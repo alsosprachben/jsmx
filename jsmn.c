@@ -15,6 +15,13 @@ static jsmntok_t *jsmn_alloc_token(jsmn_parser *parser,
 #ifdef JSMN_PARENT_LINKS
 	tok->parent = -1;
 #endif
+#ifdef JSMN_EMITTER
+	parser->toktail = parser->toknext - 1;
+	tok->toknext = -1;
+	if (parser->toktail > 0) {
+		tokens[parser->toktail - 1].toknext = parser->toktail;
+	}
+#endif
 	return tok;
 }
 
@@ -307,5 +314,30 @@ void jsmn_init(jsmn_parser *parser) {
 	parser->pos = 0;
 	parser->toknext = 0;
 	parser->toksuper = -1;
+#ifdef JSMN_EMITTER
+	parser->tokhead = 0;
+	parser->toktail = 0;
+#endif
 }
 
+#ifdef JSMN_EMITTER
+void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser) {
+	emitter->parser = parser;
+	emitter->pos = 0;
+	emitter->toknext = 0;
+}
+
+int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens) {
+	emitter->pos = 0;
+
+	while (emitter->toknext >= 0) {
+		
+	}
+
+	return emitter->pos
+}
+
+int jsmn_emit_pending(jsmn_emitter *emitter) {
+	return emitter->toknext >= 0;
+}
+#endif

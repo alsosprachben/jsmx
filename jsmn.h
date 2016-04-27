@@ -45,6 +45,9 @@ typedef struct {
 #ifdef JSMN_PARENT_LINKS
 	int parent;
 #endif
+#ifdef JSMN_EMITTER
+	int toknext; /* next token, for out-of-line edits appended to the end of the token array */
+#endif
 } jsmntok_t;
 
 /**
@@ -55,6 +58,10 @@ typedef struct {
 	unsigned int pos; /* offset in the JSON string */
 	unsigned int toknext; /* next token to allocate */
 	int toksuper; /* superior token node, e.g parent object or array */
+#ifdef JSMN_EMITTER
+	int tokhead;
+	int toktail;
+#endif
 } jsmn_parser;
 
 /**
@@ -68,6 +75,26 @@ void jsmn_init(jsmn_parser *parser);
  */
 int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
+
+#ifdef JSMN_EMITTER
+/**
+ * JSON emitter.
+ */
+typedef struct {
+	jsmn_parser *parser;
+	unsigned int pos; /* offset in the JSON string */
+	unsigned int toknext; /* next token to allocate */
+} json_emitter;
+
+void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser);
+
+/**
+ * Emit as many remaining tokens as possible into the buffer. Call this iteratively to fill multiple buffers. Returns the number bytes written excluding the null terminator, the string length. There will always be a null terminator because a token will only be emitted if there is enough room for the string including its null terminator.
+ */
+int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens);
+
+int jsmn_emit_pending(jsmn_emitter *emitter);
+#endif
 
 #ifdef __cplusplus
 }
