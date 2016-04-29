@@ -1,5 +1,7 @@
 #include "jsmn.h"
-
+#ifdef JSMN_EMITTER
+#include <string.h> /* for memcpy() */
+#endif
 /**
  * Allocates a fresh unused token from the token pull.
  */
@@ -16,11 +18,7 @@ static jsmntok_t *jsmn_alloc_token(jsmn_parser *parser,
 	tok->parent = -1;
 #endif
 #ifdef JSMN_EMITTER
-	parser->toktail = parser->toknext - 1;
-	tok->toknext = -1;
-	if (parser->toktail > 0) {
-		tokens[parser->toktail - 1].toknext = parser->toktail;
-	}
+	TAILQ_INSERT_TAIL(&parser->edithead, tok, editlinks);
 #endif
 	return tok;
 }
@@ -315,29 +313,282 @@ void jsmn_init(jsmn_parser *parser) {
 	parser->toknext = 0;
 	parser->toksuper = -1;
 #ifdef JSMN_EMITTER
-	parser->tokhead = 0;
-	parser->toktail = 0;
+	TAILQ_INIT(&parser->edithead);
 #endif
 }
 
 #ifdef JSMN_EMITTER
 void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser) {
 	emitter->parser = parser;
-	emitter->pos = 0;
-	emitter->toknext = 0;
+	emitter->tok = NULL;
+	emitter->parenttok = NULL;
+	emitter->parentitem = 0;
 }
 
-int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens) {
-	emitter->pos = 0;
+#define START_PRE                      ""
+#define CONT_PRE                       ""
+#define END_PRE                        ""
+#define SINGLE_PRE                     ""
+#define KEY_START_PRE                  "{"
+#define KEY_CONT_PRE                   ""
+#define KEY_END_PRE                    "" 
+#define KEY_SINGLE_PRE                 "{" 
+#define START_POST                     ", "
+#define CONT_POST                      ", "
+#define END_POST                       "}"
+#define SINGLE_POST                    "}"
+#define KEY_START_POST                 ": "
+#define KEY_CONT_POST                  ": "
+#define KEY_END_POST                   ": "
+#define KEY_SINGLE_POST                ": "
+#define STRING_START_PRE               "\""
+#define STRING_CONT_PRE                "\""
+#define STRING_END_PRE                 "\""
+#define STRING_SINGLE_PRE              "\""
+#define STRING_KEY_START_PRE           "{\""
+#define STRING_KEY_CONT_PRE            "\""
+#define STRING_KEY_END_PRE             "\""
+#define STRING_KEY_SINGLE_PRE          "{\""
+#define STRING_START_POST              "\", "
+#define STRING_CONT_POST               "\", "
+#define STRING_END_POST                "\"}"
+#define STRING_SINGLE_POST             "\"}"
+#define STRING_KEY_START_POST          "\": "
+#define STRING_KEY_CONT_POST           "\": "
+#define STRING_KEY_END_POST            "\": "
+#define STRING_KEY_SINGLE_POST         "\": "
+#define ARRAY_START_PRE                      "["
+#define ARRAY_CONT_PRE                       ""
+#define ARRAY_END_PRE                        ""
+#define ARRAY_SINGLE_PRE                     "["
+#define ARRAY_KEY_START_PRE                  ""
+#define ARRAY_KEY_CONT_PRE                   ""
+#define ARRAY_KEY_END_PRE                    "" 
+#define ARRAY_KEY_SINGLE_PRE                 "" 
+#define ARRAY_START_POST                     ", "
+#define ARRAY_CONT_POST                      ", "
+#define ARRAY_END_POST                       "]"
+#define ARRAY_SINGLE_POST                    "]"
+#define ARRAY_KEY_START_POST                 ""
+#define ARRAY_KEY_CONT_POST                  ""
+#define ARRAY_KEY_END_POST                   ""
+#define ARRAY_KEY_SINGLE_POST                ""
+#define ARRAY_STRING_START_PRE               "[\""
+#define ARRAY_STRING_CONT_PRE                "\""
+#define ARRAY_STRING_END_PRE                 "\""
+#define ARRAY_STRING_SINGLE_PRE              "[\""
+#define ARRAY_STRING_KEY_START_PRE           ""
+#define ARRAY_STRING_KEY_CONT_PRE            ""
+#define ARRAY_STRING_KEY_END_PRE             ""
+#define ARRAY_STRING_KEY_SINGLE_PRE          ""
+#define ARRAY_STRING_START_POST              "\", "
+#define ARRAY_STRING_CONT_POST               "\", "
+#define ARRAY_STRING_END_POST                "\"]"
+#define ARRAY_STRING_SINGLE_POST             "\"]"
+#define ARRAY_STRING_KEY_START_POST          ""
+#define ARRAY_STRING_KEY_CONT_POST           ""
+#define ARRAY_STRING_KEY_END_POST            ""
+#define ARRAY_STRING_KEY_SINGLE_POST         ""
 
-	while (emitter->toknext >= 0) {
-		
+const char *emission_table[] {
+	START_PRE,
+	CONT_PRE,
+	END_PRE,
+	SINGLE_PRE,
+	KEY_START_PRE,
+	KEY_CONT_PRE,
+	KEY_END_PRE,
+	KEY_SINGLE_PRE,
+	START_POST,
+	CONT_POST,
+	END_POST,
+	SINGLE_POST,
+	KEY_START_POST,
+	KEY_CONT_POST,
+	KEY_END_POST,
+	KEY_SINGLE_POST,
+	STRING_START_PRE,
+	STRING_CONT_PRE,
+	STRING_END_PRE,
+	STRING_SINGLE_PRE,
+	STRING_KEY_START_PRE,
+	STRING_KEY_CONT_PRE,
+	STRING_KEY_END_PRE,
+	STRING_KEY_SINGLE_PRE,
+	STRING_START_POST,
+	STRING_CONT_POST,
+	STRING_END_POST,
+	STRING_SINGLE_POST,
+	STRING_KEY_START_POST,
+	STRING_KEY_CONT_POST,
+	STRING_KEY_END_POST,
+	STRING_KEY_SINGLE_POST,
+	ARRAY_START_PRE,
+	ARRAY_CONT_PRE,
+	ARRAY_END_PRE,
+	ARRAY_SINGLE_PRE,
+	ARRAY_KEY_START_PRE,
+	ARRAY_KEY_CONT_PRE,
+	ARRAY_KEY_END_PRE,
+	ARRAY_KEY_SINGLE_PRE,
+	ARRAY_START_POST,
+	ARRAY_CONT_POST,
+	ARRAY_END_POST,
+	ARRAY_SINGLE_POST,
+	ARRAY_KEY_START_POST,
+	ARRAY_KEY_CONT_POST,
+	ARRAY_KEY_END_POST,
+	ARRAY_KEY_SINGLE_POST,
+	ARRAY_STRING_START_PRE,
+	ARRAY_STRING_CONT_PRE,
+	ARRAY_STRING_END_PRE,
+	ARRAY_STRING_SINGLE_PRE,
+	ARRAY_STRING_KEY_START_PRE,
+	ARRAY_STRING_KEY_CONT_PRE,
+	ARRAY_STRING_KEY_END_PRE,
+	ARRAY_STRING_KEY_SINGLE_PRE,
+	ARRAY_STRING_START_POST,
+	ARRAY_STRING_CONT_POST,
+	ARRAY_STRING_END_POST,
+	ARRAY_STRING_SINGLE_POST,
+	ARRAY_STRING_KEY_START_POST,
+	ARRAY_STRING_KEY_CONT_POST,
+	ARRAY_STRING_KEY_END_POST
+	ARRAY_STRING_KEY_SINGLE_POST
+};
+#define IDX_START  0
+#define IDX_CONT   1
+#define IDX_END    2
+#define IDX_SINGLE 3
+
+#define IDX_VAL   0
+#define IDX_KEY   4
+
+#define IDX_PRE   0
+#define IDX_POST  8
+
+#define IDX_UNQUOTED  0
+#define IDX_QUOTED    16
+
+#define IDX_OBJECT    0
+#define IDX_ARRAY     32
+
+int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, char *outjs, size_t outlen) {
+	size_t pos = 0;
+
+	int    tokidx;
+	int    size;
+
+	char  *prebuf;
+	size_t prelen;
+
+	size_t spanlen;
+
+	char  *postbuf;
+	size_t postlen;
+
+	if (emitter->tok == NULL) {
+		emitter->tok = TAILQ_FIRST(&parser->edithead);
 	}
 
-	return emitter->pos
+	while (emitter->tok != NULL) {
+		if (emitter->tok->parent >= 0) {
+			if (emitter->parenttok == &tokens[emitter->tok->parent]) {
+				++emitter->parentitem;
+			} else {
+				emitter->parenttok = &tokens[emitter->tok->parent];
+				emitter->parentitem = 0;
+			}
+		} else {
+			emitter->parenttok = NULL;
+		}
+		if (emitter->tok->start < emitter->tok->end) {
+			return JSMN_ERROR_INVAL;
+		}
+
+		tokidx = 0;
+
+		switch (emitter->tok->type) {
+			case JSMN_OBJECT:
+				tokidx += IDX_UNQUOTED;
+				spanlen = 0;
+				break;
+			case JSMN_ARRAY:
+				tokidx += IDX_UNQUOTED;
+				spanlen = 0;
+				break;
+			case JSMN_PRIMITIVE:
+				tokidx += IDX_UNQUOTED;
+				spanlen = emitter->tok->end + 1 - emitter->tok->start;
+				break;
+			case JSMN_STRING:
+				tokidx += IDX_QUOTED;
+				spanlen = emitter->tok->end + 1 - emitter->tok->start;
+				break;
+		}
+
+		if (emitter->parenttok != NULL) {
+			switch (emitter->parenttok->type) {
+				case JSMN_OBJECT:
+					tokidx += IDX_OBJECT;
+					size = emitter->parenttok->size / 2;
+					if (emitter->parentitem % 2 == 0) {
+						tokidx += IDX_KEY;
+					} else {
+						tokidx += IDX_VAL;
+					}
+					break;
+				case JSMN_ARRAY:
+					tokidx += IDX_ARRAY;
+					size = emitter->parenttok->size;
+					tokidx += IDX_VAL;
+					break;
+				case JSMN_PRIMITIVE:
+					size = 0;
+					break;
+				case JSMN_STRING:
+					size = 0;
+					break;
+			}
+		}
+
+		if (size == 1) {
+			tokidx += IDX_SINGLE;
+		} else if (size > 1) {
+			if (emitter->parentitem == 0) {
+				tokidx += IDX_START;
+			} else if (emitter->parentitem >= size - 1) {
+				tokidx += IDX_END;
+			} else {
+				tokidx += IDX_CONT;
+			}
+		}
+
+		prebuf  = emission_table[tokidx + IDX_PRE];
+		postbuf = emission_table[tokidx + IDX_POST];
+		prelen  = strlen(prebuf);
+		postlen = strlen(postbuf);
+
+		if (outlen <  pos +         prelen +                           spanlen +          postlen) {
+			break;
+		}
+		memcpy(&outjs[pos], prebuf, prelen);
+		memcpy(&outjs[pos +         prelen], &js[emitter->tok->start], spanlen);
+		memcpy(&outjs[pos +         prelen +                           spanlen], postbuf, postlen);
+		        outjs[pos +         prelen +                           spanlen +          postlen] = '\0';
+		              pos +=        prelen +                           spanlen +          postlen;
+		
+		TAILQ_NEXT(emitter->tok, &parser->edithead);
+	}
+
+	return pos
 }
 
 int jsmn_emit_pending(jsmn_emitter *emitter) {
-	return emitter->toknext >= 0;
+	return emitter->tok != NULL;
+}
+
+void jsmn_remove_token(jsmn_parser *parser, jsmntok_t *tok) {
+	TAILQ_REMOVE(&parser->edithead, tok, editlinks);
 }
 #endif

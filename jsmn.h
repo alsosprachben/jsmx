@@ -2,6 +2,10 @@
 #define __JSMN_H_
 
 #include <stddef.h>
+#ifdef JSMN_EMITTER
+#include <sys/queue.h> /* take from BSD if missing -- do not reinvent */
+#define JSMN_PARENT_LINKS
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,7 +41,7 @@ enum jsmnerr {
  * @param		start	start position in JSON data string
  * @param		end		end position in JSON data string
  */
-typedef struct {
+typedef struct jsmntok_s {
 	jsmntype_t type;
 	int start;
 	int end;
@@ -46,7 +50,7 @@ typedef struct {
 	int parent;
 #endif
 #ifdef JSMN_EMITTER
-	int toknext; /* next token, for out-of-line edits appended to the end of the token array */
+	TAILQ_ENTRY(jsmntok_s) editlinks; /* for out-of-line edits appended to the end of the token array */
 #endif
 } jsmntok_t;
 
@@ -59,8 +63,7 @@ typedef struct {
 	unsigned int toknext; /* next token to allocate */
 	int toksuper; /* superior token node, e.g parent object or array */
 #ifdef JSMN_EMITTER
-	int tokhead;
-	int toktail;
+	TAILQ_HEAD(edithead, jsmntok_s);
 #endif
 } jsmn_parser;
 
@@ -82,8 +85,9 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
  */
 typedef struct {
 	jsmn_parser *parser;
-	unsigned int pos; /* offset in the JSON string */
-	unsigned int toknext; /* next token to allocate */
+	jsmntok_t   *tok;
+	jsmntok_t   *parenttok;
+	unsigned int parentitem;
 } json_emitter;
 
 void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser);
@@ -91,7 +95,7 @@ void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser);
 /**
  * Emit as many remaining tokens as possible into the buffer. Call this iteratively to fill multiple buffers. Returns the number bytes written excluding the null terminator, the string length. There will always be a null terminator because a token will only be emitted if there is enough room for the string including its null terminator.
  */
-int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, char *outjs, size_t outlen);
 
 int jsmn_emit_pending(jsmn_emitter *emitter);
 #endif
