@@ -357,6 +357,28 @@ int test_nonstrict(void) {
 	return 0;
 }
 
+#ifdef JSMN_EMITTER
+int test_emitter(void) {
+	int rc;
+	jsmn_parser p;
+	jsmn_emitter e;
+	char *js = "{5: \"five\", 4: \"four\", 3: \"three\", 2: \"two\", 1: \"one\"}";
+	char outjs[1024];
+	jsmntok_t tokens[1024];
+
+	jsmn_init(&p);
+	jsmn_init_emitter(&e, &p);
+
+	rc = jsmn_parse(&p, js, strlen(js), tokens, 1024);
+	fprintf(stderr, "jsmn_parse() = %i\n", rc);
+	rc = jsmn_emit( &e, js, strlen(js), tokens, 1024, outjs, 1024);
+	fprintf(stderr, "jsmn_emit() = %i\n", rc);
+	fprintf(stderr, "js: %s\noutjs: %s\n", js, outjs);
+
+	return strcmp(js, outjs) == 0 ? 0 : -1;
+}
+#endif
+
 int main(void) {
 	test(test_empty, "test for a empty JSON objects/arrays");
 	test(test_object, "test for a JSON objects");
@@ -373,6 +395,9 @@ int main(void) {
 	test(test_issue_27, "test issue #27");
 	test(test_count, "test tokens count estimation");
 	test(test_nonstrict, "test for non-strict mode");
+#ifdef JSMN_EMITTER
+	test(test_emitter, "test emitter");
+#endif
 	printf("\nPASSED: %d\nFAILED: %d\n", test_passed, test_failed);
 	return (test_failed > 0);
 }

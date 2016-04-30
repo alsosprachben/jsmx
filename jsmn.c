@@ -474,10 +474,12 @@ const char *emission_table[] = {
 #define IDX_ARRAY     32
 
 int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, char *outjs, size_t outlen) {
+	jsmntok_t *containertok;
 	size_t pos = 0;
 
 	int    tokidx;
 	int    size;
+	int    item;
 
 	const char *prebuf;
 	size_t prelen;
@@ -492,17 +494,31 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 	}
 
 	while (emitter->tok != NULL) {
+		fprintf(stderr, "parent: %i, size: %i\n", emitter->tok->parent, tokens[emitter->tok->parent].size);
 		if (emitter->tok->parent >= 0) {
-			if (emitter->parenttok == &tokens[emitter->tok->parent]) {
+			switch (tokens[emitter->tok->parent].type) {
+				case JSMN_OBJECT:
+				case JSMN_ARRAY:
+					containertok = &tokens[emitter->tok->parent];
+					break;
+				default:
+					if (tokens[emitter->tok->parent].parent >= 0) {
+						containertok = &tokens[tokens[emitter->tok->parent].parent];
+					} else {
+						containertok = NULL;
+					}
+			}
+
+			if (emitter->parenttok == containertok) {
 				++emitter->parentitem;
 			} else {
-				emitter->parenttok = &tokens[emitter->tok->parent];
+				emitter->parenttok = containertok;
 				emitter->parentitem = 0;
 			}
 		} else {
 			emitter->parenttok = NULL;
 		}
-		if (emitter->tok->start < emitter->tok->end) {
+		if (emitter->tok->start > emitter->tok->end) {
 			return JSMN_ERROR_INVAL;
 		}
 
@@ -510,58 +526,80 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 
 		switch (emitter->tok->type) {
 			case JSMN_OBJECT:
-				tokidx += IDX_UNQUOTED;
+				tokidx = -1;;
 				spanlen = 0;
 				break;
 			case JSMN_ARRAY:
-				tokidx += IDX_UNQUOTED;
+				tokidx = -1;
 				spanlen = 0;
 				break;
 			case JSMN_PRIMITIVE:
 				tokidx += IDX_UNQUOTED;
-				spanlen = emitter->tok->end + 1 - emitter->tok->start;
+				spanlen = emitter->tok->end - emitter->tok->start;
 				break;
 			case JSMN_STRING:
 				tokidx += IDX_QUOTED;
-				spanlen = emitter->tok->end + 1 - emitter->tok->start;
+				spanlen = emitter->tok->end - emitter->tok->start;
 				break;
 			case JSMN_UNDEFINED:
+				tokidx = -1;;
 				break;
+		}
+
+		if (tokidx == -1) {
+			emitter->tok = TAILQ_NEXT(emitter->tok, editlinks);
+			fprintf(stderr, "skipping container\n");
+			continue;
 		}
 
 		if (emitter->parenttok != NULL) {
 			switch (emitter->parenttok->type) {
 				case JSMN_OBJECT:
 					tokidx += IDX_OBJECT;
-					size = emitter->parenttok->size / 2;
+					if (emitter->parenttok != NULL) {
+						size = emitter->parenttok->size;
+					} else {
+						size = 0;
+					}
 					if (emitter->parentitem % 2 == 0) {
 						tokidx += IDX_KEY;
 					} else {
 						tokidx += IDX_VAL;
 					}
+					item = emitter->parentitem / 2;
 					break;
 				case JSMN_ARRAY:
 					tokidx += IDX_ARRAY;
-					size = emitter->parenttok->size;
+					if (emitter->parenttok != NULL) {
+						size = emitter->parenttok->size;
+					} else {
+						size = 0;
+					}
 					tokidx += IDX_VAL;
+					item = emitter->parentitem;
 					break;
 				case JSMN_PRIMITIVE:
 					size = 0;
+					item = 0;
 					break;
 				case JSMN_STRING:
 					size = 0;
+					item = 0;
 					break;
 				case JSMN_UNDEFINED:
 					break;
 			}
+		} else {
+			size = 0;
+			item = 0;
 		}
 
 		if (size == 1) {
 			tokidx += IDX_SINGLE;
 		} else if (size > 1) {
-			if (emitter->parentitem == 0) {
+			if (item == 0) {
 				tokidx += IDX_START;
-			} else if (emitter->parentitem >= size - 1) {
+			} else if (item >= size - 1) {
 				tokidx += IDX_END;
 			} else {
 				tokidx += IDX_CONT;
@@ -581,8 +619,9 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 		memcpy(&outjs[pos +         prelen +                           spanlen], postbuf, postlen);
 		        outjs[pos +         prelen +                           spanlen +          postlen] = '\0';
 		              pos +=        prelen +                           spanlen +          postlen;
-		
-		TAILQ_NEXT(emitter->tok, editlinks);
+	
+		fprintf(stderr, "{preidx: %i, postidx: %i, start %i, len: %zu, size: %i, item: %i, parent: %p}\n", tokidx + IDX_PRE, tokidx + IDX_POST, emitter->tok->start, spanlen, size, item, emitter->parenttok);
+		emitter->tok = TAILQ_NEXT(emitter->tok, editlinks);
 	}
 
 	return pos;
