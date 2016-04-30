@@ -390,7 +390,7 @@ void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser) {
 #define ARRAY_STRING_KEY_END_POST            ""
 #define ARRAY_STRING_KEY_SINGLE_POST         ""
 
-const char *emission_table[] {
+const char *emission_table[] = {
 	START_PRE,
 	CONT_PRE,
 	END_PRE,
@@ -453,7 +453,7 @@ const char *emission_table[] {
 	ARRAY_STRING_SINGLE_POST,
 	ARRAY_STRING_KEY_START_POST,
 	ARRAY_STRING_KEY_CONT_POST,
-	ARRAY_STRING_KEY_END_POST
+	ARRAY_STRING_KEY_END_POST,
 	ARRAY_STRING_KEY_SINGLE_POST
 };
 #define IDX_START  0
@@ -479,16 +479,16 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 	int    tokidx;
 	int    size;
 
-	char  *prebuf;
+	const char *prebuf;
 	size_t prelen;
 
 	size_t spanlen;
 
-	char  *postbuf;
+	const char *postbuf;
 	size_t postlen;
 
 	if (emitter->tok == NULL) {
-		emitter->tok = TAILQ_FIRST(&parser->edithead);
+		emitter->tok = TAILQ_FIRST(&emitter->parser->edithead);
 	}
 
 	while (emitter->tok != NULL) {
@@ -525,6 +525,8 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 				tokidx += IDX_QUOTED;
 				spanlen = emitter->tok->end + 1 - emitter->tok->start;
 				break;
+			case JSMN_UNDEFINED:
+				break;
 		}
 
 		if (emitter->parenttok != NULL) {
@@ -548,6 +550,8 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 					break;
 				case JSMN_STRING:
 					size = 0;
+					break;
+				case JSMN_UNDEFINED:
 					break;
 			}
 		}
@@ -578,10 +582,10 @@ int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, un
 		        outjs[pos +         prelen +                           spanlen +          postlen] = '\0';
 		              pos +=        prelen +                           spanlen +          postlen;
 		
-		TAILQ_NEXT(emitter->tok, &parser->edithead);
+		TAILQ_NEXT(emitter->tok, editlinks);
 	}
 
-	return pos
+	return pos;
 }
 
 int jsmn_emit_pending(jsmn_emitter *emitter) {

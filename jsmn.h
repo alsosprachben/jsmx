@@ -63,7 +63,7 @@ typedef struct {
 	unsigned int toknext; /* next token to allocate */
 	int toksuper; /* superior token node, e.g parent object or array */
 #ifdef JSMN_EMITTER
-	TAILQ_HEAD(edithead, jsmntok_s);
+	TAILQ_HEAD(edithead_s, jsmntok_s) edithead;
 #endif
 } jsmn_parser;
 
@@ -88,7 +88,7 @@ typedef struct {
 	jsmntok_t   *tok;
 	jsmntok_t   *parenttok;
 	unsigned int parentitem;
-} json_emitter;
+} jsmn_emitter;
 
 void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser);
 
