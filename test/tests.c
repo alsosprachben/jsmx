@@ -362,7 +362,7 @@ int test_emitter(void) {
 	int rc;
 	jsmn_parser p;
 	jsmn_emitter e;
-	char *js = "{5: \"five\", 4: \"four\", 3: \"three\", 2: \"two\", 1: \"one\"}";
+	char *js = "{5: \"five\", 4: \"four\", 3: \"three\", 2: \"two\", 1: [\"one\"]}";
 	char outjs[1024];
 	jsmntok_t tokens[1024];
 

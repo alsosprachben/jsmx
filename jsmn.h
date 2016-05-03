@@ -3,8 +3,9 @@
 
 #include <stddef.h>
 #ifdef JSMN_EMITTER
-#include <sys/queue.h> /* take from BSD if missing -- do not reinvent */
-#define JSMN_PARENT_LINKS
+#define JSMN_DOM
+#endif
+#ifdef JSMN_DOM
 #endif
 
 #ifdef __cplusplus
@@ -35,6 +36,22 @@ enum jsmnerr {
 	JSMN_ERROR_PART = -3
 };
 
+#ifdef JSMN_DOM
+struct children_t {
+	int first;
+	int last;
+};
+struct siblings_t {
+	int prev;
+	int next;
+};
+struct family_t {
+	int parent;
+	struct siblings_t siblings;
+	struct children_t children;
+};
+#endif
+
 /**
  * JSON token description.
  * @param		type	type (object, array, string etc.)
@@ -45,12 +62,13 @@ typedef struct jsmntok_s {
 	jsmntype_t type;
 	int start;
 	int end;
+#ifdef JSMN_DOM
+	struct family_t family;
+#else
 	int size;
 #ifdef JSMN_PARENT_LINKS
 	int parent;
 #endif
-#ifdef JSMN_EMITTER
-	TAILQ_ENTRY(jsmntok_s) editlinks; /* for out-of-line edits appended to the end of the token array */
 #endif
 } jsmntok_t;
 
@@ -62,9 +80,6 @@ typedef struct {
 	unsigned int pos; /* offset in the JSON string */
 	unsigned int toknext; /* next token to allocate */
 	int toksuper; /* superior token node, e.g parent object or array */
-#ifdef JSMN_EMITTER
-	TAILQ_HEAD(edithead_s, jsmntok_s) edithead;
-#endif
 } jsmn_parser;
 
 /**
@@ -79,25 +94,30 @@ void jsmn_init(jsmn_parser *parser);
 int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
 
+#ifdef JSMN_DOM
+int jsmn_dom_add(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int jsmn_dom_delete(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i);
+int jsmn_dom_move(  jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int jsmn_dom_set(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i, jsmntype_t type, int start, int end);
+int jsmn_dom_new(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens);
+#endif
+
 #ifdef JSMN_EMITTER
-/**
- * JSON emitter.
+/*
+ * Emit as many remaining tokens as possible into the buffer from `js_cursor` to `js_boundary`.
+ * Call iteratively to fill multiple or extended buffers. 
+ * `token_cursor` and `js_cursor` are updated each iteration.
+ * When emission is complete, token_cursor will be NULL, and JSMN_ERROR_PART is returned.
+ * Returns the number of tokens written:
+ *  >  0: some tokens were emitted
+ *  == 0: finished emitting
+ *  <  0: JSMN_* error
+ * 
+ * There will always be a null terminator because a token will only be emitted if there is enough room for the string including its null terminator.
  */
-typedef struct {
-	jsmn_parser *parser;
-	jsmntok_t   *tok;
-	jsmntok_t   *parenttok;
-	unsigned int parentitem;
-} jsmn_emitter;
-
-void jsmn_init_emitter(jsmn_emitter *emitter, jsmn_parser *parser);
-
-/**
- * Emit as many remaining tokens as possible into the buffer. Call this iteratively to fill multiple buffers. Returns the number bytes written excluding the null terminator, the string length. There will always be a null terminator because a token will only be emitted if there is enough room for the string including its null terminator.
- */
-int jsmn_emit(jsmn_emitter *emitter, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, char *outjs, size_t outlen);
-
-int jsmn_emit_pending(jsmn_emitter *emitter);
+int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
+		jsmntok_t *tokens, unsigned int num_tokens,
+		int *token_cursor, char *js_cursor, char *js_boundary);
 #endif
 
 #ifdef __cplusplus
