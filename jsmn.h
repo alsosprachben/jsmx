@@ -95,11 +95,19 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
 
 #ifdef JSMN_DOM
-int jsmn_dom_add(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
-int jsmn_dom_delete(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i);
-int jsmn_dom_move(  jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
-int jsmn_dom_set(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i, jsmntype_t type, int start, int end);
-int jsmn_dom_new(   jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_add(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int jsmn_dom_delete(       jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_move(         jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int jsmn_dom_set(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,               int i, jsmntype_t type, int start, int end);
+int jsmn_dom_new(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_as(       jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,                      jsmntype_t type, int start, int end);
+int jsmn_dom_new_object(   jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_array(    jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_new_string(   jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_eval(         jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_insert_object(jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int object_i, int key_i, int value_i);
+int jsmn_dom_insert_array( jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int array_i,             int value_i);
 #endif
 
 #ifdef JSMN_EMITTER

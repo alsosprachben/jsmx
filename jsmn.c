@@ -346,7 +346,7 @@ int jsmn_dom_add(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens
 int jsmn_dom_delete(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
 	int parent_i;
 
-	if (i >= num_tokens || parent_i >= num_tokens) {
+	if (i >= num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -391,7 +391,7 @@ int jsmn_dom_new(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens
 
 	return i;	
 }
-int jsmn_dom_new_as(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, jsmntype_t type, start, end) {
+int jsmn_dom_new_as(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, jsmntype_t type, int start, int end) {
 	int rc;
 	int i;
 
@@ -452,7 +452,7 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	        js[parser->pos + 1 + size] = '"';
 	        js[parser->pos + 1 + size + 1] = '\0';
 
-	parser->pos++; /* skip past opening quote, where expected by `jsmn_parse_string` */
+	parser->pos++; /* skip past opening quote, where expected by `jsmn_parse_string()` */
 
 	rc = jsmn_parse_string(parser, js, len, tokens, num_tokens);
 	if (rc < 0) {
@@ -460,6 +460,69 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	}
 
 	return i;
+}
+int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value) {
+	int i;
+	int rc;
+	size_t size;
+
+	size = strlen(value);
+
+	if (parser->pos + size + 1 >= len) {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	i = parser->toknext;
+
+	memcpy(&js[parser->pos], value, size + 1);
+
+	rc = jsmn_parse(parser, js, len, tokens, num_tokens);
+	if (rc < 0) {
+		return rc;
+	}
+
+	return i;
+}
+int jsmn_dom_insert_object(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int object_i, int key_i, int value_i) {
+	int rc;
+
+	if (object_i >= num_tokens || key_i >= num_tokens || value_i >= num_tokens) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	if (tokens[object_i].type != JSMN_OBJECT) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	rc = jsmn_dom_add(parser, tokens, num_tokens, object_i, key_i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	rc = jsmn_dom_add(parser, tokens, num_tokens, key_i, value_i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	return 0;
+}
+int jsmn_dom_insert_array(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int array_i, int value_i) {
+	int rc;
+
+	if (array_i >= num_tokens || value_i >= num_tokens) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	if (tokens[array_i].type != JSMN_ARRAY) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	rc = jsmn_dom_add(parser, tokens, num_tokens, array_i, value_i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	return 0;
 }
 #endif
 
