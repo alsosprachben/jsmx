@@ -52,6 +52,7 @@ struct family_t {
 };
 #endif
 
+
 /**
  * JSON token description.
  * @param		type	type (object, array, string etc.)
@@ -95,37 +96,62 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
 
 #ifdef JSMN_DOM
-int jsmn_dom_add(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
-int jsmn_dom_delete(       jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,               int i);
-int jsmn_dom_move(         jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
-int jsmn_dom_set(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,               int i, jsmntype_t type, int start, int end);
-int jsmn_dom_new(          jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
-int jsmn_dom_new_as(       jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens,                      jsmntype_t type, int start, int end);
-int jsmn_dom_new_object(   jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
-int jsmn_dom_new_array(    jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens);
-int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
-int jsmn_dom_new_string(   jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
-int jsmn_dom_eval(         jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
-int jsmn_dom_insert_object(jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int object_i, int key_i, int value_i);
-int jsmn_dom_insert_array( jsmn_parser *parser,                       jsmntok_t *tokens, unsigned int num_tokens, int array_i,             int value_i);
+int jsmn_dom_get_value(    jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char *buf, size_t buflen);
+int jsmn_dom_get_type(     jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+
+int jsmn_dom_get_parent(   jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_get_child(    jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_get_sibling(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_is_open(      jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+
+int jsmn_dom_add(          jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int jsmn_dom_delete(       jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_move(         jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+
+int jsmn_dom_set(          jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i, jsmntype_t type, int start, int end);
+int jsmn_dom_close(        jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i,                             int end);
+
+int jsmn_dom_new(          jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_as(       jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,                      jsmntype_t type, int start, int end);
+int jsmn_dom_new_object(   jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_array(    jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_dom_new_primitive(jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_new_string(   jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_eval(         jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+
+int jsmn_dom_insert_name(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i, int value_i);
+int jsmn_dom_insert_value( jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int array_i,              int value_i);
+int jsmn_dom_delete_name(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i);
+int jsmn_dom_delete_value( jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int array_i,              int value_i);
 #endif
 
 #ifdef JSMN_EMITTER
+enum tokphase {
+	PHASE_UNOPENED;
+	PHASE_OPENED;
+	PHASE_CLOSED;
+}
+typedef struct {
+	int           cursor_i;
+	enum tokphase cursor_phase;
+} jsmn_emitter;
+
+void jsmn_init_emitter(jsmn_emitter *emitter);
+
 /*
- * Emit as many remaining tokens as possible into the buffer from `js_cursor` to `js_boundary`.
- * Call iteratively to fill multiple or extended buffers. 
- * `token_cursor` and `js_cursor` are updated each iteration.
- * When emission is complete, token_cursor will be NULL, and JSMN_ERROR_PART is returned.
- * Returns the number of tokens written:
- *  >  0: some tokens were emitted
- *  == 0: finished emitting
- *  <  0: JSMN_* error
- * 
+ * Emit as many remaining tokens as possible into the buffer `outjs` of length `outlen`.
  * There will always be a null terminator because a token will only be emitted if there is enough room for the string including its null terminator.
+ * Call iteratively to fill multiple or extended buffers. 
+ *
+ * Returns the number of bytes written into `outjs` when >= 0:
+ * Returns JSMN_ERROR_* when < 0;
+ *
+ * When emission is complete: `emitter->cursor_i == -1`.
+ * Emission starts at emitter state, which defaults to `{0, PHASE_UNOPENED}`.
  */
 int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens,
-		int *token_cursor, char *js_cursor, char *js_boundary);
+		jsmn_emitter *emitter, char *outjs, size_t outlen);
 #endif
 
 #ifdef __cplusplus
