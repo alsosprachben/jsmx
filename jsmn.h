@@ -104,6 +104,7 @@ int jsmn_dom_get_parent(   jsmn_parser *parser,                             jsmn
 int jsmn_dom_get_child(    jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int jsmn_dom_get_sibling(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int jsmn_dom_is_open(      jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int jsmn_dom_get_open(     jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 
 int jsmn_dom_add(          jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
 int jsmn_dom_delete(       jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
