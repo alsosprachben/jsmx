@@ -127,10 +127,10 @@ int jsmn_dom_delete_value( jsmn_parser *parser,                             jsmn
 
 #ifdef JSMN_EMITTER
 enum tokphase {
-	PHASE_UNOPENED;
-	PHASE_OPENED;
-	PHASE_CLOSED;
-}
+	PHASE_UNOPENED = 0,
+	PHASE_OPENED,
+	PHASE_CLOSED
+};
 typedef struct {
 	int           cursor_i;
 	enum tokphase cursor_phase;
