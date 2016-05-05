@@ -216,7 +216,11 @@ int test_array_nomem(void) {
 					JSMN_ARRAY, -1, -1, 3,
 					JSMN_PRIMITIVE, "1",
 					JSMN_PRIMITIVE, "true",
+#ifdef JSMN_DOM
+					JSMN_ARRAY, -1, -1, 1,
+#else
 					JSMN_ARRAY, -1, -1, 2,
+#endif
 					JSMN_PRIMITIVE, "123",
 					JSMN_STRING, "hello", 0));
 	}
@@ -367,13 +371,13 @@ int test_emitter(void) {
 	jsmntok_t tokens[1024];
 
 	jsmn_init(&p);
-	jsmn_init_emitter(&e, &p);
+	jsmn_init_emitter(&e);
 
 	rc = jsmn_parse(&p, js, strlen(js), tokens, 1024);
 	fprintf(stderr, "jsmn_parse() = %i\n", rc);
-	rc = jsmn_emit( &e, js, strlen(js), tokens, 1024, outjs, 1024);
+	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
 	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	fprintf(stderr, "js: %s\noutjs: %s\n", js, outjs);
+	/* fprintf(stderr, "js: %s\noutjs: %s\n", js, outjs); */
 
 	return strcmp(js, outjs) == 0 ? 0 : -1;
 }

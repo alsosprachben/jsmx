@@ -10,6 +10,9 @@ static int vtokeq(const char *s, jsmntok_t *t, int numtok, va_list ap) {
 		char *value;
 
 		size = -1;
+#ifdef JSMN_DOM
+		int domsize;
+#endif
 		value = NULL;
 		for (i = 0; i < numtok; i++) {
 			type = va_arg(ap, int);
@@ -40,10 +43,20 @@ static int vtokeq(const char *s, jsmntok_t *t, int numtok, va_list ap) {
 					return 0;
 				}
 			}
+#ifdef JSMN_DOM
+			if (size != -1) {
+				domsize = (int) jsmn_dom_get_count(NULL, t, numtok, i);
+				if (domsize != size) {
+					printf("token %d size is %d, not %d\n", i, domsize, size);
+					return 0;
+				}
+			}
+#else
 			if (size != -1 && t[i].size != size) {
 				printf("token %d size is %d, not %d\n", i, t[i].size, size);
 				return 0;
 			}
+#endif
 
 			if (s != NULL && value != NULL) {
 				const char *p = s + t[i].start;
