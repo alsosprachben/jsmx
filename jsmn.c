@@ -767,6 +767,47 @@ void jsmn_init_emitter(jsmn_emitter *emitter) {
 	emitter->cursor_i = 0;
 	emitter->cursor_phase = PHASE_UNOPENED;
 }
+
+int jsmn_emit_token(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, jsmn_emitter *emitter, char *outjs, size_t outlen) {
+	size_t pos;
+
+	pos = 0;
+
+	switch (jsmn_dom_get_type(parser, tokens, num_tokens, emitter->cursor_i)) {
+		case JSMN_OBJECT:
+			switch (emitter->cursor_phase) {
+				case PHASE_UNOPENED:
+					if (outlen - pos > 1) {
+						outjs[pos++] = '{';
+						outjs[pos] = '\0';
+						emitter->cursor_phase = PHASE_OPENED;
+					} else {
+						break;
+					}
+					/* fall through */
+				case PHASE_OPENED:
+					
+					emitter->cursor_phase = PHASE_UNCLOSED;
+				case PHASE_UNCLOSED:
+					if (outlen - pos > 1) {
+						outjs[pos++] = '}';
+						outjs[pos] = '\0';
+						emitter->cursor_phase = PHASE_CLOSED;
+					} else {
+						break;
+					}
+					/* fall through */
+				case PHASE_CLOSED:
+					break;
+			}
+			break;
+		case JSMN_UNDEFINED:
+			return JSMN_ERROR_INVAL;
+	}
+
+	return pos;
+}
+
 int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens,
 		jsmn_emitter *emitter, char *outjs, size_t outlen) {

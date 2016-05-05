@@ -131,6 +131,7 @@ int jsmn_dom_delete_value( jsmn_parser *parser,                             jsmn
 enum tokphase {
 	PHASE_UNOPENED = 0,
 	PHASE_OPENED,
+	PHASE_UNCLOSED,
 	PHASE_CLOSED
 };
 typedef struct {
