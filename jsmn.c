@@ -463,9 +463,9 @@ size_t jsmn_dom_get_count(jsmn_parser *parser, jsmntok_t *tokens, unsigned int n
 
 	return count;
 }
-int jsmn_dom_get_type(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+jsmntype_t jsmn_dom_get_type(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
 	if (i >= (int) num_tokens) {
-		return -1;
+		return JSMN_UNDEFINED;
 	}
 
 	return tokens[i].type;
@@ -768,36 +768,159 @@ void jsmn_init_emitter(jsmn_emitter *emitter) {
 	emitter->cursor_phase = PHASE_UNOPENED;
 }
 
-int jsmn_emit_token(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, jsmn_emitter *emitter, char *outjs, size_t outlen) {
+int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, jsmn_emitter *emitter, char *outjs, size_t outlen) {
 	size_t pos;
+
+	size_t     value_len;
+	jsmntype_t type;
+	jsmntype_t parent_type;
+
+	int        parent_i;
+	int        sibling_i;
+	int        child_i;
+
+	int           next_i;
+	enum tokphase next_phase;
 
 	pos = 0;
 
-	switch (jsmn_dom_get_type(parser, tokens, num_tokens, emitter->cursor_i)) {
+	value_len   = jsmn_dom_get_strlen( parser, tokens, num_tokens, emitter->cursor_i);
+	type        = jsmn_dom_get_type(   parser, tokens, num_tokens, emitter->cursor_i);
+	parent_type = jsmn_dom_get_type(   parser, tokens, num_tokens, parent_i);
+
+	parent_i    = jsmn_dom_get_parent( parser, tokens, num_tokens, emitter->cursor_i);
+	sibling_i   = jsmn_dom_get_sibling(parser, tokens, num_tokens, emitter->cursor_i);
+	child_i     = jsmn_dom_get_child(  parser, tokens, num_tokens, emitter->cursor_i);
+
+	next_i      = sibling_i == -1 ? parent_i       : sibling_i;
+	next_phase  = sibling_i == -1 ? PHASE_UNCLOSED : PHASE_UNOPENED;
+
+	switch (type) {
 		case JSMN_OBJECT:
+		case JSMN_ARRAY:
 			switch (emitter->cursor_phase) {
 				case PHASE_UNOPENED:
 					if (outlen - pos > 1) {
-						outjs[pos++] = '{';
+						outjs[pos++] = type == JSMN_OBJECT ? '{' : '[';
 						outjs[pos] = '\0';
-						emitter->cursor_phase = PHASE_OPENED;
 					} else {
 						break;
 					}
-					/* fall through */
+					emitter->cursor_phase = PHASE_OPENED;
 				case PHASE_OPENED:
-					
+					if (child_i != -1) {
+						emitter->cursor_i = child_i;
+						emitter->cursor_phase = PHASE_UNOPENED;
+						break;
+					}
 					emitter->cursor_phase = PHASE_UNCLOSED;
 				case PHASE_UNCLOSED:
 					if (outlen - pos > 1) {
-						outjs[pos++] = '}';
+						outjs[pos++] = type == JSMN_OBJECT ? '}' : ']';
 						outjs[pos] = '\0';
-						emitter->cursor_phase = PHASE_CLOSED;
 					} else {
 						break;
 					}
-					/* fall through */
+					emitter->cursor_phase = PHASE_CLOSED;
 				case PHASE_CLOSED:
+					if (sibling_i != -1 && outlen - pos > 2) {
+						outjs[pos++] = ',';
+						outjs[pos++] = ' ';
+						outjs[pos] = '\0';
+					} else {
+						break;
+					}
+					if (next_i != -1) {
+						emitter->cursor_i = next_i;
+						emitter->cursor_phase = next_phase;
+						break;
+					}
+					break;
+			}
+			break;
+		case JSMN_STRING:
+			if (parent_type == JSMN_OBJECT && child_i != -1) {
+				/* is a name of an object name-value pairing */
+				switch (emitter->cursor_phase) {
+					case PHASE_UNOPENED:
+						if (outlen - pos > value_len + 4) {
+							outjs[pos++] = '\"';
+							memcpy(&outjs[pos += value_len], js, value_len);
+							outjs[pos++] = '\"';
+							outjs[pos++] = ':';
+							outjs[pos++] = ' ';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
+						emitter->cursor_phase = PHASE_OPENED;
+					case PHASE_OPENED:
+						if (child_i != -1) {
+							emitter->cursor_i = child_i;
+							emitter->cursor_phase = PHASE_UNOPENED;
+							break;
+						}
+						emitter->cursor_phase = PHASE_UNCLOSED;
+					case PHASE_UNCLOSED:
+						emitter->cursor_phase = PHASE_CLOSED;
+					case PHASE_CLOSED:
+						if (sibling_i != -1 && outlen - pos > 2) {
+							outjs[pos++] = ',';
+							outjs[pos++] = ' ';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
+						if (next_i != -1) {
+							emitter->cursor_i = next_i;
+							emitter->cursor_phase = next_phase;
+							break;
+						}
+						break;
+				}
+			}
+			/* is not an object name */
+			/* fall through */
+		case JSMN_PRIMITIVE:
+			/* value JSMN_STRING or JSMN_PRIMITIVE */
+			switch (emitter->cursor_phase) {
+				case PHASE_UNOPENED:
+					if (type == JSMN_STRING && outlen - pos > 1) {
+						outjs[pos++] = '\"';
+						outjs[pos] = '\0';
+					} else {
+						break;
+					}
+					emitter->cursor_phase = PHASE_OPENED;
+				case PHASE_OPENED:
+					if (outlen - pos > value_len) {
+						memcpy(&outjs[pos += value_len], js, value_len);
+						outjs[pos] = '\0';
+					} else {
+						break;
+					}
+					emitter->cursor_phase = PHASE_UNCLOSED;
+				case PHASE_UNCLOSED:
+					if (type == JSMN_STRING && outlen - pos > 1) {
+						outjs[pos++] = '\"';
+						outjs[pos] = '\0';
+					} else {
+						break;
+					}
+					emitter->cursor_phase = PHASE_CLOSED;
+				case PHASE_CLOSED:
+					if (sibling_i != -1 && outlen - pos > 2) {
+						outjs[pos++] = ',';
+						outjs[pos++] = ' ';
+						outjs[pos] = '\0';
+					} else {
+						break;
+					}
+					if (next_i != -1) {
+						emitter->cursor_i = next_i;
+						emitter->cursor_phase = next_phase;
+						break;
+					}
 					break;
 			}
 			break;
@@ -811,6 +934,25 @@ int jsmn_emit_token(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tok
 int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens,
 		jsmn_emitter *emitter, char *outjs, size_t outlen) {
-	return 0;
+	size_t pos;
+	jsmn_emitter prior_emitter;
+	
+	pos = 0;
+
+	while (emitter->cursor_i != -1) {
+		prior_emitter = *emitter;
+		pos += jsmn_emit_token(parser, js, len, tokens, num_tokens, emitter, outjs + pos, outlen - pos);
+		if (memcmp(&prior_emitter, emitter, sizeof (prior_emitter)) == 0) {
+			break;
+		}
+	}
+
+	if (emitter->cursor_i == -1) {
+		/* prepare emitter state for next parsed token */
+		emitter->cursor_i = parser->toknext;
+		emitter->cursor_phase = PHASE_UNOPENED;
+	}
+
+	return pos;
 }
 #endif
