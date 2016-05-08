@@ -366,20 +366,37 @@ int test_emitter(void) {
 	int rc;
 	jsmn_parser p;
 	jsmn_emitter e;
-	char *js = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
+	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6}";
+	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
+
+	memcpy(js, injs, strlen(injs));
+	js[strlen(js)] = '\0';
 
 	jsmn_init(&p);
 	jsmn_init_emitter(&e);
 
 	rc = jsmn_parse(&p, js, strlen(js), tokens, 1024);
 	fprintf(stderr, "jsmn_parse() = %i\n", rc);
+	/* 
+	rc = jsmn_dom_delete(&p, tokens, 1024, 4);
+	rc = jsmn_dom_add(&p, tokens, 1024, 1, 0);
+	*/
+	{
+		int name_i;
+		int value_i;
+	
+		name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "six");
+		value_i = jsmn_dom_new_primitive(&p, js, 1024, tokens, 1024, "6");
+		rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	}
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
 	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	fprintf(stderr, "js   : %s\noutjs: %s\n", js, outjs);
+	fprintf(stderr, "passjs: %s\noutjs : %s\n", passjs, outjs);
 
-	return strcmp(js, outjs) == 0 ? 0 : -1;
+	return strcmp(passjs, outjs) == 0 ? 0 : -1;
 }
 #endif
 

@@ -70,10 +70,17 @@ static int jsmn_parse_primitive(jsmn_parser *parser, const char *js,
 			return JSMN_ERROR_INVAL;
 		}
 	}
+#ifdef JSMN_DOM
+	if (js[parser->pos] != '\0') {
+		/* allow ending with NULL for adding new primitives to the js buffer */
+#endif
 #ifdef JSMN_STRICT
 	/* In strict mode primitive must be followed by a comma/object/array */
 	parser->pos = start;
 	return JSMN_ERROR_PART;
+#endif
+#ifdef JSMN_DOM
+	}
 #endif
 
 found:
@@ -657,7 +664,7 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 	memcpy(&js[parser->pos], value, size + 1);
 
 	rc = jsmn_parse_primitive(parser, js, len, tokens, num_tokens);
-	if (rc < 0) {
+	if (rc < 0 && rc != JSMN_ERROR_PART) {
 		return rc;
 	}
 
