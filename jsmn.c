@@ -70,17 +70,10 @@ static int jsmn_parse_primitive(jsmn_parser *parser, const char *js,
 			return JSMN_ERROR_INVAL;
 		}
 	}
-#ifdef JSMN_DOM
-	if (js[parser->pos] != '\0') {
-		/* allow ending with NULL for adding new primitives to the js buffer */
-#endif
 #ifdef JSMN_STRICT
 	/* In strict mode primitive must be followed by a comma/object/array */
 	parser->pos = start;
 	return JSMN_ERROR_PART;
-#endif
-#ifdef JSMN_DOM
-	}
 #endif
 
 found:
@@ -655,18 +648,22 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 
 	size = strlen(value);
 
-	if (parser->pos + size + 1 >= len) {
+	if (len <  parser->pos + size + 1 + 1) {
 		return JSMN_ERROR_NOMEM;
 	}
 
 	i = parser->toknext;
 
-	memcpy(&js[parser->pos], value, size + 1);
+	memcpy(&js[parser->pos], value, size);
+	        js[parser->pos + size] = ' ';
+	        js[parser->pos + size + 1] = '\0';
 
 	rc = jsmn_parse_primitive(parser, js, len, tokens, num_tokens);
-	if (rc < 0 && rc != JSMN_ERROR_PART) {
+	if (rc < 0) {
 		return rc;
 	}
+
+	parser->pos += 2;
 
 	return i;
 }
@@ -692,6 +689,8 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	if (rc < 0) {
 		return rc;
 	}
+
+	parser->pos++;
 
 	return i;
 }
@@ -832,7 +831,7 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 	next_i      = sibling_i == -1 ? parent_i       : sibling_i;
 	next_phase  = sibling_i == -1 ? PHASE_UNCLOSED : PHASE_UNOPENED;
 
-	fprintf(stderr, "cursor_i = %i\ncursor_phase = %i\nvalue_len = %zu\ntype = %i\nparent_type = %i\nparent_i = %i\nsibling_i = %i\nchild_i = %i\nnext_i = %i\nnext_phase = %i\n\n", emitter->cursor_i, emitter->cursor_phase, value_len, type, parent_type, parent_i, sibling_i, child_i, next_i, next_phase);
+	/* fprintf(stderr, "cursor_i = %i\ncursor_phase = %i\nstart = %i\nvalue_len = %zu\ntype = %i\nparent_type = %i\nparent_i = %i\nsibling_i = %i\nchild_i = %i\nnext_i = %i\nnext_phase = %i\n\n", emitter->cursor_i, emitter->cursor_phase, start, value_len, type, parent_type, parent_i, sibling_i, child_i, next_i, next_phase); */
 
 	switch (type) {
 		case JSMN_OBJECT:
@@ -995,7 +994,7 @@ int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 	while (emitter->cursor_i != -1) {
 		prior_emitter = *emitter;
 		rc = jsmn_emit_token(parser, js, len, tokens, num_tokens, emitter, outjs + pos, outlen - pos);
-		fprintf(stderr, "jsmn_emit_token() = %i\n", rc);
+		/* fprintf(stderr, "jsmn_emit_token() = %i\n", rc); */
 		if (rc < 0) {
 			return rc;
 		}

@@ -367,16 +367,17 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}]}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
+	int name_i;
+	int value_i;
 
 	memcpy(js, injs, strlen(injs));
 	js[strlen(js)] = '\0';
 
 	jsmn_init(&p);
-	jsmn_init_emitter(&e);
 
 	rc = jsmn_parse(&p, js, strlen(js), tokens, 1024);
 	fprintf(stderr, "jsmn_parse() = %i\n", rc);
@@ -384,17 +385,26 @@ int test_emitter(void) {
 	rc = jsmn_dom_delete(&p, tokens, 1024, 4);
 	rc = jsmn_dom_add(&p, tokens, 1024, 1, 0);
 	*/
-	{
-		int name_i;
-		int value_i;
-	
-		name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "six");
-		value_i = jsmn_dom_new_primitive(&p, js, 1024, tokens, 1024, "6");
-		rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
-	}
+	fprintf(stderr, "posA: %i\n", p.pos);
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "six");
+	fprintf(stderr, "posB: %i\n", p.pos);
+	value_i = jsmn_dom_new_primitive(&p, js, 1024, tokens, 1024, "6");
+	fprintf(stderr, "posC: %i\n", p.pos);
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+
+	jsmn_init_emitter(&e);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
 	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	fprintf(stderr, "passjs: %s\noutjs : %s\n", passjs, outjs);
+	fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "stuff");
+	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "[1,2,{\"a\": 3}]");
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+
+	jsmn_init_emitter(&e);
+	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
+	fprintf(stderr, "jsmn_emit() = %i\n", rc);
+	fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
 
 	return strcmp(passjs, outjs) == 0 ? 0 : -1;
 }
