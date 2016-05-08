@@ -422,7 +422,7 @@ int jsmn_dom_get_value(jsmn_parser *parser, const char *js, size_t len, jsmntok_
 	size_t size;
 	size_t min_size;
 
-	if (i >= (int) num_tokens || tokens[i].end < tokens[i].start || buflen < 1) {
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || buflen < 1) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -434,8 +434,19 @@ int jsmn_dom_get_value(jsmn_parser *parser, const char *js, size_t len, jsmntok_
 
 	return size;
 }
+int jsmn_dom_get_start(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
+	}
+
+	if (tokens[i].start >= 0) {
+		return tokens[i].start;
+	} else {
+		return 0;
+	}
+}
 size_t jsmn_dom_get_strlen(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
 
@@ -449,7 +460,7 @@ size_t jsmn_dom_get_count(jsmn_parser *parser, jsmntok_t *tokens, unsigned int n
 	size_t count;
 	int dom_i;
 
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
 
@@ -464,43 +475,43 @@ size_t jsmn_dom_get_count(jsmn_parser *parser, jsmntok_t *tokens, unsigned int n
 	return count;
 }
 jsmntype_t jsmn_dom_get_type(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_UNDEFINED;
 	}
 
 	return tokens[i].type;
 }
 int jsmn_dom_get_parent(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return -1;
 	}
 
 	return tokens[i].family.parent;
 }
 int jsmn_dom_get_child(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return -1;
 	}
 
 	return tokens[i].family.children.first;
 }
 int jsmn_dom_get_sibling(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return -1;
 	}
 
 	return tokens[i].family.siblings.next;
 }
 int jsmn_dom_is_open(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
 
 	return tokens[i].start != -1 && tokens[i].end == -1;
 }
 int jsmn_dom_get_open(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	if (i >= (int) num_tokens) {
-		return -1;
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
 	}
 
 	while (i != -1 && ! jsmn_dom_is_open(parser, tokens, num_tokens, i)) {
@@ -510,13 +521,13 @@ int jsmn_dom_get_open(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_t
 	return i;
 }
 int jsmn_dom_add(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i) {
-	if (i >= (int) num_tokens || parent_i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens || parent_i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
 	tokens[i].family.parent = parent_i;
 	if (parent_i != -1) {
-		if (tokens[parent_i].family.children.first == -1) {
+		if (    tokens[parent_i].family.children.first == -1) {
 			tokens[parent_i].family.children.first = i;
 			tokens[parent_i].family.children.last  = i;
 		} else {
@@ -531,11 +542,30 @@ int jsmn_dom_add(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens
 int jsmn_dom_delete(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
 	int parent_i;
 
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
-	parent_i = tokens[i].family.parent;
+	if(tokens[i].family.parent == -1) {
+		return 0;
+	}
+
+	if (    tokens[tokens[i].family.siblings.prev].family.siblings.next  == i) {
+		tokens[tokens[i].family.siblings.prev].family.siblings.next  = tokens[i].family.siblings.next;
+	}
+	if (    tokens[tokens[i].family.siblings.next].family.siblings.prev  == i) {
+		tokens[tokens[i].family.siblings.next].family.siblings.prev  = tokens[i].family.siblings.prev;
+	}
+	if (    tokens[tokens[i].family.parent       ].family.children.first == i) {
+		tokens[tokens[i].family.parent       ].family.children.first = tokens[i].family.siblings.next;
+	}
+	if (    tokens[tokens[i].family.parent       ].family.children.last  == i) {
+		tokens[tokens[i].family.parent       ].family.children.last  = tokens[i].family.siblings.prev;
+	}
+
+	tokens[i].family.parent = -1;
+	tokens[i].family.siblings.prev = -1;
+	tokens[i].family.siblings.next = -1;
 
 	return 0;
 }
@@ -555,7 +585,7 @@ int jsmn_dom_move(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_token
 	return 0;
 }
 int jsmn_dom_set(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i, jsmntype_t type, int start, int end) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -564,7 +594,7 @@ int jsmn_dom_set(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens
 	return 0;
 }
 int jsmn_dom_close(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i, int end) {
-	if (i >= (int) num_tokens) {
+	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -685,7 +715,7 @@ int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, 
 int jsmn_dom_insert_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i, int value_i) {
 	int rc;
 
-	if (object_i >= (int) num_tokens || name_i >= (int) num_tokens || value_i >= (int) num_tokens) {
+	if (object_i == -1 || object_i >= (int) num_tokens || name_i == -1 || name_i >= (int) num_tokens || value_i == -1 || value_i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -708,7 +738,7 @@ int jsmn_dom_insert_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int nu
 int jsmn_dom_insert_value(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int array_i, int value_i) {
 	int rc;
 
-	if (array_i >= (int) num_tokens || value_i >= (int) num_tokens) {
+	if (array_i == -1 || array_i >= (int) num_tokens || value_i == -1 || value_i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -726,7 +756,7 @@ int jsmn_dom_insert_value(jsmn_parser *parser, jsmntok_t *tokens, unsigned int n
 int jsmn_dom_delete_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i) {
 	int rc;
 
-	if (object_i >= (int) num_tokens || name_i >= (int) num_tokens) {
+	if (object_i == -1 || object_i >= (int) num_tokens || name_i == -1 || name_i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -744,7 +774,7 @@ int jsmn_dom_delete_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int nu
 int jsmn_dom_delete_value(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int array_i, int value_i) {
 	int rc;
 
-	if (array_i >= (int) num_tokens || value_i >= (int) num_tokens) {
+	if (array_i == -1 || array_i >= (int) num_tokens || value_i == -1 || value_i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
 
@@ -771,29 +801,33 @@ void jsmn_init_emitter(jsmn_emitter *emitter) {
 int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, jsmn_emitter *emitter, char *outjs, size_t outlen) {
 	size_t pos;
 
-	size_t     value_len;
-	jsmntype_t type;
-	jsmntype_t parent_type;
-
 	int        parent_i;
 	int        sibling_i;
 	int        child_i;
+
+	int        start;
+	size_t     value_len;
+	jsmntype_t type;
+	jsmntype_t parent_type;
 
 	int           next_i;
 	enum tokphase next_phase;
 
 	pos = 0;
 
-	value_len   = jsmn_dom_get_strlen( parser, tokens, num_tokens, emitter->cursor_i);
-	type        = jsmn_dom_get_type(   parser, tokens, num_tokens, emitter->cursor_i);
-	parent_type = jsmn_dom_get_type(   parser, tokens, num_tokens, parent_i);
-
 	parent_i    = jsmn_dom_get_parent( parser, tokens, num_tokens, emitter->cursor_i);
 	sibling_i   = jsmn_dom_get_sibling(parser, tokens, num_tokens, emitter->cursor_i);
 	child_i     = jsmn_dom_get_child(  parser, tokens, num_tokens, emitter->cursor_i);
 
+	start       = jsmn_dom_get_start(  parser, tokens, num_tokens, emitter->cursor_i);
+	value_len   = jsmn_dom_get_strlen( parser, tokens, num_tokens, emitter->cursor_i);
+	type        = jsmn_dom_get_type(   parser, tokens, num_tokens, emitter->cursor_i);
+	parent_type = jsmn_dom_get_type(   parser, tokens, num_tokens, parent_i);
+
 	next_i      = sibling_i == -1 ? parent_i       : sibling_i;
 	next_phase  = sibling_i == -1 ? PHASE_UNCLOSED : PHASE_UNOPENED;
+
+	fprintf(stderr, "cursor_i = %i\ncursor_phase = %i\nvalue_len = %zu\ntype = %i\nparent_type = %i\nparent_i = %i\nsibling_i = %i\nchild_i = %i\nnext_i = %i\nnext_phase = %i\n\n", emitter->cursor_i, emitter->cursor_phase, value_len, type, parent_type, parent_i, sibling_i, child_i, next_i, next_phase);
 
 	switch (type) {
 		case JSMN_OBJECT:
@@ -823,12 +857,14 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 					}
 					emitter->cursor_phase = PHASE_CLOSED;
 				case PHASE_CLOSED:
-					if (sibling_i != -1 && outlen - pos > 2) {
-						outjs[pos++] = ',';
-						outjs[pos++] = ' ';
-						outjs[pos] = '\0';
-					} else {
-						break;
+					if (sibling_i != -1) {
+						if (outlen - pos > 2) {
+							outjs[pos++] = ',';
+							outjs[pos++] = ' ';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
 					}
 					if (next_i != -1) {
 						emitter->cursor_i = next_i;
@@ -845,7 +881,8 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 					case PHASE_UNOPENED:
 						if (outlen - pos > value_len + 4) {
 							outjs[pos++] = '\"';
-							memcpy(&outjs[pos += value_len], js, value_len);
+							memcpy(&outjs[pos], &js[start], value_len);
+							pos += value_len;
 							outjs[pos++] = '\"';
 							outjs[pos++] = ':';
 							outjs[pos++] = ' ';
@@ -864,12 +901,14 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 					case PHASE_UNCLOSED:
 						emitter->cursor_phase = PHASE_CLOSED;
 					case PHASE_CLOSED:
-						if (sibling_i != -1 && outlen - pos > 2) {
-							outjs[pos++] = ',';
-							outjs[pos++] = ' ';
-							outjs[pos] = '\0';
-						} else {
-							break;
+						if (sibling_i != -1) {
+							if (outlen - pos > 2) {
+								outjs[pos++] = ',';
+								outjs[pos++] = ' ';
+								outjs[pos] = '\0';
+							} else {
+								break;
+							}
 						}
 						if (next_i != -1) {
 							emitter->cursor_i = next_i;
@@ -878,6 +917,7 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 						}
 						break;
 				}
+				break;
 			}
 			/* is not an object name */
 			/* fall through */
@@ -885,36 +925,43 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 			/* value JSMN_STRING or JSMN_PRIMITIVE */
 			switch (emitter->cursor_phase) {
 				case PHASE_UNOPENED:
-					if (type == JSMN_STRING && outlen - pos > 1) {
-						outjs[pos++] = '\"';
-						outjs[pos] = '\0';
-					} else {
-						break;
+					if (type == JSMN_STRING) {
+						if (outlen - pos > 1) {
+							outjs[pos++] = '\"';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
 					}
 					emitter->cursor_phase = PHASE_OPENED;
 				case PHASE_OPENED:
 					if (outlen - pos > value_len) {
-						memcpy(&outjs[pos += value_len], js, value_len);
+						memcpy(&outjs[pos], &js[start], value_len);
+						pos += value_len;
 						outjs[pos] = '\0';
 					} else {
 						break;
 					}
 					emitter->cursor_phase = PHASE_UNCLOSED;
 				case PHASE_UNCLOSED:
-					if (type == JSMN_STRING && outlen - pos > 1) {
-						outjs[pos++] = '\"';
-						outjs[pos] = '\0';
-					} else {
-						break;
+					if (type == JSMN_STRING) {
+						if (outlen - pos > 1) {
+							outjs[pos++] = '\"';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
 					}
 					emitter->cursor_phase = PHASE_CLOSED;
 				case PHASE_CLOSED:
-					if (sibling_i != -1 && outlen - pos > 2) {
-						outjs[pos++] = ',';
-						outjs[pos++] = ' ';
-						outjs[pos] = '\0';
-					} else {
-						break;
+					if (sibling_i != -1) {
+						if (outlen - pos > 2) {
+							outjs[pos++] = ',';
+							outjs[pos++] = ' ';
+							outjs[pos] = '\0';
+						} else {
+							break;
+						}
 					}
 					if (next_i != -1) {
 						emitter->cursor_i = next_i;
@@ -934,6 +981,7 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens,
 		jsmn_emitter *emitter, char *outjs, size_t outlen) {
+	int rc;
 	size_t pos;
 	jsmn_emitter prior_emitter;
 	
@@ -941,7 +989,12 @@ int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 
 	while (emitter->cursor_i != -1) {
 		prior_emitter = *emitter;
-		pos += jsmn_emit_token(parser, js, len, tokens, num_tokens, emitter, outjs + pos, outlen - pos);
+		rc = jsmn_emit_token(parser, js, len, tokens, num_tokens, emitter, outjs + pos, outlen - pos);
+		fprintf(stderr, "jsmn_emit_token() = %i\n", rc);
+		if (rc < 0) {
+			return rc;
+		}
+		pos += rc;
 		if (memcmp(&prior_emitter, emitter, sizeof (prior_emitter)) == 0) {
 			break;
 		}

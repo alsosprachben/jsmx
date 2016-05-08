@@ -4,6 +4,7 @@
 #include <stddef.h>
 #ifdef JSMN_EMITTER
 #define JSMN_DOM
+#define JSMN_STRICT
 #endif
 #ifdef JSMN_DOM
 #endif
@@ -97,6 +98,7 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 
 #ifdef JSMN_DOM
 int jsmn_dom_get_value(      jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char *buf, size_t buflen);
+int    jsmn_dom_get_start(   jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 size_t jsmn_dom_get_strlen(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 jsmntype_t jsmn_dom_get_type(jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 

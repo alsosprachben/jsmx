@@ -9,7 +9,7 @@ libjsmn.a: jsmn.o
 %.o: %.c jsmn.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
-test: test_default test_strict test_links test_strict_links test_emitter test_emitter_strict
+test: test_default test_strict test_links test_strict_links test_emitter
 test_default: test/tests.c
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o test/$@
 	./test/$@
@@ -24,9 +24,6 @@ test_strict_links: test/tests.c
 	./test/$@
 test_emitter: test/tests.c
 	$(CC) -g3 -DJSMN_EMITTER=1 $(CFLAGS) $(LDFLAGS) $< -o test/$@
-	./test/$@
-test_emitter_strict: test/tests.c
-	$(CC) -g3 -DJSMN_EMITTER=1 -DJSMN_STRICT=1 $(CFLAGS) $(LDFLAGS) $< -o test/$@
 	./test/$@
 
 jsmn_test.o: jsmn_test.c libjsmn.a

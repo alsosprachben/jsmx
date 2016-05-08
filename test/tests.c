@@ -366,7 +366,7 @@ int test_emitter(void) {
 	int rc;
 	jsmn_parser p;
 	jsmn_emitter e;
-	char *js = "{5: \"five\", 4: \"four\", 3: \"three\", 2: \"two\", 1: [\"one\"]}";
+	char *js = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
 	char outjs[1024];
 	jsmntok_t tokens[1024];
 
@@ -377,7 +377,7 @@ int test_emitter(void) {
 	fprintf(stderr, "jsmn_parse() = %i\n", rc);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
 	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	/* fprintf(stderr, "js: %s\noutjs: %s\n", js, outjs); */
+	fprintf(stderr, "js   : %s\noutjs: %s\n", js, outjs);
 
 	return strcmp(js, outjs) == 0 ? 0 : -1;
 }
@@ -400,7 +400,7 @@ int main(void) {
 	test(test_count, "test tokens count estimation");
 	test(test_nonstrict, "test for non-strict mode");
 #ifdef JSMN_EMITTER
-	/* test(test_emitter, "test emitter"); */
+	test(test_emitter, "test emitter");
 #endif
 	printf("\nPASSED: %d\nFAILED: %d\n", test_passed, test_failed);
 	return (test_failed > 0);
