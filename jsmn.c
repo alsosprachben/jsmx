@@ -681,8 +681,6 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	        js[parser->pos + 1 + size] = '"';
 	        js[parser->pos + 1 + size + 1] = '\0';
 
-	parser->pos++; /* skip past opening quote, where expected by `jsmn_parse_string()` */
-
 	rc = jsmn_parse_string(parser, js, len, tokens, num_tokens);
 	if (rc < 0) {
 		return rc;
