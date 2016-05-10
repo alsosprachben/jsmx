@@ -121,6 +121,9 @@ int jsmn_dom_new_object(     jsmn_parser *parser,                             js
 int jsmn_dom_new_array(      jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
 int jsmn_dom_new_primitive(  jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
 int jsmn_dom_new_string(     jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+#define TRUE_EXPR  "true "
+#define FALSE_EXPR "false "
+#define NULL_EXPR  "null "
 int jsmn_dom_eval(           jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
 
 int jsmn_dom_insert_name(    jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i, int value_i);

@@ -667,6 +667,17 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 
 	return i;
 }
+int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int value) {
+	int rc;
+	char valbuf[32];
+
+	rc = snprintf(valbuf, sizeof (valbuf), "%i ", value);
+	if (rc == -1) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
+}
 int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value) {
 	int i;
 	int rc;

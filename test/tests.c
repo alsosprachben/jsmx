@@ -367,7 +367,7 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}]}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
@@ -399,6 +399,18 @@ int test_emitter(void) {
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "stuff");
 	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "[1,2,{\"a\": 3}]");
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a string");
+	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "\"this is a string\"");
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a primitive");
+	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "true ");
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "an integer");
+	value_i = jsmn_dom_new_integer(&p, js, 1024, tokens, 1024, 65535);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 
 	jsmn_init_emitter(&e);
