@@ -678,6 +678,21 @@ int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *t
 
 	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
 }
+int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double value) {
+	int rc;
+	char valbuf[32];
+
+	if (value >= 1.0 || value <= -1.0) {
+		rc = snprintf(valbuf, sizeof (valbuf), "%.16f ", value);
+	} else {
+		rc = snprintf(valbuf, sizeof (valbuf), "%.16g ", value);
+	}
+	if (rc == -1) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
+}
 int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value) {
 	int i;
 	int rc;
