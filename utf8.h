@@ -1,28 +1,29 @@
 #ifndef UTF8_H
 #define UTF8_H
 
+#define UTF8_NSHIFT(i, l) (6 * (l) - (i) - 1)
 /*
  * UTF-8 Decode Byte 1
  * Pass in `b` byte, and get `c` significant bits shifted from that byte, and get `l` length of the UTF-8 sequence, and increment `n` if a valid UTF-8 byte.
  */
-#define UTF8_B1(b, c, l, n) { \
+#define UTF8_B1(bc, c, l, n) { \
 	char __utf8_bits; \
 	n = 0; \
-	if ((b & 0x80) == 0) { /* ASCII */ \
-		c = b; \
-		l = 1; \
-		n++; \
-	} else if ((b & 0xc0) == 0xc0) { /* sequence start */ \
-		__utf8_bits = b; \
-		while ((__utf8_bits & 0x80 && l < 6) { \
+	if (((bc)[0] & 0x80) == 0) { /* ASCII */ \
+		(c) = (bc)[0]; \
+		(l) = 1; \
+		(n)++; \
+	} else if (((bc)[0] & 0xc0) == 0xc0) { /* sequence start */ \
+		__utf8_bits = (bc)[0]; \
+		while (__utf8_bits & 0x80 && (l) < 6) { \
 			__utf8_bits <<= 1; \
-			l++; \
+			(l)++; \
 		} \
-		__utf8_bits >>= l; \
-		c = __utf8_bits << (6 * ((l) - 1))); \
-		n++; \
+		__utf8_bits >>= (l); \
+		(c) = __utf8_bits << UTF8_NSHIFT(0, l); \
+		(n)++; \
 	} else { /* unexpected sequence continuation */ \
-		l = 1; \
+		(l) = 1; \
 	}
 }
 
@@ -32,8 +33,8 @@
  */
 #define UTF8_BN(bc, i, c, l, n) { \
 	if ((n) > 0 && ((bc)[i] & 0xc0) == 0x80) { \
-		(c) |= ((bc)[i] & 0x3f) << (6 * ((l) - (i) - 1)); \
-		n++; \
+		(c) |= ((bc)[i] & 0x3f) << UTF8_NSHIFT(i, l); \
+		(n)++; \
 	} \
 }
 
@@ -42,13 +43,13 @@
  * Pass in `c` character and `l` sequence length, and flip the sign of `l` if an valid UTF-8 character.
  */
 #define UTF8_VALID(c, l) { \
-	if ((l) == 1 && c < 0x80) { /* ASCII */ \
+	if ((l) == 1 && (c) < 0x80) { /* ASCII */ \
 	} else if ((l) < 1 || (l) > 4) { /* sequence length */ \
-	} else if (c > 0x10FFFF || (c >= 0xd800 && c <= 0xdfff)) { /* code points */ \
-	} else if ((l) == 1 && (               c >= 0x80))     { /* over long */ \
-	} else if ((l) == 2 && (c < 0x80    || c >= 0x800))    { /* over long */ \
-	} else if ((l) == 3 && (c < 0x800   || c >= 0x10000))  { /* over long */ \
-	} else if ((l) == 4 && (c < 0x10000 || c >= 0x200000)) { /* over long */ \
+	} else if ((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) { /* code points */ \
+	} else if ((l) == 1 && (                 (c) >= 0x80))     { /* over long */ \
+	} else if ((l) == 2 && ((c) < 0x80    || (c) >= 0x800))    { /* over long */ \
+	} else if ((l) == 3 && ((c) < 0x800   || (c) >= 0x10000))  { /* over long */ \
+	} else if ((l) == 4 && ((c) < 0x10000 || (c) >= 0x200000)) { /* over long */ \
 	} else { \
 		(l) = - (l); \
 	} \
@@ -64,7 +65,7 @@
 #define UTF8_CHAR(bc, bs, c, l) { \
 	int __utf8_seqlen; \
 	int __utf8_n; \
-	UTF8_B1((bc)[0], (c), __utf8_seqlen, __utf8_n); \
+	UTF8_B1(bc, c, __utf8_seqlen, __utf8_n); \
 	if (__utf8_seqlen == 1) { \
 		if (__utf8_n == 1) { /* ASCII */ \
 			(l) = __utf8_seqlen; \
@@ -149,8 +150,8 @@
  * UTF-8 Encode Character Byte 1
  * Pass in `l` byte length from UTF8_LEN(), and get bits from `c` shifted into `b` based on `l`.
  */
-#define UTF8_C1(c, b, l) { \
-	(b) = ((0xFF << (8 - l)) & 0xFF) | (((c) >> (6 * ((l) - 1))) & ((1 << (7 - l)) - 1)); \
+#define UTF8_C1(c, bc, l) { \
+	(bc)[0] = ((0xFF << (8 - l)) & 0xFF) | (((c) >> UTF8_NSHIFT(0, l)) & ((1 << (7 - l)) - 1)); \
 }
 
 /*
@@ -158,7 +159,7 @@
  * Get 6 bits from `c` shifted into `b` with the continuation high-bits set.
  */
 #define UTF8_CN(c, bc, i, l) { \
-	(bc)[i] = 0xc0 | ((c) >> (6 * ((l) - (i) - 1)) & 0x3f; \
+	(bc)[i] = 0xc0 | ((c) >> UTF8_NSHIFT(i, l)) & 0x3f; \
 }
 
 /*
@@ -180,18 +181,18 @@
 			if ((bc) + __utf8_seqlen < (bs)) { /* character fits */ \
 				c = *((cc)++); \
 				__utf8_n = 0; \
-				UTF8_C1(c, (bc)[0], __utf8_seqlen); \
+				UTF8_C1(c, bc, __utf8_seqlen); \
 				switch (__utf8_seqlen) { \
 					case 6: \
-						UTF8_CN(c, (bc), 5, __utf8_seqlen); \
+						UTF8_CN(c, bc, 5, __utf8_seqlen); \
 					case 5: \
-						UTF8_CN(c, (bc), 4, __utf8_seqlen); \
+						UTF8_CN(c, bc, 4, __utf8_seqlen); \
 					case 4: \
-						UTF8_CN(c, (bc), 3, __utf8_seqlen); \
+						UTF8_CN(c, bc, 3, __utf8_seqlen); \
 					case 3: \
-						UTF8_CN(c, (bc), 2, __utf8_seqlen); \
+						UTF8_CN(c, bc, 2, __utf8_seqlen); \
 					case 2: \
-						UTF8_CN(c, (bc), 1, __utf8_seqlen); \
+						UTF8_CN(c, bc, 1, __utf8_seqlen); \
 						break; \
 				} \
 				(bc) += __utf8_seqlen;
