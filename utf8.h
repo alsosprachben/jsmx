@@ -1,35 +1,62 @@
 #ifndef UTF8_H
 #define UTF8_H
 
+/*
+ * `bc` is byte cursor
+ * `bs` is byte stop
+ * `cc` is character cusor
+ * `cs` is character stop
+ * `c`  is character (`*cc`)
+ * `l`  is character byte length
+ * `i'  is index into `bc`
+ * `n`  is the number of valid bytes
+ */
+
+/*
+ * UTF-8 Byte Shift
+ * Given a sequence byte index `i`, and a sequence byte length `l', return the bit shift amount for the bits in this byte.
+ */
 #define UTF8_NSHIFT(i, l) (6 * (l) - (i) - 1)
+
+/*
+ * UTF-8 Character Byte Length from Byte 1
+ * Measures the number of contiguous high set bits.
+ *   l == 0: ASCII
+ *   l == 1: continuation byte
+ *   l >= 2: UTF-8 sequence length
+ *   l >  6: malformed byte
+ */
+#define UTF8_BLEN(bc, l) { \
+	(l) = 0; \
+	while ((bc)[0] & 0x80 >> (l)++); \
+}
+
 /*
  * UTF-8 Decode Byte 1
- * Pass in `b` byte, and get `c` significant bits shifted from that byte, and get `l` length of the UTF-8 sequence, and increment `n` if a valid UTF-8 byte.
+ * Set bits from the first byte into the character.
+ * Increment `n` on success.
  */
 #define UTF8_B1(bc, c, l, n) { \
-	char __utf8_bits; \
-	n = 0; \
-	if (((bc)[0] & 0x80) == 0) { /* ASCII */ \
+	if ((l) == 0) {  /* ASCII */ \
 		(c) = (bc)[0]; \
 		(l) = 1; \
 		(n)++; \
-	} else if (((bc)[0] & 0xc0) == 0xc0) { /* sequence start */ \
-		__utf8_bits = (bc)[0]; \
-		while (__utf8_bits & 0x80 && (l) < 6) { \
-			__utf8_bits <<= 1; \
-			(l)++; \
-		} \
-		__utf8_bits >>= (l); \
-		(c) = __utf8_bits << UTF8_NSHIFT(0, l); \
+	} else if ((l) >= 2 && (l) <= 6) { /* sequence start */ \
+		(c) = ((bc)[0] & ((1 << (7 - (l))) - 1)) << UTF8_NSHIFT(0, l); \
 		(n)++; \
-	} else { /* unexpected sequence continuation */ \
+	} else if ((l) == 1) { /* unexpected sequence continuation */ { \
 		(l) = 1; \
-	}
+	} else if ((l) >  6) { /* malformed */ \
+		(l) = 1; \
+	} else { /* insane negative value */ \
+		(l) = 1; \
+	} \
 }
 
 /*
  * UTF-8 Decode Continuation Byte (2+)
- * Pass in `b` byte, and `l` byte length, and get `c` significant bits shifted from that byte, and increment `n` if a valid UTF-8 byte.
+ * Set bits from the continuation byte into the character.
+ * Increment `n` on success.
  */
 #define UTF8_BN(bc, i, c, l, n) { \
 	if ((n) > 0 && ((bc)[i] & 0xc0) == 0x80) { \
@@ -40,7 +67,7 @@
 
 /*
  * UTF-8 Character Validator
- * Pass in `c` character and `l` sequence length, and flip the sign of `l` if an valid UTF-8 character.
+ * Flip the sign of `l` if the chracter is invalid.
  */
 #define UTF8_VALID(c, l) { \
 	if ((l) == 1 && (c) < 0x80) { /* ASCII */ \
@@ -57,14 +84,16 @@
 
 /*
  * UTF-8 Decode Character
- * Pass in `ba` byte array and `bl` byte array length, and get `c` character and `cl` character length in bytes.
- * cl >  0:  `cl` length of a valid UTF-8 sequence.
- * cl == 0:  `cl` is too long for `bl`.
- * cl <  0: `-cl` length of an invalid UTF-8 sequence.
+ * Set the character bits from the byte cursor.
+ * Set `l`:
+ *   l >  0:  `l` length of a valid UTF-8 sequence.
+ *   l == 0:  `l` is too long for `bl`.
+ *   l <  0: `-l` length of an invalid UTF-8 sequence.
  */
 #define UTF8_CHAR(bc, bs, c, l) { \
 	int __utf8_seqlen; \
 	int __utf8_n; \
+	UTF8_BLEN(bc, __utf8_seqlen); \
 	UTF8_B1(bc, c, __utf8_seqlen, __utf8_n); \
 	if (__utf8_seqlen == 1) { \
 		if (__utf8_n == 1) { /* ASCII */ \
@@ -75,15 +104,15 @@
 	} else if ((bc) + __utf8_seqlen < (bs)) { \
 		switch (__utf8_seqlen) { \
 			case 6: \
-				UTF8_BN((bc), 5, c, __utf8_seqlen, __utf8_n); \
+				UTF8_BN(bc, 5, c, __utf8_seqlen, __utf8_n); \
 			case 5: \
-				UTF8_BN((bc), 4, c, __utf8_seqlen, __utf8_n); \
+				UTF8_BN(bc, 4, c, __utf8_seqlen, __utf8_n); \
 			case 4: \
-				UTF8_BN((bc), 3, c, __utf8_seqlen, __utf8_n); \
+				UTF8_BN(bc, 3, c, __utf8_seqlen, __utf8_n); \
 			case 3: \
-				UTF8_BN((bc), 2, c, __utf8_seqlen, __utf8_n); \
+				UTF8_BN(bc, 2, c, __utf8_seqlen, __utf8_n); \
 			case 2: \
-				UTF8_BN((bc), 1, c, __utf8_seqlen, __utf8_n); \
+				UTF8_BN(bc, 1, c, __utf8_seqlen, __utf8_n); \
 				break; \
 		} \
 		(l) = __utf8_n; \
@@ -99,7 +128,6 @@
 
 /*
  * UTF-8 Decode String
- * Pass in `bc` byte cursor, `bs` byte stop, `cc` character cursor, and `cs` character stop.
  * The cursors will be updated as UTF-8 is parsed and characters are emitted, until:
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
@@ -124,9 +152,9 @@
 
 /*
  * UTF-8 Character Byte Length
- * Pass in `c` character, and get `cl` byte length.
+ * Set the byte length from the character,
  */
-#define UTF8_LEN(c, l) { \
+#define UTF8_CLEN(c, l) { \
 	if ((c) < 0) { \
 		(l) = 0; \
 	} else if ((c) < 0x80) { \
@@ -148,7 +176,7 @@
 
 /*
  * UTF-8 Encode Character Byte 1
- * Pass in `l` byte length from UTF8_LEN(), and get bits from `c` shifted into `b` based on `l`.
+ * Sets bits from the character into the first byte, and set the sequence start high-bits.
  */
 #define UTF8_C1(c, bc, l) { \
 	(bc)[0] = ((0xFF << (8 - l)) & 0xFF) | (((c) >> UTF8_NSHIFT(0, l)) & ((1 << (7 - l)) - 1)); \
@@ -156,7 +184,7 @@
 
 /*
  * UTF-8 Encode Character Continuation Byte (2+)
- * Get 6 bits from `c` shifted into `b` with the continuation high-bits set.
+ * Sets bits from the chraacter into the continuation byte as index `i`, and set the continuation high-bits.
  */
 #define UTF8_CN(c, bc, i, l) { \
 	(bc)[i] = 0xc0 | ((c) >> UTF8_NSHIFT(i, l)) & 0x3f; \
@@ -164,7 +192,6 @@
 
 /*
  * UTF8-8 Encode String
- * Pass in `cc` character cursor, `cs` character stop, `bc` byte cursor, and `bs` byte stop.
  * The cursors will be updated as UTF-8 is parsed and characters are emitted, until:
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
@@ -173,7 +200,7 @@
 	int __utf8_seqlen; \
 	wchar_t c; \
 	while ((cc) < (cs) && (bc) < (bs)) { \
-		UTF8_LEN(*(cc), __utf8_seqlen); \
+		UTF8_CLEN(*(cc), __utf8_seqlen); \
 		if (__utf8_seqlen == 1) { /* ASCII */ \
 			*((bc)++) = *((cc)++); \
 			continue; \
