@@ -1,5 +1,6 @@
 #ifndef UTF8_H
 #define UTF8_H
+#include <stddef.h>
 
 /*
  * `bc` is byte cursor
@@ -16,7 +17,7 @@
  * UTF-8 Byte Shift
  * Given a sequence byte index `i`, and a sequence byte length `l', return the bit shift amount for the bits in this byte.
  */
-#define UTF8_NSHIFT(i, l) (6 * (l) - (i) - 1)
+#define UTF8_NSHIFT(i, l) (6 * ((l) - (i) - 1))
 
 /*
  * UTF-8 Character Byte Length from Byte 1
@@ -27,8 +28,11 @@
  *   l >  6: malformed byte
  */
 #define UTF8_BLEN(bc, l) { \
-	(l) = 0; \
-	while ((bc)[0] & 0x80 >> (l)++); \
+	for (l = 0; l < 6; l++) { \
+		if ((((bc)[0]) & (0x80 >> (l))) == 0) { \
+			break; \
+		} \
+	} \
 }
 
 /*
@@ -44,7 +48,7 @@
 	} else if ((l) >= 2 && (l) <= 6) { /* sequence start */ \
 		(c) = ((bc)[0] & ((1 << (7 - (l))) - 1)) << UTF8_NSHIFT(0, l); \
 		(n)++; \
-	} else if ((l) == 1) { /* unexpected sequence continuation */ { \
+	} else if ((l) == 1) { /* unexpected sequence continuation */ \
 		(l) = 1; \
 	} else if ((l) >  6) { /* malformed */ \
 		(l) = 1; \
@@ -71,13 +75,14 @@
  */
 #define UTF8_VALID(c, l) { \
 	if ((l) == 1 && (c) < 0x80) { /* ASCII */ \
-	} else if ((l) < 1 || (l) > 4) { /* sequence length */ \
-	} else if ((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) { /* code points */ \
-	} else if ((l) == 1 && (                 (c) >= 0x80))     { /* over long */ \
-	} else if ((l) == 2 && ((c) < 0x80    || (c) >= 0x800))    { /* over long */ \
-	} else if ((l) == 3 && ((c) < 0x800   || (c) >= 0x10000))  { /* over long */ \
-	} else if ((l) == 4 && ((c) < 0x10000 || (c) >= 0x200000)) { /* over long */ \
-	} else { \
+	} else if ( \
+			((l) < 1 || (l) > 4)                                 /* sequence length range */ \
+		||	((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) /* code point range */ \
+		||	((l) == 1 && (                 (c) >= 0x80))         /* over long */ \
+		||	((l) == 2 && ((c) < 0x80    || (c) >= 0x800))        /* over long */ \
+		||	((l) == 3 && ((c) < 0x800   || (c) >= 0x10000))      /* over long */ \
+		||	((l) == 4 && ((c) < 0x10000 || (c) >= 0x200000))     /* over long */ \
+	) { \
 		(l) = - (l); \
 	} \
 }
@@ -92,7 +97,7 @@
  */
 #define UTF8_CHAR(bc, bs, c, l) { \
 	int __utf8_seqlen; \
-	int __utf8_n; \
+	int __utf8_n = 0; \
 	UTF8_BLEN(bc, __utf8_seqlen); \
 	UTF8_B1(bc, c, __utf8_seqlen, __utf8_n); \
 	if (__utf8_seqlen == 1) { \
@@ -101,7 +106,7 @@
 		} else { /* invalid start byte */ \
 			(l) = -1; \
 		} \
-	} else if ((bc) + __utf8_seqlen < (bs)) { \
+	} else if ((bc) + __utf8_seqlen <= (bs)) { \
 		switch (__utf8_seqlen) { \
 			case 6: \
 				UTF8_BN(bc, 5, c, __utf8_seqlen, __utf8_n); \
@@ -133,18 +138,16 @@
  *  2. a complete sequence would run past the byte stop address.
  */
 #define UTF8_DECODE(bc, bs, cc, cs) { \
-	int __utf8_cl; \
-	while ((bc) < (bc) && (cs) < (cs)) { \
-		UTF8_CHAR(bc, bs, *(cc), __utf8_cl); \
-		if (__utf8_cl > 0) { /* valid character of ASCII or UTF-8 */ \
-			(bc) += ( + __utf8_cl); \
-		} else if (__utf8_cl == 0) { \
+	int __utf8_seqlen2; \
+	while ((bc) < (bs) && (cc) < (cs)) { \
+		UTF8_CHAR(bc, bs, *(cc), __utf8_seqlen2); \
+		if (__utf8_seqlen2 > 0) { /* valid character of ASCII or UTF-8 */ \
+			(bc) += ( + __utf8_seqlen2); \
+		} else if (__utf8_seqlen2 == 0) { \
 			break; /* blocking on byte length */ \
 		} else { \
-			} \
 			*(cc) = 0xFFFD; /* represent invalid sequence with the replacement character */ \
-			(bc) += ( - __utf8_cl); \
-		} else { \
+			(bc) += ( - __utf8_seqlen2); \
 		} \
 		(cc)++; \
 	} \
@@ -187,7 +190,7 @@
  * Sets bits from the chraacter into the continuation byte as index `i`, and set the continuation high-bits.
  */
 #define UTF8_CN(c, bc, i, l) { \
-	(bc)[i] = 0xc0 | ((c) >> UTF8_NSHIFT(i, l)) & 0x3f; \
+	(bc)[i] = 0x80 | ((c) >> UTF8_NSHIFT(i, l)) & 0x3f; \
 }
 
 /*
@@ -203,11 +206,9 @@
 		UTF8_CLEN(*(cc), __utf8_seqlen); \
 		if (__utf8_seqlen == 1) { /* ASCII */ \
 			*((bc)++) = *((cc)++); \
-			continue; \
 		} else if (__utf8_seqlen > 1) { \
-			if ((bc) + __utf8_seqlen < (bs)) { /* character fits */ \
+			if ((bc) + __utf8_seqlen <= (bs)) { /* character fits */ \
 				c = *((cc)++); \
-				__utf8_n = 0; \
 				UTF8_C1(c, bc, __utf8_seqlen); \
 				switch (__utf8_seqlen) { \
 					case 6: \
@@ -222,12 +223,13 @@
 						UTF8_CN(c, bc, 1, __utf8_seqlen); \
 						break; \
 				} \
-				(bc) += __utf8_seqlen;
+				(bc) += __utf8_seqlen; \
 			} else { \
 				break; /* blocking on byte length */ \
 			} \
 		} else { \
-			continue; /* XXX: silently skip insane character */ \
+			(cc)++; \
+			/* XXX: silently skip insane character */ \
 		} \
 	} \
 }
@@ -237,5 +239,59 @@
 		 \
 	} \
 }
+
+#ifdef UTF8_TEST
+/*
+ * $ cc -DUTF8_TEST utf8.h -o utf8_test
+ * $ ./utf8_test
+ */
+#include <stdio.h>
+#include <string.h>
+int main() {
+	wchar_t in_c;
+	char    im_b[6];
+	wchar_t out_c;
+
+	for (in_c = 1; in_c < 0x110000; in_c++) {
+		wchar_t *in_cc  =  &in_c;
+		wchar_t *in_cs  = (&in_c) + 1;
+		char    *im_bc  =  im_b;
+		char    *im_bs  =  im_b + 6;
+		wchar_t *out_cc =  &out_c;
+		wchar_t *out_cs = (&out_c) + 1;
+
+		memset(im_b, 0, 6);
+
+		if (in_c == 0xd800) {
+			/* skip */
+			in_c = 0xe000;
+		}
+
+		UTF8_ENCODE(in_cc, in_cs, im_bc, im_bs);
+
+		/* 
+		printf("bin: ");
+		for (int i = 0; i < 32; i++) {
+			if (i%8 == 0) {
+				printf(" ");
+			}
+			printf(im_b[i/8] & (0x80 >> (i%8)) ? "1" : "0");
+		}
+		printf("\n");
+		*/
+
+		im_bc = im_b;
+		UTF8_DECODE(im_bc, im_bs, out_cc, out_cs);
+		if (in_c != out_c) {
+			printf("Error on character %i = %i\n.", (int) in_c, (int) out_c);
+			/* return 1; */
+		}
+	}
+
+	printf("Succeeded converting all characters.\n");
+
+	return 0;
+}
+#endif
 
 #endif
