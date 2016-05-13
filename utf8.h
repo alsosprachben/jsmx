@@ -242,17 +242,22 @@
 
 #ifdef UTF8_TEST
 /*
- * $ cc -DUTF8_TEST utf8.h -o utf8_test
+ * $ cc -DUTF8_TEST utf8.c -o utf8_test
  * $ ./utf8_test
  */
 #include <stdio.h>
 #include <string.h>
 int main() {
+	int s = 0;
 	wchar_t in_c;
 	char    im_b[6];
 	wchar_t out_c;
 
-	for (in_c = 1; in_c < 0x110000; in_c++) {
+	/*
+	for (int i_c = 1; i_c < 0x110000; i_c++) {
+		in_c = 49;
+	*/
+	 for (in_c = 1; in_c < 0x110000; in_c++) { 
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
 		char    *im_bc  =  im_b;
@@ -260,12 +265,16 @@ int main() {
 		wchar_t *out_cc =  &out_c;
 		wchar_t *out_cs = (&out_c) + 1;
 
-		memset(im_b, 0, 6);
-
+		/*
+		if (i_c == 0xd800) {
+			i_c = 0xe000;
+		}
+		*/
 		if (in_c == 0xd800) {
-			/* skip */
 			in_c = 0xe000;
 		}
+
+		memset(im_b, 0, 6);
 
 		UTF8_ENCODE(in_cc, in_cs, im_bc, im_bs);
 
@@ -284,11 +293,12 @@ int main() {
 		UTF8_DECODE(im_bc, im_bs, out_cc, out_cs);
 		if (in_c != out_c) {
 			printf("Error on character %i = %i\n.", (int) in_c, (int) out_c);
-			/* return 1; */
+			return 1;
 		}
+		s++;
 	}
 
-	printf("Succeeded converting all characters.\n");
+	printf("Succeeded converting all %i characters.\n", s);
 
 	return 0;
 }
