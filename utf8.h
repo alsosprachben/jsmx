@@ -234,7 +234,7 @@
 	} \
 }
 
-#define JSMN_CHAR_QUOTE(cc, cs, qc, qs) { \
+#define JSMN_QUOTE(cc, cs, qc, qs) { \
 	wchar_t __jsmn_char; \
 	while ((cc) < (cs) && (qc) < qs) { \
 		if (*(cc) < 0x20) { \
@@ -278,10 +278,7 @@
 #define HEXVAL(b)        ((((b) & 0x1f) + (((b) >> 6) * 0x19) - 0x10) & 0xF)
 #define JSMN_HEX4DIG(bc) ((HEXVAL((bc)[0]) << 12) | (HEXVAL((bc)[1]) << 8) | HEXVAL((bc)[2]) << 4 | HEXVAL((bc)[3]))
 
-#define JSMN_SURROGATE(ch, cl, c) { \
-}
-
-#define JSMN_CHAR_UNQUOTE(qc, qs, cc, cs) { \
+#define JSMN_UNQUOTE(qc, qs, cc, cs) { \
 	wchar_t __jsmn_char; \
 	int hex4dig1; \
 	int hex4dig2; \
@@ -316,15 +313,45 @@
 				if (__jsmn_char == 'u') { \
 					if ((qc) + 6 <= (qs)) { \
 						hex4dig1 = JSMN_HEX4DIG((qc) + 2); \
-						if (hex4dig1 / 0x800 == 0xD800 / 0x800) { \
-							/* \uD[0-7]?? of a surrogate pair */ \
+						if (hex4dig1 >> 10 == 0xD800  >> 10) { \
+							/* \uD[8-B]?? of the high surrogate pair */ \
+							if ((qc) + 12 <= (qs)) { \
+								if ((qc)[6] == '\\' && (qc)[7] == 'u') { \
+									hex4dig2 = JSMN_HEx4DIG((qc) + 8); \
+									if (hex4dig2 >> 10 == 0xDC00 >> 10) { \
+										/* \uD[C-F]?? of the low surrogate pair */ \
+										*((cc)++) = ((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400); \
+										(qc) += 12; \
+									} else { \
+										*((cc)++) = 0xFFFD; /* the replacement character */ \
+										(qc) += 6; \
+									} \
+								} else { \
+									*((cc)++) = 0xFFFD; /* the replacement character */ \
+									(qc) += 6; \
+								} \
+							} else { \
+								break; /* blocking for surrogate pair */ \
+							} \
+						} else if (hex4dig1 >> 10 == 0xDC00 >> 10) { \
+							/* \uD[C-F]?? of the *unexpected* low surrogate pair */ \
+							*((cc)++) = 0xFFFD; /* the replacement character */ \
+							(qc) += 6; \
 						} else { \
+							/* Within the Basic Multilingial Plane */ \
+							*((cc)++) = hexdig1; \
+							(qc) += 6; \
 						} \
 					} else { \
-						break; \
+						break; /* blocking for unicode quote */ \
 					} \
+				} else { \
+					/* simple escape */ \
+					*((cc)++) = __jsmn_char; \
+					(qc) += 2; \
+				} \
 			} else { \
-				break; \
+				break; /* blocking for simple escape */ \
 			} \
 		} else { \
 			*((cc)++) = *((qc)++); \
