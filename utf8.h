@@ -235,8 +235,100 @@
 }
 
 #define JSMN_CHAR_QUOTE(cc, cs, qc, qs) { \
+	wchar_t __jsmn_char; \
 	while ((cc) < (cs) && (qc) < qs) { \
-		 \
+		if (*(cc) < 0x20) { \
+			if ((qc) + 6 <= (qs)) { \
+				(qc)[0] = '\\'; \
+				(qc)[1] = 'u'; \
+				(qc)[2] = '0'; \
+				(qc)[3] = '0'; \
+				(qc)[4] = '0'; \
+				(qc)[5] = *(cc) ; \
+				(qc) += 6; \
+			} else { \
+				break; \
+			} \
+		} else { \
+			switch (*(cc)) { \
+				case '"': \
+				case '\\': \
+				case '/': \
+					__jsmn_char = *(cc); \
+					break; \
+				default: \
+					__jsmn_char = '\0'; \
+					break; \
+			} \
+			if (__jsmn_char == '\0') { \
+				*(qc) = *(cc) \
+			} else { \
+				if ((qc) + 2 <= (qs)) { \
+					(qc)[0] = '\\'; \
+					(qc)[1] = __jsmn_char; \
+					(qc) += 2; \
+				} else { \
+					break; \
+				} \
+			} \
+		} \
+	} \
+}
+
+#define HEXVAL(b)        ((((b) & 0x1f) + (((b) >> 6) * 0x19) - 0x10) & 0xF)
+#define JSMN_HEX4DIG(bc) ((HEXVAL((bc)[0]) << 12) | (HEXVAL((bc)[1]) << 8) | HEXVAL((bc)[2]) << 4 | HEXVAL((bc)[3]))
+
+#define JSMN_SURROGATE(ch, cl, c) { \
+}
+
+#define JSMN_CHAR_UNQUOTE(qc, qs, cc, cs) { \
+	wchar_t __jsmn_char; \
+	int hex4dig1; \
+	int hex4dig2; \
+	while ((qc) < (qs) && (cc) < (cs)) { \
+		 if (*(qc) == '\') { \
+			if ((qc) + 2 <= (qs)) { \
+				switch ((qc)[1]) { \
+					case '"': \
+					case '\\': \
+					case '/': \
+						__jsmn_char = *(qc); \
+						break; \
+					case '\b': \
+						__jsmn_char = 'b'; \
+						break; \
+					case '\f': \
+						__jsmn_char = 'f'; \
+						break; \
+					case '\n': \
+						__jsmn_char = 'n'; \
+						break; \
+					case '\r': \
+						__jsmn_char = 'r'; \
+						break; \
+					case '\t': \
+						__jsmn_char = 't'; \
+						break; \
+					case 'u': \
+						__jsmn_char = 'u'; \
+						break; \
+				} \
+				if (__jsmn_char == 'u') { \
+					if ((qc) + 6 <= (qs)) { \
+						hex4dig1 = JSMN_HEX4DIG((qc) + 2); \
+						if (hex4dig1 / 0x800 == 0xD800 / 0x800) { \
+							/* \uD[0-7]?? of a surrogate pair */ \
+						} else { \
+						} \
+					} else { \
+						break; \
+					} \
+			} else { \
+				break; \
+			} \
+		} else { \
+			*((cc)++) = *((qc)++); \
+		} \
 	} \
 }
 
@@ -257,7 +349,7 @@ int main() {
 	for (int i_c = 1; i_c < 0x110000; i_c++) {
 		in_c = 49;
 	*/
-	 for (in_c = 1; in_c < 0x110000; in_c++) { 
+	for (in_c = 1; in_c < 0x110000; in_c++) { 
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
 		char    *im_bc  =  im_b;
