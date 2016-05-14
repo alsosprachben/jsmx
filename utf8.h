@@ -5,11 +5,13 @@
 /*
  * `bc` is byte cursor
  * `bs` is byte stop
- * `cc` is character cusor
+ * `cc` is character cursor
  * `cs` is character stop
+ * `qc` is JSON-quoted character
+ * `qs` is JSON-quoted character stop
  * `c`  is character (`*cc`)
  * `l`  is character byte length
- * `i'  is index into `bc`
+ * `i'  is index into `bc` for peeks
  * `n`  is the number of valid bytes
  */
 
@@ -234,6 +236,9 @@
 	} \
 }
 
+/*
+ * JSON String Quoting
+ */
 #define JSMN_QUOTE(cc, cs, qc, qs) { \
 	wchar_t __jsmn_char; \
 	while ((cc) < (cs) && (qc) < qs) { \
@@ -275,9 +280,15 @@
 	} \
 }
 
+/* branchless hex-char to int */
 #define HEXVAL(b)        ((((b) & 0x1f) + (((b) >> 6) * 0x19) - 0x10) & 0xF)
+
+/* JSON HEX4DIG token parser */
 #define JSMN_HEX4DIG(bc) ((HEXVAL((bc)[0]) << 12) | (HEXVAL((bc)[1]) << 8) | HEXVAL((bc)[2]) << 4 | HEXVAL((bc)[3]))
 
+/*
+ * JSON String Unquoting
+ */
 #define JSMN_UNQUOTE(qc, qs, cc, cs) { \
 	wchar_t __jsmn_char; \
 	int hex4dig1; \
