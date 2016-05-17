@@ -236,29 +236,26 @@
 	} \
 }
 
-
+/* branchless int to hex-char */
 #define VALHEX(v) ((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))))
+
+/* JSON HEX4DIG token emitter */
+#define JSMN_EMIT_HEX4DIG(qc, c) { \
+	(qc)[0] = VALHEX(((c) >> 12) & 0xF); \
+	(qc)[1] = VALHEX(((c) >> 8)  & 0xF); \
+	(qc)[2] = VALHEX(((c) >> 4)  & 0xF); \
+	(qc)[3] = VALHEX( (c)        & 0xF); \
+}
 
 /*
  * JSON String Quoting
  */
-#define JSMN_QUOTE(cc, cs, qc, qs) { \
+#define JSMN_QUOTE(cc, cs, qc, qs, unicode) { \
 	wchar_t __jsmn_char; \
+	wchar_t hex4dig1; \
+	wchar_t hex4dig2; \
 	while ((cc) < (cs) && (qc) < qs) { \
-		if (*(cc) < 0x20) { \
-			if ((qc) + 6 <= (qs)) { \
-				(qc)[0] = '\\'; \
-				(qc)[1] = 'u'; \
-				(qc)[2] = '0'; \
-				(qc)[3] = '0'; \
-				(qc)[4] = VALHEX(((*(cc)) >> 4) & 0xF); \
-				(qc)[5] = VALHEX( (*(cc))       & 0xF); \
-				(qc) += 6; \
-				(cc)++; \
-			} else { \
-				break; \
-			} \
-		} else { \
+		if (*(cc) >= 0x20 && *(cc) < 0x80) { /* non-control ASCII */ \
 			switch (*(cc)) { \
 				case '"': \
 				case '\\': \
@@ -281,9 +278,95 @@
 					break; \
 				} \
 			} \
+		} else if (*(cc) < 0x20) { /* ASCII control characters */ \
+			switch (*(cc)) { \
+				case '\b': \
+					__jsmn_char = 'b'; \
+					break; \
+				case '\f': \
+					__jsmn_char = 'f'; \
+					break; \
+				case '\n': \
+					__jsmn_char = 'n'; \
+					break; \
+				case '\r': \
+					__jsmn_char = 'r'; \
+					break; \
+				case '\t': \
+					__jsmn_char = 't'; \
+					break; \
+				default: \
+					__jsmn_char = *(cc); \
+					break; \
+			} \
+			if (__jsmn_char >= 0x20) { \
+				if ((qc) + 2 <= (qs)) { \
+					(qc)[0] = '\\'; \
+					(qc)[1] = __jsmn_char; \
+					(qc) += 2; \
+					(cc)++; \
+				} else { \
+					break; \
+				} \
+			} else { \
+				if ((qc) + 6 <= (qs)) { \
+					(qc)[0] = '\\'; \
+					(qc)[1] = 'u'; \
+					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc)); \
+					(qc) += 6; \
+					(cc)++; \
+				} else { \
+					break; \
+				} \
+			} \
+		} else if (unicode) { \
+			if (*(cc) < 0x10000) { /* Basic Multilingual Plane */ \
+				if ((qc) + 6 <= (qs)) { \
+					(qc)[0] = '\\'; \
+					(qc)[1] = 'u'; \
+					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc)); \
+					(qc) += 6; \
+					(cc)++; \
+				} else { \
+					break; \
+				} \
+			} else if (*(cc) >= 0x10000 && *(cc) <= 0x10FFFF) /* Supplementary Planes */ { \
+				if ((qc) + 12 <= (qs)) { \
+					__jsmn_char = (*(cc)) - 0x10000; \
+					hex4dig1 = 0xD800 + ((__jsmn_char >> 10) & 0x03FF); \
+					hex4dig2 = 0xDC00 + ( __jsmn_char        & 0x03FF); \
+					(qc)[0] = '\\'; \
+					(qc)[1] = 'u'; \
+					JSMN_EMIT_HEX4DIG((qc) + 2, hex4dig1); \
+					(qc)[6] = '\\'; \
+					(qc)[7] = 'u'; \
+					JSMN_EMIT_HEX4DIG((qc) + 8, hex4dig2); \
+					(qc) += 12; \
+					(cc)++; \
+				} else { \
+					break; \
+				} \
+			} else { /* not within a valid Unicode plane */ \
+				if ((qc) + 6 <= (qs)) { \
+					(qc)[0] = '\\'; \
+					(qc)[1] = 'u'; \
+					(qc)[2] = 'F'; \
+					(qc)[3] = 'F'; \
+					(qc)[4] = 'F'; \
+					(qc)[5] = 'D'; \
+					(qc) += 6; \
+					(cc)++; \
+				} else { \
+					break; \
+				} \
+			} \
+		} else { \
+			*((qc)++) = *((cc)++); \
 		} \
 	} \
 }
+#define JSMN_QUOTE_UNICODE(cc, cs, qc, qs) JSMN_QUOTE(cc, cs, qc, qs, 1)
+#define JSMN_QUOTE_ASCII(cc, cs, qc, qs)   JSMN_QUOTE(cc, cs, qc, qs, 0)
 
 /* branchless hex-char to int */
 #define HEXVAL(b)        ((((b) & 0x1f) + (((b) >> 6) * 0x19) - 0x10) & 0xF)
@@ -296,8 +379,8 @@
  */
 #define JSMN_UNQUOTE(qc, qs, cc, cs) { \
 	wchar_t __jsmn_char; \
-	int hex4dig1; \
-	int hex4dig2; \
+	wchar_t hex4dig1; \
+	wchar_t hex4dig2; \
 	while ((qc) < (qs) && (cc) < (cs)) { \
 		 if (*(qc) == '\\') { \
 			if ((qc) + 2 <= (qs)) { \
@@ -307,20 +390,20 @@
 					case '/': \
 						__jsmn_char = (qc)[1]; \
 						break; \
-					case '\b': \
-						__jsmn_char = 'b'; \
+					case 'b': \
+						__jsmn_char = '\b'; \
 						break; \
-					case '\f': \
-						__jsmn_char = 'f'; \
+					case 'f': \
+						__jsmn_char = '\f'; \
 						break; \
-					case '\n': \
-						__jsmn_char = 'n'; \
+					case 'n': \
+						__jsmn_char = '\n'; \
 						break; \
-					case '\r': \
-						__jsmn_char = 'r'; \
+					case 'r': \
+						__jsmn_char = '\r'; \
 						break; \
-					case '\t': \
-						__jsmn_char = 't'; \
+					case 't': \
+						__jsmn_char = '\t'; \
 						break; \
 					case 'u': \
 						__jsmn_char = 'u'; \
@@ -336,7 +419,7 @@
 									hex4dig2 = JSMN_HEX4DIG((qc) + 8); \
 									if (hex4dig2 >> 10 == 0xDC00 >> 10) { \
 										/* \uD[C-F]?? of the low surrogate pair */ \
-										*((cc)++) = ((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400); \
+										*((cc)++) = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400)); \
 										(qc) += 12; \
 									} else { \
 										*((cc)++) = 0xFFFD; /* the replacement character */ \
@@ -448,7 +531,7 @@ int test_quote() {
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
 		wchar_t *im_cc  =  im_c;
-		wchar_t *im_cs  =  im_c + 6;
+		wchar_t *im_cs  =  im_c + 12;
 		wchar_t *out_cc =  &out_c;
 		wchar_t *out_cs = (&out_c) + 1;
 
@@ -456,11 +539,13 @@ int test_quote() {
 			in_c = 0xe000;
 		}
 
-		/* printf("in_c(%i): %lc\n", (int) in_c, in_c); */
+		/*
+		printf("in_c(%i): %lc\n", (int) in_c, in_c);
+		*/
 
 		memset(im_c, 0, sizeof (wchar_t) * 12);
 
-		JSMN_QUOTE(in_cc, in_cs, im_cc, im_cs);
+		JSMN_QUOTE_UNICODE(in_cc, in_cs, im_cc, im_cs);
 
 		/*
 		printf("im_c: ");
@@ -472,7 +557,9 @@ int test_quote() {
 
 		im_cc = im_c;
 		JSMN_UNQUOTE(im_cc, im_cs, out_cc, out_cs);
-		/* printf("out_c(%i): %lc\n", (int) out_c, out_c); */
+		/*
+		printf("out_c(%i): %lc\n", (int) out_c, out_c);
+		*/
 		if (in_c != out_c) {
 			printf("Error on JSON character %i = %i\n.", (int) in_c, (int) out_c);
 			return 1;
