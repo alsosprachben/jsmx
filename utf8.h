@@ -236,6 +236,9 @@
 	} \
 }
 
+
+#define VALHEX(v) ((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))))
+
 /*
  * JSON String Quoting
  */
@@ -248,9 +251,10 @@
 				(qc)[1] = 'u'; \
 				(qc)[2] = '0'; \
 				(qc)[3] = '0'; \
-				(qc)[4] = '0'; \
-				(qc)[5] = *(cc) ; \
+				(qc)[4] = VALHEX(((*(cc)) >> 4) & 0xF); \
+				(qc)[5] = VALHEX( (*(cc))       & 0xF); \
 				(qc) += 6; \
+				(cc)++; \
 			} else { \
 				break; \
 			} \
@@ -266,12 +270,13 @@
 					break; \
 			} \
 			if (__jsmn_char == '\0') { \
-				*(qc) = *(cc) \
+				*((qc)++) = *((cc)++); \
 			} else { \
 				if ((qc) + 2 <= (qs)) { \
 					(qc)[0] = '\\'; \
 					(qc)[1] = __jsmn_char; \
 					(qc) += 2; \
+					(cc)++; \
 				} else { \
 					break; \
 				} \
@@ -294,13 +299,13 @@
 	int hex4dig1; \
 	int hex4dig2; \
 	while ((qc) < (qs) && (cc) < (cs)) { \
-		 if (*(qc) == '\') { \
+		 if (*(qc) == '\\') { \
 			if ((qc) + 2 <= (qs)) { \
 				switch ((qc)[1]) { \
 					case '"': \
 					case '\\': \
 					case '/': \
-						__jsmn_char = *(qc); \
+						__jsmn_char = (qc)[1]; \
 						break; \
 					case '\b': \
 						__jsmn_char = 'b'; \
@@ -328,7 +333,7 @@
 							/* \uD[8-B]?? of the high surrogate pair */ \
 							if ((qc) + 12 <= (qs)) { \
 								if ((qc)[6] == '\\' && (qc)[7] == 'u') { \
-									hex4dig2 = JSMN_HEx4DIG((qc) + 8); \
+									hex4dig2 = JSMN_HEX4DIG((qc) + 8); \
 									if (hex4dig2 >> 10 == 0xDC00 >> 10) { \
 										/* \uD[C-F]?? of the low surrogate pair */ \
 										*((cc)++) = ((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400); \
@@ -350,7 +355,7 @@
 							(qc) += 6; \
 						} else { \
 							/* Within the Basic Multilingial Plane */ \
-							*((cc)++) = hexdig1; \
+							*((cc)++) = hex4dig1; \
 							(qc) += 6; \
 						} \
 					} else { \
@@ -377,7 +382,7 @@
  */
 #include <stdio.h>
 #include <string.h>
-int main() {
+int test_utf8() {
 	int s = 0;
 	wchar_t in_c;
 	char    im_b[6];
@@ -422,15 +427,79 @@ int main() {
 		im_bc = im_b;
 		UTF8_DECODE(im_bc, im_bs, out_cc, out_cs);
 		if (in_c != out_c) {
-			printf("Error on character %i = %i\n.", (int) in_c, (int) out_c);
+			printf("Error on UTF-8 character %i = %i\n.", (int) in_c, (int) out_c);
 			return 1;
 		}
 		s++;
 	}
 
-	printf("Succeeded converting all %i characters.\n", s);
+	printf("Succeeded converting all %i UTF-8 characters.\n", s);
 
 	return 0;
+}
+
+int test_quote() {
+	int s = 0;
+	wchar_t in_c;
+	wchar_t im_c[12];
+	wchar_t out_c;
+
+	for (in_c = 1; in_c < 0x110000; in_c++) { 
+		wchar_t *in_cc  =  &in_c;
+		wchar_t *in_cs  = (&in_c) + 1;
+		wchar_t *im_cc  =  im_c;
+		wchar_t *im_cs  =  im_c + 6;
+		wchar_t *out_cc =  &out_c;
+		wchar_t *out_cs = (&out_c) + 1;
+
+		if (in_c == 0xd800) {
+			in_c = 0xe000;
+		}
+
+		/* printf("in_c(%i): %lc\n", (int) in_c, in_c); */
+
+		memset(im_c, 0, sizeof (wchar_t) * 12);
+
+		JSMN_QUOTE(in_cc, in_cs, im_cc, im_cs);
+
+		/*
+		printf("im_c: ");
+		for (int i = 0; i < 12; i++) {
+			printf("%lc", im_c[i]);
+		}
+		printf("\n");
+		*/
+
+		im_cc = im_c;
+		JSMN_UNQUOTE(im_cc, im_cs, out_cc, out_cs);
+		/* printf("out_c(%i): %lc\n", (int) out_c, out_c); */
+		if (in_c != out_c) {
+			printf("Error on JSON character %i = %i\n.", (int) in_c, (int) out_c);
+			return 1;
+		}
+		s++;
+	}
+
+	printf("Succeeded converting all %i JSON characters.\n", s);
+
+
+	return 0;
+}
+
+int main() {
+	int rc;
+
+	rc = test_utf8();
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = test_quote();
+	if (rc != 0) {
+		return rc;
+	}
+
+	return rc;
 }
 #endif
 
