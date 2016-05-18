@@ -123,6 +123,7 @@ int jsmn_dom_new_primitive(  jsmn_parser *parser,       char *js, size_t len, js
 int jsmn_dom_new_integer(    jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int         value);
 int jsmn_dom_new_double(     jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double      value);
 int jsmn_dom_new_string(     jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int jsmn_dom_new_utf8(       jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value, size_t value_len);
 #define TRUE_EXPR  "true "
 #define FALSE_EXPR "false "
 #define NULL_EXPR  "null "

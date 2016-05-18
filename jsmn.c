@@ -1,5 +1,6 @@
 #include "jsmn.h"
 #ifdef JSMN_DOM
+#include "utf8.h"
 #include <string.h> /* for memcpy() */
 #endif
 /**
@@ -718,6 +719,55 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 
 	parser->pos++;
 
+	return i;
+}
+int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value, size_t value_len) {
+	int i;
+	int rc;
+
+	char *pos_cursor;
+	char *pos_start;
+	char *pos_stop;
+
+	const char *val_cursor;
+	const char *val_start;
+	const char *val_stop;
+
+	i          = parser->toknext;
+
+	pos_cursor = js + parser->pos;
+	pos_start  = pos_cursor;
+	pos_stop   = js + len;
+
+	val_cursor = value;
+	val_start  = val_cursor;
+	val_stop   = value + value_len;
+
+	if (pos_cursor <= pos_stop) {
+		*(pos_cursor++) = '"';
+	} else {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	JSMN_QUOTE_ASCII(val_cursor, val_stop, pos_cursor, pos_stop);
+	if (val_cursor < val_stop) {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	if (pos_cursor + 1 <= pos_stop) {
+		*(pos_cursor++) = '"';
+		 *pos_cursor    = '\0';
+	} else {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	rc = jsmn_parse_string(parser, js, len, tokens, num_tokens);
+	if (rc < 0) {
+		return rc;
+	}
+
+	parser->pos++;
+	
 	return i;
 }
 int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value) {
