@@ -250,12 +250,12 @@
 /*
  * JSON String Quoting
  */
-#define JSMN_QUOTE(cc, cs, qc, qs, unicode) { \
-	wchar_t __jsmn_char; \
-	wchar_t hex4dig1; \
-	wchar_t hex4dig2; \
+#define JSMN_QUOTE(cc, cs, qc, qs, u) { \
+	wchar_t __jsmn_char = 0; \
+	wchar_t hex4dig1    = 0; \
+	wchar_t hex4dig2    = 0; \
 	while ((cc) < (cs) && (qc) < qs) { \
-		if (*(cc) >= 0x20 && *(cc) < 0x80) { /* non-control ASCII */ \
+		if (*(cc) >= 0x20 && *(cc) <= 0x7F) { /* non-control ASCII */ \
 			switch (*(cc)) { \
 				case '"': \
 				case '\\': \
@@ -278,7 +278,7 @@
 					break; \
 				} \
 			} \
-		} else if (*(cc) < 0x20) { /* ASCII control characters */ \
+		} else if (*(cc) >= 0 && *(cc) < 0x20) { /* ASCII control characters */ \
 			switch (*(cc)) { \
 				case '\b': \
 					__jsmn_char = 'b'; \
@@ -319,7 +319,7 @@
 					break; \
 				} \
 			} \
-		} else if (unicode) { \
+		} else if (u) { \
 			if (*(cc) < 0x10000) { /* Basic Multilingual Plane */ \
 				if ((qc) + 6 <= (qs)) { \
 					(qc)[0] = '\\'; \
@@ -378,9 +378,9 @@
  * JSON String Unquoting
  */
 #define JSMN_UNQUOTE(qc, qs, cc, cs) { \
-	wchar_t __jsmn_char; \
-	wchar_t hex4dig1; \
-	wchar_t hex4dig2; \
+	wchar_t __jsmn_char = 0; \
+	wchar_t hex4dig1    = 0; \
+	wchar_t hex4dig2    = 0; \
 	while ((qc) < (qs) && (cc) < (cs)) { \
 		 if (*(qc) == '\\') { \
 			if ((qc) + 2 <= (qs)) { \
@@ -475,7 +475,7 @@ int test_utf8() {
 	for (int i_c = 1; i_c < 0x110000; i_c++) {
 		in_c = 49;
 	*/
-	for (in_c = 1; in_c < 0x110000; in_c++) { 
+	for (in_c = 0; in_c < 0x110000; in_c++) { 
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
 		char    *im_bc  =  im_b;
@@ -527,7 +527,7 @@ int test_quote() {
 	wchar_t im_c[12];
 	wchar_t out_c;
 
-	for (in_c = 1; in_c < 0x110000; in_c++) { 
+	for (in_c = 0; in_c < 0x110000; in_c++) { 
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
 		wchar_t *im_cc  =  im_c;
@@ -567,7 +567,55 @@ int test_quote() {
 		s++;
 	}
 
-	printf("Succeeded converting all %i JSON characters.\n", s);
+	printf("Succeeded converting all %i JSON Unicode characters.\n", s);
+
+
+	return 0;
+}
+
+int test_quote_ascii() {
+	int s = 0;
+	char in_c;
+	char im_c[12];
+	wchar_t out_c;
+
+	for (in_c = 0; s <= 0xFF; in_c++) { 
+		char *in_cc  =  &in_c;
+		char *in_cs  = (&in_c) + 1;
+		char *im_cc  =  im_c;
+		char *im_cs  =  im_c + 12;
+		wchar_t *out_cc =  &out_c;
+		wchar_t *out_cs = (&out_c) + 1;
+
+		/*
+		printf("in_c(%i): %lc\n", (int) in_c, in_c);
+		*/
+
+		memset(im_c, 0, sizeof (char) * 12);
+
+		JSMN_QUOTE_ASCII(in_cc, in_cs, im_cc, im_cs);
+
+		/*
+		printf("im_c: ");
+		for (int i = 0; i < 12; i++) {
+			printf("%lc", im_c[i]);
+		}
+		printf("\n");
+		*/
+
+		im_cc = im_c;
+		JSMN_UNQUOTE(im_cc, im_cs, out_cc, out_cs);
+		/*
+		printf("out_c(%i): %lc\n", (int) out_c, out_c);
+		*/
+		if (in_c != out_c) {
+			printf("Error on JSON character %i = %i\n.", (int) in_c, (int) out_c);
+			return 1;
+		}
+		s++;
+	}
+
+	printf("Succeeded converting all %i JSON ASCII characters.\n", s);
 
 
 	return 0;
@@ -582,6 +630,11 @@ int main() {
 	}
 
 	rc = test_quote();
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = test_quote_ascii();
 	if (rc != 0) {
 		return rc;
 	}
