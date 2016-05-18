@@ -367,12 +367,16 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535, \"a double\": 3.1415926535897931}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535, \"a double\": 3.1415926535897931, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\"}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
 	int name_i;
 	int value_i;
+	const char *utf8 = "\"\\/\n\r\t\b\f\xF0\x9D\x84\x9E";
+	size_t utf8_len = 12;
+
+	printf("emitter\n");
 
 	memcpy(js, injs, strlen(injs));
 	js[strlen(js)] = '\0';
@@ -387,10 +391,13 @@ int test_emitter(void) {
 	*/
 	fprintf(stderr, "posA: %i\n", p.pos);
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "six");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	fprintf(stderr, "posB: %i\n", p.pos);
 	value_i = jsmn_dom_new_primitive(&p, js, 1024, tokens, 1024, "6");
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	fprintf(stderr, "posC: %i\n", p.pos);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	jsmn_init_emitter(&e);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
@@ -398,24 +405,46 @@ int test_emitter(void) {
 	fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "stuff");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "[1,2,{\"a\": 3}]");
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a string");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "\"this is a string\"");
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a primitive");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_eval(&p, js, 1024, tokens, 1024, "true ");
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "an integer");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_new_integer(&p, js, 1024, tokens, 1024, 65535);
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a double");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, 3.141592653589793);
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a UTF-8 string");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
+	value_i = jsmn_dom_new_utf8(&p, js, 1024, tokens, 1024, utf8, utf8_len);
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
 	jsmn_init_emitter(&e);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
