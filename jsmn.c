@@ -721,27 +721,27 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 
 	return i;
 }
-int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value, size_t value_len) {
+int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *val8, size_t val8_len) {
 	int i;
 	int rc;
 
-	char *pos_cursor;
 	char *pos_start;
+	char *pos_cursor;
 	char *pos_stop;
 
-	const char *val_cursor;
-	const char *val_start;
-	const char *val_stop;
+	const char *val8_start;
+	const char *val8_cursor;
+	const char *val8_stop;
 
 	i          = parser->toknext;
 
-	pos_cursor = js + parser->pos;
-	pos_start  = pos_cursor;
+	pos_start  = js + parser->pos;
+	pos_cursor = pos_start;
 	pos_stop   = js + len;
 
-	val_cursor = value;
-	val_start  = val_cursor;
-	val_stop   = value + value_len;
+	val8_start  = val8;
+	val8_cursor = val8_start;
+	val8_stop   = val8_start + val8_len;
 
 	if (pos_cursor <= pos_stop) {
 		*(pos_cursor++) = '"';
@@ -749,9 +749,77 @@ int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *toke
 		return JSMN_ERROR_NOMEM;
 	}
 
-	JSMN_QUOTE_ASCII(val_cursor, val_stop, pos_cursor, pos_stop);
-	if (val_cursor < val_stop) {
+	JSMN_QUOTE_ASCII(val8_cursor, val8_stop, pos_cursor, pos_stop);
+	if (val8_cursor < val8_stop) {
 		return JSMN_ERROR_NOMEM;
+	}
+
+	if (pos_cursor + 1 <= pos_stop) {
+		*(pos_cursor++) = '"';
+		 *pos_cursor    = '\0';
+	} else {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	rc = jsmn_parse_string(parser, js, len, tokens, num_tokens);
+	if (rc < 0) {
+		return rc;
+	}
+
+	parser->pos++;
+	
+	return i;
+}
+int jsmn_dom_new_utf32(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const wchar_t *val32, size_t val32_len) {
+	int i;
+	int rc;
+
+	char *pos_start;
+	char *pos_cursor;
+	char *pos_stop;
+
+	char *val8_start;
+	char  val8[1024];
+	char *val8_cursor_out;
+	char *val8_cursor_in;
+	char *val8_stop;
+
+	const wchar_t *val32_cursor;
+	const wchar_t *val32_start;
+	const wchar_t *val32_stop;
+
+	i          = parser->toknext;
+
+	pos_start  = js + parser->pos;
+	pos_cursor = pos_start;
+	pos_stop   = js + len;
+
+	val8_start      = val8;
+	val8_cursor_out = val8_start;
+	val8_cursor_in  = val8_start;
+	val8_stop       = val8_start + 1024;
+
+	val32_start  = val32;
+	val32_cursor = val32_start;
+	val32_stop   = val32_start + val32_len;
+
+
+	if (pos_cursor <= pos_stop) {
+		*(pos_cursor++) = '"';
+	} else {
+		return JSMN_ERROR_NOMEM;
+	}
+
+	while (val32_cursor < val32_stop && pos_cursor < pos_stop) {
+		UTF8_ENCODE(val32_cursor, val32_stop, val8_cursor_out, val8_stop);
+
+		JSMN_QUOTE_ASCII(val8_cursor_in, val8_cursor_out, pos_cursor, pos_stop);
+		if (val8_cursor_in < val8_cursor_out) {
+			return JSMN_ERROR_NOMEM;
+		}
+
+		val8_cursor_out = val8_start;
+		val8_cursor_in  = val8_start;
 	}
 
 	if (pos_cursor + 1 <= pos_stop) {
