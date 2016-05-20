@@ -721,6 +721,132 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 
 	return i;
 }
+/*
+ * Returns JSMN_ERROR_INVAL or the number of characters written into val8.
+ * val8 is always NULL-terminated. val8_len >= 1 is required, ensuring this property.
+ */
+int jsmn_dom_get_utf8(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, char *val8, size_t val8_len) {
+	const char *pos_start;
+	const char *pos_cursor;
+	const char *pos_stop;
+
+	wchar_t  q32[1024];
+	wchar_t *q32_start;
+	wchar_t *q32_cursor_out;
+	wchar_t *q32_cursor_in;
+	wchar_t *q32_stop;
+
+	wchar_t  val32[1024];
+	wchar_t *val32_start;
+	wchar_t *val32_cursor_out;
+	wchar_t *val32_cursor_in;
+	wchar_t *val32_stop;
+
+	char *val8_start;
+	char *val8_cursor;
+	char *val8_stop;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || val8_len < 1) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	pos_start  = js + tokens[i].start;
+	pos_cursor = pos_start;
+	pos_stop   = js + tokens[i].end;
+
+	q32_start = q32;
+	q32_cursor_out = q32_start;
+	q32_cursor_in  = q32_start;
+	q32_stop       = q32_start + 1024;
+
+	val32_start      = val32;
+	val32_cursor_out = val32_start;
+	val32_cursor_in  = val32_start;
+	val32_stop       = val32_start + 1024;
+
+	val8_start  = val8;
+	val8_cursor = val8_start;
+	val8_stop   = val8_start + val8_len;
+
+	while (pos_cursor < pos_stop && val8_cursor < val8_stop) {
+		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+
+		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor_out, val32_stop);
+
+		UTF8_ENCODE(val32_cursor_in, val32_cursor_out, val8_cursor, val8_stop);
+
+		q32_cursor_out = q32_start;
+		q32_cursor_in  = q32_start;
+
+		val32_cursor_out = val32_start;
+		val32_cursor_in  = val32_start;
+	}
+
+	if (val8_cursor < val8_stop) {
+		*val8_cursor = '\0';
+	} else if (val8_cursor == val8_stop) {
+		*(--val8_cursor) = '\0';
+	} else {
+		return JSMN_ERROR_INVAL;
+	}
+
+	return val8_cursor - val8_start;
+}
+/*
+ * Returns JSMN_ERROR_INVAL or the number of characters written into val32.
+ * val32 is always NULL-terminated. val32_len >= 1 is required, ensuring this property.
+ */
+int jsmn_dom_get_utf32(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, wchar_t *val32, size_t val32_len) {
+	const char *pos_start;
+	const char *pos_cursor;
+	const char *pos_stop;
+
+	wchar_t  q32[1024];
+	wchar_t *q32_start;
+	wchar_t *q32_cursor_out;
+	wchar_t *q32_cursor_in;
+	wchar_t *q32_stop;
+
+	wchar_t *val32_start;
+	wchar_t *val32_cursor;
+	wchar_t *val32_stop;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || val32_len < 1) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	pos_start  = js + tokens[i].start;
+	pos_cursor = pos_start;
+	pos_stop   = js + tokens[i].end;
+
+	q32_start = q32;
+	q32_cursor_out = q32_start;
+	q32_cursor_in  = q32_start;
+	q32_stop       = q32_start + 1024;
+
+	val32_start  = val32;
+	val32_cursor = val32_start;
+	val32_stop   = val32_start + val32_len;
+
+	while (pos_cursor < pos_stop && val32_cursor < val32_stop) {
+		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+
+		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor, val32_stop);
+
+		q32_cursor_out = q32_start;
+		q32_cursor_in  = q32_start;
+	}
+
+	if (val32_cursor < val32_stop) {
+		*val32_cursor = '\0';
+	} else if (val32_cursor == val32_stop) {
+		*(--val32_cursor) = '\0';
+	} else {
+		return JSMN_ERROR_INVAL;
+	}
+
+	return val32_cursor - val32_start;
+}
 int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *val8, size_t val8_len) {
 	int i;
 	int rc;
@@ -778,8 +904,8 @@ int jsmn_dom_new_utf32(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tok
 	char *pos_cursor;
 	char *pos_stop;
 
-	char *val8_start;
 	char  val8[1024];
+	char *val8_start;
 	char *val8_cursor_out;
 	char *val8_cursor_in;
 	char *val8_stop;
