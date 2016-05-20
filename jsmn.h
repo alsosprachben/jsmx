@@ -97,8 +97,10 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
 
 #ifdef JSMN_DOM
-int jsmn_dom_get_utf8(       jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char    *val8,  size_t val8_len);
-int jsmn_dom_get_utf32(      jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, wchar_t *val32, size_t val32_len);
+int    jsmn_dom_get_utf8(    jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char    *val8,  size_t val8_len);
+size_t jsmn_dom_get_utf8len( jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
+int    jsmn_dom_get_utf32(   jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, wchar_t *val32, size_t val32_len);
+size_t jsmn_dom_get_utf32len(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int jsmn_dom_get_value(      jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char    *buf,   size_t buflen);
 int    jsmn_dom_get_start(   jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 size_t jsmn_dom_get_strlen(  jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);

@@ -722,6 +722,132 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	return i;
 }
 /*
+ * Returns JSMN_ERROR_INVAL or the length of the UTF-8 string in bytes.
+ */
+size_t jsmn_dom_get_utf8len(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	const char *pos_start;
+	const char *pos_cursor;
+	const char *pos_stop;
+
+	wchar_t  q32[1024];
+	wchar_t *q32_start;
+	wchar_t *q32_cursor_out;
+	wchar_t *q32_cursor_in;
+	wchar_t *q32_stop;
+
+	wchar_t  val32[1024];
+	wchar_t *val32_start;
+	wchar_t *val32_cursor_out;
+	wchar_t *val32_cursor_in;
+	wchar_t *val32_stop;
+
+	char  val8[1024];
+	char *val8_start;
+	char *val8_cursor;
+	char *val8_stop;
+
+	size_t utf8len;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	pos_start  = js + tokens[i].start;
+	pos_cursor = pos_start;
+	pos_stop   = js + tokens[i].end;
+
+	q32_start      = q32;
+	q32_cursor_out = q32_start;
+	q32_cursor_in  = q32_start;
+	q32_stop       = q32_start + 1024;
+
+	val32_start      = val32;
+	val32_cursor_out = val32_start;
+	val32_cursor_in  = val32_start;
+	val32_stop       = val32_start + 1024;
+
+	val8_start  = val8;
+	val8_cursor = val8_start;
+	val8_stop   = val8_start + 1024;
+
+	utf8len = 0;
+
+	while (pos_cursor < pos_stop) {
+		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+
+		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor_out, val32_stop);
+
+		UTF8_ENCODE(val32_cursor_in, val32_cursor_out, val8_cursor, val8_stop);
+
+		utf8len += val8_cursor - val8_start;
+
+		q32_cursor_out = q32_start;
+		q32_cursor_in  = q32_start;
+
+		val32_cursor_out = val32_start;
+		val32_cursor_in  = val32_start;
+
+		val8_cursor = val8_start;
+	}
+
+	return utf8len;
+}
+/*
+ * Returns JSMN_ERROR_INVAL or the Unicode character length of the string. This is effectively the UTF-32 element count.
+ */
+size_t jsmn_dom_get_utf32len(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	const char *pos_start;
+	const char *pos_cursor;
+	const char *pos_stop;
+
+	wchar_t  q32[1024];
+	wchar_t *q32_start;
+	wchar_t *q32_cursor_out;
+	wchar_t *q32_cursor_in;
+	wchar_t *q32_stop;
+
+	wchar_t  val32[1024];
+	wchar_t *val32_start;
+	wchar_t *val32_cursor;
+	wchar_t *val32_stop;
+
+	size_t utf32len;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	pos_start  = js + tokens[i].start;
+	pos_cursor = pos_start;
+	pos_stop   = js + tokens[i].end;
+
+	q32_start      = q32;
+	q32_cursor_out = q32_start;
+	q32_cursor_in  = q32_start;
+	q32_stop       = q32_start + 1024;
+
+	val32_start  = val32;
+	val32_cursor = val32_start;
+	val32_stop   = val32_start + 1024;
+
+	utf32len = 0;
+
+	while (pos_cursor < pos_stop) {
+		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+
+		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor, val32_stop);
+
+		utf32len += val32_cursor - val32_start;
+
+		q32_cursor_out = q32_start;
+		q32_cursor_in  = q32_start;
+
+		val32_cursor = val32_start;
+	}
+
+	return utf32len;
+}
+/*
  * Returns JSMN_ERROR_INVAL or the number of characters written into val8.
  * val8 is always NULL-terminated. val8_len >= 1 is required, ensuring this property.
  */

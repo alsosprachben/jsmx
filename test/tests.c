@@ -380,6 +380,7 @@ int test_emitter(void) {
 
 	char utf8_read[1024];
 	wchar_t utf32_read[1024];
+	size_t readlen;
 
 	printf("emitter\n");
 
@@ -457,6 +458,11 @@ int test_emitter(void) {
 	if (strcmp(utf8_read, utf8) != 0) {
 		return -1;
 	}
+	readlen = jsmn_dom_get_utf8len(&p, js, 1024, tokens, 1024, value_i);
+	fprintf(stderr, "readlen = %zu\n", readlen);
+	if (readlen != 12) {
+		return -1;
+	}
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a UTF-32 string");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
@@ -469,6 +475,11 @@ int test_emitter(void) {
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 	fprintf(stderr, "utf32_read: %s\n", utf32_read);
 	if (memcmp(utf32_read, utf32, sizeof (utf32)) != 0) {
+		return -1;
+	}
+	readlen = jsmn_dom_get_utf32len(&p, js, 1024, tokens, 1024, value_i);
+	fprintf(stderr, "readlen = %zu\n", readlen);
+	if (readlen != 9) {
 		return -1;
 	}
 
