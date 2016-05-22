@@ -414,8 +414,6 @@ void jsmn_init(jsmn_parser *parser) {
 	parser->pos = 0;
 	parser->toknext = 0;
 	parser->toksuper = -1;
-#ifdef JSMN_DOM
-#endif
 }
 
 #ifdef JSMN_DOM
@@ -671,13 +669,27 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int value) {
 	int rc;
 	char valbuf[32];
+	int  valpos;
+	int  negative;
 
-	rc = snprintf(valbuf, sizeof (valbuf), "%i ", value);
-	if (rc == -1) {
-		return JSMN_ERROR_INVAL;
+	valbuf[31] = ' '; /* delimiter */
+	negative = value < 0;
+	if (negative) {
+		value = - value;
+	}
+	for (valpos = 30; value > 0 && valpos > 0; valpos--) {
+		valbuf[valpos] = '0' + (value % 10);
+		value /= 10;
+	}
+	if (valpos == 30) {
+		valbuf[valpos] = '0';
+	} else if (negative) {
+		valbuf[valpos] = '-';
+	} else {
+		valpos++;
 	}
 
-	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
+	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf + valpos);
 }
 int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double value) {
 	int rc;
