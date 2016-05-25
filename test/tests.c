@@ -367,7 +367,7 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535, \"a double\": 3.1415926535897931, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535, \"a double\": 3.1415926535897931, \"a small double\": 3.1415926535897913e-123, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
@@ -382,7 +382,9 @@ int test_emitter(void) {
 	wchar_t utf32_read[1024];
 	size_t readlen;
 
+	/*
 	printf("emitter\n");
+	*/
 
 	memcpy(js, injs, strlen(injs));
 	js[strlen(js)] = '\0';
@@ -441,6 +443,13 @@ int test_emitter(void) {
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a double");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
 	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, 3.141592653589793);
+	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
+	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
+	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
+
+	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a small double");
+	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
+	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, 3.141592653589793e-123);
 	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);

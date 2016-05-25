@@ -1,8 +1,27 @@
 #include "jsmn.h"
 #ifdef JSMN_DOM
 #include "utf8.h"
-#include <string.h> /* for memcpy() */
+#ifdef USE_LIBC
+#include <string.h> /* for memcpy() and snprintf */
+#else
+#define memcpy(dst, src, len) naive_memcpy(dst, src, len)
 #endif
+#endif
+
+#ifdef JSMN_DOM
+#ifndef USE_LIBC
+void *naive_memcpy(void *dst, void *src, size_t len) {
+	size_t cur;
+
+	for (cur = 0; cur < len; cur++) {
+		((char *) dst)[cur] = ((char *) src)[cur];
+	}
+
+	return dst;
+}
+#endif
+#endif
+
 /**
  * Allocates a fresh unused token from the token pull.
  */
@@ -667,11 +686,20 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 	return i;
 }
 int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int value) {
-	int rc;
 	char valbuf[32];
+#ifdef USE_LIBC
+	int rc;
+
+	rc = snprintf(valbuf, sizeof (valbuf), "%i ", value);
+	if (rc == -1) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
+#else
 	int  valpos;
 	int  negative;
-
+	
 	valbuf[31] = ' '; /* delimiter */
 	negative = value < 0;
 	if (negative) {
@@ -690,10 +718,12 @@ int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *t
 	}
 
 	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf + valpos);
+#endif
 }
 int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double value) {
-	int rc;
 	char valbuf[32];
+#ifdef USE_LIBC
+	int rc;
 
 	if (value >= 1.0 || value <= -1.0) {
 		rc = snprintf(valbuf, sizeof (valbuf), "%.16f ", value);
@@ -703,6 +733,69 @@ int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	if (rc == -1) {
 		return JSMN_ERROR_INVAL;
 	}
+#else
+	int decimal;
+	int pos;
+	int digit;
+	int digits;
+
+	pos = 0;
+	digits = 0;
+
+	if (value < 0.0) {
+		valbuf[pos++] = '-';
+		value = - value;
+	}
+
+	if (value < 1.0) {
+		for (decimal = 0; value < 1.0; decimal--, value *= 10.0) {
+			/* pass */
+		}
+	} else if (value >= 10.0) {
+		for (decimal = 0; value >= 10.0; decimal++, value /= 10.0) {
+			/* pass */
+		}
+	} else {
+		/* [1-9][.] */
+		decimal = 0;
+	}
+
+	digit = (int) value;
+	value = value - digit;
+	value *= 10;
+	valbuf[pos++] = '0' + digit;
+	digits++;
+
+	valbuf[pos++] = '.';
+	while (digits < 17) {
+		digit = (int) value;
+		value = value - digit;
+		value *= 10;
+		valbuf[pos++] = '0' + digit;
+		digits++;
+	}
+	if (decimal != 0) {
+		valbuf[pos++] = 'e';
+		if (decimal < 0) {
+			valbuf[pos++] = '-';
+			decimal = - decimal;
+		}
+
+		if (decimal < 10) {
+			valbuf[pos++] = '0' + ( decimal            );
+		} else if (decimal < 100) {
+			valbuf[pos++] = '0' + ((decimal / 10)  % 10);
+			valbuf[pos++] = '0' + ( decimal        % 10);
+		} else {
+			valbuf[pos++] = '0' + ((decimal / 100) % 10);
+			valbuf[pos++] = '0' + ((decimal / 10)  % 10);
+			valbuf[pos++] = '0' + ( decimal        % 10);
+		}
+	}
+
+	valbuf[pos++] = ' ';
+	valbuf[pos++] = '\0';
+#endif
 
 	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf);
 }
