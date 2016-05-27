@@ -367,7 +367,7 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": 65535, \"a double\": 3.1415926535897931, \"a small double\": 3.1415926535897913e-123, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": -65535, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];
@@ -378,9 +378,13 @@ int test_emitter(void) {
 	const wchar_t  utf32[] = {'G', ' ', 'C', 'l', 'e', 'f', ':', ' ', 0x0001D11E, '\0'};
 	size_t         utf32_len = 9;
 
-	char utf8_read[1024];
+	char    utf8_read[1024];
 	wchar_t utf32_read[1024];
-	size_t readlen;
+	size_t  readlen;
+	int     int_read;
+	double  double_read;
+	const double pi  = 3.141592654;
+	const double spi = 3.141592654e-123;
 
 	/*
 	printf("emitter\n");
@@ -435,24 +439,43 @@ int test_emitter(void) {
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "an integer");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
-	value_i = jsmn_dom_new_integer(&p, js, 1024, tokens, 1024, 65535);
+	value_i = jsmn_dom_new_integer(&p, js, 1024, tokens, 1024, -65535);
 	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
+	rc = jsmn_dom_get_integer(&p, js, 1024, tokens, 1024, value_i, &int_read);
+	if (int_read != -65535) {
+		fprintf(stderr, "int_read: %i\n", int_read);
+		return -1;
+	}
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a double");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
-	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, 3.141592653589793);
+	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, pi);
 	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
+	rc = jsmn_dom_get_double(&p, js, 1024, tokens, 1024, value_i, &double_read);
+	if (double_read - pi >  1e-14
+	||  double_read - pi < -1e-14) {
+		fprintf(stderr, "double_read (pi): %.20g - %.20g = %.20g\n", double_read, pi, double_read - pi);
+		return -1;
+	}
+	rc = jsmn_dom_delete(&p, tokens, 1024, name_i);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a small double");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
-	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, 3.141592653589793e-123);
+	value_i = jsmn_dom_new_double(&p, js, 1024, tokens, 1024, spi);
 	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
+	rc = jsmn_dom_get_double(&p, js, 1024, tokens, 1024, value_i, &double_read);
+	if (double_read - spi >  1e-14
+	||  double_read - spi < -1e-14) {
+		fprintf(stderr, "double_read (spi): %.20g - %.20g = %.20g\n", double_read, spi, double_read - spi);
+		return -1;
+	}
+	rc = jsmn_dom_delete(&p, tokens, 1024, name_i);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "a UTF-8 string");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);

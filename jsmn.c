@@ -10,7 +10,7 @@
 
 #ifdef JSMN_DOM
 #ifndef USE_LIBC
-void *naive_memcpy(void *dst, void *src, size_t len) {
+void *naive_memcpy(void *dst, const void *src, size_t len) {
 	size_t cur;
 
 	for (cur = 0; cur < len; cur++) {
@@ -685,6 +685,58 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 
 	return i;
 }
+int jsmn_dom_get_integer(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, int *value_ptr) {
+#ifdef USE_LIBC
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || value_ptr == NULL) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	rc = sscanf(js + tokens[i].start, "%i", value_ptr);
+	if (rc != 1) {
+		return JSMN_ERROR_INVAL;
+	}
+#else
+	int value;
+	int negative;
+	int pos;
+	const char *val_start;
+	const char *val_cursor;
+	const char *val_stop;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || value_ptr == NULL) {
+		return JSMN_ERROR_INVAL;
+	}
+	
+	value      = 0;
+	negative   = 0;
+	pos        = 0;
+	val_start  = js + tokens[i].start;
+	val_cursor = val_start;
+	val_stop   = js + tokens[i].end;
+
+	if (val_cursor + 1 <= val_stop && *val_cursor =='-') {
+		negative = 1;
+		val_cursor++;
+	}
+
+	for (; val_cursor + 1 <= val_stop; val_cursor++) {
+		if (*val_cursor >= '0' && *val_cursor <= '9') {
+			value *= 10;
+			value += (int) ((*val_cursor) - '0');
+		} else {
+			break;
+		}
+	}
+
+	value = negative ? - value : value;
+
+	*value_ptr = value;
+#endif
+
+	return 0;
+}
 int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int value) {
 	char valbuf[32];
 #ifdef USE_LIBC
@@ -719,6 +771,113 @@ int jsmn_dom_new_integer(jsmn_parser *parser, char *js, size_t len, jsmntok_t *t
 
 	return jsmn_dom_new_primitive(parser, js, len, tokens, num_tokens, valbuf + valpos);
 #endif
+}
+int jsmn_dom_get_double(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, double *value_ptr) {
+#ifdef USE_LIBC
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || value_ptr == NULL) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	rc = sscanf(js + tokens[i].start, "%lf", value_ptr);
+	if (rc != 1) {
+		return JSMN_ERROR_INVAL;
+	}
+#else
+	double value;
+	int negative;
+	int e_negative;
+	int decimal;
+	int exponent;
+	int pos;
+	const char *val_start;
+	const char *val_cursor;
+	const char *val_stop;
+	const char *num_start;
+	const char *dec_start;
+
+	if (i == -1 || i >= (int) num_tokens || tokens[i].end < tokens[i].start || value_ptr == NULL) {
+		return JSMN_ERROR_INVAL;
+	}
+	
+	value      = 0;
+	negative   = 0;
+	decimal    = 0;
+	exponent   = 0;
+	e_negative = 0;
+	pos        = 0;
+	val_start  = js + tokens[i].start;
+	val_cursor = val_start;
+	val_stop   = js + tokens[i].end;
+	num_start  = val_cursor;
+	dec_start  = NULL;
+
+	if (val_cursor + 1 < val_stop) {
+		if (*val_cursor =='-') {
+			negative = 1;
+			val_cursor++;
+		}
+	}
+
+	num_start = val_cursor;
+
+	for (; val_cursor + 1 <= val_stop; val_cursor++) {
+		if (*val_cursor >= '0' && *val_cursor <= '9') {
+			value *= 10.0;
+			value += (double) ((int) ((*val_cursor) - '0'));
+		} else if (*val_cursor == '.') {
+			dec_start = val_cursor + 1;
+		} else {
+			break;
+		}
+	}
+
+	if (dec_start == NULL) {
+		decimal = 0;
+	} else {
+		decimal = dec_start - val_cursor;
+	}
+	fprintf(stderr, "decimal: %i\n", decimal);
+
+	if (val_cursor + 1 <= val_stop && (*val_cursor == 'e' || *val_cursor == 'E')) {
+		val_cursor++;
+		if (val_cursor + 1 <= val_stop && *val_cursor == '-') {
+			e_negative = 1;
+			val_cursor++;
+		}
+
+		for (; val_cursor + 1 <= val_stop; val_cursor++) {
+			if (*val_cursor >= '0' && *val_cursor <= '9') {
+				exponent *= 10;
+				exponent += (int) ((*val_cursor) - '0');
+			} else {
+				break;
+			}
+		}
+	}
+
+	value    = negative   ? - value    : value;
+	exponent = e_negative ? - exponent : exponent;
+
+	exponent += decimal;
+
+	while (exponent > 0) {
+		value *= 10.0;
+		exponent--;
+	}
+
+	while (exponent < 0) {
+		value /= 10.0;
+		exponent++;
+	}
+
+	fprintf(stderr, "value: %.16f\n", value);
+
+	*value_ptr = value;
+#endif
+
+	return 0;
 }
 int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double value) {
 	char valbuf[32];
@@ -767,7 +926,7 @@ int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	digits++;
 
 	valbuf[pos++] = '.';
-	while (digits < 17) {
+	while (digits <= 16) {
 		digit = (int) value;
 		value = value - digit;
 		value *= 10;
