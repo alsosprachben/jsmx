@@ -3,8 +3,9 @@
 #include "utf8.h"
 #ifdef USE_LIBC
 #include <string.h> /* for memcpy() and snprintf */
+#define our_memcpy memcpy
 #else
-#define memcpy(dst, src, len) naive_memcpy(dst, src, len)
+#define our_memcpy naive_memcpy
 #endif
 #endif
 
@@ -448,7 +449,7 @@ int jsmn_dom_get_value(jsmn_parser *parser, const char *js, size_t len, jsmntok_
 	size = tokens[i].end - tokens[i].start;
 	min_size = size < buflen - 1 ? size : buflen - 1;
 
-	memcpy(buf, &js[tokens[i].start], min_size);
+	our_memcpy(buf, &js[tokens[i].start], min_size);
 	buf[min_size] = '\0';
 
 	return size;
@@ -673,7 +674,7 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 
 	i = parser->toknext;
 
-	memcpy(&js[parser->pos], value, size);
+	our_memcpy(&js[parser->pos], value, size);
 	        js[parser->pos + size] = ' ';
 	        js[parser->pos + size + 1] = '\0';
 
@@ -1023,7 +1024,7 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	i = parser->toknext;
 
 	        js[parser->pos] = '"';
-	memcpy(&js[parser->pos + 1], value, size);
+	our_memcpy(&js[parser->pos + 1], value, size);
 	        js[parser->pos + 1 + size] = '"';
 	        js[parser->pos + 1 + size + 1] = '\0';
 
@@ -1418,7 +1419,7 @@ int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, 
 
 	i = parser->toknext;
 
-	memcpy(&js[parser->pos], value, size + 1);
+	our_memcpy(&js[parser->pos], value, size + 1);
 
 	rc = jsmn_parse(parser, js, len, tokens, num_tokens);
 	if (rc < 0) {
@@ -1596,7 +1597,7 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 					case PHASE_UNOPENED:
 						if (outlen - pos > value_len + 4) {
 							outjs[pos++] = '\"';
-							memcpy(&outjs[pos], &js[start], value_len);
+							our_memcpy(&outjs[pos], &js[start], value_len);
 							pos += value_len;
 							outjs[pos++] = '\"';
 							outjs[pos++] = ':';
@@ -1651,7 +1652,7 @@ int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens
 					emitter->cursor_phase = PHASE_OPENED;
 				case PHASE_OPENED:
 					if (outlen - pos > value_len) {
-						memcpy(&outjs[pos], &js[start], value_len);
+						our_memcpy(&outjs[pos], &js[start], value_len);
 						pos += value_len;
 						outjs[pos] = '\0';
 					} else {

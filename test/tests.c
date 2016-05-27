@@ -508,7 +508,7 @@ int test_emitter(void) {
 	rc = jsmn_dom_get_utf32(&p, js, 1024, tokens, 1024, value_i, utf32_read, 1024);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 	if (memcmp(utf32_read, utf32, sizeof (utf32)) != 0) {
-		fprintf(stderr, "utf32_read: %s\n", utf32_read);
+		fprintf(stderr, "utf32_read: %ls\n", utf32_read);
 		return -1;
 	}
 	readlen = jsmn_dom_get_utf32len(&p, js, 1024, tokens, 1024, value_i);
