@@ -391,7 +391,7 @@ int test_emitter(void) {
 	*/
 
 	memcpy(js, injs, strlen(injs));
-	js[strlen(js)] = '\0';
+	js[strlen(injs)] = '\0';
 
 	jsmn_init(&p);
 

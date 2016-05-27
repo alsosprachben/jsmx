@@ -23,7 +23,7 @@ test_strict_links: test/tests.c
 	$(CC) -DJSMN_STRICT=1 -DJSMN_PARENT_LINKS=1 $(CFLAGS) $(LDFLAGS) $< -o test/$@
 	./test/$@
 test_emitter: test/tests.c
-	$(CC) -Os -DJSMN_EMITTER=1 $(CFLAGS) $(LDFLAGS) $< -o test/$@
+	$(CC) -g3 -DJSMN_EMITTER=1 $(CFLAGS) $(LDFLAGS) $< -o test/$@
 	./test/$@
 
 jsmn_test.o: jsmn_test.c libjsmn.a
