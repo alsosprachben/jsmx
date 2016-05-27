@@ -396,25 +396,27 @@ int test_emitter(void) {
 	jsmn_init(&p);
 
 	rc = jsmn_parse(&p, js, strlen(js), tokens, 1024);
-	fprintf(stderr, "jsmn_parse() = %i\n", rc);
+	if (rc < 0) {
+		fprintf(stderr, "jsmn_parse() = %i\n", rc);
+		return -1;
+	}
+	jsmn_init_emitter(&e);
+	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
+	if (strcmp(injs, outjs) != 0) {
+		fprintf(stderr, "jsmn_emit() = %i\n", rc);
+		fprintf(stderr, "pos: %i\njs   : %s\noutjs: %s\n", p.pos, js, outjs);
+		return -1;
+	}
 	/* 
 	rc = jsmn_dom_delete(&p, tokens, 1024, 4);
 	rc = jsmn_dom_add(&p, tokens, 1024, 1, 0);
 	*/
-	fprintf(stderr, "posA: %i\n", p.pos);
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "six");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
-	fprintf(stderr, "posB: %i\n", p.pos);
 	value_i = jsmn_dom_new_primitive(&p, js, 1024, tokens, 1024, "6");
 	if (value_i < 0) fprintf(stderr, "value_i(%i): %i\n", rc, __LINE__);
-	fprintf(stderr, "posC: %i\n", p.pos);
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
-
-	jsmn_init_emitter(&e);
-	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
-	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
 
 	name_i = jsmn_dom_new_string(&p, js, 1024, tokens, 1024, "stuff");
 	if (name_i < 0) fprintf(stderr, "name_i(%i): %i\n", rc, __LINE__);
@@ -486,13 +488,13 @@ int test_emitter(void) {
 
 	rc = jsmn_dom_get_utf8(&p, js, 1024, tokens, 1024, value_i, utf8_read, 1024);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
-	fprintf(stderr, "utf8_read: %s\n", utf8_read);
 	if (strcmp(utf8_read, utf8) != 0) {
+		fprintf(stderr, "utf8_read: %s\n", utf8_read);
 		return -1;
 	}
 	readlen = jsmn_dom_get_utf8len(&p, js, 1024, tokens, 1024, value_i);
-	fprintf(stderr, "readlen = %zu\n", readlen);
 	if (readlen != 12) {
+		fprintf(stderr, "readlen = %zu\n", readlen);
 		return -1;
 	}
 
@@ -505,22 +507,25 @@ int test_emitter(void) {
 
 	rc = jsmn_dom_get_utf32(&p, js, 1024, tokens, 1024, value_i, utf32_read, 1024);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
-	fprintf(stderr, "utf32_read: %s\n", utf32_read);
 	if (memcmp(utf32_read, utf32, sizeof (utf32)) != 0) {
+		fprintf(stderr, "utf32_read: %s\n", utf32_read);
 		return -1;
 	}
 	readlen = jsmn_dom_get_utf32len(&p, js, 1024, tokens, 1024, value_i);
-	fprintf(stderr, "readlen = %zu\n", readlen);
 	if (readlen != 9) {
+		fprintf(stderr, "readlen = %zu\n", readlen);
 		return -1;
 	}
 
 	jsmn_init_emitter(&e);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);
-	fprintf(stderr, "jsmn_emit() = %i\n", rc);
-	fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
+	if (strcmp(passjs, outjs) != 0) {
+		fprintf(stderr, "jsmn_emit() = %i\n", rc);
+		fprintf(stderr, "pos: %i\njs    : %s\npassjs: %s\noutjs : %s\n", p.pos, js, passjs, outjs);
+		return -1;
+	}
 
-	return strcmp(passjs, outjs) == 0 ? 0 : -1;
+	return 0;
 }
 #endif
 

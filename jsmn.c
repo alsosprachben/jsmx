@@ -421,7 +421,8 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		}
 #endif /* !JSMN_DOM */
 	}
-
+	
+	/* fprintf(stderr, "count: %i\n", count); */
 	return count;
 }
 
@@ -685,6 +686,58 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 
 	return i;
 }
+int jsmn_dom_is_null(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
+	}
+
+	if (tokens[i].type == JSMN_PRIMITIVE && tokens[i].start != -1 && tokens[i].start < tokens[i].end && js[tokens[i].start] == 'n') {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+int jsmn_dom_is_bool(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
+	}
+
+	if (tokens[i].type == JSMN_PRIMITIVE && tokens[i].start != -1 && tokens[i].start < tokens[i].end && (js[tokens[i].start] == 't' || js[tokens[i].start] == 'f')) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+int jsmn_dom_is_true(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
+	}
+
+	if (tokens[i].type == JSMN_PRIMITIVE && tokens[i].start != -1 && tokens[i].start < tokens[i].end && js[tokens[i].start] == 't') {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+int jsmn_dom_is_false(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	int rc;
+
+	if (i == -1 || i >= (int) num_tokens) {
+		return 0;
+	}
+
+	if (tokens[i].type == JSMN_PRIMITIVE && tokens[i].start != -1 && tokens[i].start < tokens[i].end && js[tokens[i].start] == 'f') {
+		return 1;
+	} else {
+		return 0;
+	}
+}
 int jsmn_dom_get_integer(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, int *value_ptr) {
 #ifdef USE_LIBC
 	int rc;
@@ -838,14 +891,12 @@ int jsmn_dom_get_double(jsmn_parser *parser, const char *js, size_t len, jsmntok
 	} else {
 		decimal = dec_start - val_cursor;
 	}
-	fprintf(stderr, "decimal: %i\n", decimal);
 
-	if (val_cursor + 1 <= val_stop && (*val_cursor == 'e' || *val_cursor == 'E')) {
-		val_cursor++;
-		if (val_cursor + 1 <= val_stop && *val_cursor == '-') {
+	if (val_cursor + 2 <= val_stop && (val_cursor[0] == 'e' || val_cursor[0] == 'E') && (val_cursor[1] == '-' || val_cursor[1] == '+')) {
+		if (val_cursor[1] == '-') {
 			e_negative = 1;
-			val_cursor++;
 		}
+		val_cursor += 2;
 
 		for (; val_cursor + 1 <= val_stop; val_cursor++) {
 			if (*val_cursor >= '0' && *val_cursor <= '9') {
@@ -871,8 +922,6 @@ int jsmn_dom_get_double(jsmn_parser *parser, const char *js, size_t len, jsmntok
 		value /= 10.0;
 		exponent++;
 	}
-
-	fprintf(stderr, "value: %.16f\n", value);
 
 	*value_ptr = value;
 #endif
@@ -938,6 +987,8 @@ int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 		if (decimal < 0) {
 			valbuf[pos++] = '-';
 			decimal = - decimal;
+		} else {
+			valbuf[pos++] = '+';
 		}
 
 		if (decimal < 10) {
