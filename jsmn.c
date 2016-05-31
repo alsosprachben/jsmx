@@ -4,8 +4,10 @@
 #ifdef USE_LIBC
 #include <string.h> /* for memcpy() and snprintf */
 #define our_memcpy memcpy
+#define our_memcmp memcmp
 #else
 #define our_memcpy naive_memcpy
+#define our_memcmp naive_memcmp
 #endif
 #endif
 
@@ -19,6 +21,24 @@ void *naive_memcpy(void *dst, const void *src, size_t len) {
 	}
 
 	return dst;
+}
+int naive_memcmp(const void *b1, const void *b2, size_t len) {
+	const unsigned char *c1;
+	const unsigned char *c2;
+	size_t i;
+	int d;
+
+	c1 = (const unsigned char *) b1;
+	c2 = (const unsigned char *) b2;
+
+	for (i = 0; i < len; i++) {
+		d = c1[i] - c2[i];
+		if (d != 0) {
+			return d;
+		}
+	}
+
+	return 0;
 }
 #endif
 #endif
@@ -1711,7 +1731,7 @@ int jsmn_emit(jsmn_parser *parser, char *js, size_t len,
 			return rc;
 		}
 		pos += rc;
-		if (memcmp(&prior_emitter, emitter, sizeof (prior_emitter)) == 0) {
+		if (our_memcmp(&prior_emitter, emitter, sizeof (prior_emitter)) == 0) {
 			break;
 		}
 	}
