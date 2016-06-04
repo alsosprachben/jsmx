@@ -1184,7 +1184,7 @@ size_t jsmn_dom_get_utf32len(jsmn_parser *parser, const char *js, size_t len, js
 	return utf32len;
 }
 /*
- * Returns JSMN_ERROR_INVAL or the number of characters written into val8.
+ * Returns JSMN_ERROR_INVAL or the number of bytes written into val8.
  * val8 is always NULL-terminated. val8_len >= 1 is required, ensuring this property.
  */
 int jsmn_dom_get_utf8(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, char *val8, size_t val8_len) {
@@ -1447,6 +1447,43 @@ int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, 
 	}
 
 	return i;
+}
+#define NAME_CMP_SIZE 1024
+int jsmn_dom_get_utf8_name(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int object_i, char *utf8_name, size_t utf8_len) {
+	int rc;
+	int dom_i;
+
+	char val8[NAME_CMP_SIZE];
+
+	if (utf8_len >= NAME_CMP_SIZE || jsmn_dom_get_type(parser, tokens, num_tokens, object_i) != JSMN_OBJECT) {
+		return -1;
+	}
+
+	dom_i = jsmn_dom_get_child(parser, tokens, num_tokens, object_i);
+	while (dom_i != -1) {
+		rc = jsmn_dom_get_utf8(parser, js, len, tokens, num_tokens, dom_i, val8, sizeof(val8));
+		if (rc < 0 || rc >= NAME_CMP_SIZE) {
+			return -1;
+		}
+
+		if (rc == utf8_len && our_memcmp((void *) val8, (void *) utf8_name, utf8_len) == 0) {
+			return dom_i;
+		}
+
+		dom_i = jsmn_dom_get_sibling(parser, tokens, num_tokens, dom_i);
+	}
+
+	return -1;
+}
+int jsmn_dom_get_by_utf8_name(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int object_i, char *utf8_name, size_t utf8_len) {
+	int dom_i;
+
+	dom_i = jsmn_dom_get_utf8_name(parser, js, len, tokens, num_tokens, object_i, utf8_name, utf8_len);
+	if (dom_i < 0) {
+		return dom_i;
+	}
+
+	return jsmn_dom_get_child(parser, tokens, num_tokens, object_i);
 }
 int jsmn_dom_insert_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i, int value_i) {
 	int rc;
