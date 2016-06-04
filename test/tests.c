@@ -373,6 +373,7 @@ int test_emitter(void) {
 	jsmntok_t tokens[1024];
 	int name_i;
 	int value_i;
+	int utf8val_i;
 	const char    *utf8 = "\"\\/\n\r\t\b\f\xF0\x9D\x84\x9E";
 	size_t         utf8_len = 12;
 	const wchar_t  utf32[] = {'G', ' ', 'C', 'l', 'e', 'f', ':', ' ', 0x0001D11E, '\0'};
@@ -486,6 +487,8 @@ int test_emitter(void) {
 	rc = jsmn_dom_insert_name(&p, tokens, 1024, 0, name_i, value_i);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 
+	utf8val_i = value_i;
+
 	rc = jsmn_dom_get_utf8(&p, js, 1024, tokens, 1024, value_i, utf8_read, 1024);
 	if (rc < 0) fprintf(stderr, "rc(%i): %i\n", rc, __LINE__);
 	if (strcmp(utf8_read, utf8) != 0) {
@@ -516,6 +519,13 @@ int test_emitter(void) {
 		fprintf(stderr, "readlen = %zu\n", readlen);
 		return -1;
 	}
+
+	value_i = jsmn_dom_get_by_utf8_name(&p, js, 1024, tokens, 1024, 0, "a UTF-8 string", strlen("a UTF-8 string"));
+	if (value_i != utf8val_i) {
+		fprintf(stderr, "value_i != utf8val_i: %i != %i\n", value_i, utf8val_i);
+		return -1;
+	}
+	
 
 	jsmn_init_emitter(&e);
 	rc = jsmn_emit( &p, js, strlen(js), tokens, 1024, &e, outjs, 1024);

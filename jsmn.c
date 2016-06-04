@@ -1456,6 +1456,7 @@ int jsmn_dom_get_utf8_name(jsmn_parser *parser, const char *js, size_t len, jsmn
 	char val8[NAME_CMP_SIZE];
 
 	if (utf8_len >= NAME_CMP_SIZE || jsmn_dom_get_type(parser, tokens, num_tokens, object_i) != JSMN_OBJECT) {
+		/* fprintf(stderr, "1\n"); */
 		return -1;
 	}
 
@@ -1463,16 +1464,23 @@ int jsmn_dom_get_utf8_name(jsmn_parser *parser, const char *js, size_t len, jsmn
 	while (dom_i != -1) {
 		rc = jsmn_dom_get_utf8(parser, js, len, tokens, num_tokens, dom_i, val8, sizeof(val8));
 		if (rc < 0 || rc >= NAME_CMP_SIZE) {
+			/* fprintf(stderr, "2\n"); */
 			return -1;
 		}
 
+		/*
+		fprintf(stderr, "candidate[%i]: %s\n", rc, val8);
+		fprintf(stderr, "target   [%zu]: %s\n", utf8_len, utf8_name);
+		*/
 		if (rc == utf8_len && our_memcmp((void *) val8, (void *) utf8_name, utf8_len) == 0) {
+			/* fprintf(stderr, "3\n"); */
 			return dom_i;
 		}
 
 		dom_i = jsmn_dom_get_sibling(parser, tokens, num_tokens, dom_i);
 	}
 
+	/* fprintf(stderr, "4\n"); */
 	return -1;
 }
 int jsmn_dom_get_by_utf8_name(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int object_i, char *utf8_name, size_t utf8_len) {
@@ -1483,7 +1491,7 @@ int jsmn_dom_get_by_utf8_name(jsmn_parser *parser, const char *js, size_t len, j
 		return dom_i;
 	}
 
-	return jsmn_dom_get_child(parser, tokens, num_tokens, object_i);
+	return jsmn_dom_get_child(parser, tokens, num_tokens, dom_i);
 }
 int jsmn_dom_insert_name(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int object_i, int name_i, int value_i) {
 	int rc;
