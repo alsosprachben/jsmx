@@ -458,6 +458,16 @@ void jsmn_init(jsmn_parser *parser) {
 }
 
 #ifdef JSMN_DOM
+int jsmn_dom_rollback(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
+	if (i == -1 || i >= (int) num_tokens) {
+		return JSMN_ERROR_INVAL;
+	}
+
+	parser->pos = tokens[i].start;
+	parser->toknext = i;
+
+	return i;
+}
 int jsmn_dom_get_value(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i, char *buf, size_t buflen) {
 	size_t size;
 	size_t min_size;

@@ -97,6 +97,7 @@ int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens);
 
 #ifdef JSMN_DOM
+int        jsmn_dom_rollback(        jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_is_null(         jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_is_bool(         jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_is_true(         jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
