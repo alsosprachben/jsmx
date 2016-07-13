@@ -2,6 +2,7 @@
 #ifdef JSMN_DOM
 #include "utf8.h"
 #ifdef USE_LIBC
+#include <stdio.h>
 #include <string.h> /* for memcpy() and snprintf */
 #define our_memcpy memcpy
 #define our_memcmp memcmp
@@ -88,7 +89,9 @@ static void jsmn_fill_token(jsmntok_t *token, jsmntype_t type,
  */
 static int jsmn_parse_primitive(jsmn_parser *parser, const char *js,
 		size_t len, jsmntok_t *tokens, size_t num_tokens) {
+#ifndef JSMN_DOM
 	jsmntok_t *token;
+#endif
 	int start;
 #ifdef JSMN_DOM
 	int dom_i;
@@ -238,8 +241,10 @@ static int jsmn_parse_string(jsmn_parser *parser, const char *js,
 int jsmn_parse(jsmn_parser *parser, const char *js, size_t len,
 		jsmntok_t *tokens, unsigned int num_tokens) {
 	int r;
+#ifndef JSMN_DOM
 	int i;
 	jsmntok_t *token;
+#endif
 	int count = parser->toknext;
 #ifdef JSMN_DOM
 	int dom_i;
@@ -590,8 +595,6 @@ int jsmn_dom_add(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens
 	return i;
 }
 int jsmn_dom_delete(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	int parent_i;
-
 	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
 	}
@@ -718,8 +721,6 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 	return i;
 }
 int jsmn_dom_is_null(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	int rc;
-
 	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
@@ -731,8 +732,6 @@ int jsmn_dom_is_null(jsmn_parser *parser, const char *js, size_t len, jsmntok_t 
 	}
 }
 int jsmn_dom_is_bool(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	int rc;
-
 	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
@@ -744,8 +743,6 @@ int jsmn_dom_is_bool(jsmn_parser *parser, const char *js, size_t len, jsmntok_t 
 	}
 }
 int jsmn_dom_is_true(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	int rc;
-
 	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}
@@ -757,8 +754,6 @@ int jsmn_dom_is_true(jsmn_parser *parser, const char *js, size_t len, jsmntok_t 
 	}
 }
 int jsmn_dom_is_false(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int i) {
-	int rc;
-
 	if (i == -1 || i >= (int) num_tokens) {
 		return 0;
 	}

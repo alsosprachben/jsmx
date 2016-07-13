@@ -192,7 +192,7 @@
  * Sets bits from the chraacter into the continuation byte as index `i`, and set the continuation high-bits.
  */
 #define UTF8_CN(c, bc, i, l) { \
-	(bc)[i] = 0x80 | ((c) >> UTF8_NSHIFT(i, l)) & 0x3f; \
+	(bc)[i] = 0x80 | (((c) >> UTF8_NSHIFT(i, l)) & 0x3f); \
 }
 
 /*
