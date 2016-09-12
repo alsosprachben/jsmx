@@ -122,6 +122,7 @@ int        jsmn_dom_get_open(        jsmn_parser *parser,                       
 int        jsmn_dom_add(             jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
 int        jsmn_dom_delete(          jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_move(            jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int parent_i, int i);
+int        jsmn_dom_replace(         jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int prior_i,  int i);
 
 int        jsmn_dom_set(             jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i, jsmntype_t type, int start, int end);
 int        jsmn_dom_close(           jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i,                             int end);

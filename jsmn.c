@@ -637,6 +637,29 @@ int jsmn_dom_move(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_token
 
 	return 0;
 }
+int jsmn_dom_replace(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int prior_i, int i) {
+	int rc;
+	int parent_i;
+
+	rc = jsmn_dom_get_parent(parser, tokens, num_tokens, prior_i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	parent_i = rc;
+
+	rc = jsmn_dom_delete(parser, tokens, num_tokens, prior_i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	rc = jsmn_dom_add(parser, tokens, num_tokens, parent_i, i);
+	if (rc < 0) {
+		return rc;
+	}
+
+	return 0;
+}
 int jsmn_dom_set(jsmn_parser *parser, jsmntok_t *tokens, unsigned int num_tokens, int i, jsmntype_t type, int start, int end) {
 	if (i == -1 || i >= (int) num_tokens) {
 		return JSMN_ERROR_INVAL;
