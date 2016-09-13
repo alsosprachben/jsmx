@@ -162,6 +162,8 @@ typedef struct {
 	enum tokphase cursor_phase;
 } jsmn_emitter;
 
+void jsmn_emit_seek(   jsmn_emitter *emitter, int object_i);
+
 void jsmn_init_emitter(jsmn_emitter *emitter);
 
 /*

@@ -1602,9 +1602,13 @@ int jsmn_dom_delete_value(jsmn_parser *parser, jsmntok_t *tokens, unsigned int n
 
 #ifdef JSMN_EMITTER
 
-void jsmn_init_emitter(jsmn_emitter *emitter) {
-	emitter->cursor_i = 0;
+void jsmn_emit_seek(jsmn_emitter *emitter, int object_i) {
+	emitter->cursor_i = object_i;
 	emitter->cursor_phase = PHASE_UNOPENED;
+}
+
+void jsmn_init_emitter(jsmn_emitter *emitter) {
+	jsmn_emit_seek(emitter, 0);
 }
 
 int jsmn_emit_token(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, jsmn_emitter *emitter, char *outjs, size_t outlen) {
