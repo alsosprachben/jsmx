@@ -126,6 +126,7 @@ int        jsmn_dom_move(            jsmn_parser *parser,                       
 int        jsmn_dom_replace(         jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int prior_i,  int i);
 
 int        jsmn_dom_set(             jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i, jsmntype_t type, int start, int end);
+int        jsmn_dom_set_from(        jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens, int to_i,     int i);
 int        jsmn_dom_close(           jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i,                             int end);
 
 int        jsmn_dom_new(             jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
@@ -133,6 +134,7 @@ int        jsmn_dom_new_as(          jsmn_parser *parser,                       
 int        jsmn_dom_new_object(      jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
 int        jsmn_dom_new_array(       jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens);
 int        jsmn_dom_new_primitive(   jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
+int        jsmn_dom_dup_primitive(   jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_new_integer(     jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, int         value);
 int        jsmn_dom_new_double(      jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, double      value);
 int        jsmn_dom_new_string(      jsmn_parser *parser,       char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens, const char *value);
