@@ -996,11 +996,14 @@ int jsmn_dom_new_double(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 #ifdef USE_LIBC
 	int rc;
 
+	rc = snprintf(valbuf, sizeof (valbuf), "%.16g ", value);
+	/*
 	if (value >= 1.0 || value <= -1.0) {
 		rc = snprintf(valbuf, sizeof (valbuf), "%.16f ", value);
 	} else {
 		rc = snprintf(valbuf, sizeof (valbuf), "%.16g ", value);
 	}
+	*/
 	if (rc == -1) {
 		return JSMN_ERROR_INVAL;
 	}
