@@ -259,7 +259,7 @@
 			switch (*(cc)) { \
 				case '"': \
 				case '\\': \
-				case '/': \
+				/* case '/': */ \
 					__jsmn_char = *(cc); \
 					break; \
 				default: \
