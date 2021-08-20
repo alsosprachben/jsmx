@@ -9,4 +9,4 @@ JSMX
  4. An emitter API is provided.
  5. UTF-8 with compliant JSON quoting and UTF-8 or UTF-32 wide character interfaces. This is natively provided, either depending on no library, or depending on libc.
 
-See [README-jsmn.md] for `jsmn`.
+See [the jsmn README](README-jsmn.md) for `jsmn`.
