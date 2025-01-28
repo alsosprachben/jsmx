@@ -7,7 +7,7 @@ libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
 %.o: %.c jsmn.h
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) -DJSMN_EMITTER $< -o $@s
 
 test: test_default test_strict test_links test_strict_links test_emitter
 test_default: test/tests.c
@@ -33,6 +33,10 @@ simple_example: example/simple.o libjsmn.a
 
 jsondump: example/jsondump.o libjsmn.a
 	$(CC) $(LDFLAGS) $^ -o $@
+
+test_jsstr: test_jsstr.c jsstr.c
+	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
 
 clean:
 	rm -f jsmn.o jsmn_test.o example/simple.o

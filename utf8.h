@@ -73,7 +73,7 @@
 
 /*
  * UTF-8 Character Validator
- * Flip the sign of `l` if the chracter is invalid.
+ * Flip the sign of `l` if the character is invalid.
  */
 #define UTF8_VALID(c, l) { \
 	if ((l) == 1 && (c) < 0x80) { /* ASCII */ \
@@ -189,7 +189,7 @@
 
 /*
  * UTF-8 Encode Character Continuation Byte (2+)
- * Sets bits from the chraacter into the continuation byte as index `i`, and set the continuation high-bits.
+ * Sets bits from the character into the continuation byte as index `i`, and set the continuation high-bits.
  */
 #define UTF8_CN(c, bc, i, l) { \
 	(bc)[i] = 0x80 | (((c) >> UTF8_NSHIFT(i, l)) & 0x3f); \
@@ -437,7 +437,7 @@
 							*((cc)++) = 0xFFFD; /* the replacement character */ \
 							(qc) += 6; \
 						} else { \
-							/* Within the Basic Multilingial Plane */ \
+							/* Within the Basic Multilingual Plane */ \
 							*((cc)++) = hex4dig1; \
 							(qc) += 6; \
 						} \
