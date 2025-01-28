@@ -30,6 +30,23 @@ void test_jsstr_lifecycle() {
 
     jsstr_slice(&s_slice, &s, 7, 10);
     printf("jsstr_slice: %zu\n", jsstr_get_charlen(&s_slice));
+
+    jsstr_t s2 = jsstr_from_str(L"Hello, World!");
+    printf("jsstr_from_str: %zu\n", jsstr_get_charlen(&s2));
+
+    /* test cmp */
+    jsstr_t s3 = jsstr_from_str(L"Hello, World!");
+    printf("jsstr_cmp: %d\n", jsstr_cmp(&s2, &s3));
+
+    /* test indexof */
+    wchar_t search_c = L'o';
+    size_t start_i = 6;
+    printf("jsstr_indexof: %zd\n", jsstr_indexof(&s2, search_c, start_i));
+
+    /* test indextoken */
+    wchar_t *search_c2 = L"orld";
+    size_t search_c_len = wcslen(search_c2);
+    printf("jsstr_indextoken: %zd\n", jsstr_indextoken(&s2, search_c2, search_c_len, start_i));    
 }
 
 void test_jsstr16_lifecycle() {
@@ -65,6 +82,24 @@ void test_jsstr16_lifecycle() {
 
     jsstr16_slice(&s_slice, &s, 7, 10);
     printf("jsstr16_slice: %zu\n", jsstr16_get_charlen(&s_slice));
+
+    const uint16_t utf16_str[] = {0x0048, 0x0065, 0x006C, 0x006C, 0x006F, 0x002C, 0x0020, 0x0057, 0x006F, 0x0072, 0x006C, 0x0064, 0x0021};
+    jsstr16_t s2 = jsstr16_from_str(utf16_str);
+    printf("jsstr16_from_str: %zu\n", jsstr16_get_charlen(&s2));
+
+    /* test cmp */
+    jsstr16_t s3 = jsstr16_from_str(utf16_str);
+    printf("jsstr16_cmp: %d\n", jsstr16_cmp(&s2, &s3));
+
+    /* test indexof */
+    wchar_t search_c = L'o';
+    size_t start_i = 6;
+    printf("jsstr16_indexof: %zd\n", jsstr16_indexof(&s2, search_c, start_i));
+
+    /* test indextoken */
+    wchar_t *search_c2 = L"orld";
+    size_t search_c_len = wcslen(search_c2);
+    printf("jsstr16_indextoken: %zd\n", jsstr16_indextoken(&s2, search_c2, search_c_len, start_i));
 }
 
 void test_jsstr8_lifecycle() {
@@ -92,6 +127,23 @@ void test_jsstr8_lifecycle() {
 
     jsstr8_slice(&s_slice, &s, 7, 10);
     printf("jsstr8_slice: %zu\n", jsstr8_get_charlen(&s_slice));
+
+    jsstr8_t s2 = jsstr8_from_str("Hello, World!");
+    printf("jsstr8_from_str: %zu\n", jsstr8_get_charlen(&s2));
+
+    /* test cmp */
+    jsstr8_t s3 = jsstr8_from_str("Hello, World!");
+    printf("jsstr8_cmp: %d\n", jsstr8_cmp(&s2, &s3));
+
+    /* test indexof */
+    char search_c = 'o';
+    size_t start_i = 6;
+    printf("jsstr8_indexof: %zd\n", jsstr8_indexof(&s2, search_c, start_i));
+    
+    /* test indextoken */
+    wchar_t *search_c2 = L"orld";
+    size_t search_c_len = wcslen(search_c2);
+    printf("jsstr8_indextoken: %zd\n", jsstr8_indextoken(&s2, search_c2, search_c_len, start_i));
 }
 
 

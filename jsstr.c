@@ -19,11 +19,13 @@ void jsstr_init_from_buf(jsstr_t *s, const char *buf, size_t len) {
     s->codepoints = (wchar_t *) buf;
 }
 
-void jsstr_slice(jsstr_t *s, jsstr_t *src, size_t start_i, size_t stop_i) {
+void jsstr_slice(jsstr_t *s, jsstr_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr_get_at() to slice the buffer */
     s->codepoints = jsstr_get_at(src, start_i);
     s->len = src->codepoints + src->len - s->codepoints;
-    jsstr_truncate(s, stop_i - start_i);
+    if (stop_i >= 0) {
+        jsstr_truncate(s, stop_i - start_i);
+    }
     s->cap = s->len;
 }
 
@@ -77,6 +79,14 @@ size_t jsstr_set_from_utf8(jsstr_t *s, uint8_t *str, size_t len) {
     UTF8_DECODE(bc, bs, cc, cs);
     s->len = cc - s->codepoints;
     return s->len;
+}
+
+jsstr_t jsstr_from_str(const wchar_t *str) {
+    jsstr_t s;
+    size_t len = wcslen(str);
+    jsstr_init_from_buf(&s, (char *) str, len);
+    s.len = len;
+    return s;
 }
 
 size_t jsstr_get_charlen(jsstr_t *s) {
@@ -138,7 +148,7 @@ void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i)
     /* initialize from a slice of a source string, using jsstr16_get_at() to slice the buffer */
     s->codeunits = jsstr16_get_at(src, start_i);
     s->len = src->codeunits + src->len - s->codeunits;
-    if (start_i >= 0) {
+    if (stop_i >= 0) {
         jsstr16_truncate(s, stop_i - start_i);
     }
     s->cap = s->len;
@@ -156,53 +166,55 @@ int jsstr16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
     return 0;
 }
 
-ssize_t jsstr16_indexof(jsstr16_t *s, wchar_t c, size_t start_i) {
+ssize_t jsstr16_indexof(jsstr16_t *s, wchar_t search_c, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* account for surrogate pairs */
-    wchar_t c2;
-    ssize_t c_i = 0;
-    for (size_t i = 0; i < s->len; i++, c_i++) {
+    wchar_t c;
+    ssize_t c_i;
+    size_t i;
+    for (i = 0, c_i = 0; i < s->len; i++, c_i++) {
         if (s->codeunits[i] >= 0xD800 && s->codeunits[i] <= 0xDBFF) {
             /* detected high surrogate */
             if (i + 1 < s->len && s->codeunits[i + 1] >= 0xDC00 && s->codeunits[i + 1] <= 0xDFFF) {
                 /* detected low surrogate */
-                c2 = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
-                i += 1;
+                c = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
+                i++;
             } else {
-                c2 = 0xFFFD; /* the replacement character */
+                c = 0xFFFD; /* the replacement character */
             }
         } else {
-            c2 = s->codeunits[i];            
+            c = s->codeunits[i];            
         }
-        if (c_i >= start_i && c == c2) {
+        if (c_i >= start_i && search_c == c) {
             return c_i;
         }
     }
     return -c_i;
 }
 
-ssize_t jsstr16_indextoken(jsstr16_t *s, wchar_t *c, size_t c_len, size_t start_i) {
+ssize_t jsstr16_indextoken(jsstr16_t *s, wchar_t *search_c, size_t c_len, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* account for surrogate pairs */
-    wchar_t c2;
-    ssize_t c_i = 0;
-    for (size_t i = 0; i < s->len; i++, c_i++) {
+    wchar_t c;
+    ssize_t c_i;
+    size_t i;
+    for (i = 0, c_i = 0; i < s->len; i++, c_i++) {
         if (s->codeunits[i] >= 0xD800 && s->codeunits[i] <= 0xDBFF) {
             /* detected high surrogate */
             if (i + 1 < s->len && s->codeunits[i + 1] >= 0xDC00 && s->codeunits[i + 1] <= 0xDFFF) {
                 /* detected low surrogate */
-                c2 = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
+                c = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
                 i += 1;
             } else {
-                c2 = 0xFFFD; /* the replacement character */
+                c = 0xFFFD; /* the replacement character */
             }
         } else {
-            c2 = s->codeunits[i];            
+            c = s->codeunits[i];            
         }
         if (c_i >= start_i) {
             int j;
             for (j = 0; j < c_len; j++) {
-                if (c[j] != c2) {
+                if (search_c[j] == c) {
                     return c_i;
                 }
             }
@@ -241,6 +253,22 @@ size_t jsstr16_set_from_utf8(jsstr16_t *s, uint8_t *str, size_t len) {
     }
     s->len = j;
     return j;
+}
+
+size_t str16len(const uint16_t *str) {
+    size_t len = 0;
+    while (str[len] != 0) {
+        len++;
+    }
+    return len;
+}
+
+jsstr16_t jsstr16_from_str(const uint16_t *str) {
+    jsstr16_t s;
+    size_t len = str16len(str);
+    jsstr16_init_from_buf(&s, (char *) str, len);
+    s.len = len;
+    return s;
 }
 
 size_t jsstr16_get_charlen(jsstr16_t *s) {
@@ -316,11 +344,13 @@ void jsstr8_init_from_buf(jsstr8_t *s, const char *buf, size_t len) {
     s->bytes = (uint8_t *) buf;
 }
 
-void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, size_t stop_i) {
+void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr8_get_at() to slice the buffer */
     s->bytes = jsstr8_get_at(src, start_i);
     s->len = src->bytes + src->len - s->bytes;
-    jsstr8_truncate(s, stop_i - start_i);
+    if (stop_i >= 0) {
+        jsstr8_truncate(s, stop_i - start_i);
+    }
     s->cap = s->len;
 }
 
@@ -344,19 +374,47 @@ ssize_t jsstr8_indexof(jsstr8_t *s, wchar_t search_c, size_t start_i) {
     wchar_t c; /* character */
     int l; /* byte length */
     ssize_t i; /* index */
-    for (i = 0; i < s->len; i++) {
+    for (i = 0; i < s->len; i += l) {
         cc = s->bytes + i;
         cs = s->bytes + s->len;
         UTF8_CHAR(cc, cs, c, l);
-        if (l > 0) {
-            i += l;
-        } else {
+        if (l < 0) {
+            l = 1;
             c = 0xFFFD; /* the replacement character */
         }
 
         if (i >= start_i && c == search_c) {
             return i;
         }
+    }
+    return -i;
+}
+ssize_t jsstr8_indextoken(jsstr8_t *s, wchar_t *search_c, size_t c_len, size_t start_i) {
+    /* search for a code point in the string, and return the code point index (as works with _at() method) */
+    /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
+    uint8_t *cc; /* character cursor */
+    uint8_t *cs; /* character stop */
+    wchar_t c; /* character */
+    int l; /* byte length */
+    ssize_t i; /* index */
+    for (i = 0; i < s->len; i += l) {
+        cc = s->bytes + i;
+        cs = s->bytes + s->len;
+        UTF8_CHAR(cc, cs, c, l);
+        if (l < 0) {
+            l = 1;
+            c = 0xFFFD; /* the replacement character */
+        }
+
+        if (i >= start_i) {
+            int j;
+            for (j = 0; j < c_len; j++) {
+                if (c == search_c[j]) {
+                    return i;
+                }
+            }
+        }
+
     }
     return -i;
 }
@@ -373,6 +431,13 @@ size_t jsstr8_set_from_utf8(jsstr8_t *s, uint8_t *str, size_t len) {
     return copy_len;
 }
 
+jsstr8_t jsstr8_from_str(const char *str) {
+    jsstr8_t s;
+    size_t len = strlen(str);
+    jsstr8_init_from_buf(&s, str, len);
+    s.len = len;
+    return s;
+}
 
 size_t jsstr8_get_charlen(jsstr8_t *s) {
     /* determine how many bytes are in the string to calculate the character length */

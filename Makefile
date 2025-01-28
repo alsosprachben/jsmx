@@ -35,7 +35,11 @@ jsondump: example/jsondump.o libjsmn.a
 	$(CC) $(LDFLAGS) $^ -o $@
 
 test_jsstr: test_jsstr.c jsstr.c
-	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
+test_mnurl: test_mnurl.c mnurl.c jsstr.c
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
 clean:

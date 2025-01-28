@@ -11,34 +11,43 @@ void urlsearchparams_init(urlsearchparams_t *searchParams, jsstr8_t search) {
     /* use jsstr8_slice() to assign the fields */
     /* use urlsearchparams_append() to append the fields */
 
-    size_t cursor_i = 0;
-    size_t amp_i = 0;
-    size_t eq_i = 0;
+    size_t param_i = 0;
+    ssize_t amp_i = 0;
+    ssize_t eq_i = 0;
     jsstr8_t param;
     jsstr8_t key;
     jsstr8_t value;
-    static wchar_t param_term[] = {'&', ';', 0};
-    for (;;) {
+    static wchar_t param_term[] = L"&;";
+    size_t search_len = jsstr8_get_charlen(&search);
+    
+    for (
+        param_i = 0, amp_i = 0, eq_i = 0; /* init positions */
+        param_i < search_len && amp_i >= 0; /* until we don't find an arg terminator */
+        param_i = amp_i + 1 /* skip to the next arg */
+    ) {
         /* init param */
-        amp_i = jsstr8_indextoken(&search, param_term, 2, cursor_i);
+        amp_i = jsstr8_indextoken(&search, param_term, 2, param_i);
         if (amp_i < 0) {
-            amp_i = -amp_i;
+            amp_i = -1; /* to end */
         }
-        jsstr8_slice(&param, &search, cursor_i, amp_i);
+        jsstr8_slice(&param, &search, param_i, amp_i);
 
         /* init key */
-        eq_i = jsstr8_indexof(&param, '=', cursor_i);
+        eq_i = jsstr8_indexof(&param, '=', 0);
         if (eq_i < 0) {
-            eq_i = -eq_i;
+            eq_i = -1; /* to end */
         }
-        jsstr8_slice(&key, &search, cursor_i, eq_i);
+        jsstr8_slice(&key, &param, 0, eq_i);
 
         /* init value */
-        jsstr8_slice(&value, &search, eq_i + 1, amp_i);
+        if (eq_i >= 0) {
+            jsstr8_slice(&value, &param, eq_i + 1, -1);
+        } else {
+            value = jsstr8_empty;
+        }
 
         /* append param */
         urlsearchparams_append(searchParams, key, value);
-        cursor_i = amp_i + 1;
     }
 }
 
@@ -83,8 +92,9 @@ jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t key) {
     return (jsstr8_t) {0};
 }
 
-void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, urlparams_t *params) {
-    return searchParams->params;
+void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, urlparams_t *params, size_t *len) {
+    params = searchParams->params;
+    len = &searchParams->len;
 }
 
 int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t key) {
@@ -148,19 +158,19 @@ void url_init(url_t *url, jsstr8_t href) {
     /* verify the two authority slashes */
     authority_b1 = jsstr8_get_at(&href, protocol_i + 1);
     authority_b2 = jsstr8_get_at(&href, protocol_i + 2);
-    if (authority_b1 != '/' && authority_b2 != '/') {
+    if (authority_b1[0] != '/' && authority_b2[0] != '/') {
         return;
     }
     authority_i = protocol_i + 3;
 
     at_i = jsstr8_indexof(&href, '@', authority_i);
     if (at_i >= 0) {
-        colon_i = jsstr8_indexof(&href, ':', at_i);
+        colon_i = jsstr8_indexof(&href, ':', authority_i);
         if (colon_i >= 0) {
-            jsstr8_slice(&url->username, &href, protocol_i + 3, colon_i);
+            jsstr8_slice(&url->username, &href, authority_i, colon_i);
             jsstr8_slice(&url->password, &href, colon_i + 1, at_i);
         } else {
-            jsstr8_slice(&url->username, &href, protocol_i + 3, at_i);
+            jsstr8_slice(&url->username, &href, authority_i, at_i);
         }
         host_i = at_i + 1;
     } else {
@@ -168,38 +178,41 @@ void url_init(url_t *url, jsstr8_t href) {
     }
 
     port_i = jsstr8_indexof(&href, ':', host_i);
-    if (port_i >= 0) {
-        jsstr8_slice(&url->host, &href, host_i, port_i);
-    } else {
-        port_i = host_i;
-    }
-
     path_i = jsstr8_indexof(&href, '/', host_i);
+    if (port_i > path_i) {
+        port_i = -1;
+    }
     if (path_i >= 0) {
-        jsstr8_slice(&url->host, &href, host_i, path_i);
+        if (port_i >= 0) {
+            jsstr8_slice(&url->host, &href, host_i, port_i);
+            jsstr8_slice(&url->port, &href, port_i + 1, path_i);
+        } else {
+            jsstr8_slice(&url->host, &href, host_i, path_i);
+        }
     } else {
         path_i = -path_i; /* end of search */
         jsstr8_slice(&url->host, &href, host_i, path_i);
         return;
     }
-    search_i = jsstr8_indexof(&href, '?', path_i);
+    search_i = jsstr8_indexof(&href, '?', path_i + 1);
     if (search_i != -1) {
-        jsstr8_slice(&url->pathname, &href, search_i, path_i);
-        hash_i = jsstr8_indexof(&href, '#', search_i);
+        jsstr8_slice(&url->pathname, &href, path_i, search_i);
+        hash_i = jsstr8_indexof(&href, '#', search_i + 1);
         if (hash_i >= 0) {
-            jsstr8_slice(&url->search, &href, search_i, hash_i);
-            jsstr8_slice(&url->hash, &href, hash_i, -1);
+            jsstr8_slice(&url->search, &href, search_i + 1, hash_i);
+            jsstr8_slice(&url->hash, &href, hash_i + 1, -1);
         } else {
-            jsstr8_slice(&url->search, &href, search_i, -1);
+            jsstr8_slice(&url->search, &href, search_i + 1, -1);
         }
     } else {
-        hash_i = jsstr8_indexof(&href, '#', path_i);
+        hash_i = jsstr8_indexof(&href, '#', path_i + 1);
         if (hash_i >= 0) {
             jsstr8_slice(&url->pathname, &href, path_i, hash_i);
-            jsstr8_slice(&url->hash, &href, hash_i, -1);
+            jsstr8_slice(&url->hash, &href, hash_i + 1, -1);
         } else {
             jsstr8_slice(&url->pathname, &href, path_i, -1);
         }
     }
     urlsearchparams_init(&url->searchParams, url->search);
 }
+

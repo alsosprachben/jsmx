@@ -23,10 +23,10 @@ void urlsearchparams_append(urlsearchparams_t *searchParams, jsstr8_t key, jsstr
 void urlsearchparams_delete(urlsearchparams_t *searchParams, jsstr8_t key);
 void urlsearchparams_deletevalue(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t value);
 jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t key);
-void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, urlparams_t *params);
+void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, urlparams_t *params, size_t *len);
 int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t key);
 void urlsearchparams_set(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t value);
-urlsearchparams_sort(urlsearchparams_t *searchParams);
+void urlsearchparams_sort(urlsearchparams_t *searchParams);
 
 /*
  * as the whatwg URL spec, but in C idioms
