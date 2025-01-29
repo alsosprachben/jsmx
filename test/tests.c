@@ -367,7 +367,7 @@ int test_emitter(void) {
 	jsmn_parser p;
 	jsmn_emitter e;
 	char *injs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}]}";
-	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": -65535, \"a UTF-8 string\": \"\\\"\\\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
+	char *passjs = "{\"five\": 5, \"four\": 4, \"three\": 3, \"two\": 2, \"one\": [1, \"uno\", {\"1\": 1}], \"six\": 6, \"stuff\": [1, 2, {\"a\": 3}], \"a string\": \"this is a string\", \"a primitive\": true, \"an integer\": -65535, \"a UTF-8 string\": \"\\\"\\\\/\\n\\r\\t\\b\\f\xF0\x9D\x84\x9E\", \"a UTF-32 string\": \"G Clef: \xF0\x9D\x84\x9E\"}";
 	char js[1024];
 	char outjs[1024];
 	jsmntok_t tokens[1024];

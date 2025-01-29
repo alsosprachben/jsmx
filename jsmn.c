@@ -6,9 +6,11 @@
 #include <string.h> /* for memcpy() and snprintf */
 #define our_memcpy memcpy
 #define our_memcmp memcmp
+#define our_strlen strlen
 #else
 #define our_memcpy naive_memcpy
 #define our_memcmp naive_memcmp
+#define our_strlen naive_strlen
 #endif
 #endif
 
@@ -40,6 +42,14 @@ int naive_memcmp(const void *b1, const void *b2, size_t len) {
 	}
 
 	return 0;
+}
+size_t naive_strlen(const char *s) {
+	size_t len;
+
+	for (len = 0; s[len] != '\0'; len++) {
+	}
+
+	return len;
 }
 #endif
 #endif
@@ -729,7 +739,7 @@ int jsmn_dom_new_primitive(jsmn_parser *parser, char *js, size_t len, jsmntok_t 
 	int rc;
 	size_t size;
 
-	size = strlen(value);
+	size = our_strlen(value);
 
 	if (len <  parser->pos + size + 1 + 1) {
 		return JSMN_ERROR_NOMEM;
@@ -1080,7 +1090,7 @@ int jsmn_dom_new_string(jsmn_parser *parser, char *js, size_t len, jsmntok_t *to
 	int rc;
 	size_t size;
 
-	size = strlen(value);
+	size = our_strlen(value);
 
 	if (len <  parser->pos + 1 + size + 1 + 1) {
 		return JSMN_ERROR_NOMEM;
@@ -1476,7 +1486,7 @@ int jsmn_dom_eval(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tokens, 
 	int rc;
 	size_t size;
 
-	size = strlen(value);
+	size = our_strlen(value);
 
 	if (parser->pos + size + 1 >= len) {
 		return JSMN_ERROR_NOMEM;

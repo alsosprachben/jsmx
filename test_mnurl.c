@@ -70,6 +70,7 @@ void test_url_init() {
     declare_jsstr8(password, "password");
     declare_jsstr8(host, "host");
     declare_jsstr8(port, "8080");
+    declare_jsstr8(origin, "http://username:password@host:8080");
     declare_jsstr8(pathname, "/path");
     declare_jsstr8(search, "key=value");
     declare_jsstr8(hash, "hash");
@@ -79,6 +80,7 @@ void test_url_init() {
     assert(jsstr8_cmp(&url.password, &password) == 0);
     assert(jsstr8_cmp(&url.host, &host) == 0);
     assert(jsstr8_cmp(&url.port, &port) == 0);
+    assert(jsstr8_cmp(&url.origin, &origin) == 0);
     assert(jsstr8_cmp(&url.pathname, &pathname) == 0);
     assert(jsstr8_cmp(&url.search, &search) == 0);
     assert(jsstr8_cmp(&url.hash, &hash) == 0);

@@ -33,6 +33,7 @@ void urlsearchparams_sort(urlsearchparams_t *searchParams);
  */
 typedef struct url_s {
     jsstr8_t href;
+    jsstr8_t origin;
     jsstr8_t protocol;
     jsstr8_t username;
     jsstr8_t password;

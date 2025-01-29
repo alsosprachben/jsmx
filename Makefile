@@ -1,13 +1,17 @@
 # You can put your build options here
 -include config.mk
 
-all: libjsmn.a 
+all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8
 
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
-%.o: %.c jsmn.h
-	$(CC) -c $(CFLAGS) -DJSMN_EMITTER $< -o $@s
+jsmn.o: jsmn.c jsmn.h
+
+libjsmndom.a: jsmndom.o
+
+jsmndom.o: jsmn.c jsmn.h
+	$(CC) -DJSMN_EMITTER=1 $(CFLAGS) -c jsmn.c -o $@
 
 test: test_default test_strict test_links test_strict_links test_emitter
 test_default: test/tests.c
@@ -47,8 +51,8 @@ test_utf8: utf8.c
 	./$@
 
 clean:
-	rm -f jsmn.o jsmn_test.o example/simple.o
-	rm -f libjsmn.a
+	rm -f jsmn.o jsmndom.o jsmn_test.o example/simple.o
+	rm -f libjsmn.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
 

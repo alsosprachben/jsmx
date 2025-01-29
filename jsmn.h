@@ -1,8 +1,6 @@
 #ifndef __JSMN_H_
 #define __JSMN_H_
 
-#define JSMN_DOM 1
-
 #include <stddef.h>
 #ifdef JSMN_EMITTER
 #define JSMN_DOM

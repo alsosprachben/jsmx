@@ -148,6 +148,10 @@ void url_init(url_t *url, jsstr8_t href) {
     /* use jsstr8_slice() to assign the fields */
     /* use urlsearchparams_init() to initialize searchParams */
 
+    /*
+     * Origin
+     */
+
     protocol_i = jsstr8_indexof(&href, ':', 0);
     if (protocol_i < 0) {
         return;
@@ -194,6 +198,11 @@ void url_init(url_t *url, jsstr8_t href) {
         jsstr8_slice(&url->host, &href, host_i, path_i);
         return;
     }
+
+    jsstr8_slice(&url->origin, &href, 0, path_i);
+
+    /* Path */
+
     search_i = jsstr8_indexof(&href, '?', path_i + 1);
     if (search_i != -1) {
         jsstr8_slice(&url->pathname, &href, path_i, search_i);
