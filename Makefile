@@ -42,6 +42,10 @@ test_mnurl: test_mnurl.c mnurl.c jsstr.c
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
+test_utf8: utf8.c
+	$(CC) -g -DUTF8_TEST $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
 clean:
 	rm -f jsmn.o jsmn_test.o example/simple.o
 	rm -f libjsmn.a
