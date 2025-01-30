@@ -1164,11 +1164,11 @@ size_t jsmn_dom_get_utf8len(jsmn_parser *parser, const char *js, size_t len, jsm
 	utf8len = 0;
 
 	while (pos_cursor < pos_stop) {
-		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+		UTF8_DECODE(&pos_cursor, pos_stop, &q32_cursor_out, q32_stop);
 
-		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor_out, val32_stop);
+		JSMN_UNQUOTE_UNICODE((const wchar_t **) &q32_cursor_in, q32_cursor_out, &val32_cursor_out, val32_stop);
 
-		UTF8_ENCODE(val32_cursor_in, val32_cursor_out, val8_cursor, val8_stop);
+		UTF8_ENCODE((const wchar_t **) &val32_cursor_in, val32_cursor_out, &val8_cursor, val8_stop);
 
 		utf8len += val8_cursor - val8_start;
 
@@ -1224,9 +1224,9 @@ size_t jsmn_dom_get_utf32len(jsmn_parser *parser, const char *js, size_t len, js
 	utf32len = 0;
 
 	while (pos_cursor < pos_stop) {
-		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+		UTF8_DECODE(&pos_cursor, pos_stop, &q32_cursor_out, q32_stop);
 
-		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor, val32_stop);
+		JSMN_UNQUOTE_UNICODE((const wchar_t **) &q32_cursor_in, q32_cursor_out, &val32_cursor, val32_stop);
 
 		utf32len += val32_cursor - val32_start;
 
@@ -1286,11 +1286,11 @@ int jsmn_dom_get_utf8(jsmn_parser *parser, const char *js, size_t len, jsmntok_t
 	val8_stop   = val8_start + val8_len;
 
 	while (pos_cursor < pos_stop && val8_cursor < val8_stop) {
-		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+		UTF8_DECODE(&pos_cursor, pos_stop, &q32_cursor_out, q32_stop);
 
-		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor_out, val32_stop);
+		JSMN_UNQUOTE_UNICODE((const wchar_t **) &q32_cursor_in, q32_cursor_out, &val32_cursor_out, val32_stop);
 
-		UTF8_ENCODE(val32_cursor_in, val32_cursor_out, val8_cursor, val8_stop);
+		UTF8_ENCODE((const wchar_t **) &val32_cursor_in, val32_cursor_out, &val8_cursor, val8_stop);
 
 		q32_cursor_out = q32_start;
 		q32_cursor_in  = q32_start;
@@ -1346,9 +1346,9 @@ int jsmn_dom_get_utf32(jsmn_parser *parser, const char *js, size_t len, jsmntok_
 	val32_stop   = val32_start + val32_len;
 
 	while (pos_cursor < pos_stop && val32_cursor < val32_stop) {
-		UTF8_DECODE(pos_cursor, pos_stop, q32_cursor_out, q32_stop);
+		UTF8_DECODE(&pos_cursor, pos_stop, &q32_cursor_out, q32_stop);
 
-		JSMN_UNQUOTE(q32_cursor_in, q32_cursor_out, val32_cursor, val32_stop);
+		JSMN_UNQUOTE_UNICODE((const wchar_t **) &q32_cursor_in, q32_cursor_out, &val32_cursor, val32_stop);
 
 		q32_cursor_out = q32_start;
 		q32_cursor_in  = q32_start;
@@ -1392,7 +1392,7 @@ int jsmn_dom_new_utf8(jsmn_parser *parser, char *js, size_t len, jsmntok_t *toke
 		return JSMN_ERROR_NOMEM;
 	}
 
-	JSMN_QUOTE_ASCII(val8_cursor, val8_stop, pos_cursor, pos_stop);
+	JSMN_QUOTE_ASCII(&val8_cursor, val8_stop, &pos_cursor, pos_stop);
 	if (val8_cursor < val8_stop) {
 		return JSMN_ERROR_NOMEM;
 	}
@@ -1454,9 +1454,9 @@ int jsmn_dom_new_utf32(jsmn_parser *parser, char *js, size_t len, jsmntok_t *tok
 	}
 
 	while (val32_cursor < val32_stop && pos_cursor < pos_stop) {
-		UTF8_ENCODE(val32_cursor, val32_stop, val8_cursor_out, val8_stop);
+		UTF8_ENCODE(&val32_cursor, val32_stop, &val8_cursor_out, val8_stop);
 
-		JSMN_QUOTE_ASCII(val8_cursor_in, val8_cursor_out, pos_cursor, pos_stop);
+		JSMN_QUOTE_ASCII((const char **) &val8_cursor_in, val8_cursor_out, &pos_cursor, pos_stop);
 		if (val8_cursor_in < val8_cursor_out) {
 			return JSMN_ERROR_NOMEM;
 		}

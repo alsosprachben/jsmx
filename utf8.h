@@ -19,7 +19,9 @@
  * UTF-8 Byte Shift
  * Given a sequence byte index `i`, and a sequence byte length `l', return the bit shift amount for the bits in this byte.
  */
-#define UTF8_NSHIFT(i, l) (6 * ((l) - (i) - 1))
+static inline int UTF8_NSHIFT(int i, int l) {
+	return 6 * (l - i - 1);
+}
 
 /*
  * UTF-8 Character Byte Length from Byte 1
@@ -29,12 +31,11 @@
  *   l >= 2: UTF-8 sequence length
  *   l >  6: malformed byte
  */
-#define UTF8_BLEN(bc, l) { \
-	for (l = 0; l < 6; l++) { \
-		if ((((bc)[0]) & (0x80 >> (l))) == 0) { \
-			break; \
-		} \
-	} \
+static inline void UTF8_BLEN(const char *bc, int *l) {
+	*l = 0;
+	while (*l < 6 && (bc[0] & (0x80 >> *l)) != 0) {
+		(*l)++;
+	}
 }
 
 /*
@@ -42,21 +43,21 @@
  * Set bits from the first byte into the character.
  * Increment `n` on success.
  */
-#define UTF8_B1(bc, c, l, n) { \
-	if ((l) == 0) {  /* ASCII */ \
-		(c) = (bc)[0]; \
-		(l) = 1; \
-		(n)++; \
-	} else if ((l) >= 2 && (l) <= 6) { /* sequence start */ \
-		(c) = ((bc)[0] & ((1 << (7 - (l))) - 1)) << UTF8_NSHIFT(0, l); \
-		(n)++; \
-	} else if ((l) == 1) { /* unexpected sequence continuation */ \
-		(l) = 1; \
-	} else if ((l) >  6) { /* malformed */ \
-		(l) = 1; \
-	} else { /* insane negative value */ \
-		(l) = 1; \
-	} \
+static inline void UTF8_B1(const char *bc, wchar_t *c, int *l, int *n) {
+	if (*l == 0) {  /* ASCII */
+		*c = bc[0];
+		*l = 1;
+		(*n)++;
+	} else if (*l >= 2 && *l <= 6) { /* sequence start */
+		*c = (bc[0] & ((1 << (7 - *l)) - 1)) << UTF8_NSHIFT(0, *l);
+		(*n)++;
+	} else if (*l == 1) { /* unexpected sequence continuation */
+		*l = 1;
+	} else if (*l > 6) { /* malformed */
+		*l = 1;
+	} else { /* insane negative value */
+		*l = 1;
+	}
 }
 
 /*
@@ -64,29 +65,29 @@
  * Set bits from the continuation byte into the character.
  * Increment `n` on success.
  */
-#define UTF8_BN(bc, i, c, l, n) { \
-	if ((n) > 0 && ((bc)[i] & 0xc0) == 0x80) { \
-		(c) |= ((bc)[i] & 0x3f) << UTF8_NSHIFT(i, l); \
-		(n)++; \
-	} \
+static inline void UTF8_BN(const char *bc, int i, wchar_t *c, int l, int *n) {
+	if (*n > 0 && (bc[i] & 0xc0) == 0x80) {
+		*c |= (bc[i] & 0x3f) << UTF8_NSHIFT(i, l);
+		(*n)++;
+	}
 }
 
 /*
  * UTF-8 Character Validator
  * Flip the sign of `l` if the character is invalid.
  */
-#define UTF8_VALID(c, l) { \
-	if ((l) == 1 && (c) < 0x80) { /* ASCII */ \
-	} else if ( \
-			((l) < 1 || (l) > 4)                                 /* sequence length range */ \
-		||	((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) /* code point range */ \
-		||	((l) == 1 && (                 (c) >= 0x80))         /* over long */ \
-		||	((l) == 2 && ((c) < 0x80    || (c) >= 0x800))        /* over long */ \
-		||	((l) == 3 && ((c) < 0x800   || (c) >= 0x10000))      /* over long */ \
-		||	((l) == 4 && ((c) < 0x10000 || (c) >= 0x200000))     /* over long */ \
-	) { \
-		(l) = - (l); \
-	} \
+static inline void UTF8_VALID(wchar_t c, int *l) {
+	if ((*l) == 1 && (c) < 0x80) { /* ASCII */ 
+	} else if (
+			((*l) < 1 || (*l) > 4)                                 /* sequence length range */ 
+		||	((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) /* code point range */ 
+		||	((*l) == 1 && (                 (c) >= 0x80))         /* over long */ 
+		||	((*l) == 2 && ((c) < 0x80    || (c) >= 0x800))        /* over long */ 
+		||	((*l) == 3 && ((c) < 0x800   || (c) >= 0x10000))      /* over long */ 
+		||	((*l) == 4 && ((c) < 0x10000 || (c) >= 0x200000))     /* over long */ 
+	) { 
+		(*l) = - (*l); 
+	} 
 }
 
 /*
@@ -97,40 +98,40 @@
  *   l == 0:  `l` is too long for `bl`.
  *   l <  0: `-l` length of an invalid UTF-8 sequence.
  */
-#define UTF8_CHAR(bc, bs, c, l) { \
-	int __utf8_seqlen; \
-	int __utf8_n = 0; \
-	UTF8_BLEN(bc, __utf8_seqlen); \
-	UTF8_B1(bc, c, __utf8_seqlen, __utf8_n); \
-	if (__utf8_seqlen == 1) { \
-		if (__utf8_n == 1) { /* ASCII */ \
-			(l) = __utf8_seqlen; \
-		} else { /* invalid start byte */ \
-			(l) = -1; \
-		} \
-	} else if ((bc) + __utf8_seqlen <= (bs)) { \
-		switch (__utf8_seqlen) { \
-			case 6: \
-				UTF8_BN(bc, 5, c, __utf8_seqlen, __utf8_n); \
-			case 5: \
-				UTF8_BN(bc, 4, c, __utf8_seqlen, __utf8_n); \
-			case 4: \
-				UTF8_BN(bc, 3, c, __utf8_seqlen, __utf8_n); \
-			case 3: \
-				UTF8_BN(bc, 2, c, __utf8_seqlen, __utf8_n); \
-			case 2: \
-				UTF8_BN(bc, 1, c, __utf8_seqlen, __utf8_n); \
-				break; \
-		} \
-		(l) = __utf8_n; \
-		if (__utf8_n < __utf8_seqlen) { \
-			(l) = - (l); /* error the invalid byte sequence */ \
-		} else { \
-			UTF8_VALID(c, l); /* error any invalid characters */ \
-		} \
-	} else { \
-		(l) = 0; /* `bs - bc` not long enough yet */ \
-	} \
+static inline void UTF8_CHAR(const char *bc, const char *bs, wchar_t *c, int *l) {
+	int __utf8_seqlen;
+	int __utf8_n = 0;
+	UTF8_BLEN(bc, &__utf8_seqlen);
+	UTF8_B1(bc, c, &__utf8_seqlen, &__utf8_n);
+	if (__utf8_seqlen == 1) {
+		if (__utf8_n == 1) { /* ASCII */
+			*l = __utf8_seqlen;
+		} else { /* invalid start byte */
+			*l = -1;
+		}
+	} else if (bc + __utf8_seqlen <= bs) {
+		switch (__utf8_seqlen) {
+			case 6:
+				UTF8_BN(bc, 5, c, __utf8_seqlen, &__utf8_n);
+			case 5:
+				UTF8_BN(bc, 4, c, __utf8_seqlen, &__utf8_n);
+			case 4:
+				UTF8_BN(bc, 3, c, __utf8_seqlen, &__utf8_n);
+			case 3:
+				UTF8_BN(bc, 2, c, __utf8_seqlen, &__utf8_n);
+			case 2:
+				UTF8_BN(bc, 1, c, __utf8_seqlen, &__utf8_n);
+				break;
+		}
+		*l = __utf8_n;
+		if (__utf8_n < __utf8_seqlen) {
+			*l = -(*l); /* error the invalid byte sequence */
+		} else {
+			UTF8_VALID(*c, l); /* error any invalid characters */
+		}
+	} else {
+		*l = 0; /* `bs - bc` not long enough yet */
+	}
 }
 
 /*
@@ -139,60 +140,67 @@
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
  */
-#define UTF8_DECODE(bc, bs, cc, cs) { \
-	int __utf8_seqlen2; \
-	while ((bc) < (bs) && (cc) < (cs)) { \
-		UTF8_CHAR(bc, bs, *(cc), __utf8_seqlen2); \
-		if (__utf8_seqlen2 > 0) { /* valid character of ASCII or UTF-8 */ \
-			(bc) += ( + __utf8_seqlen2); \
-		} else if (__utf8_seqlen2 == 0) { \
-			break; /* blocking on byte length */ \
-		} else { \
-			*(cc) = 0xFFFD; /* represent invalid sequence with the replacement character */ \
-			(bc) += ( - __utf8_seqlen2); \
-		} \
-		(cc)++; \
-	} \
+static inline void UTF8_DECODE(const char **bc_ptr, const char *bs, wchar_t **cc_ptr, const wchar_t *cs) {
+	const char *bc = *bc_ptr;
+	wchar_t *cc = *cc_ptr;
+
+	int __utf8_seqlen2;
+	while (bc < bs && cc < cs) {
+		UTF8_CHAR(bc, bs, cc, &__utf8_seqlen2);
+		if (__utf8_seqlen2 > 0) { /* valid character of ASCII or UTF-8 */
+			bc += __utf8_seqlen2;
+		} else if (__utf8_seqlen2 == 0) {
+			break; /* blocking on byte length */
+		} else {
+			*cc = 0xFFFD; /* represent invalid sequence with the replacement character */
+			bc += -__utf8_seqlen2;
+		}
+		cc++;
+	}
+
+	*bc_ptr = bc;
+	*cc_ptr = cc;
+	return;
 }
 
 /*
  * UTF-8 Character Byte Length
  * Set the byte length from the character,
  */
-#define UTF8_CLEN(c, l) { \
-	if ((c) < 0) { \
-		(l) = 0; \
-	} else if ((c) < 0x80) { \
-		(l) = 1; \
-	} else if ((c) < 0x800) { \
-		(l) = 2; \
-	} else if ((c) < 0x10000) { \
-		(l) = 3; \
-	} else if ((c) < 0x200000) { \
-		(l) = 4; \
-	} else if ((c) < 0x4000000) { \
-		(l) = 5; \
-	} else if ((c) < 0x80000000) { \
-		(l) = 6; \
-	} else { \
-		(l) = 0 ; \
-	} \
+static inline int UTF8_CLEN(wchar_t c) {
+	if (c < 0) {
+		return 0;
+	} else if (c < 0x80) {
+		return 1;
+	} else if (c < 0x800) {
+		return 2;
+	} else if (c < 0x10000) {
+		return 3;
+	} else if (c < 0x200000) {
+		return 4;
+	} else if (c < 0x4000000) {
+		return 5;
+	} else if (c < 0x80000000) {
+		return 6;
+	} else {
+		return 0;
+	}
 }
 
 /*
  * UTF-8 Encode Character Byte 1
  * Sets bits from the character into the first byte, and set the sequence start high-bits.
  */
-#define UTF8_C1(c, bc, l) { \
-	(bc)[0] = ((0xFF << (8 - l)) & 0xFF) | (((c) >> UTF8_NSHIFT(0, l)) & ((1 << (7 - l)) - 1)); \
+static inline void UTF8_C1(wchar_t c, char *bc, int l) {
+	bc[0] = ((0xFF << (8 - l)) & 0xFF) | ((c >> UTF8_NSHIFT(0, l)) & ((1 << (7 - l)) - 1));
 }
 
 /*
  * UTF-8 Encode Character Continuation Byte (2+)
  * Sets bits from the character into the continuation byte as index `i`, and set the continuation high-bits.
  */
-#define UTF8_CN(c, bc, i, l) { \
-	(bc)[i] = 0x80 | (((c) >> UTF8_NSHIFT(i, l)) & 0x3f); \
+static inline void UTF8_CN(wchar_t c, char *bc, int i, int l) {
+	bc[i] = 0x80 | ((c >> UTF8_NSHIFT(i, l)) & 0x3f);
 }
 
 /*
@@ -201,306 +209,552 @@
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
  */
-#define UTF8_ENCODE(cc, cs, bc, bs) { \
-	int __utf8_seqlen; \
-	wchar_t c; \
-	while ((cc) < (cs) && (bc) < (bs)) { \
-		UTF8_CLEN(*(cc), __utf8_seqlen); \
-		if (__utf8_seqlen == 1) { /* ASCII */ \
-			*((bc)++) = *((cc)++); \
-		} else if (__utf8_seqlen > 1) { \
-			if ((bc) + __utf8_seqlen <= (bs)) { /* character fits */ \
-				c = *((cc)++); \
-				UTF8_C1(c, bc, __utf8_seqlen); \
-				switch (__utf8_seqlen) { \
-					case 6: \
-						UTF8_CN(c, bc, 5, __utf8_seqlen); \
-					case 5: \
-						UTF8_CN(c, bc, 4, __utf8_seqlen); \
-					case 4: \
-						UTF8_CN(c, bc, 3, __utf8_seqlen); \
-					case 3: \
-						UTF8_CN(c, bc, 2, __utf8_seqlen); \
-					case 2: \
-						UTF8_CN(c, bc, 1, __utf8_seqlen); \
-						break; \
-				} \
-				(bc) += __utf8_seqlen; \
-			} else { \
-				break; /* blocking on byte length */ \
-			} \
-		} else { \
-			(cc)++; \
-			/* XXX: silently skip insane character */ \
-		} \
-	} \
+static inline void UTF8_ENCODE(const wchar_t **cc_ptr, const wchar_t *cs, char **bc_ptr, const char *bs) {
+	const wchar_t *cc = *cc_ptr;
+	char *bc = *bc_ptr;
+
+	int __utf8_seqlen;
+	wchar_t c;
+	while (cc < cs && bc < bs) {
+		__utf8_seqlen = UTF8_CLEN(*cc);
+		if (__utf8_seqlen == 1) { /* ASCII */
+			*(bc++) = *(cc++);
+		} else if (__utf8_seqlen > 1) {
+			if (bc + __utf8_seqlen <= bs) { /* character fits */
+				c = *(cc++);
+				UTF8_C1(c, bc, __utf8_seqlen);
+				switch (__utf8_seqlen) {
+					case 6:
+						UTF8_CN(c, bc, 5, __utf8_seqlen);
+					case 5:
+						UTF8_CN(c, bc, 4, __utf8_seqlen);
+					case 4:
+						UTF8_CN(c, bc, 3, __utf8_seqlen);
+					case 3:
+						UTF8_CN(c, bc, 2, __utf8_seqlen);
+					case 2:
+						UTF8_CN(c, bc, 1, __utf8_seqlen);
+						break;
+				}
+				bc += __utf8_seqlen;
+			} else {
+				break; /* blocking on byte length */
+			}
+		} else {
+			cc++;
+			/* XXX: silently skip insane character */
+		}
+	}
+
+	*cc_ptr = cc;
+	*bc_ptr = bc;
+	return;
 }
 
 /* branchless int to hex-char */
-#define VALHEX(v) ((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))))
+static inline wchar_t VALHEX(int v) {
+	return (wchar_t)((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))));
+}
 
 /* JSON HEX4DIG token emitter */
-#define JSMN_EMIT_HEX4DIG(qc, c) { \
-	(qc)[0] = VALHEX(((c) >> 12) & 0xF); \
-	(qc)[1] = VALHEX(((c) >> 8)  & 0xF); \
-	(qc)[2] = VALHEX(((c) >> 4)  & 0xF); \
-	(qc)[3] = VALHEX( (c)        & 0xF); \
+static inline void JSMN_EMIT_HEX4DIG(char *qc, wchar_t c) {
+	qc[0] = VALHEX((c >> 12) & 0xF);
+	qc[1] = VALHEX((c >> 8)  & 0xF);
+	qc[2] = VALHEX((c >> 4)  & 0xF);
+	qc[3] = VALHEX( c        & 0xF);
 }
 
 /*
  * JSON String Quoting
  */
-#define JSMN_QUOTE(cc, cs, qc, qs, u) { \
-	wchar_t __jsmn_char = 0; \
-	wchar_t hex4dig1    = 0; \
-	wchar_t hex4dig2    = 0; \
-	while ((cc) < (cs) && (qc) < qs) { \
-		if (*(cc) >= 0x20 && *(cc) <= 0x7F) { /* non-control ASCII */ \
-			switch (*(cc)) { \
-				case '"': \
-				case '\\': \
-				/* case '/': */ \
-					__jsmn_char = *(cc); \
-					break; \
-				default: \
-					__jsmn_char = '\0'; \
-					break; \
-			} \
-			if (__jsmn_char == '\0') { \
-				*((qc)++) = *((cc)++); \
-			} else { \
-				if ((qc) + 2 <= (qs)) { \
-					(qc)[0] = '\\'; \
-					(qc)[1] = __jsmn_char; \
-					(qc) += 2; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} \
-		} else if (*(cc) >= 0 && *(cc) < 0x20) { /* ASCII control characters */ \
-			switch (*(cc)) { \
-				case '\b': \
-					__jsmn_char = 'b'; \
-					break; \
-				case '\f': \
-					__jsmn_char = 'f'; \
-					break; \
-				case '\n': \
-					__jsmn_char = 'n'; \
-					break; \
-				case '\r': \
-					__jsmn_char = 'r'; \
-					break; \
-				case '\t': \
-					__jsmn_char = 't'; \
-					break; \
-				default: \
-					__jsmn_char = *(cc); \
-					break; \
-			} \
-			if (__jsmn_char >= 0x20) { \
-				if ((qc) + 2 <= (qs)) { \
-					(qc)[0] = '\\'; \
-					(qc)[1] = __jsmn_char; \
-					(qc) += 2; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} else { \
-				if ((qc) + 6 <= (qs)) { \
-					(qc)[0] = '\\'; \
-					(qc)[1] = 'u'; \
-					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc)); \
-					(qc) += 6; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} \
-		} else if (u) { \
-			if (*(cc) < 0x10000) { /* Basic Multilingual Plane */ \
-				if ((qc) + 6 <= (qs)) { \
-					(qc)[0] = '\\'; \
-					(qc)[1] = 'u'; \
-					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc)); \
-					(qc) += 6; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} else if (*(cc) >= 0x10000 && *(cc) <= 0x10FFFF) /* Supplementary Planes */ { \
-				if ((qc) + 12 <= (qs)) { \
-					__jsmn_char = (*(cc)) - 0x10000; \
-					hex4dig1 = 0xD800 + ((__jsmn_char >> 10) & 0x03FF); \
-					hex4dig2 = 0xDC00 + ( __jsmn_char        & 0x03FF); \
-					(qc)[0] = '\\'; \
-					(qc)[1] = 'u'; \
-					JSMN_EMIT_HEX4DIG((qc) + 2, hex4dig1); \
-					(qc)[6] = '\\'; \
-					(qc)[7] = 'u'; \
-					JSMN_EMIT_HEX4DIG((qc) + 8, hex4dig2); \
-					(qc) += 12; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} else { /* not within a valid Unicode plane */ \
-				if ((qc) + 6 <= (qs)) { \
-					(qc)[0] = '\\'; \
-					(qc)[1] = 'u'; \
-					(qc)[2] = 'F'; \
-					(qc)[3] = 'F'; \
-					(qc)[4] = 'F'; \
-					(qc)[5] = 'D'; \
-					(qc) += 6; \
-					(cc)++; \
-				} else { \
-					break; \
-				} \
-			} \
-		} else { \
-			*((qc)++) = *((cc)++); \
-		} \
-	} \
+static inline void JSMN_QUOTE_UNICODE(const wchar_t **cc_ptr, const wchar_t *cs, char **qc_ptr, const char *qs) {
+	const wchar_t *cc = *cc_ptr;
+	char *qc = *qc_ptr;
+
+	wchar_t __jsmn_char = 0;
+	wchar_t hex4dig1    = 0;
+	wchar_t hex4dig2    = 0;
+	while ((cc) < (cs) && (qc) < qs) {
+		if (*(cc) >= 0x20 && *(cc) <= 0x7F) { /* non-control ASCII */
+			switch (*(cc)) {
+				case '"':
+				case '\\':
+				/* case '/': */
+					__jsmn_char = *(cc);
+					break;
+				default:
+					__jsmn_char = '\0';
+					break;
+			}
+			if (__jsmn_char == '\0') {
+				*((qc)++) = *((cc)++);
+			} else {
+				if ((qc) + 2 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = __jsmn_char;
+					(qc) += 2;
+					(cc)++;
+				} else {
+					break;
+				}
+			}
+		} else if (*(cc) >= 0 && *(cc) < 0x20) { /* ASCII control characters */
+			switch (*(cc)) {
+				case '\b':
+					__jsmn_char = 'b';
+					break;
+				case '\f':
+					__jsmn_char = 'f';
+					break;
+				case '\n':
+					__jsmn_char = 'n';
+					break;
+				case '\r':
+					__jsmn_char = 'r';
+					break;
+				case '\t':
+					__jsmn_char = 't';
+					break;
+				default:
+					__jsmn_char = *(cc);
+					break;
+			}
+			if (__jsmn_char >= 0x20) {
+				if ((qc) + 2 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = __jsmn_char;
+					(qc) += 2;
+					(cc)++;
+				} else {
+					break;
+				}
+			} else {
+				if ((qc) + 6 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = 'u';
+					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc));
+					(qc) += 6;
+					(cc)++;
+				} else {
+					break;
+				}
+			}
+		} else {
+			if (*(cc) < 0x10000) { /* Basic Multilingual Plane */
+				if ((qc) + 6 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = 'u';
+					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc));
+					(qc) += 6;
+					(cc)++;
+				} else {
+					break;
+				}
+			} else if (*(cc) >= 0x10000 && *(cc) <= 0x10FFFF) /* Supplementary Planes */ {
+				if ((qc) + 12 <= (qs)) {
+					__jsmn_char = (*(cc)) - 0x10000;
+					hex4dig1 = 0xD800 + ((__jsmn_char >> 10) & 0x03FF);
+					hex4dig2 = 0xDC00 + ( __jsmn_char        & 0x03FF);
+					(qc)[0] = '\\';
+					(qc)[1] = 'u';
+					JSMN_EMIT_HEX4DIG((qc) + 2, hex4dig1);
+					(qc)[6] = '\\';
+					(qc)[7] = 'u';
+					JSMN_EMIT_HEX4DIG((qc) + 8, hex4dig2);
+					(qc) += 12;
+					(cc)++;
+				} else {
+					break;
+				}
+			} else { /* not within a valid Unicode plane */
+				if ((qc) + 6 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = 'u';
+					(qc)[2] = 'F';
+					(qc)[3] = 'F';
+					(qc)[4] = 'F';
+					(qc)[5] = 'D';
+					(qc) += 6;
+					(cc)++;
+				} else {
+					break;
+				}
+			}
+		}
+	}
+
+	*cc_ptr = cc;
+	*qc_ptr = qc;
+	return;
 }
-#define JSMN_QUOTE_UNICODE(cc, cs, qc, qs) JSMN_QUOTE(cc, cs, qc, qs, 1)
-#define JSMN_QUOTE_ASCII(cc, cs, qc, qs)   JSMN_QUOTE(cc, cs, qc, qs, 0)
+
+static inline void JSMN_QUOTE_ASCII(const char **cc_ptr, const char *cs, char **qc_ptr, const char *qs) {
+	const char *cc = *cc_ptr;
+	char *qc = *qc_ptr;
+
+	wchar_t __jsmn_char = 0;
+	wchar_t hex4dig1    = 0;
+	wchar_t hex4dig2    = 0;
+	while ((cc) < (cs) && (qc) < qs) {
+		if (*(cc) >= 0x20 && *(cc) <= 0x7F) { /* non-control ASCII */
+			switch (*(cc)) {
+				case '"':
+				case '\\':
+				/* case '/': */
+					__jsmn_char = *(cc);
+					break;
+				default:
+					__jsmn_char = '\0';
+					break;
+			}
+			if (__jsmn_char == '\0') {
+				*((qc)++) = *((cc)++);
+			} else {
+				if ((qc) + 2 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = __jsmn_char;
+					(qc) += 2;
+					(cc)++;
+				} else {
+					break;
+				}
+			}
+		} else if (*(cc) >= 0 && *(cc) < 0x20) { /* ASCII control characters */
+			switch (*(cc)) {
+				case '\b':
+					__jsmn_char = 'b';
+					break;
+				case '\f':
+					__jsmn_char = 'f';
+					break;
+				case '\n':
+					__jsmn_char = 'n';
+					break;
+				case '\r':
+					__jsmn_char = 'r';
+					break;
+				case '\t':
+					__jsmn_char = 't';
+					break;
+				default:
+					__jsmn_char = *(cc);
+					break;
+			}
+			if (__jsmn_char >= 0x20) {
+				if ((qc) + 2 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = __jsmn_char;
+					(qc) += 2;
+					(cc)++;
+				} else {
+					break;
+				}
+			} else {
+				if ((qc) + 6 <= (qs)) {
+					(qc)[0] = '\\';
+					(qc)[1] = 'u';
+					JSMN_EMIT_HEX4DIG((qc) + 2, *(cc));
+					(qc) += 6;
+					(cc)++;
+				} else {
+					break;
+				}
+			}
+		} else {
+			*((qc)++) = *((cc)++);
+		}
+	}
+
+	*cc_ptr = cc;
+	*qc_ptr = qc;
+	return;
+}
+
+static inline void JSMN_QUOTE(const void **cc_ptr, const void *cs, char **qc_ptr, const char *qs, int u) {
+	if (u) {
+		JSMN_QUOTE_UNICODE((const wchar_t **) cc_ptr, (const wchar_t *) cs, qc_ptr, qs);
+	} else {
+		JSMN_QUOTE_ASCII((const char **) cc_ptr, (const char *) cs, qc_ptr, qs);
+	}
+}
 
 /* branchless hex-char to int */
-#define HEXVAL(b)        ((((b) & 0x1f) + (((b) >> 6) * 0x19) - 0x10) & 0xF)
+static inline int HEXVAL(char b) {
+	return (((b & 0x1f) + ((b >> 6) * 0x19) - 0x10) & 0xF);
+}
 
 /* JSON HEX2DIG token parser */
-#define JSMN_HEX2DIG(bc) (HEXVAL((bc)[0]) << 4 | HEXVAL((bc)[1]))
+static inline wchar_t JSMN_HEX2DIG_ASCII(const char *bc) {
+	return (HEXVAL(bc[0]) << 4) | HEXVAL(bc[1]);
+}
+static inline wchar_t JSMN_HEX2DIG_UNICODE(const wchar_t *bc) {
+	return (HEXVAL((char) bc[0]) << 4) | HEXVAL((char) bc[1]);
+}
+static inline wchar_t JSMN_HEX2DIG(const void *bc, int u) {
+	if (u) {
+		return JSMN_HEX2DIG_UNICODE((const wchar_t *) bc);
+	} else {
+		return JSMN_HEX2DIG_ASCII((const char *) bc);
+	}
+}
 
 /* JSON HEX4DIG token parser */
-#define JSMN_HEX4DIG(bc) ((HEXVAL((bc)[0]) << 12) | (HEXVAL((bc)[1]) << 8) | HEXVAL((bc)[2]) << 4 | HEXVAL((bc)[3]))
+static inline wchar_t JSMN_HEX4DIG_ASCII(const char *bc) {
+	return (HEXVAL(bc[0]) << 12) | (HEXVAL(bc[1]) << 8) | (HEXVAL(bc[2]) << 4) | HEXVAL(bc[3]);
+}
+static inline wchar_t JSMN_HEX4DIG_UNICODE(const wchar_t *bc) {
+	return (HEXVAL(bc[0]) << 12) | (HEXVAL(bc[1]) << 8) | (HEXVAL(bc[2]) << 4) | HEXVAL(bc[3]);
+}
+static inline wchar_t JSMN_HEX4DIG(const void *bc, int u) {
+	if (u) {
+		return JSMN_HEX4DIG_UNICODE((const wchar_t *) bc);
+	} else {
+		return JSMN_HEX4DIG_ASCII((const char *) bc);
+	}
+}
 
 /*
  * JSON String Unquoting
  */
-#define JSMN_UNQUOTE(qc, qs, cc, cs) { \
-	wchar_t __jsmn_char = 0; \
-	wchar_t hex4dig1    = 0; \
-	wchar_t hex4dig2    = 0; \
-	while ((qc) < (qs) && (cc) < (cs)) { \
-		 if (*(qc) == '\\') { \
-			if ((qc) + 2 <= (qs)) { \
-				switch ((qc)[1]) { \
-					case '"': \
-					case '\\': \
-					case '/': \
-						__jsmn_char = (qc)[1]; \
-						break; \
-					case 'b': \
-						__jsmn_char = '\b'; \
-						break; \
-					case 'f': \
-						__jsmn_char = '\f'; \
-						break; \
-					case 'n': \
-						__jsmn_char = '\n'; \
-						break; \
-					case 'r': \
-						__jsmn_char = '\r'; \
-						break; \
-					case 't': \
-						__jsmn_char = '\t'; \
-						break; \
-					case 'u': \
-						__jsmn_char = 'u'; \
-						break; \
-				} \
-				if (__jsmn_char == 'u') { \
-					if ((qc) + 6 <= (qs)) { \
-						hex4dig1 = JSMN_HEX4DIG((qc) + 2); \
-						if (hex4dig1 >> 10 == 0xD800  >> 10) { \
-							/* \uD[8-B]?? of the high surrogate pair */ \
-							if ((qc) + 12 <= (qs)) { \
-								if ((qc)[6] == '\\' && (qc)[7] == 'u') { \
-									hex4dig2 = JSMN_HEX4DIG((qc) + 8); \
-									if (hex4dig2 >> 10 == 0xDC00 >> 10) { \
-										/* \uD[C-F]?? of the low surrogate pair */ \
-										*((cc)++) = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400)); \
-										(qc) += 12; \
-									} else { \
-										*((cc)++) = 0xFFFD; /* the replacement character */ \
-										(qc) += 6; \
-									} \
-								} else { \
-									*((cc)++) = 0xFFFD; /* the replacement character */ \
-									(qc) += 6; \
-								} \
-							} else { \
-								break; /* blocking for surrogate pair */ \
-							} \
-						} else if (hex4dig1 >> 10 == 0xDC00 >> 10) { \
-							/* \uD[C-F]?? of the *unexpected* low surrogate pair */ \
-							*((cc)++) = 0xFFFD; /* the replacement character */ \
-							(qc) += 6; \
-						} else { \
-							/* Within the Basic Multilingual Plane */ \
-							*((cc)++) = hex4dig1; \
-							(qc) += 6; \
-						} \
-					} else { \
-						break; /* blocking for unicode quote */ \
-					} \
-				} else { \
-					/* simple escape */ \
-					*((cc)++) = __jsmn_char; \
-					(qc) += 2; \
-				} \
-			} else { \
-				break; /* blocking for simple escape */ \
-			} \
-		} else { \
-			*((cc)++) = *((qc)++); \
-		} \
-	} \
+static inline void JSMN_UNQUOTE_ASCII(const char **qc_ptr, const char *qs, wchar_t **cc_ptr, const wchar_t *cs) {
+	const char *qc = *qc_ptr;
+	wchar_t *cc = *cc_ptr;
+
+	wchar_t __jsmn_char = 0;
+	wchar_t hex4dig1    = 0;
+	wchar_t hex4dig2    = 0;
+	while (qc < qs && cc < cs) {
+		if (*qc == '\\') {
+			if (qc + 2 <= qs) {
+				switch (qc[1]) {
+					case '"':
+					case '\\':
+					case '/':
+						__jsmn_char = qc[1];
+						break;
+					case 'b':
+						__jsmn_char = '\b';
+						break;
+					case 'f':
+						__jsmn_char = '\f';
+						break;
+					case 'n':
+						__jsmn_char = '\n';
+						break;
+					case 'r':
+						__jsmn_char = '\r';
+						break;
+					case 't':
+						__jsmn_char = '\t';
+						break;
+					case 'u':
+						__jsmn_char = 'u';
+						break;
+				}
+				if (__jsmn_char == 'u') {
+					if (qc + 6 <= qs) {
+						hex4dig1 = JSMN_HEX4DIG_ASCII(qc + 2);
+						if (hex4dig1 >> 10 == 0xD800 >> 10) {
+							/* \uD[8-B]?? of the high surrogate pair */
+							if (qc + 12 <= qs) {
+								if (qc[6] == '\\' && qc[7] == 'u') {
+									hex4dig2 = JSMN_HEX4DIG_ASCII(qc + 8);
+									if (hex4dig2 >> 10 == 0xDC00 >> 10) {
+										/* \uD[C-F]?? of the low surrogate pair */
+										*cc++ = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400));
+										qc += 12;
+									} else {
+										*cc++ = 0xFFFD; /* the replacement character */
+										qc += 6;
+									}
+								} else {
+									*cc++ = 0xFFFD; /* the replacement character */
+									qc += 6;
+								}
+							} else {
+								break; /* blocking for surrogate pair */
+							}
+						} else if (hex4dig1 >> 10 == 0xDC00 >> 10) {
+							/* \uD[C-F]?? of the *unexpected* low surrogate pair */
+							*cc++ = 0xFFFD; /* the replacement character */
+							qc += 6;
+						} else {
+							/* Within the Basic Multilingual Plane */
+							*cc++ = hex4dig1;
+							qc += 6;
+						}
+					} else {
+						break; /* blocking for unicode quote */
+					}
+				} else {
+					/* simple escape */
+					*cc++ = __jsmn_char;
+					qc += 2;
+				}
+			} else {
+				break; /* blocking for simple escape */
+			}
+		} else {
+			*cc++ = *qc++;
+		}
+	}
+
+	*qc_ptr = qc;
+	*cc_ptr = cc;
+	return;
 }
 
-#define JSMN_DECODE_URL(qc, qs, cc, cs, block) { \
-	wchar_t __jsmn_char = 0; \
-	while ((qc) < (qs) && (cc) < (cs)) { \
-		if (*(qc) == '%') { \
-			if ((qc) + 2 <= (qs)) { \
-				*((cc)++) = (HEXVAL((qc)[1]) << 4) | HEXVAL((qc)[2]); \
-				(qc) += 3; \
-			} else if (block) { \
-				break; /* blocking for percent escape */ \
-			} else { \
-				/* incomplete escape sequence at end of stream becomes literal */ \
-				*((cc)++) = *((qc)++); \
-			} \
-		} else { \
-			*((cc)++) = *((qc)++); \
-		} \
-	} \
+static inline void JSMN_UNQUOTE_UNICODE(const wchar_t **qc_ptr, const wchar_t *qs, wchar_t **cc_ptr, const wchar_t *cs) {
+	const wchar_t *qc = *qc_ptr;
+	wchar_t *cc = *cc_ptr;
+
+	wchar_t __jsmn_char = 0;
+	wchar_t hex4dig1    = 0;
+	wchar_t hex4dig2    = 0;
+	while (qc < qs && cc < cs) {
+		if (*qc == '\\') {
+			if (qc + 2 <= qs) {
+				switch (qc[1]) {
+					case '"':
+					case '\\':
+					case '/':
+						__jsmn_char = qc[1];
+						break;
+					case 'b':
+						__jsmn_char = '\b';
+						break;
+					case 'f':
+						__jsmn_char = '\f';
+						break;
+					case 'n':
+						__jsmn_char = '\n';
+						break;
+					case 'r':
+						__jsmn_char = '\r';
+						break;
+					case 't':
+						__jsmn_char = '\t';
+						break;
+					case 'u':
+						__jsmn_char = 'u';
+						break;
+				}
+				if (__jsmn_char == 'u') {
+					if (qc + 6 <= qs) {
+						hex4dig1 = JSMN_HEX4DIG_UNICODE(qc + 2);
+						if (hex4dig1 >> 10 == 0xD800 >> 10) {
+							/* \uD[8-B]?? of the high surrogate pair */
+							if (qc + 12 <= qs) {
+								if (qc[6] == '\\' && qc[7] == 'u') {
+									hex4dig2 = JSMN_HEX4DIG_UNICODE(qc + 8);
+									if (hex4dig2 >> 10 == 0xDC00 >> 10) {
+										/* \uD[C-F]?? of the low surrogate pair */
+										*cc++ = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400));
+										qc += 12;
+									} else {
+										*cc++ = 0xFFFD; /* the replacement character */
+										qc += 6;
+									}
+								} else {
+									*cc++ = 0xFFFD; /* the replacement character */
+									qc += 6;
+								}
+							} else {
+								break; /* blocking for surrogate pair */
+							}
+						} else if (hex4dig1 >> 10 == 0xDC00 >> 10) {
+							/* \uD[C-F]?? of the *unexpected* low surrogate pair */
+							*cc++ = 0xFFFD; /* the replacement character */
+							qc += 6;
+						} else {
+							/* Within the Basic Multilingual Plane */
+							*cc++ = hex4dig1;
+							qc += 6;
+						}
+					} else {
+						break; /* blocking for unicode quote */
+					}
+				} else {
+					/* simple escape */
+					*cc++ = __jsmn_char;
+					qc += 2;
+				}
+			} else {
+				break; /* blocking for simple escape */
+			}
+		} else {
+			*cc++ = *qc++;
+		}
+	}
+
+	*qc_ptr = qc;
+	*cc_ptr = cc;
+	return;
 }
 
-#define JSMN_ENCODE_URL(cc, cs, qc, qs, encode_set) { \
-	wchar_t __jsmn_char = 0; \
-	while ((cc) < (cs) && (qc) < (qs)) { \
-		if (*(cc) >= 0x20 && *(cc) <= 0x7F) { /* non-control ASCII */ \
-			if ((encode_set)[*(cc)]) { \
-				if ((qc) + 3 <= (qs)) { \
-					(qc)[0] = '%'; \
-					(qc)[1] = VALHEX((*(cc) >> 4) & 0xF); \
-					(qc)[2] = VALHEX( *(cc)       & 0xF); \
-					(qc) += 3; \
-					(cc)++; \
-				} else { \
-					break; /* blocking for percent escape */ \
-				} \
-			} else { \
-				*((qc)++) = *((cc)++); \
-			} \
-		} else { \
-			*((qc)++) = *((cc)++); \
-		} \
-	} \
+static inline void JSMN_UNQUOTE(const void **qc_ptr, const void *qs, void **cc_ptr, const void *cs, int u) {
+	if (u) {
+		return JSMN_UNQUOTE_UNICODE((const wchar_t **) qc_ptr, (const wchar_t *) qs, (wchar_t **) cc_ptr, (const wchar_t *) cs);
+	} else {
+		return JSMN_UNQUOTE_ASCII((const char **) qc_ptr, (const char *) qs, (wchar_t **) cc_ptr, (const wchar_t *) cs);
+	}
+}
+
+
+static inline void JSMN_DECODE_URL(const wchar_t **qc_ptr, const wchar_t *qs, wchar_t **cc_ptr, const wchar_t *cs, int block) {
+	const wchar_t *qc = *qc_ptr;
+	wchar_t *cc = *cc_ptr;
+
+	wchar_t __jsmn_char = 0;
+	while (qc < qs && cc < cs) {
+		if (*qc == '%') {
+			if (qc + 2 <= qs) {
+				*cc++ = (HEXVAL(qc[1]) << 4) | HEXVAL(qc[2]);
+				qc += 3;
+			} else if (block) {
+				break; /* blocking for percent escape */
+			} else {
+				/* incomplete escape sequence at end of stream becomes literal */
+				*cc++ = *qc++;
+			}
+		} else {
+			*cc++ = *qc++;
+		}
+	}
+
+	*qc_ptr = qc;
+	*cc_ptr = cc;
+	return;
+}
+
+static inline void JSMN_ENCODE_URL(const wchar_t **cc_ptr, const wchar_t *cs, wchar_t **qc_ptr, const wchar_t *qs, const char *encode_set) {
+	const wchar_t *cc = *cc_ptr;
+	wchar_t *qc = *qc_ptr;
+	
+	wchar_t __jsmn_char = 0;
+	while (cc < cs && qc < qs) {
+		if (*cc >= 0x20 && *cc <= 0x7F) { /* non-control ASCII */
+			if (encode_set[*cc]) {
+				if (qc + 3 <= qs) {
+					qc[0] = '%';
+					qc[1] = VALHEX((*cc >> 4) & 0xF);
+					qc[2] = VALHEX(*cc & 0xF);
+					qc += 3;
+					cc++;
+				} else {
+					break; /* blocking for percent escape */
+				}
+			} else {
+				*(qc++) = *(cc++);
+			}
+		} else {
+			*(qc++) = *(cc++);
+		}
+	}
+
+	*cc_ptr = cc;
+	*qc_ptr = qc;
+	return;
 }
 
 /* encode sets for JSMN_URLENCODE */
@@ -840,14 +1094,14 @@ int test_utf8() {
 int test_quote() {
 	int s = 0;
 	wchar_t in_c;
-	wchar_t im_c[12];
+	char im_c[12];
 	wchar_t out_c;
 
 	for (in_c = 0; in_c < 0x110000; in_c++) { 
 		wchar_t *in_cc  =  &in_c;
 		wchar_t *in_cs  = (&in_c) + 1;
-		wchar_t *im_cc  =  im_c;
-		wchar_t *im_cs  =  im_c + 12;
+		char *im_cc  =  im_c;
+		char *im_cs  =  im_c + 12;
 		wchar_t *out_cc =  &out_c;
 		wchar_t *out_cs = (&out_c) + 1;
 
@@ -859,7 +1113,7 @@ int test_quote() {
 		printf("in_c(%i): %lc\n", (int) in_c, in_c);
 		*/
 
-		memset(im_c, 0, sizeof (wchar_t) * 12);
+		memset(im_c, 0, sizeof (char) * 12);
 
 		JSMN_QUOTE_UNICODE(in_cc, in_cs, im_cc, im_cs);
 
@@ -872,7 +1126,7 @@ int test_quote() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE(im_cc, im_cs, out_cc, out_cs);
+		JSMN_UNQUOTE_ASCII(im_cc, im_cs, out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -920,7 +1174,7 @@ int test_quote_ascii() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE(im_cc, im_cs, out_cc, out_cs);
+		JSMN_UNQUOTE_ASCII(im_cc, im_cs, out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -940,17 +1194,17 @@ int test_quote_ascii() {
 int test_encode_url_set(const char *encode_set) {
 	/* Test URL encode/decode cycle with the given encoding set. */
 	int s = 0;
-	char in_c;
-	char im_c[12];
-	char out_c;
+	wchar_t in_c;
+	wchar_t im_c[12];
+	wchar_t out_c;
 
 	for (in_c = 0; ; in_c++) { 
-		char *in_cc  =  &in_c;
-		char *in_cs  = (&in_c) + 1;
-		char *im_cc  =  im_c;
-		char *im_cs  =  im_c + 12;
-		char *out_cc =  &out_c;
-		char *out_cs = (&out_c) + 1;
+		wchar_t *in_cc  =  &in_c;
+		wchar_t *in_cs  = (&in_c) + 1;
+		wchar_t *im_cc  =  im_c;
+		wchar_t *im_cs  =  im_c + 12;
+		wchar_t *out_cc =  &out_c;
+		wchar_t *out_cs = (&out_c) + 1;
 
 		/*
 		printf("in_c(%i): %lc\n", (int) in_c, in_c);
