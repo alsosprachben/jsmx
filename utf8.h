@@ -1179,7 +1179,7 @@ int test_quote_ascii() {
 	return 0;
 }
 
-int test_encode_url_set(const char *encode_set) {
+int test_encode_url_set(const char *encode_set, const char *set_name) {
 	/* Test URL encode/decode cycle with the given encoding set. */
 	int s = 0;
 	char in_c;
@@ -1226,7 +1226,7 @@ int test_encode_url_set(const char *encode_set) {
 		}
 	}
 
-	printf("Succeeded converting all %i URL characters of set %p.\n", s, encode_set);
+	printf("Succeeded converting all %i URL characters of set %s.\n", s, set_name);
 
 	return 0;
 }
@@ -1235,27 +1235,27 @@ int test_encode_url_all() {
 	/* Test URL encode/decode cycle with all encoding sets. */
 	int rc;
 
-	rc = test_encode_url_set(jsmn_urlencode_set_query);
+	rc = test_encode_url_set(jsmn_urlencode_set_query, "jsmn_urlencode_set_query");
 	if (rc != 0) {
 		return rc;
 	}
 
-	rc = test_encode_url_set(jsmn_urlencode_set_special_query);
+	rc = test_encode_url_set(jsmn_urlencode_set_special_query, "jsmn_urlencode_set_special_query");
 	if (rc != 0) {
 		return rc;
 	}
 
-	rc = test_encode_url_set(jsmn_urlencode_set_path);
+	rc = test_encode_url_set(jsmn_urlencode_set_path, "jsmn_urlencode_set_path");
 	if (rc != 0) {
 		return rc;
 	}
 
-	rc = test_encode_url_set(jsmn_urlencode_set_userinfo);
+	rc = test_encode_url_set(jsmn_urlencode_set_userinfo, "jsmn_urlencode_set_userinfo");
 	if (rc != 0) {
 		return rc;
 	}
 
-	rc = test_encode_url_set(jsmn_urlencode_set_component);
+	rc = test_encode_url_set(jsmn_urlencode_set_component, "jsmn_urlencode_set_component");
 	if (rc != 0) {
 		return rc;
 	}
