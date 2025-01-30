@@ -55,6 +55,7 @@ clean:
 	rm -f libjsmn.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
+	rm -rf test_jsstr test_mnurl test_utf8
 
 .PHONY: all clean test
 

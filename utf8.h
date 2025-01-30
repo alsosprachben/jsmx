@@ -252,7 +252,7 @@ static inline void UTF8_ENCODE(const wchar_t **cc_ptr, const wchar_t *cs, char *
 }
 
 /* branchless int to hex-char */
-static inline wchar_t VALHEX(int v) {
+static inline wchar_t VALHEX(char v) {
 	return (wchar_t)((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))));
 }
 
@@ -470,13 +470,10 @@ static inline void JSMN_QUOTE_ASCII(const char **cc_ptr, const char *cs, char **
 	return;
 }
 
-static inline void JSMN_QUOTE(const void **cc_ptr, const void *cs, char **qc_ptr, const char *qs, int u) {
-	if (u) {
-		JSMN_QUOTE_UNICODE((const wchar_t **) cc_ptr, (const wchar_t *) cs, qc_ptr, qs);
-	} else {
-		JSMN_QUOTE_ASCII((const char **) cc_ptr, (const char *) cs, qc_ptr, qs);
-	}
-}
+#define JSMN_QUOTE(cc_ptr, cs, qc_ptr, qs) _Generic((cs), \
+    const wchar_t *: JSMN_QUOTE_UNICODE, \
+    const char *: JSMN_QUOTE_ASCII \
+)(cc_ptr, cs, qc_ptr, qs)
 
 /* branchless hex-char to int */
 static inline int HEXVAL(char b) {
@@ -490,13 +487,10 @@ static inline wchar_t JSMN_HEX2DIG_ASCII(const char *bc) {
 static inline wchar_t JSMN_HEX2DIG_UNICODE(const wchar_t *bc) {
 	return (HEXVAL((char) bc[0]) << 4) | HEXVAL((char) bc[1]);
 }
-static inline wchar_t JSMN_HEX2DIG(const void *bc, int u) {
-	if (u) {
-		return JSMN_HEX2DIG_UNICODE((const wchar_t *) bc);
-	} else {
-		return JSMN_HEX2DIG_ASCII((const char *) bc);
-	}
-}
+#define JSMN_HEX2DIG(bc) _Generic((bc), \
+	const wchar_t *: JSMN_HEX2DIG_UNICODE, \
+	const char *: JSMN_HEX2DIG_ASCII \
+)(bc)
 
 /* JSON HEX4DIG token parser */
 static inline wchar_t JSMN_HEX4DIG_ASCII(const char *bc) {
@@ -505,13 +499,10 @@ static inline wchar_t JSMN_HEX4DIG_ASCII(const char *bc) {
 static inline wchar_t JSMN_HEX4DIG_UNICODE(const wchar_t *bc) {
 	return (HEXVAL(bc[0]) << 12) | (HEXVAL(bc[1]) << 8) | (HEXVAL(bc[2]) << 4) | HEXVAL(bc[3]);
 }
-static inline wchar_t JSMN_HEX4DIG(const void *bc, int u) {
-	if (u) {
-		return JSMN_HEX4DIG_UNICODE((const wchar_t *) bc);
-	} else {
-		return JSMN_HEX4DIG_ASCII((const char *) bc);
-	}
-}
+#define JSMN_HEX4DIG(bc) _Generic((bc), \
+	const wchar_t *: JSMN_HEX4DIG_UNICODE, \
+	const char *: JSMN_HEX4DIG_ASCII \
+)(bc)
 
 /*
  * JSON String Unquoting
@@ -553,12 +544,12 @@ static inline void JSMN_UNQUOTE_ASCII(const char **qc_ptr, const char *qs, wchar
 				}
 				if (__jsmn_char == 'u') {
 					if (qc + 6 <= qs) {
-						hex4dig1 = JSMN_HEX4DIG_ASCII(qc + 2);
+						hex4dig1 = JSMN_HEX4DIG(qc + 2);
 						if (hex4dig1 >> 10 == 0xD800 >> 10) {
 							/* \uD[8-B]?? of the high surrogate pair */
 							if (qc + 12 <= qs) {
 								if (qc[6] == '\\' && qc[7] == 'u') {
-									hex4dig2 = JSMN_HEX4DIG_ASCII(qc + 8);
+									hex4dig2 = JSMN_HEX4DIG(qc + 8);
 									if (hex4dig2 >> 10 == 0xDC00 >> 10) {
 										/* \uD[C-F]?? of the low surrogate pair */
 										*cc++ = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400));
@@ -641,12 +632,12 @@ static inline void JSMN_UNQUOTE_UNICODE(const wchar_t **qc_ptr, const wchar_t *q
 				}
 				if (__jsmn_char == 'u') {
 					if (qc + 6 <= qs) {
-						hex4dig1 = JSMN_HEX4DIG_UNICODE(qc + 2);
+						hex4dig1 = JSMN_HEX4DIG(qc + 2);
 						if (hex4dig1 >> 10 == 0xD800 >> 10) {
 							/* \uD[8-B]?? of the high surrogate pair */
 							if (qc + 12 <= qs) {
 								if (qc[6] == '\\' && qc[7] == 'u') {
-									hex4dig2 = JSMN_HEX4DIG_UNICODE(qc + 8);
+									hex4dig2 = JSMN_HEX4DIG(qc + 8);
 									if (hex4dig2 >> 10 == 0xDC00 >> 10) {
 										/* \uD[C-F]?? of the low surrogate pair */
 										*cc++ = 0x10000 + (((hex4dig1 % 0x400) << 10) | (hex4dig2 % 0x400));
@@ -692,20 +683,17 @@ static inline void JSMN_UNQUOTE_UNICODE(const wchar_t **qc_ptr, const wchar_t *q
 	return;
 }
 
-static inline void JSMN_UNQUOTE(const void **qc_ptr, const void *qs, void **cc_ptr, const void *cs, int u) {
-	if (u) {
-		return JSMN_UNQUOTE_UNICODE((const wchar_t **) qc_ptr, (const wchar_t *) qs, (wchar_t **) cc_ptr, (const wchar_t *) cs);
-	} else {
-		return JSMN_UNQUOTE_ASCII((const char **) qc_ptr, (const char *) qs, (wchar_t **) cc_ptr, (const wchar_t *) cs);
-	}
-}
+#define JSMN_UNQUOTE(qc_ptr, qs, cc_ptr, cs) _Generic((qs), \
+	const wchar_t *: JSMN_UNQUOTE_UNICODE, \
+	const char *: JSMN_UNQUOTE_ASCII \
+)(qc_ptr, qs, cc_ptr, cs)
 
 
-static inline void JSMN_DECODE_URL(const wchar_t **qc_ptr, const wchar_t *qs, wchar_t **cc_ptr, const wchar_t *cs, int block) {
-	const wchar_t *qc = *qc_ptr;
-	wchar_t *cc = *cc_ptr;
+static inline void JSMN_DECODE_URL(const char **qc_ptr, const char *qs, char **cc_ptr, const char *cs, int block) {
+	const char *qc = *qc_ptr;
+	char *cc = *cc_ptr;
 
-	wchar_t __jsmn_char = 0;
+	char __jsmn_char = 0;
 	while (qc < qs && cc < cs) {
 		if (*qc == '%') {
 			if (qc + 2 <= qs) {
@@ -727,11 +715,11 @@ static inline void JSMN_DECODE_URL(const wchar_t **qc_ptr, const wchar_t *qs, wc
 	return;
 }
 
-static inline void JSMN_ENCODE_URL(const wchar_t **cc_ptr, const wchar_t *cs, wchar_t **qc_ptr, const wchar_t *qs, const char *encode_set) {
-	const wchar_t *cc = *cc_ptr;
-	wchar_t *qc = *qc_ptr;
+static inline void JSMN_ENCODE_URL(const char **cc_ptr, const char *cs, char **qc_ptr, const char *qs, const char *encode_set) {
+	const char *cc = *cc_ptr;
+	char *qc = *qc_ptr;
 	
-	wchar_t __jsmn_char = 0;
+	char __jsmn_char = 0;
 	while (cc < cs && qc < qs) {
 		if (*cc >= 0x20 && *cc <= 0x7F) { /* non-control ASCII */
 			if (encode_set[*cc]) {
@@ -1064,7 +1052,7 @@ int test_utf8() {
 
 		memset(im_b, 0, 6);
 
-		UTF8_ENCODE(in_cc, in_cs, im_bc, im_bs);
+		UTF8_ENCODE((const wchar_t **) &in_cc, (const wchar_t *) in_cs, &im_bc, im_bs);
 
 		/* 
 		printf("bin: ");
@@ -1078,7 +1066,7 @@ int test_utf8() {
 		*/
 
 		im_bc = im_b;
-		UTF8_DECODE(im_bc, im_bs, out_cc, out_cs);
+		UTF8_DECODE((const char **) &im_bc, (const char *) im_bs, &out_cc, out_cs);
 		if (in_c != out_c) {
 			printf("Error on UTF-8 character %i = %i\n.", (int) in_c, (int) out_c);
 			return 1;
@@ -1115,7 +1103,7 @@ int test_quote() {
 
 		memset(im_c, 0, sizeof (char) * 12);
 
-		JSMN_QUOTE_UNICODE(in_cc, in_cs, im_cc, im_cs);
+		JSMN_QUOTE((const wchar_t **) &in_cc, (const wchar_t *) in_cs, &im_cc, im_cs);
 
 		/*
 		printf("im_c: ");
@@ -1126,7 +1114,7 @@ int test_quote() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE_ASCII(im_cc, im_cs, out_cc, out_cs);
+		JSMN_UNQUOTE((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -1163,7 +1151,7 @@ int test_quote_ascii() {
 
 		memset(im_c, 0, sizeof (char) * 12);
 
-		JSMN_QUOTE_ASCII(in_cc, in_cs, im_cc, im_cs);
+		JSMN_QUOTE((const char **) &in_cc, (const char *) in_cs, &im_cc, im_cs);
 
 		/*
 		printf("im_c: ");
@@ -1174,7 +1162,7 @@ int test_quote_ascii() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE_ASCII(im_cc, im_cs, out_cc, out_cs);
+		JSMN_UNQUOTE((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -1194,17 +1182,17 @@ int test_quote_ascii() {
 int test_encode_url_set(const char *encode_set) {
 	/* Test URL encode/decode cycle with the given encoding set. */
 	int s = 0;
-	wchar_t in_c;
-	wchar_t im_c[12];
-	wchar_t out_c;
+	char in_c;
+	char im_c[12];
+	char out_c;
 
 	for (in_c = 0; ; in_c++) { 
-		wchar_t *in_cc  =  &in_c;
-		wchar_t *in_cs  = (&in_c) + 1;
-		wchar_t *im_cc  =  im_c;
-		wchar_t *im_cs  =  im_c + 12;
-		wchar_t *out_cc =  &out_c;
-		wchar_t *out_cs = (&out_c) + 1;
+		char *in_cc  =  &in_c;
+		char *in_cs  = (&in_c) + 1;
+		char *im_cc  =  im_c;
+		char *im_cs  =  im_c + 12;
+		char *out_cc =  &out_c;
+		char *out_cs = (&out_c) + 1;
 
 		/*
 		printf("in_c(%i): %lc\n", (int) in_c, in_c);
@@ -1212,7 +1200,7 @@ int test_encode_url_set(const char *encode_set) {
 
 		memset(im_c, 0, sizeof (char) * 12);
 
-		JSMN_ENCODE_URL(in_cc, in_cs, im_cc, im_cs, encode_set);
+		JSMN_ENCODE_URL((const char **) &in_cc, (const char *) in_cs, &im_cc, im_cs, encode_set);
 
 		/*
 		printf("im_c: ");
@@ -1223,7 +1211,7 @@ int test_encode_url_set(const char *encode_set) {
 		*/
 
 		im_cc = im_c;
-		JSMN_DECODE_URL(im_cc, im_cs, out_cc, out_cs, 0);
+		JSMN_DECODE_URL((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs, 0);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/

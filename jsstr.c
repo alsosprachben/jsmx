@@ -76,7 +76,7 @@ size_t jsstr_set_from_utf8(jsstr_t *s, uint8_t *str, size_t len) {
     uint8_t *bs = str + len;
     wchar_t *cc = s->codepoints;
     wchar_t *cs = s->codepoints + s->cap;
-    UTF8_DECODE(bc, bs, cc, cs);
+    UTF8_DECODE((const char **) &bc, (const char *) bs, &cc, cs);
     s->len = cc - s->codepoints;
     return s->len;
 }
@@ -111,7 +111,7 @@ size_t jsstr_get_utf8len(jsstr_t *s) {
     for (size_t i = 0; i < s->len; i++) {
         wchar_t c = s->codepoints[i];
         int l;
-        UTF8_CLEN(c, l);
+        l = UTF8_CLEN(c);
         utf8len += l;
     }
     return utf8len;
@@ -234,7 +234,7 @@ size_t jsstr16_set_from_utf8(jsstr16_t *s, uint8_t *str, size_t len) {
     while (i < len && i < s->cap) {
         wchar_t c;
         int l;
-        UTF8_CHAR(str + i, str + len, c, l);
+        UTF8_CHAR((const char *) str + i, (const char *) str + len, &c, &l);
         if (l > 0) {
             if (c >= 0x10000) {
                 s->codeunits[j] = 0xD800 + ((c - 0x10000) >> 10);
@@ -301,7 +301,7 @@ size_t jsstr16_get_utf8len(jsstr16_t *s) {
             c = s->codeunits[i];
         }
         int l;
-        UTF8_CLEN(c, l);
+        l = UTF8_CLEN(c);
         utf8len += l;
     }
     return utf8len;
@@ -377,7 +377,7 @@ ssize_t jsstr8_indexof(jsstr8_t *s, wchar_t search_c, size_t start_i) {
     for (i = 0; i < s->len; i += l) {
         cc = s->bytes + i;
         cs = s->bytes + s->len;
-        UTF8_CHAR(cc, cs, c, l);
+        UTF8_CHAR((const char *) cc, (const char *) cs, &c, &l);
         if (l < 0) {
             l = 1;
             c = 0xFFFD; /* the replacement character */
@@ -400,7 +400,7 @@ ssize_t jsstr8_indextoken(jsstr8_t *s, wchar_t *search_c, size_t c_len, size_t s
     for (i = 0; i < s->len; i += l) {
         cc = s->bytes + i;
         cs = s->bytes + s->len;
-        UTF8_CHAR(cc, cs, c, l);
+        UTF8_CHAR((const char *) cc, (const char *) cs, &c, &l);
         if (l < 0) {
             l = 1;
             c = 0xFFFD; /* the replacement character */
@@ -445,7 +445,7 @@ size_t jsstr8_get_charlen(jsstr8_t *s) {
     size_t charlen = 0;
     for (size_t i = 0; i < s->len; i++) {
         int l;
-        UTF8_BLEN(s->bytes + i, l);
+        UTF8_BLEN((const char *) s->bytes + i, &l);
         i += l;
         charlen += 1;
     }
@@ -463,7 +463,7 @@ size_t jsstr8_get_utf16len(jsstr8_t *s) {
     for (size_t i = 0; i < s->len; i++) {
         cc = s->bytes + i;
         cs = s->bytes + s->len;
-        UTF8_CHAR(cc, cs, c, l);
+        UTF8_CHAR((const char *) cc, (const char *) cs, &c, &l);
         if (l > 0) {
             if (c >= 0x10000) {
                 utf16len += 2;
@@ -489,7 +489,7 @@ uint8_t *jsstr8_get_at(jsstr8_t *s, size_t i) {
     size_t k = 0;
     for (j = 0, k = 0; j < s->len && k < i; k++, j++) {
         int l;
-        UTF8_BLEN(s->bytes + j, l);
+        UTF8_BLEN((const char *) s->bytes + j, &l);
         j += l;
     }
     if (j < s->len) {
