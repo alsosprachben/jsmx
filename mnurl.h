@@ -42,8 +42,13 @@ jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t key);
 /*
  * get all values for a key in the search params
  * fills the values array (of length len) and sets len to the number of values found
+ * returns the number of values that would be written to an unbounded array
+ * if len is 0, it will not write any values and just return the number of values
+ * that would be written.
+ * If len is less than the number of values, it will write as many as it can
+ * and set len to the number of values written.
  */
-void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t *values, size_t *len);
+size_t urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t *values, size_t *len);
 
 /*
  * check if a key exists in the search params

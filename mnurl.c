@@ -95,16 +95,22 @@ jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t key) {
 }
 
 
-void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t *values, size_t *len_ptr) {
+size_t urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t *values, size_t *len_ptr) {
     size_t in_len = *len_ptr;
     size_t out_len = 0;
-    for (size_t i = 0; i < searchParams->len && out_len < in_len; i++) {
+    size_t found_len = 0;
+    for (size_t i = 0; i < searchParams->len; i++) {
         if (jsstr8_cmp(&searchParams->params[i].key, &key) == 0) {
-            values[out_len] = searchParams->params[i].value;
-            out_len++;
+            if (found_len < in_len) {
+                /* write the value to the output array, if it fits */
+                values[out_len] = searchParams->params[i].value;
+                out_len++;
+            }
+            found_len++;
         }
     }
     *len_ptr = out_len;
+    return found_len; /* return the number of values found */
 }
 
 int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t key) {

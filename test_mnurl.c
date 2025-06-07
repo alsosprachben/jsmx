@@ -95,10 +95,12 @@ void test_urlsearchparams_getAll() {
     declare_jsstr8(key, "key1");
     jsstr8_t values[2];
     size_t len = 2;
+    size_t found = 0;
 
-    urlsearchparams_getAll(&searchParams, key, values, &len);
+    found = urlsearchparams_getAll(&searchParams, key, values, &len);
 
     assert(len == 2);
+    assert(found == 2);
     declare_jsstr8(value1, "value1");
     declare_jsstr8(value3, "value3");
     assert(jsstr8_cmp(&values[0], &value1) == 0);
