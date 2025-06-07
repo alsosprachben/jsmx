@@ -13,10 +13,19 @@ void test_urlsearchparams_init() {
     declare_jsstr8(value1, "value1");
     declare_jsstr8(key2, "key2");
     declare_jsstr8(value2, "value2");
-    assert(jsstr8_cmp(&searchParams.params[0].key, &key1) == 0);
+    assert(jsstr8_cmp(&searchParams.params[0].name, &key1) == 0);
     assert(jsstr8_cmp(&searchParams.params[0].value, &value1) == 0);
-    assert(jsstr8_cmp(&searchParams.params[1].key, &key2) == 0);
+    assert(jsstr8_cmp(&searchParams.params[1].name, &key2) == 0);
     assert(jsstr8_cmp(&searchParams.params[1].value, &value2) == 0);
+}
+
+void test_urlsearchparams_size() {
+    urlsearchparams_t searchParams;
+    declare_jsstr8(search, "key1=value1&key2=value2");
+    urlsearchparams_init(&searchParams, search);
+
+    size_t size = urlsearchparams_size(&searchParams);
+    assert(size == 2);
 }
 
 void test_urlsearchparams_append() {
@@ -28,7 +37,7 @@ void test_urlsearchparams_append() {
     urlsearchparams_append(&searchParams, key, value);
 
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].key, &key) == 0);
+    assert(jsstr8_cmp(&searchParams.params[0].name, &key) == 0);
     assert(jsstr8_cmp(&searchParams.params[0].value, &value) == 0);
 }
 
@@ -42,7 +51,7 @@ void test_urlsearchparams_delete() {
     declare_jsstr8(key2, "key2");
     declare_jsstr8(value2, "value2");
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].key, &key2) == 0);
+    assert(jsstr8_cmp(&searchParams.params[0].name, &key2) == 0);
     assert(jsstr8_cmp(&searchParams.params[0].value, &value2) == 0);
 }
 
@@ -62,11 +71,11 @@ void test_urlsearchparams_deletevalue() {
     // Check that the remaining pairs are ("key2", "value2") and ("key1", "value3")
     int found_key2 = 0, found_key1_value3 = 0;
     for (size_t i = 0; i < searchParams.len; ++i) {
-        if (jsstr8_cmp(&searchParams.params[i].key, &key2) == 0 &&
+        if (jsstr8_cmp(&searchParams.params[i].name, &key2) == 0 &&
             jsstr8_cmp(&searchParams.params[i].value, &value2) == 0) {
             found_key2 = 1;
         }
-        if (jsstr8_cmp(&searchParams.params[i].key, &key) == 0 &&
+        if (jsstr8_cmp(&searchParams.params[i].name, &key) == 0 &&
             jsstr8_cmp(&searchParams.params[i].value, &value3) == 0) {
             found_key1_value3 = 1;
         }
@@ -129,7 +138,7 @@ void test_urlsearchparams_set() {
     urlsearchparams_set(&searchParams, key, new_value);
 
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].key, &key) == 0);
+    assert(jsstr8_cmp(&searchParams.params[0].name, &key) == 0);
     assert(jsstr8_cmp(&searchParams.params[0].value, &new_value) == 0);
 }
 
@@ -163,6 +172,7 @@ void test_url_init() {
 
 int main() {
     test_urlsearchparams_init();
+    test_urlsearchparams_size();
     test_urlsearchparams_append();
     test_urlsearchparams_delete();
     test_urlsearchparams_deletevalue();
