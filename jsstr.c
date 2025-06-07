@@ -1,4 +1,5 @@
 #include <string.h>
+#include <errno.h>
 
 #include "jsstr.h"
 #include "utf8.h"
@@ -130,6 +131,17 @@ void jsstr_truncate(jsstr_t *s, size_t len) {
     if (c != NULL) {
         s->len = c - s->codepoints;
     }
+}
+
+int jsstr_concat(jsstr_t *s, jsstr_t *src) {
+    /* concatenate src to s, if there is enough capacity */
+    if (s->len + src->len > s->cap) {
+        errno = ENOBUFS;
+        return -1; /* not enough capacity */
+    }
+    memcpy(s->codepoints + s->len, src->codepoints, src->len * sizeof(wchar_t));
+    s->len += src->len;
+    return 0; /* success */
 }
 
 void jsstr16_init(jsstr16_t *s) {
@@ -332,6 +344,17 @@ void jsstr16_truncate(jsstr16_t *s, size_t len) {
     }
 }
 
+int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
+    /* concatenate src to s, if there is enough capacity */
+    if (s->len + src->len > s->cap) {
+        errno = ENOBUFS;
+        return -1; /* not enough capacity */
+    }
+    memcpy(s->codeunits + s->len, src->codeunits, src->len * sizeof(uint16_t));
+    s->len += src->len;
+    return 0; /* success */
+}
+
 void jsstr8_init(jsstr8_t *s) {
     s->cap = 0;
     s->len = 0;
@@ -504,4 +527,15 @@ void jsstr8_truncate(jsstr8_t *s, size_t len) {
     if (bc != NULL) {
         s->len = bc - s->bytes;
     }
+}
+
+int jsstr8_concat(jsstr8_t *s, jsstr8_t *src) {
+    /* concatenate src to s, if there is enough capacity */
+    if (s->len + src->len > s->cap) {
+        errno = ENOBUFS;
+        return -1; /* not enough capacity */
+    }
+    memcpy(s->bytes + s->len, src->bytes, src->len);
+    s->len += src->len;
+    return 0; /* success */
 }

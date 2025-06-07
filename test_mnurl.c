@@ -142,6 +142,22 @@ void test_urlsearchparams_set() {
     assert(jsstr8_cmp(&searchParams.params[0].value, &new_value) == 0);
 }
 
+void test_urlsearchparams_toString() {
+    int rc;
+    uint8_t result_buf[256];
+    jsstr8_t result;
+    jsstr8_init_from_buf(&result, result_buf, sizeof(result_buf));
+    urlsearchparams_t searchParams;
+    declare_jsstr8(search, "key1=value1&key2=value2");
+    urlsearchparams_init(&searchParams, search);
+
+    rc = urlsearchparams_toString(&searchParams, &result);
+    assert(rc == 0);
+
+    declare_jsstr8(expected, "key1=value1&key2=value2");
+    assert(jsstr8_cmp(&result, &expected) == 0);
+}
+
 
 void test_url_init() {
     url_t url;
@@ -180,6 +196,7 @@ int main() {
     test_urlsearchparams_getAll();
     test_urlsearchparams_has();
     test_urlsearchparams_set();
+    test_urlsearchparams_toString();
     test_url_init();
 
     printf("All tests passed.\n");

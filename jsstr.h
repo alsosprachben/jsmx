@@ -68,7 +68,7 @@ size_t jsstr_get_utf8len(jsstr_t *s);
 
 wchar_t *jsstr_get_at(jsstr_t *s, size_t i);
 void jsstr_truncate(jsstr_t *s, size_t len);
-
+int jsstr_concat(jsstr_t *s, jsstr_t *src);
 
 void jsstr16_init(jsstr16_t *s);
 /*
@@ -93,6 +93,7 @@ size_t jsstr16_get_utf8len(jsstr16_t *s);
 
 uint16_t *jsstr16_get_at(jsstr16_t *s, size_t i);
 void jsstr16_truncate(jsstr16_t *s, size_t len);
+int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
 
 
 void jsstr8_init(jsstr8_t *s);
@@ -118,5 +119,6 @@ size_t jsstr8_get_utf8len(jsstr8_t *s);
 
 uint8_t *jsstr8_get_at(jsstr8_t *s, size_t i);
 void jsstr8_truncate(jsstr8_t *s, size_t len);
+int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
 
 #endif

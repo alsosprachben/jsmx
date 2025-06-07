@@ -148,6 +148,32 @@ void urlsearchparams_sort(urlsearchparams_t *searchParams) {
     }
 }
 
+int urlsearchparams_toString(urlsearchparams_t *searchParams, jsstr8_t *result_ptr) {
+    int rc;
+    declare_jsstr8(amp, "&");
+    declare_jsstr8(equals, "=");
+    for (size_t i = 0; i < searchParams->len; i++) {
+        if (i > 0) {
+            rc = jsstr8_concat(result_ptr, &amp);
+            if (rc == -1) {
+                return -1; /* error in concatenation */
+            }
+        }
+        jsstr8_concat(result_ptr, &searchParams->params[i].name);
+        if (searchParams->params[i].value.len > 0) {
+            rc = jsstr8_concat(result_ptr, &equals);
+            if (rc == -1) {
+                return -1; /* error in concatenation */
+            }
+            rc = jsstr8_concat(result_ptr, &searchParams->params[i].value);
+            if (rc == -1) {
+                return -1; /* error in concatenation */
+            }
+        }
+    }
+    return 0;
+}
+
 void url_init(url_t *url, jsstr8_t href) {
     ssize_t protocol_i;
     uint8_t *authority_b1;
@@ -245,3 +271,6 @@ void url_init(url_t *url, jsstr8_t href) {
     urlsearchparams_init(&url->searchParams, url->search);
 }
 
+jsstr8_t url_toJSON(url_t *url) {
+    return url->href;
+}

@@ -68,6 +68,11 @@ void urlsearchparams_set(urlsearchparams_t *searchParams, jsstr8_t name, jsstr8_
 void urlsearchparams_sort(urlsearchparams_t *searchParams);
 
 /*
+ * convert the search params to a string in the format "name1=value1&name2=value2"
+ */
+int urlsearchparams_toString(urlsearchparams_t *searchParams, jsstr8_t *result);
+
+/*
  * as the whatwg URL spec, but in C idioms
  */
 typedef struct url_s {
@@ -87,6 +92,9 @@ typedef struct url_s {
 
 void url_init(url_t *url, jsstr8_t href);
 
-void url_toJSON(url_t *url, jsstr8_t *json_str);
+/*
+ * return the href of the URL
+ */
+jsstr8_t url_toJSON(url_t *url);
 
 #endif
