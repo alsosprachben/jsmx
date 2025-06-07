@@ -1,4 +1,6 @@
 #include <string.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 #include "mnurl.h"
 
@@ -92,9 +94,17 @@ jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t key) {
     return (jsstr8_t) {0};
 }
 
-void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, urlparams_t *params, size_t *len) {
-    params = searchParams->params;
-    len = &searchParams->len;
+
+void urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t key, jsstr8_t *values, size_t *len_ptr) {
+    size_t in_len = *len_ptr;
+    size_t out_len = 0;
+    for (size_t i = 0; i < searchParams->len && out_len < in_len; i++) {
+        if (jsstr8_cmp(&searchParams->params[i].key, &key) == 0) {
+            values[out_len] = searchParams->params[i].value;
+            out_len++;
+        }
+    }
+    *len_ptr = out_len;
 }
 
 int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t key) {
