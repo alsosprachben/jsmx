@@ -1,6 +1,11 @@
 #ifndef UTF8_H
 #define UTF8_H
 #include <stddef.h>
+#include <stdint.h>
+
+/*
+ * UTF-8 functions
+ */
 
 /*
  * `bc` is byte cursor
@@ -250,6 +255,184 @@ static inline void UTF8_ENCODE(const wchar_t **cc_ptr, const wchar_t *cs, char *
 	*bc_ptr = bc;
 	return;
 }
+
+/*
+ * UTF-16 functions
+ */
+
+/*
+ * UTF-16 Length of Code Point in Code Units
+ */
+static inline int UTF16_BLEN(const uint16_t *bc, const uint16_t *bs) {
+	if (bc < bs) {
+		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+				return 2; /* surrogate pair */
+			} else {
+				return 1; /* invalid sequence */
+			}
+		} else {
+			return 1; /* BMP */
+		}
+	} else {
+		return 0; /* no more bytes */
+	}
+}
+
+/*
+ * Whether the UTF-16 Code Point sequence is a valid Code Unit sequence.
+ */
+static inline int UTF16_VALID(const uint16_t *bc, const uint16_t *bs) {
+	if (bc < bs) {
+		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+				return 1; /* valid surrogate pair */
+			} else {
+				return 0; /* invalid sequence */
+			}
+		} else if (*bc < 0xD800 || *bc > 0xDFFF) { /* BMP */
+			return 1; /* valid BMP character */
+		} else {
+			return 0; /* invalid code point */
+		}
+	} else {
+		return -1; /* no more bytes */
+	}
+}
+
+/*
+ * wchar_t to uint16_t UTF-16 character conversion
+ */
+static inline void UTF16_CHAR(const uint16_t *bc, const uint16_t *bs, wchar_t *c, int *l) {
+	if (bc < bs) {
+		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+				*c = 0x10000 + (((*bc - 0xD800) << 10) | (*(bc + 1) - 0xDC00));
+				*l = 2; /* surrogate pair */
+				return;
+			} else {
+				*c = 0xFFFD; /* replacement character for invalid sequence */
+				*l = -1; /* invalid sequence */
+				return;
+			}
+		} else { /* BMP */
+			*c = *bc;
+			*l = 1;
+			return;
+		}
+	} else {
+		*c = 0; /* no more bytes */
+		*l = 0;
+		return;
+	}
+}
+
+/*
+ * wchar_t to uint16_t UTF-16 character length
+ */
+static inline int UTF16_CLEN(wchar_t c) {
+	if (c < 0) {
+		return 0;
+	} else if (c < 0x10000) {
+		return 1; /* BMP */
+	} else if (c < 0x110000) {
+		return 2; /* Supplementary Planes */
+	} else {
+		return 0; /* invalid code point */
+	}
+}
+
+/*
+ * wchar_t to uint16_t UTF-16 code point conversion (surrogate pair, where UTF16_CLEN(c) == 2)
+ * Converts a code point in the Supplementary Planes to a surrogate pair.
+ */
+static inline void UTF16_CODEPAIR(wchar_t c, uint16_t *bc) {
+	c -= 0x10000;
+	bc[0] = 0xD800 + ((c >> 10) & 0x3FF); /* high surrogate */
+	bc[1] = 0xDC00 + ( c        & 0x3FF); /* low surrogate */
+}
+
+/*
+ * UTF-16 Encode String
+ * The cursors will be updated as UTF-16 is parsed and characters are emitted, until:
+ *  1. a cursor reaches a stop address.
+ *  2. a complete sequence would run past the byte stop address.
+ */
+static inline void UTF16_ENCODE(const wchar_t **cc_ptr, const wchar_t *cs, uint16_t **bc_ptr, const uint16_t *bs) {
+	const wchar_t *cc = *cc_ptr;
+	uint16_t *bc = *bc_ptr;
+
+	int __utf16_seqlen;
+	while (cc < cs && bc < bs) {
+		__utf16_seqlen = UTF16_CLEN(*cc);
+		switch (__utf16_seqlen) {
+			case 0: /* invalid code point */
+				*(bc++) = 0xFFFD; /* replacement character */
+				cc++;
+				continue;
+			case 1: /* BMP */
+				*(bc++) = *(cc++);
+				break;
+			case 2: /* Supplementary Planes */
+				if (bc + 2 <= bs) { /* character fits */
+					UTF16_CODEPAIR(*(cc++), bc);
+					bc += 2;
+				} else {
+					break; /* blocking on byte length */
+				}
+				break;
+			default:
+				cc++;
+				/* XXX: silently skip insane character */
+				continue;
+		}
+	}
+
+	*cc_ptr = cc;
+	*bc_ptr = bc;
+	return;
+}
+
+/*
+ * UTF-16 Decode String
+ * The cursors will be updated as UTF-16 is parsed and characters are emitted, until:
+ * 1. a cursor reaches a stop address.
+ * 2. a complete sequence would run past the byte stop address.
+ * 3. a blocking condition is encountered, which will stop the decoding.
+ */
+static inline void UTF16_DECODE(const uint16_t **bc_ptr, const uint16_t *bs, wchar_t **cc_ptr, const wchar_t *cs) {
+	const uint16_t *bc = *bc_ptr;
+	wchar_t *cc = *cc_ptr;
+
+	int __utf16_seqlen2;
+	wchar_t c;
+	while (bc < bs && cc < cs) {
+		__utf16_seqlen2 = UTF16_BLEN(bc, bs);
+		if (__utf16_seqlen2 > 0) { /* valid character of BMP or Supplementary Planes */
+			UTF16_CHAR(bc, bs, &c, &__utf16_seqlen2);
+			if (__utf16_seqlen2 > 0) {
+				bc += __utf16_seqlen2;
+			} else {
+				c = 0xFFFD; /* represent invalid sequence with the replacement character */
+				bc += -__utf16_seqlen2;
+			}
+			*(cc++) = c;
+		} else if (__utf16_seqlen2 == 0) {
+			break; /* blocking on byte length */
+		} else {
+			bc += -__utf16_seqlen2; /* invalid sequence */
+			*(cc++) = 0xFFFD; /* replacement character */
+		}
+	}
+
+	*bc_ptr = bc;
+	*cc_ptr = cc;
+	return;
+}
+
+/*
+ * JSON functions
+ */
 
 /* branchless int to hex-char */
 static inline wchar_t VALHEX(char v) {
@@ -1079,6 +1262,42 @@ int test_utf8() {
 	return 0;
 }
 
+int test_utf16() {
+	int s = 0;
+	wchar_t in_c;
+	uint16_t    im_b[3];
+	wchar_t out_c;
+
+	for (in_c = 0; in_c < 0x110000; in_c++) { 
+		wchar_t *in_cc  =  &in_c;
+		wchar_t *in_cs  = (&in_c) + 1;
+		uint16_t *im_bc  =  im_b;
+		uint16_t *im_bs  =  im_b + 3;
+		wchar_t *out_cc =  &out_c;
+		wchar_t *out_cs = (&out_c) + 1;
+
+		if (in_c == 0xd800) {
+			in_c = 0xe000;
+		}
+
+		memset(im_b, 0, sizeof(uint16_t) * 3);
+
+		UTF16_ENCODE((const wchar_t **) &in_cc, (const wchar_t *) in_cs, &im_bc, im_bs);
+
+		im_bc = im_b;
+		UTF16_DECODE((const uint16_t **) &im_bc, (const uint16_t *) im_bs, &out_cc, out_cs);
+		if (in_c != out_c) {
+			printf("Error on UTF-16 character %i = %i\n.", (int) in_c, (int) out_c);
+			return 1;
+		}
+		s++;
+	}
+
+	printf("Succeeded converting all %i UTF-16 characters.\n", s);
+
+	return 0;
+}
+
 int test_quote() {
 	int s = 0;
 	wchar_t in_c;
@@ -1267,6 +1486,11 @@ int main() {
 	int rc;
 
 	rc = test_utf8();
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = test_utf16();
 	if (rc != 0) {
 		return rc;
 	}
