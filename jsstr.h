@@ -72,11 +72,11 @@ size_t jsstr_get_charlen(jsstr_t *s);
 size_t jsstr_get_utf16len(jsstr_t *s);
 size_t jsstr_get_utf8len(jsstr_t *s);
 
-wchar_t *jsstr_get_at(jsstr_t *s, size_t i);
+wchar_t *jsstr_wstr_codepoint_at(jsstr_t *s, size_t i);
 void jsstr_truncate(jsstr_t *s, size_t len);
 
 /*
- * after JS string methods
+ * universal string methods
  */
 
 /*
@@ -85,22 +85,22 @@ void jsstr_truncate(jsstr_t *s, size_t len);
  * If the index is negative, it counts from the end of the string.
  * 
  */
-jsstr_t jsstr_at(jsstr_t *s, ssize_t index);
+jsstr_t jsstr_jsstr_codepoint_at2(jsstr_t *s, ssize_t index);
 
 /*
  * Return the character at the index as a string.
  */
-jsstr_t jsstr_charAt(jsstr_t *s, ssize_t index);
+jsstr_t jsstr_jsstr_codepoint_at(jsstr_t *s, ssize_t index);
 
 /*
  * Return the UTF-16 code unit at the index (in UTF-16 position).
  */
-uint16_t jsstr_charCodeAt(jsstr_t *s, ssize_t index, const char *buf, size_t len);
+uint16_t jsstr_u16_codeunit_at(jsstr_t *s, ssize_t index, const char *buf, size_t len);
 
 /*
  * Return the code point at the index (in code point position).
  */
-wchar_t jsstr_codePointAt(jsstr_t *s, ssize_t index);
+wchar_t jsstr_wchar_codepoint_at(jsstr_t *s, ssize_t index);
 
 /*
  * Concatenate the src string to the end of the s string.
@@ -135,13 +135,13 @@ size_t jsstr16_get_charlen(jsstr16_t *s);
 size_t jsstr16_get_utf16len(jsstr16_t *s);
 size_t jsstr16_get_utf8len(jsstr16_t *s);
 
-uint16_t *jsstr16_get_at(jsstr16_t *s, size_t i);
+uint16_t *jsstr16_u16s_codeunit_at(jsstr16_t *s, size_t i);
 void jsstr16_truncate(jsstr16_t *s, size_t len);
 
-jsstr16_t jsstr16_at(jsstr16_t *s, ssize_t index);
-jsstr16_t jsstr16_charAt(jsstr16_t *s, ssize_t index);
-uint16_t jsstr16_charCodeAt(jsstr16_t *s, ssize_t index);
-wchar_t jsstr16_codePointAt(jsstr16_t *s, ssize_t index, const char *buf, size_t len);
+jsstr16_t jsstr16_jsstr16_codepoint_at2(jsstr16_t *s, ssize_t index);
+jsstr16_t jsstr16_jsstr16_codepoint_at(jsstr16_t *s, ssize_t index);
+uint16_t jsstr16_u16_codeunit_at(jsstr16_t *s, ssize_t index);
+wchar_t jsstr16_wchar_codepoint_at(jsstr16_t *s, ssize_t index, const char *buf, size_t len);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
 
 /*
@@ -171,13 +171,13 @@ size_t jsstr8_get_charlen(jsstr8_t *s);
 size_t jsstr8_get_utf16len(jsstr8_t *s);
 size_t jsstr8_get_utf8len(jsstr8_t *s);
 
-uint8_t *jsstr8_get_at(jsstr8_t *s, size_t i);
+uint8_t *jsstr8_u8s_byte_at(jsstr8_t *s, size_t i);
 void jsstr8_truncate(jsstr8_t *s, size_t len);
 
-jsstr8_t jsstr8_at(jsstr8_t *s, ssize_t index);
-jsstr8_t jsstr8_charAt(jsstr8_t *s, ssize_t index);
-uint16_t jsstr8_charCodeAt(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
-wchar_t jsstr8_codePointAt(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
+jsstr8_t jsstr8_jsstr8_codepoint_at2(jsstr8_t *s, ssize_t index);
+jsstr8_t jsstr8_jsstr8_codepoint_at(jsstr8_t *s, ssize_t index);
+uint16_t jsstr8_u16_codeunit_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
+wchar_t jsstr8_wchar_codepoint_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
 
 #endif

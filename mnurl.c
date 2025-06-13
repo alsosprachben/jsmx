@@ -206,8 +206,8 @@ void url_init(url_t *url, jsstr8_t href) {
     jsstr8_slice(&url->protocol, &href, 0, protocol_i);
 
     /* verify the two authority slashes */
-    authority_b1 = jsstr8_get_at(&href, protocol_i + 1);
-    authority_b2 = jsstr8_get_at(&href, protocol_i + 2);
+    authority_b1 = jsstr8_u8s_byte_at(&href, protocol_i + 1);
+    authority_b2 = jsstr8_u8s_byte_at(&href, protocol_i + 2);
     if (authority_b1[0] != '/' && authority_b2[0] != '/') {
         return;
     }

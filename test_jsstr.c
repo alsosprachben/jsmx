@@ -25,8 +25,8 @@ void test_jsstr_lifecycle() {
     printf("jsstr_get_utf16len: %zu\n", jsstr_get_utf16len(&s));
     printf("jsstr_get_utf8len: %zu\n", jsstr_get_utf8len(&s));
 
-    wchar_t *c = jsstr_get_at(&s, 20);
-    printf("jsstr_get_at: %lc\n", *c);
+    wchar_t *c = jsstr_wstr_codepoint_at(&s, 20);
+    printf("jsstr_wstr_codepoint_at: %lc\n", *c);
 
     jsstr_truncate(&s, 19);
     printf("jsstr_truncate: %zu\n", jsstr_get_charlen(&s));
@@ -71,11 +71,11 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_get_utf16len: %zu\n", jsstr16_get_utf16len(&s));
     printf("jsstr16_get_utf8len: %zu\n", jsstr16_get_utf8len(&s));
 
-    const uint16_t *cu = jsstr16_get_at(&s, 20);
+    const uint16_t *cu = jsstr16_u16s_codeunit_at(&s, 20);
     wchar_t c;
     wchar_t *c_ptr = &c;
     UTF16_DECODE(&cu, cu + 2, &c_ptr, c_ptr + 1);
-    printf("jsstr16_get_at: %lc\n", c);
+    printf("jsstr16_u16s_codeunit_at: %lc\n", c);
 
     jsstr16_truncate(&s, 19);
     printf("jsstr16_truncate: %zu\n", jsstr16_get_charlen(&s));
@@ -121,8 +121,8 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_get_utf16len: %zu\n", jsstr8_get_utf16len(&s));
     printf("jsstr8_get_utf8len: %zu\n", jsstr8_get_utf8len(&s));
 
-    uint8_t *u = jsstr8_get_at(&s, 20);
-    printf("jsstr8_get_at: %s\n", u);
+    uint8_t *u = jsstr8_u8s_byte_at(&s, 20);
+    printf("jsstr8_u8s_byte_at: %s\n", u);
 
     jsstr8_truncate(&s, 19);
     printf("jsstr8_truncate: %zu\n", jsstr8_get_charlen(&s));
