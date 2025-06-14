@@ -19,8 +19,8 @@ void urlsearchparams_init(urlsearchparams_t *searchParams, jsstr8_t search) {
     jsstr8_t param;
     jsstr8_t name;
     jsstr8_t value;
-    static wchar_t *param_term = L"&;";
-    size_t search_len = jsstr8_get_charlen(&search);
+    static uint32_t *param_term = L"&;";
+    size_t search_len = jsstr8_get_utf32len(&search);
     
     for (
         param_i = 0, amp_i = 0, eq_i = 0; /* init positions */

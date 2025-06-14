@@ -376,11 +376,11 @@ int test_emitter(void) {
 	int utf8val_i;
 	const char    *utf8 = "\"\\/\n\r\t\b\f\xF0\x9D\x84\x9E";
 	size_t         utf8_len = 12;
-	const wchar_t  utf32[] = {'G', ' ', 'C', 'l', 'e', 'f', ':', ' ', 0x0001D11E, '\0'};
+	const uint32_t  utf32[] = {'G', ' ', 'C', 'l', 'e', 'f', ':', ' ', 0x0001D11E, '\0'};
 	size_t         utf32_len = 9;
 
 	char    utf8_read[1024];
-	wchar_t utf32_read[1024];
+	uint32_t utf32_read[1024];
 	size_t  readlen;
 	int     int_read;
 	double  double_read;

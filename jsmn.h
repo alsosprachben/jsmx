@@ -2,6 +2,7 @@
 #define __JSMN_H_
 
 #include <stddef.h>
+#include <stdint.h>
 #ifdef JSMN_EMITTER
 #define JSMN_DOM
 #define JSMN_STRICT
@@ -106,7 +107,7 @@ int        jsmn_dom_get_integer(     jsmn_parser *parser, const char *js, size_t
 int        jsmn_dom_get_double(      jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, double  *value_ptr);
 int        jsmn_dom_get_utf8(        jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char    *val8,  size_t val8_len);
 size_t     jsmn_dom_get_utf8len(     jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
-int        jsmn_dom_get_utf32(       jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, wchar_t *val32, size_t val32_len);
+int        jsmn_dom_get_utf32(       jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, uint32_t *val32, size_t val32_len);
 size_t     jsmn_dom_get_utf32len(    jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i);
 int        jsmn_dom_get_value(       jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens,               int i, char    *buf,   size_t buflen);
 int        jsmn_dom_get_start(       jsmn_parser *parser,                             jsmntok_t *tokens, unsigned int num_tokens,               int i);
