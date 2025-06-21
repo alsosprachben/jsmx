@@ -4,11 +4,45 @@
 #include "jsstr.h"
 #include "utf8.h"
 
-size_t jsstr_head_size() {
+size_t jsstr32_head_size() {
     return sizeof(jsstr32_t);
 }
+size_t jsstr16_head_size() {
+    return sizeof(jsstr16_t);
+}
+size_t jsstr8_head_size() {
+    return sizeof(jsstr8_t);
+}
 
-void jsstr_init(jsstr32_t *s) {
+size_t utf8_strlen(const uint8_t *str) {
+    /* element length, not characterlength */
+    size_t len = 0;
+    const uint8_t *p = str;
+    for (; *p; p++) {
+        len++;
+    }
+    return len;
+}
+size_t utf16_strlen(const uint16_t *str) {
+    /* element length, not character length */
+    size_t len = 0;
+    const uint16_t *p = str;
+    for (; *p; p++) {
+        len++;
+    }
+    return len;
+}
+size_t utf32_strlen(const uint32_t *str) {
+    /* element length, not character length */
+    size_t len = 0;
+    const uint32_t *p = str;
+    for (; *p; p++) {
+        len++;
+    }
+    return len;
+}
+
+void jsstr32_init(jsstr32_t *s) {
     s->cap = 0;
     s->len = 0;
     s->codepoints = NULL;
@@ -73,13 +107,10 @@ size_t jsstr32_get_cap(jsstr32_t *s) {
 
 size_t jsstr32_set_from_utf32(jsstr32_t *s, const uint32_t *str, size_t len) {
     /* copy the wide characters into the codepoints array */
-    if (len > s->cap) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0;
-    }
-    memcpy(s->codepoints, str, len * sizeof(uint32_t));
+    size_t to_send = len <= s->cap ? len : s->cap;
+    memcpy(s->codepoints, str, to_send * sizeof(uint32_t));
     s->len = len;
-    return s->len;
+    return to_send; /* return the number of code points processed */
 }
 
 size_t jsstr32_set_from_utf16(jsstr32_t *s, const uint16_t *str, size_t len) {
@@ -90,7 +121,7 @@ size_t jsstr32_set_from_utf16(jsstr32_t *s, const uint16_t *str, size_t len) {
     uint32_t *cs = s->codepoints + s->cap;
     UTF16_DECODE((const uint16_t **) &bc, (const uint16_t *) bs, &cc, cs);
     s->len = cc - s->codepoints;
-    return s->len;
+    return bc - str; /* return the number of code units processed */
 }
 
 size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len) {
@@ -99,9 +130,9 @@ size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len) {
     uint8_t *bs = str + len;
     uint32_t *cc = s->codepoints;
     uint32_t *cs = s->codepoints + s->cap;
-    UTF8_DECODE((const char **) &bc, (const char *) bs, &cc, cs);
+    UTF8_DECODE((const uint8_t **) &bc, (const uint8_t *) bs, &cc, cs);
     s->len = cc - s->codepoints;
-    return s->len;
+    return bc - str; /* return the number of bytes processed */
 }
 
 jsstr32_t jsstr32_from_str(const uint32_t *str) {
@@ -164,7 +195,7 @@ jsstr32_t jsstr32_jsstr_codepoint_at2(jsstr32_t *s, ssize_t index) {
 jsstr32_t jsstr32_jsstr_codepoint_at(jsstr32_t *s, ssize_t index) {
     /* jsstr32_slice() to slice using the s string's buffer */
     jsstr32_t result;
-    jsstr_init(&result);
+    jsstr32_init(&result);
     if (index < 0 || index >= s->len) {
         /* out of bounds, return empty string */
         return result;
@@ -347,10 +378,13 @@ size_t jsstr16_set_from_utf8(jsstr16_t *s, const uint8_t *str, size_t len) {
         UTF8_CHAR((const char *) str + i, (const char *) str + len, &c, &l);
         if (l > 0) {
             if (c >= 0x10000) {
-                s->codeunits[j] = 0xD800 + ((c - 0x10000) >> 10);
-                j++;
-                s->codeunits[j] = 0xDC00 + ((c - 0x10000) & 0x3FF);
-                j++;
+                if (j + 1 < s->cap) {
+                    /* surrogate pair */
+                    UTF16_CODEPAIR(c, s->codeunits + j);
+                    j += 2; /* surrogate pair */
+                } else {
+                    break; /* not enough capacity */
+                }
             } else {
                 s->codeunits[j] = c;
                 j++;
@@ -362,7 +396,7 @@ size_t jsstr16_set_from_utf8(jsstr16_t *s, const uint8_t *str, size_t len) {
         }
     }
     s->len = j;
-    return j;
+    return i;
 }
 
 size_t str16len(const uint16_t *str) {
@@ -614,6 +648,61 @@ size_t jsstr8_set_from_utf8(jsstr8_t *s, const uint8_t *str, size_t len) {
     memcpy(s->bytes, str, copy_len);
     s->len = copy_len;
     return copy_len;
+}
+
+size_t jsstr8_set_from_utf16(jsstr8_t *s, const uint16_t *str, size_t len) {
+    /* decode each UTF-16 code unit into a UTF-8 byte sequence, assigning into bytes array */
+    size_t i = 0;
+    size_t j = 0;
+    while (i < len && j < s->cap) {
+        uint32_t c;
+        const uint32_t *cc = &c;
+        uint8_t *bc = s->bytes + j;
+        uint8_t *bs = s->bytes + s->cap;
+        int l;
+        UTF16_CHAR(str + i, str + len, &c, &l);
+        if (l > 0) {
+            if (j + l <= s->cap) {
+                UTF8_ENCODE(&cc, cc + 1, &bc, bs);
+                j += l; /* advance by the length of the UTF-8 sequence */
+            } else {
+                break; /* not enough capacity */
+            }
+        } else {
+            break; /* invalid character */
+        }
+        i++;
+    }
+    s->len = j;
+    return i; /* return the number of code units processed */
+}
+
+size_t jsstr8_set_from_utf32(jsstr8_t *s, const uint32_t *str, size_t len) {
+    /* decode each wide character into a UTF-8 byte sequence, assigning into bytes array */
+    size_t i = 0;
+    size_t j = 0;
+    while (i < len && j < s->cap) {
+        uint32_t c;
+        const  uint32_t *cc = str + i;
+        uint8_t *cb = s->bytes + j;
+        uint8_t *cs = s->bytes + s->cap;
+        int l;
+        c = str[i];
+        l = UTF8_CLEN(c);
+        if (l > 0) {
+            if (j + l <= s->cap) {
+                UTF8_ENCODE(&cc, cc + 1, &cb, cs);
+                j += l; /* advance by the length of the UTF-8 sequence */
+            } else {
+                break; /* not enough capacity */
+            }
+        } else {
+            break; /* invalid character */
+        }
+        i++;
+    }
+    s->len = j;
+    return i; /* return the number of code points processed */
 }
 
 jsstr8_t jsstr8_from_str(const char *str) {

@@ -36,7 +36,7 @@ static inline int UTF8_NSHIFT(int i, int l) {
  *   l >= 2: UTF-8 sequence length
  *   l >  6: malformed byte
  */
-static inline void UTF8_BLEN(const char *bc, int *l) {
+static inline void UTF8_BLEN(const uint8_t *bc, int *l) {
 	*l = 0;
 	while (*l < 6 && (bc[0] & (0x80 >> *l)) != 0) {
 		(*l)++;
@@ -48,7 +48,7 @@ static inline void UTF8_BLEN(const char *bc, int *l) {
  * Set bits from the first byte into the character.
  * Increment `n` on success.
  */
-static inline void UTF8_B1(const char *bc, uint32_t *c, int *l, int *n) {
+static inline void UTF8_B1(const uint8_t *bc, uint32_t *c, int *l, int *n) {
 	if (*l == 0) {  /* ASCII */
 		*c = bc[0];
 		*l = 1;
@@ -70,7 +70,7 @@ static inline void UTF8_B1(const char *bc, uint32_t *c, int *l, int *n) {
  * Set bits from the continuation byte into the character.
  * Increment `n` on success.
  */
-static inline void UTF8_BN(const char *bc, int i, uint32_t *c, int l, int *n) {
+static inline void UTF8_BN(const uint8_t *bc, int i, uint32_t *c, int l, int *n) {
 	if (*n > 0 && (bc[i] & 0xc0) == 0x80) {
 		*c |= (bc[i] & 0x3f) << UTF8_NSHIFT(i, l);
 		(*n)++;
@@ -103,7 +103,7 @@ static inline void UTF8_VALID(uint32_t c, int *l) {
  *   l == 0:  `l` is too long for `bl`.
  *   l <  0: `-l` length of an invalid UTF-8 sequence.
  */
-static inline void UTF8_CHAR(const char *bc, const char *bs, uint32_t *c, int *l) {
+static inline void UTF8_CHAR(const uint8_t *bc, const uint8_t *bs, uint32_t *c, int *l) {
 	int __utf8_seqlen;
 	int __utf8_n = 0;
 	UTF8_BLEN(bc, &__utf8_seqlen);
@@ -145,8 +145,8 @@ static inline void UTF8_CHAR(const char *bc, const char *bs, uint32_t *c, int *l
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
  */
-static inline void UTF8_DECODE(const char **bc_ptr, const char *bs, uint32_t **cc_ptr, const uint32_t *cs) {
-	const char *bc = *bc_ptr;
+static inline void UTF8_DECODE(const uint8_t **bc_ptr, const uint8_t *bs, uint32_t **cc_ptr, const uint32_t *cs) {
+	const uint8_t *bc = *bc_ptr;
 	uint32_t *cc = *cc_ptr;
 
 	int __utf8_seqlen2;
@@ -191,7 +191,7 @@ static inline int UTF8_CLEN(uint32_t c) {
  * UTF-8 Encode Character Byte 1
  * Sets bits from the character into the first byte, and set the sequence start high-bits.
  */
-static inline void UTF8_C1(uint32_t c, char *bc, int l) {
+static inline void UTF8_C1(uint32_t c, uint8_t *bc, int l) {
 	bc[0] = ((0xFF << (8 - l)) & 0xFF) | ((c >> UTF8_NSHIFT(0, l)) & ((1 << (7 - l)) - 1));
 }
 
@@ -199,7 +199,7 @@ static inline void UTF8_C1(uint32_t c, char *bc, int l) {
  * UTF-8 Encode Character Continuation Byte (2+)
  * Sets bits from the character into the continuation byte as index `i`, and set the continuation high-bits.
  */
-static inline void UTF8_CN(uint32_t c, char *bc, int i, int l) {
+static inline void UTF8_CN(uint32_t c, uint8_t *bc, int i, int l) {
 	bc[i] = 0x80 | ((c >> UTF8_NSHIFT(i, l)) & 0x3f);
 }
 
@@ -209,9 +209,9 @@ static inline void UTF8_CN(uint32_t c, char *bc, int i, int l) {
  *  1. a cursor reaches a stop address.
  *  2. a complete sequence would run past the byte stop address.
  */
-static inline void UTF8_ENCODE(const uint32_t **cc_ptr, const uint32_t *cs, char **bc_ptr, const char *bs) {
+static inline void UTF8_ENCODE(const uint32_t **cc_ptr, const uint32_t *cs, uint8_t **bc_ptr, const uint8_t *bs) {
 	const uint32_t *cc = *cc_ptr;
-	char *bc = *bc_ptr;
+	uint8_t *bc = *bc_ptr;
 	int replace = 0; /* whether to replace invalid characters with U+FFFD */
 
 	int __utf8_seqlen;
@@ -439,12 +439,12 @@ static inline void UTF16_DECODE(const uint16_t **bc_ptr, const uint16_t *bs, uin
  */
 
 /* branchless int to hex-char */
-static inline uint32_t VALHEX(char v) {
+static inline uint32_t VALHEX(uint8_t v) {
 	return (uint32_t)((((v) + 48) & (-((((v) - 10) & 0x80) >> 7))) | (((v) + 55) & (-(((9 - (v)) & 0x80) >> 7))));
 }
 
 /* JSON HEX4DIG token emitter */
-static inline void JSMN_EMIT_HEX4DIG(char *qc, uint32_t c) {
+static inline void JSMN_EMIT_HEX4DIG(uint8_t *qc, uint32_t c) {
 	qc[0] = VALHEX((c >> 12) & 0xF);
 	qc[1] = VALHEX((c >> 8)  & 0xF);
 	qc[2] = VALHEX((c >> 4)  & 0xF);
@@ -454,9 +454,9 @@ static inline void JSMN_EMIT_HEX4DIG(char *qc, uint32_t c) {
 /*
  * JSON String Quoting
  */
-static inline void JSMN_QUOTE_UNICODE(const uint32_t **cc_ptr, const uint32_t *cs, char **qc_ptr, const char *qs) {
+static inline void JSMN_QUOTE_UNICODE(const uint32_t **cc_ptr, const uint32_t *cs, uint8_t **qc_ptr, const uint8_t *qs) {
 	const uint32_t *cc = *cc_ptr;
-	char *qc = *qc_ptr;
+	uint8_t *qc = *qc_ptr;
 
 	uint32_t __jsmn_char = 0;
 	uint32_t hex4dig1    = 0;
@@ -575,9 +575,9 @@ static inline void JSMN_QUOTE_UNICODE(const uint32_t **cc_ptr, const uint32_t *c
 	return;
 }
 
-static inline void JSMN_QUOTE_ASCII(const char **cc_ptr, const char *cs, char **qc_ptr, const char *qs) {
-	const char *cc = *cc_ptr;
-	char *qc = *qc_ptr;
+static inline void JSMN_QUOTE_ASCII(const uint8_t **cc_ptr, const uint8_t *cs, uint8_t **qc_ptr, const uint8_t *qs) {
+	const uint8_t *cc = *cc_ptr;
+	uint8_t *qc = *qc_ptr;
 
 	uint32_t __jsmn_char = 0;
 	uint32_t hex4dig1    = 0;
@@ -659,16 +659,16 @@ static inline void JSMN_QUOTE_ASCII(const char **cc_ptr, const char *cs, char **
 
 #define JSMN_QUOTE(cc_ptr, cs, qc_ptr, qs) _Generic((cs), \
     const uint32_t *: JSMN_QUOTE_UNICODE, \
-    const char *: JSMN_QUOTE_ASCII \
+    const uint8_t *: JSMN_QUOTE_ASCII \
 )(cc_ptr, cs, qc_ptr, qs)
 
 /* branchless hex-char to int */
-static inline int HEXVAL(char b) {
+static inline int HEXVAL(uint8_t b) {
 	return (((b & 0x1f) + ((b >> 6) * 0x19) - 0x10) & 0xF);
 }
 
 /* JSON HEX2DIG token parser */
-static inline uint32_t JSMN_HEX2DIG_ASCII(const char *bc) {
+static inline uint32_t JSMN_HEX2DIG_ASCII(const uint8_t *bc) {
 	return (HEXVAL(bc[0]) << 4) | HEXVAL(bc[1]);
 }
 static inline uint32_t JSMN_HEX2DIG_UNICODE(const uint32_t *bc) {
@@ -676,11 +676,11 @@ static inline uint32_t JSMN_HEX2DIG_UNICODE(const uint32_t *bc) {
 }
 #define JSMN_HEX2DIG(bc) _Generic((bc), \
 	const uint32_t *: JSMN_HEX2DIG_UNICODE, \
-	const char *: JSMN_HEX2DIG_ASCII \
+	const uint8_t *: JSMN_HEX2DIG_ASCII \
 )(bc)
 
 /* JSON HEX4DIG token parser */
-static inline uint32_t JSMN_HEX4DIG_ASCII(const char *bc) {
+static inline uint32_t JSMN_HEX4DIG_ASCII(const uint8_t *bc) {
 	return (HEXVAL(bc[0]) << 12) | (HEXVAL(bc[1]) << 8) | (HEXVAL(bc[2]) << 4) | HEXVAL(bc[3]);
 }
 static inline uint32_t JSMN_HEX4DIG_UNICODE(const uint32_t *bc) {
@@ -688,14 +688,14 @@ static inline uint32_t JSMN_HEX4DIG_UNICODE(const uint32_t *bc) {
 }
 #define JSMN_HEX4DIG(bc) _Generic((bc), \
 	const uint32_t *: JSMN_HEX4DIG_UNICODE, \
-	const char *: JSMN_HEX4DIG_ASCII \
+	const uint8_t *: JSMN_HEX4DIG_ASCII \
 )(bc)
 
 /*
  * JSON String Unquoting
  */
-static inline void JSMN_UNQUOTE_ASCII(const char **qc_ptr, const char *qs, uint32_t **cc_ptr, const uint32_t *cs) {
-	const char *qc = *qc_ptr;
+static inline void JSMN_UNQUOTE_ASCII(const uint8_t **qc_ptr, const uint8_t *qs, uint32_t **cc_ptr, const uint32_t *cs) {
+	const uint8_t *qc = *qc_ptr;
 	uint32_t *cc = *cc_ptr;
 
 	uint32_t __jsmn_char = 0;
@@ -872,15 +872,15 @@ static inline void JSMN_UNQUOTE_UNICODE(const uint32_t **qc_ptr, const uint32_t 
 
 #define JSMN_UNQUOTE(qc_ptr, qs, cc_ptr, cs) _Generic((qs), \
 	const uint32_t *: JSMN_UNQUOTE_UNICODE, \
-	const char *: JSMN_UNQUOTE_ASCII \
+	const uint8_t *: JSMN_UNQUOTE_ASCII \
 )(qc_ptr, qs, cc_ptr, cs)
 
 
-static inline void JSMN_DECODE_URL(const char **qc_ptr, const char *qs, char **cc_ptr, const char *cs, int block) {
-	const char *qc = *qc_ptr;
-	char *cc = *cc_ptr;
+static inline void JSMN_DECODE_URL(const uint8_t **qc_ptr, const uint8_t *qs, uint8_t **cc_ptr, const uint8_t *cs, int block) {
+	const uint8_t *qc = *qc_ptr;
+	uint8_t *cc = *cc_ptr;
 
-	char __jsmn_char = 0;
+	uint8_t __jsmn_char = 0;
 	while (qc < qs && cc < cs) {
 		if (*qc == '%') {
 			if (qc + 2 <= qs) {
@@ -902,11 +902,11 @@ static inline void JSMN_DECODE_URL(const char **qc_ptr, const char *qs, char **c
 	return;
 }
 
-static inline void JSMN_ENCODE_URL(const char **cc_ptr, const char *cs, char **qc_ptr, const char *qs, const char *encode_set) {
-	const char *cc = *cc_ptr;
-	char *qc = *qc_ptr;
+static inline void JSMN_ENCODE_URL(const uint8_t **cc_ptr, const uint8_t *cs, uint8_t **qc_ptr, const uint8_t *qs, const uint8_t *encode_set) {
+	const uint8_t *cc = *cc_ptr;
+	uint8_t *qc = *qc_ptr;
 	
-	char __jsmn_char = 0;
+	uint8_t __jsmn_char = 0;
 	while (cc < cs && qc < qs) {
 		if (*cc >= 0x20 && *cc <= 0x7F) { /* non-control ASCII */
 			if (encode_set[*cc]) {
@@ -937,7 +937,7 @@ static inline void JSMN_ENCODE_URL(const char **cc_ptr, const char *cs, char **q
 /* always encode U+0025 (%), the escape character */
 
 /* "The C0 control percent-encode set are the C0 controls and all code points greater than U+007E (~)."" */
-static char jsmn_urlencode_set_c0[8*32] = {
+static uint8_t jsmn_urlencode_set_c0[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -976,7 +976,7 @@ static char jsmn_urlencode_set_c0[8*32] = {
 };
 
 /* "The fragment percent-encode set is the C0 control percent-encode set and U+0020 SPACE, U+0022 ("), U+003C (<), U+003E (>), and U+0060 (`). " */
-static char jsmn_urlencode_set_fragment[8*32] = {
+static uint8_t jsmn_urlencode_set_fragment[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1014,7 +1014,7 @@ static char jsmn_urlencode_set_fragment[8*32] = {
 };
 
 /* The query percent-encode set is the C0 control percent-encode set and U+0020 SPACE, U+0022 ("), U+0023 (#), U+003C (<), and U+003E (>). */
-static char jsmn_urlencode_set_query[8*32] = {
+static uint8_t jsmn_urlencode_set_query[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1052,7 +1052,7 @@ static char jsmn_urlencode_set_query[8*32] = {
 };
 
 /* The special-query percent-encode set is the query percent-encode set and U+0027 ('). */
-static char jsmn_urlencode_set_special_query[8*32] = {
+static uint8_t jsmn_urlencode_set_special_query[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1090,7 +1090,7 @@ static char jsmn_urlencode_set_special_query[8*32] = {
 };
 
 /* The path percent-encode set is the query percent-encode set and U+003F (?), U+0060 (`), U+007B ({), and U+007D (}). */
-static char jsmn_urlencode_set_path[8*32] = {
+static uint8_t jsmn_urlencode_set_path[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1128,7 +1128,7 @@ static char jsmn_urlencode_set_path[8*32] = {
 };
 
 /* The userinfo percent-encode set is the path percent-encode set and U+002F (/), U+003A (:), U+003B (;), U+003D (=), U+0040 (@), U+005B ([) to U+005E (^), inclusive, and U+007C (|).  */
-static char jsmn_urlencode_set_userinfo[8*32] = {
+static uint8_t jsmn_urlencode_set_userinfo[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1166,7 +1166,7 @@ static char jsmn_urlencode_set_userinfo[8*32] = {
 };
 
 /* The component percent-encode set is the userinfo percent-encode set and U+0024 ($) to U+0026 (&), inclusive, U+002B (+), and U+002C (,). */
-static char jsmn_urlencode_set_component[8*32] = {
+static uint8_t jsmn_urlencode_set_component[8*32] = {
 	/* 0x00 - 0x1F: control characters are set */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x00 - 0x07 */
 	1, 1, 1, 1, 1, 1, 1, 1, /* 0x08 - 0x0f */
@@ -1213,7 +1213,7 @@ static char jsmn_urlencode_set_component[8*32] = {
 int test_utf8() {
 	int s = 0;
 	uint32_t in_c;
-	char    im_b[6];
+	uint8_t    im_b[6];
 	uint32_t out_c;
 
 	/*
@@ -1223,8 +1223,8 @@ int test_utf8() {
 	for (in_c = 0; in_c < 0x110000; in_c++) { 
 		uint32_t *in_cc  =  &in_c;
 		uint32_t *in_cs  = (&in_c) + 1;
-		char    *im_bc  =  im_b;
-		char    *im_bs  =  im_b + 6;
+		uint8_t    *im_bc  =  im_b;
+		uint8_t    *im_bs  =  im_b + 6;
 		uint32_t *out_cc =  &out_c;
 		uint32_t *out_cs = (&out_c) + 1;
 
@@ -1253,7 +1253,7 @@ int test_utf8() {
 		*/
 
 		im_bc = im_b;
-		UTF8_DECODE((const char **) &im_bc, (const char *) im_bs, &out_cc, out_cs);
+		UTF8_DECODE((const uint8_t **) &im_bc, (const uint8_t *) im_bs, &out_cc, out_cs);
 		if (in_c != out_c) {
 			printf("Error on UTF-8 character %i = %i\n.", (int) in_c, (int) out_c);
 			return 1;
@@ -1305,14 +1305,14 @@ int test_utf16() {
 int test_quote() {
 	int s = 0;
 	uint32_t in_c;
-	char im_c[12];
+	uint8_t im_c[12];
 	uint32_t out_c;
 
 	for (in_c = 0; in_c < 0x110000; in_c++) { 
 		uint32_t *in_cc  =  &in_c;
 		uint32_t *in_cs  = (&in_c) + 1;
-		char *im_cc  =  im_c;
-		char *im_cs  =  im_c + 12;
+		uint8_t *im_cc  =  im_c;
+		uint8_t *im_cs  =  im_c + 12;
 		uint32_t *out_cc =  &out_c;
 		uint32_t *out_cs = (&out_c) + 1;
 
@@ -1337,7 +1337,7 @@ int test_quote() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs);
+		JSMN_UNQUOTE((const uint8_t **) &im_cc, (const uint8_t *) im_cs, &out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -1356,15 +1356,15 @@ int test_quote() {
 
 int test_quote_ascii() {
 	int s = 0;
-	char in_c;
-	char im_c[12];
+	uint8_t in_c;
+	uint8_t im_c[12];
 	uint32_t out_c;
 
 	for (in_c = 0; s <= 0xFF; in_c++) { 
-		char *in_cc  =  &in_c;
-		char *in_cs  = (&in_c) + 1;
-		char *im_cc  =  im_c;
-		char *im_cs  =  im_c + 12;
+		uint8_t *in_cc  =  &in_c;
+		uint8_t *in_cs  = (&in_c) + 1;
+		uint8_t *im_cc  =  im_c;
+		uint8_t *im_cs  =  im_c + 12;
 		uint32_t *out_cc =  &out_c;
 		uint32_t *out_cs = (&out_c) + 1;
 
@@ -1374,7 +1374,7 @@ int test_quote_ascii() {
 
 		memset(im_c, 0, sizeof (char) * 12);
 
-		JSMN_QUOTE((const char **) &in_cc, (const char *) in_cs, &im_cc, im_cs);
+		JSMN_QUOTE((const uint8_t **) &in_cc, (const uint8_t *) in_cs, &im_cc, im_cs);
 
 		/*
 		printf("im_c: ");
@@ -1385,7 +1385,7 @@ int test_quote_ascii() {
 		*/
 
 		im_cc = im_c;
-		JSMN_UNQUOTE((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs);
+		JSMN_UNQUOTE((const uint8_t **) &im_cc, (const uint8_t *) im_cs, &out_cc, out_cs);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -1402,20 +1402,20 @@ int test_quote_ascii() {
 	return 0;
 }
 
-int test_encode_url_set(const char *encode_set, const char *set_name) {
+int test_encode_url_set(const uint8_t *encode_set, const uint8_t *set_name) {
 	/* Test URL encode/decode cycle with the given encoding set. */
 	int s = 0;
-	char in_c;
-	char im_c[12];
-	char out_c;
+	uint8_t in_c;
+	uint8_t im_c[12];
+	uint8_t out_c;
 
 	for (in_c = 0; ; in_c++) { 
-		char *in_cc  =  &in_c;
-		char *in_cs  = (&in_c) + 1;
-		char *im_cc  =  im_c;
-		char *im_cs  =  im_c + 12;
-		char *out_cc =  &out_c;
-		char *out_cs = (&out_c) + 1;
+		uint8_t *in_cc  =  &in_c;
+		uint8_t *in_cs  = (&in_c) + 1;
+		uint8_t *im_cc  =  im_c;
+		uint8_t *im_cs  =  im_c + 12;
+		uint8_t *out_cc =  &out_c;
+		uint8_t *out_cs = (&out_c) + 1;
 
 		/*
 		printf("in_c(%i): %lc\n", (int) in_c, in_c);
@@ -1423,7 +1423,7 @@ int test_encode_url_set(const char *encode_set, const char *set_name) {
 
 		memset(im_c, 0, sizeof (char) * 12);
 
-		JSMN_ENCODE_URL((const char **) &in_cc, (const char *) in_cs, &im_cc, im_cs, encode_set);
+		JSMN_ENCODE_URL((const uint8_t **) &in_cc, (const uint8_t *) in_cs, &im_cc, im_cs, encode_set);
 
 		/*
 		printf("im_c: ");
@@ -1434,7 +1434,7 @@ int test_encode_url_set(const char *encode_set, const char *set_name) {
 		*/
 
 		im_cc = im_c;
-		JSMN_DECODE_URL((const char **) &im_cc, (const char *) im_cs, &out_cc, out_cs, 0);
+		JSMN_DECODE_URL((const uint8_t **) &im_cc, (const uint8_t *) im_cs, &out_cc, out_cs, 0);
 		/*
 		printf("out_c(%i): %lc\n", (int) out_c, out_c);
 		*/
@@ -1444,7 +1444,7 @@ int test_encode_url_set(const char *encode_set, const char *set_name) {
 		}
 		s++;
 
-		if (in_c == (char) 0xFF) {
+		if (in_c == (uint8_t) 0xFF) {
 			break;
 		}
 	}

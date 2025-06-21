@@ -2,11 +2,25 @@
 #define JSSTR_H
 
 /*
- * JavaScript string and character utilities for the whatwg spec
+ * String and encoding utilities for high-level string semantics.
  * Implements:
- *  - string of code points (unicode characters)
+ *  - string of code points (UTF-32)
  *  - string of code units (UTF-16)
  *  - string of bytes (UTF-8)
+ * 
+ * The stings are slice pointers:
+ *  - capacity,
+ *  - length, and
+ *  - a pointer to the data.
+ * 
+ * They do not contain the data themselves, 
+ *   but rather point to a buffer that is managed elsewhere.
+ * 
+ * Therefore, these are *mutable* strings.
+ * 
+ * These are NOT null-terminated strings:
+ *  - There may be other data next to the string data,
+ *  - so *never* assume null termination.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -43,7 +57,14 @@ typedef struct jsstr8_s {
     uint8_t *bytes;
 } jsstr8_t;
 
-size_t jsstr_head_size();
+size_t jsstr32_head_size();
+size_t jsstr16_head_size();
+size_t jsstr8_head_size();
+
+/* element length, not character length */
+size_t utf8_strlen(const uint8_t *str);
+size_t utf16_strlen(const uint16_t *str);
+size_t utf32_strlen(const uint32_t *str);
 
 /*
  * uint32_t strings
@@ -52,18 +73,42 @@ size_t jsstr_head_size();
 void jsstr8_init(jsstr8_t *s);
 /*
  * Init a JavaScript string from a byte buffer.
+ * This initializes an empty string with a given capacity.
  */
 void jsstr32_init_from_buf(jsstr32_t *s, const char *buf, size_t len);
 void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i);
 int jsstr32_cmp(jsstr32_t *s1, jsstr32_t *s2);
+
+/*
+ * Find the index of the first occurrence of the code point in the string.
+ * Returns the index of the code point, or -1 if not found.
+ */
 ssize_t jsstr32_indexof(jsstr32_t *s, uint32_t search_c, size_t start_i);
+/*
+ * Find the index of the first occurrence of a sequence of code points in the string.
+ * Returns the index of the first code point of the sequence, or -1 if not found.
+ */
 ssize_t jsstr32_indextoken(jsstr32_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
+
+/* return the fixed capacity of the string */
 size_t jsstr32_get_cap(jsstr32_t *s);
 
+/*
+ * Set the string from a UTF-32, UTF-16 or UTF-8 encoded string.
+ * Returns the number of code points processed.
+ * Therefore, you can use a cursor to iterate a single string over a single buffer
+ * by incrementing the cursor by the return value
+ * until it reaches the end of the buffer.
+ */
 size_t jsstr32_set_from_utf32(jsstr32_t *s, const uint32_t *str, size_t len);
 size_t jsstr32_set_from_utf16(jsstr32_t *s, const uint16_t *str, size_t len);
 size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len);
 #define jsstr32_set_from_literal(s, str) jsstr32_set_from_utf8(s, str, sizeof(str) - 1)
+
+/*
+ * Set the string from a null-terminated wide character string.
+ * The number of code points processed is determined by the length of the string.
+ */
 jsstr32_t jsstr32_from_str(const uint32_t *str);
 #define declare_jsstr32(__varname, __str) jsstr_t __varname = jsstr32_from_str(__str)
 static const jsstr32_t jsstr32_empty = {0, 0, NULL};
