@@ -83,7 +83,7 @@ void test_jsstr32_lifecycle() {
     printf("jsstr32_indexof: %zd\n", jsstr32_indexof(&s, search_c, start_i));
 
     uint32_t *search_tok = L"orld";
-    size_t search_tok_len = wcslen(search_tok);
+    size_t search_tok_len = utf32_strlen(search_tok);
     printf("jsstr32_indextoken: %zd\n",
            jsstr32_indextoken(&s, search_tok, search_tok_len, start_i));
 }
@@ -175,7 +175,7 @@ void test_jsstr16_lifecycle() {
     /* test indextoken */
     int32_t *search_c2i = L"orld";
     uint32_t *search_c2 = (uint32_t *) search_c2i;
-    size_t search_c_len = wcslen(search_c2);
+    size_t search_c_len = utf32_strlen(search_c2);
     printf("jsstr16_indextoken: %zd\n", jsstr16_indextoken(&s_str, search_c2, search_c_len, start_i));
 }
 
