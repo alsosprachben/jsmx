@@ -137,7 +137,7 @@ size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len) {
 
 jsstr32_t jsstr32_from_str(const uint32_t *str) {
     jsstr32_t s;
-    size_t len = wcslen(str);
+    size_t len = utf32_strlen(str);
     jsstr32_init_from_buf(&s, (char *) str, len);
     s.len = len;
     return s;
