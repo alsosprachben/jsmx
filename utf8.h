@@ -168,28 +168,23 @@ static inline void UTF8_DECODE(const char **bc_ptr, const char *bs, uint32_t **c
 	return;
 }
 
+static uint8_t UTF8_REPLACEMENT_CHAR[] = {0xEF, 0xBF, 0xBD}; /* U+FFFD Replacement Character in UTF-8 */
+
+static inline int UNICODE_BOUNDARY() {
+	return 0x110000; /* Maximum valid Unicode code point */
+}
+
 /*
  * UTF-8 Character Byte Length
  * Set the byte length from the character,
  */
 static inline int UTF8_CLEN(uint32_t c) {
-	if (c < 0) {
-		return 0;
-	} else if (c < 0x80) {
-		return 1;
-	} else if (c < 0x800) {
-		return 2;
-	} else if (c < 0x10000) {
-		return 3;
-	} else if (c < 0x200000) {
-		return 4;
-	} else if (c < 0x4000000) {
-		return 5;
-	} else if (c < 0x80000000) {
-		return 6;
-	} else {
-		return 0;
-	}
+    if (c < 0x80)        return 1;
+    if (c < 0x800)       return 2;
+    if (c < 0x10000)     return 3;
+    if (c < 0x110000)    return 4;  /* Unicode max */
+    /* invalid → U+FFFD */
+    return 3;
 }
 
 /*
@@ -217,22 +212,31 @@ static inline void UTF8_CN(uint32_t c, char *bc, int i, int l) {
 static inline void UTF8_ENCODE(const uint32_t **cc_ptr, const uint32_t *cs, char **bc_ptr, const char *bs) {
 	const uint32_t *cc = *cc_ptr;
 	char *bc = *bc_ptr;
+	int replace = 0; /* whether to replace invalid characters with U+FFFD */
 
 	int __utf8_seqlen;
 	uint32_t c;
 	while (cc < cs && bc < bs) {
+		replace = *cc >= UNICODE_BOUNDARY() || (*cc >= 0xD800 && *cc < 0xE000);
+
 		__utf8_seqlen = UTF8_CLEN(*cc);
 		if (__utf8_seqlen == 1) { /* ASCII */
 			*(bc++) = *(cc++);
 		} else if (__utf8_seqlen > 1) {
 			if (bc + __utf8_seqlen <= bs) { /* character fits */
-				c = *(cc++);
+				if (replace) {
+					c = 0xFFFD; /* replacement character */
+				} else {
+					c = *(cc++);
+				}
 				UTF8_C1(c, bc, __utf8_seqlen);
 				switch (__utf8_seqlen) {
+					/*
 					case 6:
 						UTF8_CN(c, bc, 5, __utf8_seqlen);
 					case 5:
 						UTF8_CN(c, bc, 4, __utf8_seqlen);
+						*/
 					case 4:
 						UTF8_CN(c, bc, 3, __utf8_seqlen);
 					case 3:
@@ -265,8 +269,8 @@ static inline void UTF8_ENCODE(const uint32_t **cc_ptr, const uint32_t *cs, char
  */
 static inline int UTF16_BLEN(const uint16_t *bc, const uint16_t *bs) {
 	if (bc < bs) {
-		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
-			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+		if (*bc >= 0xD800 && *bc < 0xDC00) { /* high surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) { /* low surrogate */
 				return 2; /* surrogate pair */
 			} else {
 				return 1; /* invalid sequence */
@@ -284,13 +288,13 @@ static inline int UTF16_BLEN(const uint16_t *bc, const uint16_t *bs) {
  */
 static inline int UTF16_VALID(const uint16_t *bc, const uint16_t *bs) {
 	if (bc < bs) {
-		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
-			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+		if (*bc >= 0xD800 && *bc < 0xDC00) { /* high surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) { /* low surrogate */
 				return 1; /* valid surrogate pair */
 			} else {
 				return 0; /* invalid sequence */
 			}
-		} else if (*bc < 0xD800 || *bc > 0xDFFF) { /* BMP */
+		} else if (*bc < 0xD800 || *bc >= 0xE000) { /* BMP */
 			return 1; /* valid BMP character */
 		} else {
 			return 0; /* invalid code point */
@@ -306,7 +310,7 @@ static inline int UTF16_VALID(const uint16_t *bc, const uint16_t *bs) {
 static inline void UTF16_CHAR(const uint16_t *bc, const uint16_t *bs, uint32_t *c, int *l) {
 	if (bc < bs) {
 		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
-			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) <= 0xDFFF) { /* low surrogate */
+			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) { /* low surrogate */
 				*c = 0x10000 + (((*bc - 0xD800) << 10) | (*(bc + 1) - 0xDC00));
 				*l = 2; /* surrogate pair */
 				return;
@@ -338,7 +342,7 @@ static inline int UTF16_CLEN(uint32_t c) {
 	} else if (c < 0x110000) {
 		return 2; /* Supplementary Planes */
 	} else {
-		return 0; /* invalid code point */
+		return -1; /* invalid code point */
 	}
 }
 

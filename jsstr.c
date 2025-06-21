@@ -308,10 +308,12 @@ size_t jsstr16_set_from_utf32(jsstr16_t *s, const uint32_t *str, size_t len) {
     while (i < len && j < s->cap) {
         uint32_t c = str[i];
         if (c >= 0x10000) {
-            s->codeunits[j] = 0xD800 + ((c - 0x10000) >> 10);
-            j++;
-            s->codeunits[j] = 0xDC00 + ((c - 0x10000) & 0x3FF);
-            j++;
+            if (j + 1 < s->cap) {
+                UTF16_CODEPAIR(c, s->codeunits + j);
+                j += 2; /* surrogate pair */
+            } else {
+                break; /* not enough capacity */
+            }
         } else {
             s->codeunits[j] = c;
             j++;
@@ -319,7 +321,7 @@ size_t jsstr16_set_from_utf32(jsstr16_t *s, const uint32_t *str, size_t len) {
         i++;
     }
     s->len = j;
-    return j;
+    return i;
 }
 
 size_t jsstr16_set_from_utf16(jsstr16_t *s, const uint16_t *str, size_t len) {
