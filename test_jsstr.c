@@ -10,46 +10,82 @@ void test_jsstr32_lifecycle() {
     jsstr32_t s;
     jsstr32_t s_slice;
     uint8_t buf[1024];
-    size_t len = sizeof (buf);
+    size_t len = sizeof(buf);
     size_t rc;
+    const uint32_t *cu;
+    uint32_t c;
+    uint32_t *c_ptr = &c;
+
+    uint8_t utf8_str[] = "Hello, UTF-8 World! \xF0\x9F\x98\x81";
+    size_t u8_strlen = utf8_strlen(utf8_str);
+    uint16_t utf16_str[] = {
+        0x0048,0x0065,0x006C,0x006C,0x006F,0x002C,0x0020,
+        0x0057,0x006F,0x0072,0x006C,0x0064,0x0021,0
+    };
+    size_t u16_strlen = sizeof(utf16_str)/sizeof(utf16_str[0]) - 1;
+    uint32_t *utf32_str = L"Hello, World! 😀";
+    size_t u32_strlen = utf32_strlen(utf32_str);
+
+    printf("utf8_strlen: %zu\n", u8_strlen);
+    printf("utf16_strlen: %zu\n", u16_strlen);
+    printf("utf32_strlen: %zu\n", u32_strlen);
 
     jsstr32_init_from_buf(&s, buf, len);
     printf("jsstr32_init_from_buf: %zu\n", jsstr32_get_cap(&s));
 
-    uint8_t utf8_str[] = "Hello, UTF-8 World! \xF0\x9F\x98\x81"; // Adding a UTF-8 sequence for 😀
-    len = sizeof(utf8_str) - 1;
-    rc = jsstr32_set_from_utf8(&s, utf8_str, len);
+    rc = jsstr32_set_from_utf8(&s, utf8_str, u8_strlen);
     printf("jsstr32_set_from_utf8: %zu\n", rc);
-
-    printf("jsstr32_get_utf32len: %zu\n", jsstr32_get_utf32len(&s));
-    printf("jsstr32_get_utf16len: %zu\n", jsstr32_get_utf16len(&s));
     printf("jsstr32_get_utf8len: %zu\n", jsstr32_get_utf8len(&s));
 
-    uint32_t *c = jsstr32_wstr_codepoint_at(&s, 20);
-    printf("jsstr32_wstr_codepoint_at: %lc\n", *c);
+    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    if (cu == NULL) {
+        printf("jsstr32_wstr_codepoint_at: NULL\n");
+    } else {
+        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+    }
 
-    jsstr32_truncate(&s, 19);
+    rc = jsstr32_set_from_utf16(&s, utf16_str, u16_strlen);
+    printf("jsstr32_set_from_utf16: %zu\n", rc);
+    printf("jsstr32_get_utf16len: %zu\n", jsstr32_get_utf16len(&s));
+
+    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    if (cu == NULL) {
+        printf("jsstr32_wstr_codepoint_at: NULL\n");
+    } else {
+        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+    }
+
+    rc = jsstr32_set_from_utf32(&s, utf32_str, u32_strlen);
+    printf("jsstr32_set_from_utf32: %zu\n", rc);
+    printf("jsstr32_get_utf32len: %zu\n", jsstr32_get_utf32len(&s));
+
+    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    if (cu == NULL) {
+        printf("jsstr32_wstr_codepoint_at: NULL\n");
+    } else {
+        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+    }
+
+    jsstr32_truncate(&s, 10);
     printf("jsstr32_truncate: %zu\n", jsstr32_get_utf32len(&s));
 
-    jsstr32_slice(&s_slice, &s, 7, 10);
+    jsstr32_slice(&s_slice, &s, 3, 7);
     printf("jsstr32_slice: %zu\n", jsstr32_get_utf32len(&s_slice));
 
-    jsstr32_t s2 = jsstr32_from_str(L"Hello, World!");
-    printf("jsstr32_from_str: %zu\n", jsstr32_get_utf32len(&s2));
+    s = jsstr32_from_str(L"Hello, World!");
+    printf("jsstr32_from_str: %zu\n", jsstr32_get_utf32len(&s));
 
-    /* test cmp */
-    jsstr32_t s3 = jsstr32_from_str(L"Hello, World!");
-    printf("jsstr32_cmp: %d\n", jsstr32_cmp(&s2, &s3));
+    jsstr32_t s_cmp = jsstr32_from_str(L"Hello, World!");
+    printf("jsstr32_cmp: %d\n", jsstr32_cmp(&s, &s_cmp));
 
-    /* test indexof */
     uint32_t search_c = L'o';
     size_t start_i = 6;
-    printf("jsstr32_indexof: %zd\n", jsstr32_indexof(&s2, search_c, start_i));
+    printf("jsstr32_indexof: %zd\n", jsstr32_indexof(&s, search_c, start_i));
 
-    /* test indextoken */
-    uint32_t *search_c2 = L"orld";
-    size_t search_c_len = wcslen(search_c2);
-    printf("jsstr32_indextoken: %zd\n", jsstr32_indextoken(&s2, search_c2, search_c_len, start_i));    
+    uint32_t *search_tok = L"orld";
+    size_t search_tok_len = wcslen(search_tok);
+    printf("jsstr32_indextoken: %zd\n",
+           jsstr32_indextoken(&s, search_tok, search_tok_len, start_i));
 }
 
 void test_jsstr16_lifecycle() {
