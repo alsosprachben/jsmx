@@ -72,10 +72,10 @@ void test_jsstr32_lifecycle() {
     jsstr32_slice(&s_slice, &s, 3, 7);
     printf("jsstr32_slice: %zu\n", jsstr32_get_utf32len(&s_slice));
 
-    s = jsstr32_from_str(L"Hello, World!");
-    printf("jsstr32_from_str: %zu\n", jsstr32_get_utf32len(&s));
+    s = jsstr32_init_from_str(L"Hello, World!");
+    printf("jsstr32_init_from_str: %zu\n", jsstr32_get_utf32len(&s));
 
-    jsstr32_t s_cmp = jsstr32_from_str(L"Hello, World!");
+    jsstr32_t s_cmp = jsstr32_init_from_str(L"Hello, World!");
     printf("jsstr32_cmp: %d\n", jsstr32_cmp(&s, &s_cmp));
 
     uint32_t search_c = L'o';
@@ -160,11 +160,11 @@ void test_jsstr16_lifecycle() {
     jsstr16_slice(&s_slice, &s, 3, 7);
     printf("jsstr16_slice: %zu\n", jsstr16_get_utf32len(&s_slice));
 
-    s_str = jsstr16_from_str(utf16_str);
-    printf("jsstr16_from_str: %zu\n", jsstr16_get_utf32len(&s_str));
+    s_str = jsstr16_init_from_str(utf16_str);
+    printf("jsstr16_init_from_str: %zu\n", jsstr16_get_utf32len(&s_str));
 
     /* test cmp */
-    s_cmp = jsstr16_from_str(utf16_str);
+    s_cmp = jsstr16_init_from_str(utf16_str);
     printf("jsstr16_cmp: %d\n", jsstr16_cmp(&s_str, &s_cmp));
 
     /* test indexof */
@@ -250,10 +250,10 @@ void test_jsstr8_lifecycle() {
     jsstr8_slice(&s_slice, &s, 3, 7);
     printf("jsstr8_slice: %zu\n", jsstr8_get_utf32len(&s_slice));
 
-    s_str = jsstr8_from_str("Hello, World!");
-    printf("jsstr8_from_str: %zu\n", jsstr8_get_utf32len(&s_str));
+    s_str = jsstr8_init_from_str("Hello, World!");
+    printf("jsstr8_init_from_str: %zu\n", jsstr8_get_utf32len(&s_str));
 
-    s_cmp = jsstr8_from_str("Hello, World!");
+    s_cmp = jsstr8_init_from_str("Hello, World!");
     printf("jsstr8_cmp: %d\n", jsstr8_cmp(&s_str, &s_cmp));
 
     uint32_t search_c = L'o';

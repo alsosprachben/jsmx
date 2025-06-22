@@ -54,6 +54,14 @@ void jsstr32_init_from_buf(jsstr32_t *s, const char *buf, size_t len) {
     s->codepoints = (uint32_t *) buf;
 }
 
+jsstr32_t jsstr32_init_from_str(const uint32_t *str) {
+    jsstr32_t s;
+    size_t len = utf32_strlen(str);
+    jsstr32_init_from_buf(&s, (char *) str, len);
+    s.len = len;
+    return s;
+}
+
 void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr32_wstr_codepoint_at() to slice the buffer */
     s->codepoints = jsstr32_wstr_codepoint_at(src, start_i);
@@ -135,12 +143,14 @@ size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len) {
     return bc - str; /* return the number of bytes processed */
 }
 
-jsstr32_t jsstr32_from_str(const uint32_t *str) {
-    jsstr32_t s;
-    size_t len = utf32_strlen(str);
-    jsstr32_init_from_buf(&s, (char *) str, len);
-    s.len = len;
-    return s;
+size_t jsstr32_set_from_jsstr16(jsstr32_t *s, jsstr16_t *src) {
+    /* convert a jsstr16_t string to a jsstr32_t string */
+    return jsstr32_set_from_utf16(s, src->codeunits, src->len);
+}
+
+size_t jsstr32_set_from_jsstr8(jsstr32_t *s, jsstr8_t *src) {
+    /* convert a jsstr8_t string to a jsstr32_t string */
+    return jsstr32_set_from_utf8(s, src->bytes, src->len);
 }
 
 size_t jsstr32_get_utf32len(jsstr32_t *s) {
@@ -247,6 +257,14 @@ void jsstr16_init_from_buf(jsstr16_t *s, const char *buf, size_t len) {
     s->cap = len / sizeof(uint16_t);
     s->len = 0;
     s->codeunits = (uint16_t *) buf;
+}
+
+jsstr16_t jsstr16_init_from_str(const uint16_t *str) {
+    jsstr16_t s;
+    size_t len = utf16_strlen(str);
+    jsstr16_init_from_buf(&s, (char *) str, len);
+    s.len = len;
+    return s;
 }
 
 void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
@@ -399,20 +417,14 @@ size_t jsstr16_set_from_utf8(jsstr16_t *s, const uint8_t *str, size_t len) {
     return i;
 }
 
-size_t str16len(const uint16_t *str) {
-    size_t len = 0;
-    while (str[len] != 0) {
-        len++;
-    }
-    return len;
+size_t jsstr16_set_from_jsstr32(jsstr16_t *s, jsstr32_t *src) {
+    /* convert a jsstr32_t string to a jsstr16_t string */
+    return jsstr16_set_from_utf32(s, src->codepoints, src->len);
 }
 
-jsstr16_t jsstr16_from_str(const uint16_t *str) {
-    jsstr16_t s;
-    size_t len = str16len(str);
-    jsstr16_init_from_buf(&s, (char *) str, len);
-    s.len = len;
-    return s;
+size_t jsstr16_set_from_jsstr8(jsstr16_t *s, jsstr8_t *src) {
+    /* convert a jsstr8_t string to a jsstr16_t string */
+    return jsstr16_set_from_utf8(s, src->bytes, src->len);
 }
 
 size_t jsstr16_get_utf32len(jsstr16_t *s) {
@@ -563,6 +575,14 @@ void jsstr8_init_from_buf(jsstr8_t *s, const char *buf, size_t len) {
     s->bytes = (uint8_t *) buf;
 }
 
+jsstr8_t jsstr8_init_from_str(const char *str) {
+    jsstr8_t s;
+    size_t len = strlen(str);
+    jsstr8_init_from_buf(&s, str, len);
+    s.len = len;
+    return s;
+}
+
 void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr8_u8s_byte_at() to slice the buffer */
     s->bytes = jsstr8_u8s_byte_at(src, start_i);
@@ -705,12 +725,14 @@ size_t jsstr8_set_from_utf32(jsstr8_t *s, const uint32_t *str, size_t len) {
     return i; /* return the number of code points processed */
 }
 
-jsstr8_t jsstr8_from_str(const char *str) {
-    jsstr8_t s;
-    size_t len = strlen(str);
-    jsstr8_init_from_buf(&s, str, len);
-    s.len = len;
-    return s;
+size_t jsstr8_set_from_jsstr16(jsstr8_t *s, jsstr16_t *src) {
+    /* convert a jsstr16_t string to a jsstr8_t string */
+    return jsstr8_set_from_utf16(s, src->codeunits, src->len);
+}
+
+size_t jsstr8_set_from_jsstr32(jsstr8_t *s, jsstr32_t *src) {
+    /* convert a jsstr32_t string to a jsstr8_t string */
+    return jsstr8_set_from_utf32(s, src->codepoints, src->len);
 }
 
 size_t jsstr8_get_utf32len(jsstr8_t *s) {
