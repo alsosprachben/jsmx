@@ -54,12 +54,11 @@ void jsstr32_init_from_buf(jsstr32_t *s, const char *buf, size_t len) {
     s->codepoints = (uint32_t *) buf;
 }
 
-jsstr32_t jsstr32_init_from_str(const uint32_t *str) {
-    jsstr32_t s;
+void jsstr32_init_from_str(jsstr32_t *s, const uint32_t *str) {
     size_t len = utf32_strlen(str);
-    jsstr32_init_from_buf(&s, (char *) str, len);
-    s.len = len;
-    return s;
+    jsstr32_init_from_buf(s, (char *) str, len);
+    s->len = len;
+    return;
 }
 
 void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i) {
@@ -259,12 +258,11 @@ void jsstr16_init_from_buf(jsstr16_t *s, const char *buf, size_t len) {
     s->codeunits = (uint16_t *) buf;
 }
 
-jsstr16_t jsstr16_init_from_str(const uint16_t *str) {
-    jsstr16_t s;
+void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str) {
     size_t len = utf16_strlen(str);
-    jsstr16_init_from_buf(&s, (char *) str, len);
-    s.len = len;
-    return s;
+    jsstr16_init_from_buf(s, (char *) str, len);
+    s->len = len;
+    return;
 }
 
 void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
@@ -575,12 +573,11 @@ void jsstr8_init_from_buf(jsstr8_t *s, const char *buf, size_t len) {
     s->bytes = (uint8_t *) buf;
 }
 
-jsstr8_t jsstr8_init_from_str(const char *str) {
-    jsstr8_t s;
+void jsstr8_init_from_str(jsstr8_t *s, const char *str) {
     size_t len = strlen(str);
-    jsstr8_init_from_buf(&s, str, len);
-    s.len = len;
-    return s;
+    jsstr8_init_from_buf(s, str, len);
+    s->len = len;
+    return;
 }
 
 void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {

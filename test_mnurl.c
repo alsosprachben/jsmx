@@ -46,7 +46,8 @@ void test_urlsearchparams_delete() {
     declare_jsstr8(search, "key1=value1&key2=value2");
     urlsearchparams_init(&searchParams, search);
 
-    urlsearchparams_delete(&searchParams, jsstr8_init_from_str("key1"));
+    declare_jsstr8(key, "key1");
+    urlsearchparams_delete(&searchParams, key);
 
     declare_jsstr8(key2, "key2");
     declare_jsstr8(value2, "value2");
