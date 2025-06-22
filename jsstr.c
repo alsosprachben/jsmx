@@ -61,7 +61,7 @@ void jsstr32_init_from_str(jsstr32_t *s, const uint32_t *str) {
     return;
 }
 
-void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i) {
+void jsstr32_u32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr32_u32s_at() to slice the buffer */
     s->codepoints = jsstr32_u32s_at(src, start_i);
     s->len = src->codepoints + src->len - s->codepoints;
@@ -71,7 +71,7 @@ void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i)
     s->cap = s->len;
 }
 
-int jsstr32_cmp(jsstr32_t *s1, jsstr32_t *s2) {
+int jsstr32_u32_cmp(jsstr32_t *s1, jsstr32_t *s2) {
     if (s1->len != s2->len) {
         return s1->len - s2->len;
     }
@@ -194,15 +194,15 @@ void jsstr32_u32_truncate(jsstr32_t *s, size_t len) {
     }
 }
 
-jsstr32_t jsstr32_jsstr_codepoint_at(jsstr32_t *s, ssize_t index) {
-    /* jsstr32_slice() to slice using the s string's buffer */
+jsstr32_t jsstr32_jsstr32_at(jsstr32_t *s, ssize_t index) {
+    /* jsstr32_u32_slice() to slice using the s string's buffer */
     jsstr32_t result;
     jsstr32_init(&result);
     if (index < 0 || index >= s->len) {
         /* out of bounds, return empty string */
         return result;
     }
-    jsstr32_slice(&result, s, index, index + 1);
+    jsstr32_u32_slice(&result, s, index, index + 1);
     return result;
 }
 
@@ -258,7 +258,7 @@ void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str) {
     return;
 }
 
-void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
+void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr16_u16s_at() to slice the buffer */
     s->codeunits = jsstr16_u16s_at(src, start_i);
     s->len = src->codeunits + src->len - s->codeunits;
@@ -268,7 +268,7 @@ void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i)
     s->cap = s->len;
 }
 
-int jsstr16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
+int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
     if (s1->len != s2->len) {
         return s1->len - s2->len;
     }
@@ -503,14 +503,14 @@ void jsstr16_u16_truncate(jsstr16_t *s, size_t len) {
 }
 
 jsstr16_t jsstr16_jsstr16_at(jsstr16_t *s, ssize_t index) {
-    /* jsstr16_slice() to slice using the s string's buffer */
+    /* jsstr16_u16_slice() to slice using the s string's buffer */
     jsstr16_t result;
     jsstr16_init(&result);
     if (index < 0 || index >= s->len) {
         /* out of bounds, return empty string */
         return result;
     }
-    jsstr16_slice(&result, s, index, index + 1);
+    jsstr16_u16_slice(&result, s, index, index + 1);
     return result;
 }
 
@@ -566,7 +566,7 @@ void jsstr8_init_from_str(jsstr8_t *s, const char *str) {
     return;
 }
 
-void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
+void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
     /* initialize from a slice of a source string, using jsstr8_u8s_at() to slice the buffer */
     s->bytes = jsstr8_u8s_at(src, start_i);
     s->len = src->bytes + src->len - s->bytes;
@@ -576,7 +576,7 @@ void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
     s->cap = s->len;
 }
 
-int jsstr8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
+int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
     if (s1->len != s2->len) {
         return s1->len - s2->len;
     }
@@ -786,14 +786,14 @@ void jsstr8_u8_truncate(jsstr8_t *s, size_t len) {
 }
 
 jsstr8_t jsstr8_jsstr8_at(jsstr8_t *s, ssize_t index) {
-    /* jsstr8_slice() to slice using the s string's buffer */
+    /* jsstr8_u8_slice() to slice using the s string's buffer */
     jsstr8_t result;
     jsstr8_init(&result);
     if (index < 0 || index >= s->len) {
         /* out of bounds, return empty string */
         return result;
     }
-    jsstr8_slice(&result, s, index, index + 1);
+    jsstr8_u8_slice(&result, s, index, index + 1);
     return result;
 }
 

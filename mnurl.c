@@ -10,7 +10,7 @@ void urlsearchparams_init(urlsearchparams_t *searchParams, jsstr8_t search) {
 
     /* parse search to fill in the searchParams */
     /* use jsstr8_index{of,token}() to find the next delimiter */
-    /* use jsstr8_slice() to assign the fields */
+    /* use jsstr8_u8_slice() to assign the fields */
     /* use urlsearchparams_append() to append the fields */
 
     size_t param_i = 0;
@@ -32,18 +32,18 @@ void urlsearchparams_init(urlsearchparams_t *searchParams, jsstr8_t search) {
         if (amp_i < 0) {
             amp_i = -1; /* to end */
         }
-        jsstr8_slice(&param, &search, param_i, amp_i);
+        jsstr8_u8_slice(&param, &search, param_i, amp_i);
 
         /* init name */
         eq_i = jsstr8_u32_indexof(&param, '=', 0);
         if (eq_i < 0) {
             eq_i = -1; /* to end */
         }
-        jsstr8_slice(&name, &param, 0, eq_i);
+        jsstr8_u8_slice(&name, &param, 0, eq_i);
 
         /* init value */
         if (eq_i >= 0) {
-            jsstr8_slice(&value, &param, eq_i + 1, -1);
+            jsstr8_u8_slice(&value, &param, eq_i + 1, -1);
         } else {
             value = jsstr8_empty;
         }
@@ -67,7 +67,7 @@ void urlsearchparams_append(urlsearchparams_t *searchParams, jsstr8_t name, jsst
 
 void urlsearchparams_delete(urlsearchparams_t *searchParams, jsstr8_t name) {
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0) {
             for (size_t j = i; j < searchParams->len - 1; j++) {
                 searchParams->params[j] = searchParams->params[j + 1];
             }
@@ -79,7 +79,7 @@ void urlsearchparams_delete(urlsearchparams_t *searchParams, jsstr8_t name) {
 
 void urlsearchparams_deletevalue(urlsearchparams_t *searchParams, jsstr8_t name, jsstr8_t value) {
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0 && jsstr8_cmp(&searchParams->params[i].value, &value) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0 && jsstr8_u8_cmp(&searchParams->params[i].value, &value) == 0) {
             for (size_t j = i; j < searchParams->len - 1; j++) {
                 searchParams->params[j] = searchParams->params[j + 1];
             }
@@ -91,7 +91,7 @@ void urlsearchparams_deletevalue(urlsearchparams_t *searchParams, jsstr8_t name,
 
 jsstr8_t urlsearchparams_get(urlsearchparams_t *searchParams, jsstr8_t name) {
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0) {
             return searchParams->params[i].value;
         }
     }
@@ -104,7 +104,7 @@ size_t urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t name, js
     size_t out_len = 0;
     size_t found_len = 0;
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0) {
             if (found_len < in_len) {
                 /* write the value to the output array, if it fits */
                 values[out_len] = searchParams->params[i].value;
@@ -119,7 +119,7 @@ size_t urlsearchparams_getAll(urlsearchparams_t *searchParams, jsstr8_t name, js
 
 int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t name) {
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0) {
             return 1;
         }
     }
@@ -128,7 +128,7 @@ int urlsearchparams_has(urlsearchparams_t *searchParams, jsstr8_t name) {
 
 void urlsearchparams_set(urlsearchparams_t *searchParams, jsstr8_t name, jsstr8_t value) {
     for (size_t i = 0; i < searchParams->len; i++) {
-        if (jsstr8_cmp(&searchParams->params[i].name, &name) == 0) {
+        if (jsstr8_u8_cmp(&searchParams->params[i].name, &name) == 0) {
             searchParams->params[i].value = value;
             return;
         }
@@ -139,7 +139,7 @@ void urlsearchparams_set(urlsearchparams_t *searchParams, jsstr8_t name, jsstr8_
 void urlsearchparams_sort(urlsearchparams_t *searchParams) {
     for (size_t i = 0; i < searchParams->len; i++) {
         for (size_t j = i + 1; j < searchParams->len; j++) {
-            if (jsstr8_cmp(&searchParams->params[i].name, &searchParams->params[j].name) > 0) {
+            if (jsstr8_u8_cmp(&searchParams->params[i].name, &searchParams->params[j].name) > 0) {
                 urlparams_t tmp = searchParams->params[i];
                 searchParams->params[i] = searchParams->params[j];
                 searchParams->params[j] = tmp;
@@ -191,7 +191,7 @@ void url_init(url_t *url, jsstr8_t href) {
 
     url->href = href;
     /* parse href to point into the other fields, using jsstr8_u32_indexof() to find the next delimiter */
-    /* use jsstr8_slice() to assign the fields */
+    /* use jsstr8_u8_slice() to assign the fields */
     /* use urlsearchparams_init() to initialize searchParams */
 
     /*
@@ -203,7 +203,7 @@ void url_init(url_t *url, jsstr8_t href) {
         return;
     }
     
-    jsstr8_slice(&url->protocol, &href, 0, protocol_i);
+    jsstr8_u8_slice(&url->protocol, &href, 0, protocol_i);
 
     /* verify the two authority slashes */
     authority_b1 = jsstr8_u8s_at(&href, protocol_i + 1);
@@ -217,10 +217,10 @@ void url_init(url_t *url, jsstr8_t href) {
     if (at_i >= 0) {
         colon_i = jsstr8_u32_indexof(&href, ':', authority_i);
         if (colon_i >= 0) {
-            jsstr8_slice(&url->username, &href, authority_i, colon_i);
-            jsstr8_slice(&url->password, &href, colon_i + 1, at_i);
+            jsstr8_u8_slice(&url->username, &href, authority_i, colon_i);
+            jsstr8_u8_slice(&url->password, &href, colon_i + 1, at_i);
         } else {
-            jsstr8_slice(&url->username, &href, authority_i, at_i);
+            jsstr8_u8_slice(&url->username, &href, authority_i, at_i);
         }
         host_i = at_i + 1;
     } else {
@@ -234,38 +234,38 @@ void url_init(url_t *url, jsstr8_t href) {
     }
     if (path_i >= 0) {
         if (port_i >= 0) {
-            jsstr8_slice(&url->host, &href, host_i, port_i);
-            jsstr8_slice(&url->port, &href, port_i + 1, path_i);
+            jsstr8_u8_slice(&url->host, &href, host_i, port_i);
+            jsstr8_u8_slice(&url->port, &href, port_i + 1, path_i);
         } else {
-            jsstr8_slice(&url->host, &href, host_i, path_i);
+            jsstr8_u8_slice(&url->host, &href, host_i, path_i);
         }
     } else {
         path_i = -path_i; /* end of search */
-        jsstr8_slice(&url->host, &href, host_i, path_i);
+        jsstr8_u8_slice(&url->host, &href, host_i, path_i);
         return;
     }
 
-    jsstr8_slice(&url->origin, &href, 0, path_i);
+    jsstr8_u8_slice(&url->origin, &href, 0, path_i);
 
     /* Path */
 
     search_i = jsstr8_u32_indexof(&href, '?', path_i + 1);
     if (search_i != -1) {
-        jsstr8_slice(&url->pathname, &href, path_i, search_i);
+        jsstr8_u8_slice(&url->pathname, &href, path_i, search_i);
         hash_i = jsstr8_u32_indexof(&href, '#', search_i + 1);
         if (hash_i >= 0) {
-            jsstr8_slice(&url->search, &href, search_i + 1, hash_i);
-            jsstr8_slice(&url->hash, &href, hash_i + 1, -1);
+            jsstr8_u8_slice(&url->search, &href, search_i + 1, hash_i);
+            jsstr8_u8_slice(&url->hash, &href, hash_i + 1, -1);
         } else {
-            jsstr8_slice(&url->search, &href, search_i + 1, -1);
+            jsstr8_u8_slice(&url->search, &href, search_i + 1, -1);
         }
     } else {
         hash_i = jsstr8_u32_indexof(&href, '#', path_i + 1);
         if (hash_i >= 0) {
-            jsstr8_slice(&url->pathname, &href, path_i, hash_i);
-            jsstr8_slice(&url->hash, &href, hash_i + 1, -1);
+            jsstr8_u8_slice(&url->pathname, &href, path_i, hash_i);
+            jsstr8_u8_slice(&url->hash, &href, hash_i + 1, -1);
         } else {
-            jsstr8_slice(&url->pathname, &href, path_i, -1);
+            jsstr8_u8_slice(&url->pathname, &href, path_i, -1);
         }
     }
     urlsearchparams_init(&url->searchParams, url->search);

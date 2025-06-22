@@ -13,10 +13,10 @@ void test_urlsearchparams_init() {
     declare_jsstr8(value1, "value1");
     declare_jsstr8(key2, "key2");
     declare_jsstr8(value2, "value2");
-    assert(jsstr8_cmp(&searchParams.params[0].name, &key1) == 0);
-    assert(jsstr8_cmp(&searchParams.params[0].value, &value1) == 0);
-    assert(jsstr8_cmp(&searchParams.params[1].name, &key2) == 0);
-    assert(jsstr8_cmp(&searchParams.params[1].value, &value2) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].name, &key1) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].value, &value1) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[1].name, &key2) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[1].value, &value2) == 0);
 }
 
 void test_urlsearchparams_size() {
@@ -37,8 +37,8 @@ void test_urlsearchparams_append() {
     urlsearchparams_append(&searchParams, key, value);
 
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].name, &key) == 0);
-    assert(jsstr8_cmp(&searchParams.params[0].value, &value) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].name, &key) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].value, &value) == 0);
 }
 
 void test_urlsearchparams_delete() {
@@ -52,8 +52,8 @@ void test_urlsearchparams_delete() {
     declare_jsstr8(key2, "key2");
     declare_jsstr8(value2, "value2");
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].name, &key2) == 0);
-    assert(jsstr8_cmp(&searchParams.params[0].value, &value2) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].name, &key2) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].value, &value2) == 0);
 }
 
 void test_urlsearchparams_deletevalue() {
@@ -72,12 +72,12 @@ void test_urlsearchparams_deletevalue() {
     // Check that the remaining pairs are ("key2", "value2") and ("key1", "value3")
     int found_key2 = 0, found_key1_value3 = 0;
     for (size_t i = 0; i < searchParams.len; ++i) {
-        if (jsstr8_cmp(&searchParams.params[i].name, &key2) == 0 &&
-            jsstr8_cmp(&searchParams.params[i].value, &value2) == 0) {
+        if (jsstr8_u8_cmp(&searchParams.params[i].name, &key2) == 0 &&
+            jsstr8_u8_cmp(&searchParams.params[i].value, &value2) == 0) {
             found_key2 = 1;
         }
-        if (jsstr8_cmp(&searchParams.params[i].name, &key) == 0 &&
-            jsstr8_cmp(&searchParams.params[i].value, &value3) == 0) {
+        if (jsstr8_u8_cmp(&searchParams.params[i].name, &key) == 0 &&
+            jsstr8_u8_cmp(&searchParams.params[i].value, &value3) == 0) {
             found_key1_value3 = 1;
         }
     }
@@ -94,7 +94,7 @@ void test_urlsearchparams_get() {
 
     jsstr8_t got_value = urlsearchparams_get(&searchParams, key);
 
-    assert(jsstr8_cmp(&got_value, &value) == 0);
+    assert(jsstr8_u8_cmp(&got_value, &value) == 0);
 }
 
 void test_urlsearchparams_getAll() {
@@ -113,8 +113,8 @@ void test_urlsearchparams_getAll() {
     assert(found == 2);
     declare_jsstr8(value1, "value1");
     declare_jsstr8(value3, "value3");
-    assert(jsstr8_cmp(&values[0], &value1) == 0);
-    assert(jsstr8_cmp(&values[1], &value3) == 0);
+    assert(jsstr8_u8_cmp(&values[0], &value1) == 0);
+    assert(jsstr8_u8_cmp(&values[1], &value3) == 0);
 }
 
 void test_urlsearchparams_has() {
@@ -139,8 +139,8 @@ void test_urlsearchparams_set() {
     urlsearchparams_set(&searchParams, key, new_value);
 
     assert(searchParams.len == 1);
-    assert(jsstr8_cmp(&searchParams.params[0].name, &key) == 0);
-    assert(jsstr8_cmp(&searchParams.params[0].value, &new_value) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].name, &key) == 0);
+    assert(jsstr8_u8_cmp(&searchParams.params[0].value, &new_value) == 0);
 }
 
 void test_urlsearchparams_toString() {
@@ -156,7 +156,7 @@ void test_urlsearchparams_toString() {
     assert(rc == 0);
 
     declare_jsstr8(expected, "key1=value1&key2=value2");
-    assert(jsstr8_cmp(&result, &expected) == 0);
+    assert(jsstr8_u8_cmp(&result, &expected) == 0);
 }
 
 
@@ -176,15 +176,15 @@ void test_url_init() {
     declare_jsstr8(search, "key=value");
     declare_jsstr8(hash, "hash");
 
-    assert(jsstr8_cmp(&url.protocol, &protocol) == 0);
-    assert(jsstr8_cmp(&url.username, &username) == 0);
-    assert(jsstr8_cmp(&url.password, &password) == 0);
-    assert(jsstr8_cmp(&url.host, &host) == 0);
-    assert(jsstr8_cmp(&url.port, &port) == 0);
-    assert(jsstr8_cmp(&url.origin, &origin) == 0);
-    assert(jsstr8_cmp(&url.pathname, &pathname) == 0);
-    assert(jsstr8_cmp(&url.search, &search) == 0);
-    assert(jsstr8_cmp(&url.hash, &hash) == 0);
+    assert(jsstr8_u8_cmp(&url.protocol, &protocol) == 0);
+    assert(jsstr8_u8_cmp(&url.username, &username) == 0);
+    assert(jsstr8_u8_cmp(&url.password, &password) == 0);
+    assert(jsstr8_u8_cmp(&url.host, &host) == 0);
+    assert(jsstr8_u8_cmp(&url.port, &port) == 0);
+    assert(jsstr8_u8_cmp(&url.origin, &origin) == 0);
+    assert(jsstr8_u8_cmp(&url.pathname, &pathname) == 0);
+    assert(jsstr8_u8_cmp(&url.search, &search) == 0);
+    assert(jsstr8_u8_cmp(&url.hash, &hash) == 0);
 }
 
 int main() {

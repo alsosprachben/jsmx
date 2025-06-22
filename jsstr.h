@@ -86,8 +86,8 @@ void jsstr32_init_from_str(jsstr32_t *s, const uint32_t *str);
     jsstr32_init_from_str(&__varname, __str)
 static const jsstr32_t jsstr32_empty = {0, 0, NULL};
 
-void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i);
-int jsstr32_cmp(jsstr32_t *s1, jsstr32_t *s2);
+void jsstr32_u32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i);
+int jsstr32_u32_cmp(jsstr32_t *s1, jsstr32_t *s2);
 
 /*
  * Find the index of the first occurrence of the code point in the string.
@@ -132,7 +132,7 @@ void jsstr32_u32_truncate(jsstr32_t *s, size_t len);
 /*
  * Return the character at the index as a string.
  */
-jsstr32_t jsstr32_jsstr_codepoint_at(jsstr32_t *s, ssize_t index);
+jsstr32_t jsstr32_jsstr32_at(jsstr32_t *s, ssize_t index);
 
 /*
  * Return the UTF-16 code unit at the index (in UTF-16 position).
@@ -165,8 +165,8 @@ void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str);
     jsstr16_init_from_str(&__varname, __str)
 static const jsstr16_t jsstr16_empty = {0, 0, NULL};
 
-void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
-int jsstr16_cmp(jsstr16_t *s1, jsstr16_t *s2);
+void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
+int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr16_get_cap(jsstr16_t *s);
@@ -206,8 +206,8 @@ void jsstr8_init_from_str(jsstr8_t *s, const char *str);
     jsstr8_init_from_str(&__varname, __str)
 static const jsstr8_t jsstr8_empty = {0, 0, NULL};
 
-void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
-int jsstr8_cmp(jsstr8_t *s1, jsstr8_t *s2);
+void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
+int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
 ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr8_get_cap(jsstr8_t *s);

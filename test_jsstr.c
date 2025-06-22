@@ -69,15 +69,15 @@ void test_jsstr32_lifecycle() {
     jsstr32_u32_truncate(&s, 10);
     printf("jsstr32_u32_truncate: %zu\n", jsstr32_get_utf32len(&s));
 
-    jsstr32_slice(&s_slice, &s, 3, 7);
-    printf("jsstr32_slice: %zu\n", jsstr32_get_utf32len(&s_slice));
+    jsstr32_u32_slice(&s_slice, &s, 3, 7);
+    printf("jsstr32_u32_slice: %zu\n", jsstr32_get_utf32len(&s_slice));
 
     jsstr32_init_from_str(&s, L"Hello, World!");
     printf("jsstr32_init_from_str: %zu\n", jsstr32_get_utf32len(&s));
 
     jsstr32_t s_cmp;
     jsstr32_init_from_str(&s_cmp, L"Hello, World!");
-    printf("jsstr32_cmp: %d\n", jsstr32_cmp(&s, &s_cmp));
+    printf("jsstr32_u32_cmp: %d\n", jsstr32_u32_cmp(&s, &s_cmp));
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
@@ -158,15 +158,15 @@ void test_jsstr16_lifecycle() {
     jsstr16_u16_truncate(&s, 10);
     printf("jsstr16_u16_truncate: %zu\n", jsstr16_get_utf32len(&s));
 
-    jsstr16_slice(&s_slice, &s, 3, 7);
-    printf("jsstr16_slice: %zu\n", jsstr16_get_utf32len(&s_slice));
+    jsstr16_u16_slice(&s_slice, &s, 3, 7);
+    printf("jsstr16_u16_slice: %zu\n", jsstr16_get_utf32len(&s_slice));
 
     jsstr16_init_from_str(&s_str, utf16_str);
     printf("jsstr16_init_from_str: %zu\n", jsstr16_get_utf32len(&s_str));
 
     /* test cmp */
     jsstr16_init_from_str(&s_cmp, utf16_str);
-    printf("jsstr16_cmp: %d\n", jsstr16_cmp(&s_str, &s_cmp));
+    printf("jsstr16_u16_cmp: %d\n", jsstr16_u16_cmp(&s_str, &s_cmp));
 
     /* test indexof */
     uint32_t search_c = L'o';
@@ -248,14 +248,14 @@ void test_jsstr8_lifecycle() {
     jsstr8_u8_truncate(&s, 10);
     printf("jsstr8_u8_truncate: %zu\n", jsstr8_get_utf32len(&s));
 
-    jsstr8_slice(&s_slice, &s, 3, 7);
-    printf("jsstr8_slice: %zu\n", jsstr8_get_utf32len(&s_slice));
+    jsstr8_u8_slice(&s_slice, &s, 3, 7);
+    printf("jsstr8_u8_slice: %zu\n", jsstr8_get_utf32len(&s_slice));
 
     jsstr8_init_from_str(&s_str, "Hello, World!");
     printf("jsstr8_init_from_str: %zu\n", jsstr8_get_utf32len(&s_str));
 
     jsstr8_init_from_str(&s_cmp, "Hello, World!");
-    printf("jsstr8_cmp: %d\n", jsstr8_cmp(&s_str, &s_cmp));
+    printf("jsstr8_u8_cmp: %d\n", jsstr8_u8_cmp(&s_str, &s_cmp));
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
