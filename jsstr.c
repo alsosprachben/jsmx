@@ -62,11 +62,11 @@ void jsstr32_init_from_str(jsstr32_t *s, const uint32_t *str) {
 }
 
 void jsstr32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i) {
-    /* initialize from a slice of a source string, using jsstr32_wstr_codepoint_at() to slice the buffer */
-    s->codepoints = jsstr32_wstr_codepoint_at(src, start_i);
+    /* initialize from a slice of a source string, using jsstr32_u32s_at() to slice the buffer */
+    s->codepoints = jsstr32_u32s_at(src, start_i);
     s->len = src->codepoints + src->len - s->codepoints;
     if (stop_i >= 0) {
-        jsstr32_truncate(s, stop_i - start_i);
+        jsstr32_u32_truncate(s, stop_i - start_i);
     }
     s->cap = s->len;
 }
@@ -83,7 +83,7 @@ int jsstr32_cmp(jsstr32_t *s1, jsstr32_t *s2) {
     return 0;
 }
 
-ssize_t jsstr32_indexof(jsstr32_t *s, uint32_t c, size_t start_i) {
+ssize_t jsstr32_u32_indexof(jsstr32_t *s, uint32_t c, size_t start_i) {
     ssize_t i;
     for (i = 0; i < s->len; i++) {
         if (i >= start_i && s->codepoints[i] == c) {
@@ -93,7 +93,7 @@ ssize_t jsstr32_indexof(jsstr32_t *s, uint32_t c, size_t start_i) {
     return -i;
 }
 
-ssize_t jsstr32_indextoken(jsstr32_t *s, uint32_t *c, size_t c_len, size_t start_i) {
+ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *c, size_t c_len, size_t start_i) {
     ssize_t i;
     for (i = 0; i < s->len; i++) {
         if (i >= start_i && i + c_len <= s->len) {
@@ -179,7 +179,7 @@ size_t jsstr32_get_utf8len(jsstr32_t *s) {
     return utf8len;
 }
 
-uint32_t *jsstr32_wstr_codepoint_at(jsstr32_t *s, size_t i) {
+uint32_t *jsstr32_u32s_at(jsstr32_t *s, size_t i) {
     if (i < s->len) {
         return s->codepoints + i;
     } else {
@@ -187,18 +187,11 @@ uint32_t *jsstr32_wstr_codepoint_at(jsstr32_t *s, size_t i) {
     }
 }
 
-void jsstr32_truncate(jsstr32_t *s, size_t len) {
-    uint32_t *c = jsstr32_wstr_codepoint_at(s, len);
+void jsstr32_u32_truncate(jsstr32_t *s, size_t len) {
+    uint32_t *c = jsstr32_u32s_at(s, len);
     if (c != NULL) {
         s->len = c - s->codepoints;
     }
-}
-
-jsstr32_t jsstr32_jsstr_codepoint_at2(jsstr32_t *s, ssize_t index) {
-    if (index < 0) {
-        index += s->len; /* convert negative index to positive */
-    }
-    return jsstr32_jsstr_codepoint_at(s, index);
 }
 
 jsstr32_t jsstr32_jsstr_codepoint_at(jsstr32_t *s, ssize_t index) {
@@ -213,7 +206,7 @@ jsstr32_t jsstr32_jsstr_codepoint_at(jsstr32_t *s, ssize_t index) {
     return result;
 }
 
-uint16_t jsstr32_u16_codeunit_at(jsstr32_t *s, ssize_t index, const char *buf, size_t len) {
+uint16_t jsstr32_u16_at(jsstr32_t *s, ssize_t index, const char *buf, size_t len) {
     /* make a jsstr16_t string of this string, to index code units instead of code points */
     size_t rc;
     jsstr16_t jsstr16;
@@ -223,10 +216,10 @@ uint16_t jsstr32_u16_codeunit_at(jsstr32_t *s, ssize_t index, const char *buf, s
         errno = ENOBUFS; /* not enough capacity */
         return 0; /* out of bounds */
     }
-    return jsstr16_u16_codeunit_at(&jsstr16, index);
+    return jsstr16_u16_at(&jsstr16, index);
 }
 
-uint32_t jsstr32_u32_codepoint_at(jsstr32_t *s, ssize_t index) {
+uint32_t jsstr32_u32_at(jsstr32_t *s, ssize_t index) {
     /* return the code point at the index, or 0 if out of bounds */
     if (index < 0 || index >= s->len) {
         errno = ENOBUFS; /* not enough capacity */
@@ -266,11 +259,11 @@ void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str) {
 }
 
 void jsstr16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
-    /* initialize from a slice of a source string, using jsstr16_u16s_codeunit_at() to slice the buffer */
-    s->codeunits = jsstr16_u16s_codeunit_at(src, start_i);
+    /* initialize from a slice of a source string, using jsstr16_u16s_at() to slice the buffer */
+    s->codeunits = jsstr16_u16s_at(src, start_i);
     s->len = src->codeunits + src->len - s->codeunits;
     if (stop_i >= 0) {
-        jsstr16_truncate(s, stop_i - start_i);
+        jsstr16_u16_truncate(s, stop_i - start_i);
     }
     s->cap = s->len;
 }
@@ -287,7 +280,7 @@ int jsstr16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
     return 0;
 }
 
-ssize_t jsstr16_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
+ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* account for surrogate pairs */
     uint32_t c;
@@ -313,7 +306,7 @@ ssize_t jsstr16_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
     return -c_i;
 }
 
-ssize_t jsstr16_indextoken(jsstr16_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
+ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* account for surrogate pairs */
     uint32_t c;
@@ -474,7 +467,7 @@ size_t jsstr16_get_utf8len(jsstr16_t *s) {
     return code8_i;
 }
 
-uint16_t *jsstr16_u16s_codeunit_at(jsstr16_t *s, size_t index) {
+uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t index) {
     /* i is code point index, so need to count surrogate pairs of two code units as one code point */
     /* need to walk from the beginning */
     int l;
@@ -502,21 +495,14 @@ uint16_t *jsstr16_u16s_codeunit_at(jsstr16_t *s, size_t index) {
     }
 }
 
-void jsstr16_truncate(jsstr16_t *s, size_t len) {
-    uint16_t *cu = jsstr16_u16s_codeunit_at(s, len);
+void jsstr16_u16_truncate(jsstr16_t *s, size_t len) {
+    uint16_t *cu = jsstr16_u16s_at(s, len);
     if (cu != NULL) {
         s->len = cu - s->codeunits;
     }
 }
 
-jsstr16_t jsstr16_jsstr16_codepoint_at2(jsstr16_t *s, ssize_t index) {
-    if (index < 0) {
-        index += s->len; /* convert negative index to positive */
-    }
-    return jsstr16_jsstr16_codepoint_at(s, index);
-}
-
-jsstr16_t jsstr16_jsstr16_codepoint_at(jsstr16_t *s, ssize_t index) {
+jsstr16_t jsstr16_jsstr16_at(jsstr16_t *s, ssize_t index) {
     /* jsstr16_slice() to slice using the s string's buffer */
     jsstr16_t result;
     jsstr16_init(&result);
@@ -528,7 +514,7 @@ jsstr16_t jsstr16_jsstr16_codepoint_at(jsstr16_t *s, ssize_t index) {
     return result;
 }
 
-uint16_t jsstr16_u16_codeunit_at(jsstr16_t *s, ssize_t index) {
+uint16_t jsstr16_u16_at(jsstr16_t *s, ssize_t index) {
     /* return the code unit at the index, or 0 if out of bounds */
     if (index < 0 || index >= s->len) {
         errno = ENOBUFS; /* not enough capacity */
@@ -537,7 +523,7 @@ uint16_t jsstr16_u16_codeunit_at(jsstr16_t *s, ssize_t index) {
     return s->codeunits[index];
 }
 
-uint32_t jsstr16_u32_codepoint_at(jsstr16_t *s, ssize_t index, const char *buf, size_t len) {
+uint32_t jsstr16_u32_at(jsstr16_t *s, ssize_t index, const char *buf, size_t len) {
     /* make a jsstr32_t string of this string, to index code points instead of code units */
     size_t rc;
     jsstr32_t jsstr;
@@ -547,7 +533,7 @@ uint32_t jsstr16_u32_codepoint_at(jsstr16_t *s, ssize_t index, const char *buf, 
         errno = ENOBUFS; /* not enough capacity */
         return 0; /* out of bounds */
     }
-    return jsstr32_u32_codepoint_at(&jsstr, index);
+    return jsstr32_u32_at(&jsstr, index);
 }
 
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
@@ -581,11 +567,11 @@ void jsstr8_init_from_str(jsstr8_t *s, const char *str) {
 }
 
 void jsstr8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
-    /* initialize from a slice of a source string, using jsstr8_u8s_byte_at() to slice the buffer */
-    s->bytes = jsstr8_u8s_byte_at(src, start_i);
+    /* initialize from a slice of a source string, using jsstr8_u8s_at() to slice the buffer */
+    s->bytes = jsstr8_u8s_at(src, start_i);
     s->len = src->bytes + src->len - s->bytes;
     if (stop_i >= 0) {
-        jsstr8_truncate(s, stop_i - start_i);
+        jsstr8_u8_truncate(s, stop_i - start_i);
     }
     s->cap = s->len;
 }
@@ -602,7 +588,7 @@ int jsstr8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
     return 0;
 }
 
-ssize_t jsstr8_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i) {
+ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
     uint8_t *cc; /* character cursor */
@@ -625,7 +611,7 @@ ssize_t jsstr8_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i) {
     }
     return -i;
 }
-ssize_t jsstr8_indextoken(jsstr8_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
+ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
     uint8_t *cc; /* character cursor */
@@ -775,7 +761,7 @@ size_t jsstr8_get_utf8len(jsstr8_t *s) {
     return s->len;
 }
 
-uint8_t *jsstr8_u8s_byte_at(jsstr8_t *s, size_t i) {
+uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i) {
     /* i is code point index, so need to count each UTF-8 sequence as one code point */
     /* need to walk from the beginning */
     size_t j = 0;
@@ -792,21 +778,14 @@ uint8_t *jsstr8_u8s_byte_at(jsstr8_t *s, size_t i) {
     }
 }
 
-void jsstr8_truncate(jsstr8_t *s, size_t len) {
-    uint8_t *bc = jsstr8_u8s_byte_at(s, len);
+void jsstr8_u8_truncate(jsstr8_t *s, size_t len) {
+    uint8_t *bc = jsstr8_u8s_at(s, len);
     if (bc != NULL) {
         s->len = bc - s->bytes;
     }
 }
 
-jsstr8_t jsstr8_jsstr8_codepoint_at2(jsstr8_t *s, ssize_t index) {
-    if (index < 0) {
-        index += s->len; /* convert negative index to positive */
-    }
-    return jsstr8_jsstr8_codepoint_at(s, index);
-}
-
-jsstr8_t jsstr8_jsstr8_codepoint_at(jsstr8_t *s, ssize_t index) {
+jsstr8_t jsstr8_jsstr8_at(jsstr8_t *s, ssize_t index) {
     /* jsstr8_slice() to slice using the s string's buffer */
     jsstr8_t result;
     jsstr8_init(&result);
@@ -818,7 +797,7 @@ jsstr8_t jsstr8_jsstr8_codepoint_at(jsstr8_t *s, ssize_t index) {
     return result;
 }
 
-uint16_t jsstr8_u16_codeunit_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
+uint16_t jsstr8_u16_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
     /* make a jsstr16_t string of this string, to index code units instead of code points */
     size_t rc;
     jsstr16_t jsstr16;
@@ -828,10 +807,10 @@ uint16_t jsstr8_u16_codeunit_at(jsstr8_t *s, ssize_t index, const char *buf, siz
         errno = ENOBUFS; /* not enough capacity */
         return 0; /* out of bounds */
     }
-    return jsstr16_u16_codeunit_at(&jsstr16, index);
+    return jsstr16_u16_at(&jsstr16, index);
 }
 
-uint32_t jsstr8_u32_codepoint_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
+uint32_t jsstr8_u32_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
     /* make a jsstr32_t string of this string, to index code points instead of code units */
     size_t rc;
     jsstr32_t jsstr;
@@ -841,7 +820,7 @@ uint32_t jsstr8_u32_codepoint_at(jsstr8_t *s, ssize_t index, const char *buf, si
         errno = ENOBUFS; /* not enough capacity */
         return 0; /* out of bounds */
     }
-    return jsstr32_u32_codepoint_at(&jsstr, index);
+    return jsstr32_u32_at(&jsstr, index);
 }
 
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src) {

@@ -37,37 +37,37 @@ void test_jsstr32_lifecycle() {
     printf("jsstr32_set_from_utf8: %zu\n", rc);
     printf("jsstr32_get_utf8len: %zu\n", jsstr32_get_utf8len(&s));
 
-    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    cu = jsstr32_u32s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr32_wstr_codepoint_at: NULL\n");
+        printf("jsstr32_u32s_at: NULL\n");
     } else {
-        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+        printf("jsstr32_u32s_at: %lc\n", *cu);
     }
 
     rc = jsstr32_set_from_utf16(&s, utf16_str, u16_strlen);
     printf("jsstr32_set_from_utf16: %zu\n", rc);
     printf("jsstr32_get_utf16len: %zu\n", jsstr32_get_utf16len(&s));
 
-    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    cu = jsstr32_u32s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr32_wstr_codepoint_at: NULL\n");
+        printf("jsstr32_u32s_at: NULL\n");
     } else {
-        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+        printf("jsstr32_u32s_at: %lc\n", *cu);
     }
 
     rc = jsstr32_set_from_utf32(&s, utf32_str, u32_strlen);
     printf("jsstr32_set_from_utf32: %zu\n", rc);
     printf("jsstr32_get_utf32len: %zu\n", jsstr32_get_utf32len(&s));
 
-    cu = jsstr32_wstr_codepoint_at(&s, 20);
+    cu = jsstr32_u32s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr32_wstr_codepoint_at: NULL\n");
+        printf("jsstr32_u32s_at: NULL\n");
     } else {
-        printf("jsstr32_wstr_codepoint_at: %lc\n", *cu);
+        printf("jsstr32_u32s_at: %lc\n", *cu);
     }
 
-    jsstr32_truncate(&s, 10);
-    printf("jsstr32_truncate: %zu\n", jsstr32_get_utf32len(&s));
+    jsstr32_u32_truncate(&s, 10);
+    printf("jsstr32_u32_truncate: %zu\n", jsstr32_get_utf32len(&s));
 
     jsstr32_slice(&s_slice, &s, 3, 7);
     printf("jsstr32_slice: %zu\n", jsstr32_get_utf32len(&s_slice));
@@ -81,12 +81,12 @@ void test_jsstr32_lifecycle() {
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
-    printf("jsstr32_indexof: %zd\n", jsstr32_indexof(&s, search_c, start_i));
+    printf("jsstr32_u32_indexof: %zd\n", jsstr32_u32_indexof(&s, search_c, start_i));
 
     uint32_t *search_tok = L"orld";
     size_t search_tok_len = utf32_strlen(search_tok);
-    printf("jsstr32_indextoken: %zd\n",
-           jsstr32_indextoken(&s, search_tok, search_tok_len, start_i));
+    printf("jsstr32_u32_indextoken: %zd\n",
+           jsstr32_u32_indextoken(&s, search_tok, search_tok_len, start_i));
 }
 
 void test_jsstr16_lifecycle() {
@@ -120,43 +120,43 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_set_from_utf8: %zu\n", rc);
     printf("jsstr16_get_utf8len: %zu\n", jsstr16_get_utf8len(&s));
 
-    cu = jsstr16_u16s_codeunit_at(&s, 20);
+    cu = jsstr16_u16s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr16_u16s_codeunit_at: NULL\n");
+        printf("jsstr16_u16s_at: NULL\n");
     } else {
         c_ptr = &c;
         UTF16_DECODE(&cu, cu + 2, &c_ptr, c_ptr + 1);
-        printf("jsstr16_u16s_codeunit_at: %lc\n", c);
+        printf("jsstr16_u16s_at: %lc\n", c);
     }
 
     rc = jsstr16_set_from_utf16(&s, utf16_str, u16_strlen);
     printf("jsstr16_set_from_utf16: %zu\n", rc);
     printf("jsstr16_get_utf16len: %zu\n", jsstr16_get_utf16len(&s));
 
-    cu = jsstr16_u16s_codeunit_at(&s, 20);
+    cu = jsstr16_u16s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr16_u16s_codeunit_at: NULL\n");
+        printf("jsstr16_u16s_at: NULL\n");
     } else {
         c_ptr = &c;
         UTF16_DECODE(&cu, cu + 2, &c_ptr, c_ptr + 1);
-        printf("jsstr16_u16s_codeunit_at: %lc\n", c);
+        printf("jsstr16_u16s_at: %lc\n", c);
     }
 
     rc = jsstr16_set_from_utf32(&s, utf32_str, u32_strlen);
     printf("jsstr16_set_from_utf32: %zu\n", rc);
     printf("jsstr16_get_utf32len: %zu\n", jsstr16_get_utf32len(&s));
 
-    cu = jsstr16_u16s_codeunit_at(&s, 20);
+    cu = jsstr16_u16s_at(&s, 20);
     if (cu == NULL) {
-        printf("jsstr16_u16s_codeunit_at: NULL\n");
+        printf("jsstr16_u16s_at: NULL\n");
     } else {
         c_ptr = &c;
         UTF16_DECODE(&cu, cu + 2, &c_ptr, c_ptr + 1);
-        printf("jsstr16_u16s_codeunit_at: %lc\n", c);
+        printf("jsstr16_u16s_at: %lc\n", c);
     }
 
-    jsstr16_truncate(&s, 10);
-    printf("jsstr16_truncate: %zu\n", jsstr16_get_utf32len(&s));
+    jsstr16_u16_truncate(&s, 10);
+    printf("jsstr16_u16_truncate: %zu\n", jsstr16_get_utf32len(&s));
 
     jsstr16_slice(&s_slice, &s, 3, 7);
     printf("jsstr16_slice: %zu\n", jsstr16_get_utf32len(&s_slice));
@@ -171,13 +171,13 @@ void test_jsstr16_lifecycle() {
     /* test indexof */
     uint32_t search_c = L'o';
     size_t start_i = 6;
-    printf("jsstr16_indexof: %zd\n", jsstr16_indexof(&s_str, search_c, start_i));
+    printf("jsstr16_u32_indexof: %zd\n", jsstr16_u32_indexof(&s_str, search_c, start_i));
 
     /* test indextoken */
     int32_t *search_c2i = L"orld";
     uint32_t *search_c2 = (uint32_t *) search_c2i;
     size_t search_c_len = utf32_strlen(search_c2);
-    printf("jsstr16_indextoken: %zd\n", jsstr16_indextoken(&s_str, search_c2, search_c_len, start_i));
+    printf("jsstr16_u32_indextoken: %zd\n", jsstr16_u32_indextoken(&s_str, search_c2, search_c_len, start_i));
 }
 
 void test_jsstr8_lifecycle() {
@@ -213,40 +213,40 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_set_from_utf8: %zu\n", rc);
     printf("jsstr8_get_utf8len: %zu\n", jsstr8_get_utf8len(&s));
 
-    u8 = jsstr8_u8s_byte_at(&s, 20);
+    u8 = jsstr8_u8s_at(&s, 20);
     if (u8 == NULL) {
-        printf("jsstr8_u8s_byte_at: NULL\n");
+        printf("jsstr8_u8s_at: NULL\n");
     } else {
         UTF8_DECODE(&u8, u8 + 4, &c_ptr, c_ptr + 1);
-        printf("jsstr8_u8s_byte_at: %lc\n", c);
+        printf("jsstr8_u8s_at: %lc\n", c);
     }
 
     rc = jsstr8_set_from_utf16(&s, utf16_str, u16_strlen);
     printf("jsstr8_set_from_utf16: %zu\n", rc);
     printf("jsstr8_get_utf16len: %zu\n", jsstr8_get_utf16len(&s));
 
-    u8 = jsstr8_u8s_byte_at(&s, 20);
+    u8 = jsstr8_u8s_at(&s, 20);
     if (u8 == NULL) {
-        printf("jsstr8_u8s_byte_at: NULL\n");
+        printf("jsstr8_u8s_at: NULL\n");
     } else {
         UTF8_DECODE(&u8, u8 + 4, &c_ptr, c_ptr + 1);
-        printf("jsstr8_u8s_byte_at: %lc\n", c);
+        printf("jsstr8_u8s_at: %lc\n", c);
     }
 
     rc = jsstr8_set_from_utf32(&s, utf32_str, u32_strlen);
     printf("jsstr8_set_from_utf32: %zu\n", rc);
     printf("jsstr8_get_utf32len: %zu\n", jsstr8_get_utf32len(&s));
 
-    u8 = jsstr8_u8s_byte_at(&s, 20);
+    u8 = jsstr8_u8s_at(&s, 20);
     if (u8 == NULL) {
-        printf("jsstr8_u8s_byte_at: NULL\n");
+        printf("jsstr8_u8s_at: NULL\n");
     } else {
         UTF8_DECODE(&u8, u8 + 4, &c_ptr, c_ptr + 1);
-        printf("jsstr8_u8s_byte_at: %lc\n", c);
+        printf("jsstr8_u8s_at: %lc\n", c);
     }
 
-    jsstr8_truncate(&s, 10);
-    printf("jsstr8_truncate: %zu\n", jsstr8_get_utf32len(&s));
+    jsstr8_u8_truncate(&s, 10);
+    printf("jsstr8_u8_truncate: %zu\n", jsstr8_get_utf32len(&s));
 
     jsstr8_slice(&s_slice, &s, 3, 7);
     printf("jsstr8_slice: %zu\n", jsstr8_get_utf32len(&s_slice));
@@ -259,13 +259,13 @@ void test_jsstr8_lifecycle() {
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
-    printf("jsstr8_indexof: %zd\n", jsstr8_indexof(&s_str, search_c, start_i));
+    printf("jsstr8_u32_indexof: %zd\n", jsstr8_u32_indexof(&s_str, search_c, start_i));
 
     int32_t search_tok8i[] = L"orld";
     uint32_t *search_tok8 = search_tok8i;
     size_t search_tok8_len = sizeof(search_tok8)/sizeof(search_tok8[0]) - 1;
-    printf("jsstr8_indextoken: %zd\n",
-           jsstr8_indextoken(&s_str, search_tok8, search_tok8_len, start_i));
+    printf("jsstr8_u32_indextoken: %zd\n",
+           jsstr8_u32_indextoken(&s_str, search_tok8, search_tok8_len, start_i));
 }
 
 
