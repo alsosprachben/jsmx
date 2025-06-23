@@ -173,11 +173,20 @@ void test_jsstr16_lifecycle() {
     size_t start_i = 6;
     printf("jsstr16_u32_indexof: %zd\n", jsstr16_u32_indexof(&s_str, search_c, start_i));
 
+    /* test indexof with utf16 */
+    uint16_t search_c16 = 'o';
+    printf("jsstr16_u16_indexof: %zd\n", jsstr16_u16_indexof(&s_str, search_c16, start_i));
+
     /* test indextoken */
     int32_t *search_c2i = L"orld";
     uint32_t *search_c2 = (uint32_t *) search_c2i;
     size_t search_c_len = utf32_strlen(search_c2);
     printf("jsstr16_u32_indextoken: %zd\n", jsstr16_u32_indextoken(&s_str, search_c2, search_c_len, start_i));
+
+    /* test indextoken with utf16 */
+    uint16_t search_c216[] = {0x006F, 0x0072, 0x006C, 0x0064, 0};
+    size_t search_c216_len = utf16_strlen(search_c216);
+    printf("jsstr16_u16_indextoken: %zd\n", jsstr16_u16_indextoken(&s_str, search_c216, search_c216_len, start_i));
 }
 
 void test_jsstr8_lifecycle() {
@@ -261,11 +270,19 @@ void test_jsstr8_lifecycle() {
     size_t start_i = 6;
     printf("jsstr8_u32_indexof: %zd\n", jsstr8_u32_indexof(&s_str, search_c, start_i));
 
+    uint8_t search_c8 = 'o';
+    printf("jsstr8_u8_indexof: %zd\n", jsstr8_u8_indexof(&s_str, search_c8, start_i));
+
     int32_t search_tok8i[] = L"orld";
     uint32_t *search_tok8 = search_tok8i;
     size_t search_tok8_len = sizeof(search_tok8)/sizeof(search_tok8[0]) - 1;
     printf("jsstr8_u32_indextoken: %zd\n",
            jsstr8_u32_indextoken(&s_str, search_tok8, search_tok8_len, start_i));
+
+    uint8_t search_tok8u[] = "orld";
+    size_t search_tok8u_len = utf8_strlen(search_tok8u);
+    printf("jsstr8_u8_indextoken: %zd\n",
+              jsstr8_u8_indextoken(&s_str, search_tok8u, search_tok8u_len, start_i));
 }
 
 

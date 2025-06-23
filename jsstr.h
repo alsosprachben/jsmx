@@ -167,7 +167,9 @@ static const jsstr16_t jsstr16_empty = {0, 0, NULL};
 
 void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
 int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
+ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
+ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr16_get_cap(jsstr16_t *s);
 
@@ -208,7 +210,9 @@ static const jsstr8_t jsstr8_empty = {0, 0, NULL};
 
 void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
 int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
+ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i);
 ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
+ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr8_get_cap(jsstr8_t *s);
 

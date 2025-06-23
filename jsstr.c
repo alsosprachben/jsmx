@@ -280,6 +280,17 @@ int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
     return 0;
 }
 
+ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i) {
+    /* search for a code unit in the string, and return the code unit index (as works with _at() method) */
+    ssize_t i;
+    for (i = 0; i < s->len; i++) {
+        if (i >= start_i && s->codeunits[i] == search_c) {
+            return i;
+        }
+    }
+    return -i;
+}
+
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* account for surrogate pairs */
@@ -304,6 +315,22 @@ ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
         }
     }
     return -c_i;
+}
+
+ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t c_len, size_t start_i) {
+    /* search for a code unit in the string, and return the code unit index (as works with _at() method) */
+    ssize_t i;
+    for (i = 0; i < s->len; i++) {
+        if (i >= start_i && i + c_len <= s->len) {
+            int j;
+            for (j = 0; j < c_len; j++) {
+                if (s->codeunits[i] == search_c[j]) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -i;
 }
 
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
@@ -588,6 +615,17 @@ int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
     return 0;
 }
 
+ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i) {
+    /* search for a byte in the string, and return the byte index (as works with _at() method) */
+    ssize_t i;
+    for (i = 0; i < s->len; i++) {
+        if (i >= start_i && s->bytes[i] == search_c) {
+            return i;
+        }
+    }
+    return -i;
+}
+
 ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
@@ -611,6 +649,23 @@ ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i) {
     }
     return -i;
 }
+
+ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t c_len, size_t start_i) {
+    /* search for a byte in the string, and return the byte index (as works with _at() method) */
+    ssize_t i;
+    for (i = 0; i < s->len; i++) {
+        if (i >= start_i && i + c_len <= s->len) {
+            int j;
+            for (j = 0; j < c_len; j++) {
+                if (s->bytes[i] == search_c[j]) {
+                    return i;
+                }
+            }
+        }
+    }
+    return -i;
+}
+
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
     /* search for a code point in the string, and return the code point index (as works with _at() method) */
     /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
