@@ -86,20 +86,6 @@ void jsstr32_init_from_str(jsstr32_t *s, const uint32_t *str);
     jsstr32_init_from_str(&__varname, __str)
 static const jsstr32_t jsstr32_empty = {0, 0, NULL};
 
-void jsstr32_u32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i);
-int jsstr32_u32_cmp(jsstr32_t *s1, jsstr32_t *s2);
-
-/*
- * Find the index of the first occurrence of the code point in the string.
- * Returns the index of the code point, or -1 if not found.
- */
-ssize_t jsstr32_u32_indexof(jsstr32_t *s, uint32_t search_c, size_t start_i);
-/*
- * Find the index of the first occurrence of a sequence of code points in the string.
- * Returns the index of the first code point of the sequence, or -1 if not found.
- */
-ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
-
 /* return the fixed capacity of the string */
 size_t jsstr32_get_cap(jsstr32_t *s);
 
@@ -118,31 +104,58 @@ size_t jsstr32_set_from_utf8(jsstr32_t *s, uint8_t *str, size_t len);
 size_t jssstr32_set_from_jsstr16(jsstr32_t *s, jsstr16_t *src);
 size_t jssstr32_set_from_jsstr8(jsstr32_t *s, jsstr8_t *src);
 
+/*
+ * Get the length of the string in code points.
+ */
 size_t jsstr32_get_utf32len(jsstr32_t *s);
+
+/*
+ * Get the length of the string in UTF-16 code units.
+ * This is the number of code units needed to encode the string in UTF-16.
+ */
 size_t jsstr32_get_utf16len(jsstr32_t *s);
+
+/*
+ * Get the length of the string in UTF-8 bytes.
+ * This is the number of bytes needed to encode the string in UTF-8.
+ */
 size_t jsstr32_get_utf8len(jsstr32_t *s);
 
+/*
+ * Get the code point at the given index.
+ * Returns a pointer to the code point, or NULL if out of bounds.
+ */
 uint32_t *jsstr32_u32s_at(jsstr32_t *s, size_t i);
-void jsstr32_u32_truncate(jsstr32_t *s, size_t len);
 
 /*
  * universal string methods
  */
 
 /*
- * Return the character at the index as a string.
+ * Truncate the string to the given code point length.
  */
-jsstr32_t jsstr32_jsstr32_at(jsstr32_t *s, ssize_t index);
+void jsstr32_u32_truncate(jsstr32_t *s, size_t len);
 
 /*
- * Return the UTF-16 code unit at the index (in UTF-16 position).
+ * Slice the string from the source string, starting at start_i and stopping at stop_i.
  */
-uint16_t jsstr32_u16_at(jsstr32_t *s, ssize_t index, const char *buf, size_t len);
+void jsstr32_u32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t stop_i);
 
 /*
- * Return the code point at the index (in code point position).
+ * Compare two jsstr32_t strings as UTF-32 code points.
  */
-uint32_t jsstr32_u32_at(jsstr32_t *s, ssize_t index);
+int jsstr32_u32_cmp(jsstr32_t *s1, jsstr32_t *s2);
+
+/*
+ * Find the index of the first occurrence of the code point in the string.
+ * Returns the index of the code point, or -1 if not found.
+ */
+ssize_t jsstr32_u32_indexof(jsstr32_t *s, uint32_t search_c, size_t start_i);
+/*
+ * Find the index of the first occurrence of a sequence of code points in the string.
+ * Returns the index of the first code point of the sequence, or -1 if not found.
+ */
+ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 
 /*
  * Concatenate the src string to the end of the s string.
@@ -165,14 +178,6 @@ void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str);
     jsstr16_init_from_str(&__varname, __str)
 static const jsstr16_t jsstr16_empty = {0, 0, NULL};
 
-void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
-void jsstr16_u32_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
-int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
-int jsstr16_u32_cmp(jsstr16_t *s1, jsstr16_t *s2);
-ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
-ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
-ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
-ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr16_get_cap(jsstr16_t *s);
 
 size_t jsstr16_set_from_utf32(jsstr16_t *s, const uint32_t *str, size_t len);
@@ -189,12 +194,20 @@ size_t jsstr16_get_utf8len(jsstr16_t *s);
 
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i);
 uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t i);
+
+/*
+ * universal string methods
+ */
 void jsstr16_u16_truncate(jsstr16_t *s, size_t len);
 void jsstr16_u32_truncate(jsstr16_t *s, size_t len);
-
-jsstr16_t jsstr16_jsstr16_at(jsstr16_t *s, ssize_t index);
-uint16_t jsstr16_u16_at(jsstr16_t *s, ssize_t index);
-uint32_t jsstr16_u32_at(jsstr16_t *s, ssize_t index, const char *buf, size_t len);
+void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
+void jsstr16_u32_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
+int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
+int jsstr16_u32_cmp(jsstr16_t *s1, jsstr16_t *s2);
+ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
+ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
+ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
+ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
 
 /*
@@ -212,14 +225,6 @@ void jsstr8_init_from_str(jsstr8_t *s, const char *str);
     jsstr8_init_from_str(&__varname, __str)
 static const jsstr8_t jsstr8_empty = {0, 0, NULL};
 
-void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
-void jsstr8_u32_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
-int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
-int jsstr8_u32_cmp(jsstr8_t *s1, jsstr8_t *s2);
-ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i);
-ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
-ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
-ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 size_t jsstr8_get_cap(jsstr8_t *s);
 
 size_t jsstr8_set_from_utf32(jsstr8_t *s, const uint32_t *str, size_t len);
@@ -236,12 +241,20 @@ size_t jsstr8_get_utf8len(jsstr8_t *s);
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i);
 uint8_t *jsstr8_u32s_at(jsstr8_t *s, size_t i);
+
+/*
+ * universal string methods
+ */
 void jsstr8_u8_truncate(jsstr8_t *s, size_t len);
 void jsstr8_u32_truncate(jsstr8_t *s, size_t len);
-
-jsstr8_t jsstr8_jsstr8_at(jsstr8_t *s, ssize_t index);
-uint16_t jsstr8_u16_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
-uint32_t jsstr8_u32_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
+void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
+void jsstr8_u32_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
+int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
+int jsstr8_u32_cmp(jsstr8_t *s1, jsstr8_t *s2);
+ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i);
+ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
+ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
+ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
 
 #endif

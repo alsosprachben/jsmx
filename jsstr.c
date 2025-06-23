@@ -194,40 +194,6 @@ void jsstr32_u32_truncate(jsstr32_t *s, size_t len) {
     }
 }
 
-jsstr32_t jsstr32_jsstr32_at(jsstr32_t *s, ssize_t index) {
-    /* jsstr32_u32_slice() to slice using the s string's buffer */
-    jsstr32_t result;
-    jsstr32_init(&result);
-    if (index < 0 || index >= s->len) {
-        /* out of bounds, return empty string */
-        return result;
-    }
-    jsstr32_u32_slice(&result, s, index, index + 1);
-    return result;
-}
-
-uint16_t jsstr32_u16_at(jsstr32_t *s, ssize_t index, const char *buf, size_t len) {
-    /* make a jsstr16_t string of this string, to index code units instead of code points */
-    size_t rc;
-    jsstr16_t jsstr16;
-    jsstr16_init_from_buf(&jsstr16, buf, len);
-    rc = jsstr16_set_from_utf32(&jsstr16, s->codepoints, s->len);
-    if (rc < index) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return jsstr16_u16_at(&jsstr16, index);
-}
-
-uint32_t jsstr32_u32_at(jsstr32_t *s, ssize_t index) {
-    /* return the code point at the index, or 0 if out of bounds */
-    if (index < 0 || index >= s->len) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return s->codepoints[index];
-}
-
 int jsstr32_concat(jsstr32_t *s, jsstr32_t *src) {
     /* concatenate src to s, if there is enough capacity */
     if (s->len + src->len > s->cap) {
@@ -576,40 +542,6 @@ void jsstr16_u32_truncate(jsstr16_t *s, size_t len) {
     }
 }
 
-jsstr16_t jsstr16_jsstr16_at(jsstr16_t *s, ssize_t index) {
-    /* jsstr16_u16_slice() to slice using the s string's buffer */
-    jsstr16_t result;
-    jsstr16_init(&result);
-    if (index < 0 || index >= s->len) {
-        /* out of bounds, return empty string */
-        return result;
-    }
-    jsstr16_u16_slice(&result, s, index, index + 1);
-    return result;
-}
-
-uint16_t jsstr16_u16_at(jsstr16_t *s, ssize_t index) {
-    /* return the code unit at the index, or 0 if out of bounds */
-    if (index < 0 || index >= s->len) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return s->codeunits[index];
-}
-
-uint32_t jsstr16_u32_at(jsstr16_t *s, ssize_t index, const char *buf, size_t len) {
-    /* make a jsstr32_t string of this string, to index code points instead of code units */
-    size_t rc;
-    jsstr32_t jsstr;
-    jsstr32_init_from_buf(&jsstr, buf, len);
-    rc = jsstr32_set_from_utf16(&jsstr, s->codeunits, s->len);
-    if (rc < index) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return jsstr32_u32_at(&jsstr, index);
-}
-
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
     /* concatenate src to s, if there is enough capacity */
     if (s->len + src->len > s->cap) {
@@ -931,44 +863,6 @@ void jsstr8_u32_truncate(jsstr8_t *s, size_t len) {
     if (bc != NULL) {
         s->len = bc - s->bytes;
     }
-}
-
-jsstr8_t jsstr8_jsstr8_at(jsstr8_t *s, ssize_t index) {
-    /* jsstr8_u8_slice() to slice using the s string's buffer */
-    jsstr8_t result;
-    jsstr8_init(&result);
-    if (index < 0 || index >= s->len) {
-        /* out of bounds, return empty string */
-        return result;
-    }
-    jsstr8_u8_slice(&result, s, index, index + 1);
-    return result;
-}
-
-uint16_t jsstr8_u16_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
-    /* make a jsstr16_t string of this string, to index code units instead of code points */
-    size_t rc;
-    jsstr16_t jsstr16;
-    jsstr16_init_from_buf(&jsstr16, buf, len);
-    rc = jsstr16_set_from_utf8(&jsstr16, s->bytes, s->len);
-    if (rc < index) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return jsstr16_u16_at(&jsstr16, index);
-}
-
-uint32_t jsstr8_u32_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len) {
-    /* make a jsstr32_t string of this string, to index code points instead of code units */
-    size_t rc;
-    jsstr32_t jsstr;
-    jsstr32_init_from_buf(&jsstr, buf, len);
-    rc = jsstr32_set_from_utf8(&jsstr, s->bytes, s->len);
-    if (rc < index) {
-        errno = ENOBUFS; /* not enough capacity */
-        return 0; /* out of bounds */
-    }
-    return jsstr32_u32_at(&jsstr, index);
 }
 
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src) {
