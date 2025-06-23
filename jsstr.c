@@ -330,34 +330,29 @@ ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t c_len, s
 }
 
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t c_len, size_t start_i) {
-    /* search for a code point in the string, and return the code point index (as works with _at() method) */
-    /* account for surrogate pairs */
+    /* search for a code point in the string, using UTF16_CHAR to decode code points */
+    size_t code16_i;
+    ssize_t cp_i;
     uint32_t c;
-    ssize_t c_i;
-    size_t i;
-    for (i = 0, c_i = 0; i < s->len; i++, c_i++) {
-        if (s->codeunits[i] >= 0xD800 && s->codeunits[i] <= 0xDBFF) {
-            /* detected high surrogate */
-            if (i + 1 < s->len && s->codeunits[i + 1] >= 0xDC00 && s->codeunits[i + 1] <= 0xDFFF) {
-                /* detected low surrogate */
-                c = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
-                i += 1;
-            } else {
-                c = 0xFFFD; /* the replacement character */
-            }
-        } else {
-            c = s->codeunits[i];            
+    int l;
+
+    for (code16_i = 0, cp_i = 0; code16_i < s->len; cp_i++) {
+        UTF16_CHAR(s->codeunits + code16_i, s->codeunits + s->len, &c, &l);
+        if (l <= 0) {
+            /* invalid sequence: advance one code unit as replacement */
+            l = 1;
+            c = 0xFFFD;
         }
-        if (c_i >= start_i) {
-            int j;
-            for (j = 0; j < c_len; j++) {
+        if (cp_i >= (ssize_t)start_i) {
+            for (size_t j = 0; j < c_len; j++) {
                 if (search_c[j] == c) {
-                    return c_i;
+                    return cp_i;
                 }
             }
         }
+        code16_i += l;
     }
-    return -c_i;
+    return -cp_i;
 }
 
 size_t jsstr16_get_cap(jsstr16_t *s) {
