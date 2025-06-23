@@ -146,6 +146,8 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_set_from_utf32: %zu\n", rc);
     printf("jsstr16_get_utf32len: %zu\n", jsstr16_get_utf32len(&s));
 
+    /* native u16 encoding ops */
+
     cu = jsstr16_u16s_at(&s, 20);
     if (cu == NULL) {
         printf("jsstr16_u16s_at: NULL\n");
@@ -187,6 +189,27 @@ void test_jsstr16_lifecycle() {
     uint16_t search_c216[] = {0x006F, 0x0072, 0x006C, 0x0064, 0};
     size_t search_c216_len = utf16_strlen(search_c216);
     printf("jsstr16_u16_indextoken: %zd\n", jsstr16_u16_indextoken(&s_str, search_c216, search_c216_len, start_i));
+
+    /* character u32 encoding ops */
+
+    cu = jsstr16_u32s_at(&s_str, 20);
+    if (cu == NULL) {
+        printf("jsstr16_u32s_at: NULL\n");
+    } else {
+        c_ptr = &c;
+        UTF16_DECODE(&cu, cu + 2, &c_ptr, c_ptr + 1);
+        printf("jsstr16_u32s_at: %lc\n", c);
+    }
+
+    jsstr16_u32_truncate(&s, 10);
+    printf("jsstr16_u32_truncate: %zu\n", jsstr16_get_utf32len(&s));
+
+    jsstr16_u32_slice(&s_slice, &s_str, 3, 7);
+    printf("jsstr16_u32_slice: %zu\n", jsstr16_get_utf32len(&s_slice));
+
+    /* test cmp */
+    jsstr16_init_from_str(&s_cmp, utf16_str);
+    printf("jsstr16_u32_cmp: %d\n", jsstr16_u32_cmp(&s_str, &s_cmp));
 }
 
 void test_jsstr8_lifecycle() {
@@ -283,6 +306,25 @@ void test_jsstr8_lifecycle() {
     size_t search_tok8u_len = utf8_strlen(search_tok8u);
     printf("jsstr8_u8_indextoken: %zd\n",
               jsstr8_u8_indextoken(&s_str, search_tok8u, search_tok8u_len, start_i));
+
+    /* character u32 encoding ops */
+    u8 = jsstr8_u32s_at(&s_str, 20);
+    if (u8 == NULL) {
+        printf("jsstr8_u32s_at: NULL\n");
+    } else {
+        UTF8_DECODE(&u8, u8 + 4, &c_ptr, c_ptr + 1);
+        printf("jsstr8_u32s_at: %lc\n", c);
+    }
+
+    jsstr8_u32_truncate(&s, 10);
+    printf("jsstr8_u32_truncate: %zu\n", jsstr8_get_utf32len(&s));
+
+    jsstr8_u32_slice(&s_slice, &s_str, 3, 7);
+    printf("jsstr8_u32_slice: %zu\n", jsstr8_get_utf32len(&s_slice));
+
+    /* test cmp */
+    jsstr8_init_from_str(&s_cmp, "Hello, World!");
+    printf("jsstr8_u32_cmp: %d\n", jsstr8_u32_cmp(&s_str, &s_cmp));
 }
 
 

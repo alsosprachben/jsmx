@@ -268,6 +268,16 @@ void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t sto
     s->cap = s->len;
 }
 
+void jsstr16_u32_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i) {
+    /* initialize from a slice of a source string, using jsstr16_u32s_at() to slice the buffer */
+    s->codeunits = jsstr16_u32s_at(src, start_i);
+    s->len = src->codeunits + src->len - s->codeunits;
+    if (stop_i >= 0) {
+        jsstr16_u32_truncate(s, stop_i - start_i);
+    }
+    s->cap = s->len;
+}
+
 int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
     if (s1->len != s2->len) {
         return s1->len - s2->len;
@@ -278,6 +288,23 @@ int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2) {
         }
     }
     return 0;
+}
+
+int jsstr16_u32_cmp(jsstr16_t *s1, jsstr16_t *s2) {
+    /* compare two jsstr16_t strings as UTF-32 code points */
+    size_t i;
+    for (i = 0; i < s1->len && i < s2->len; i++) {
+        uint32_t c1, c2;
+        int l1, l2;
+
+        UTF16_CHAR(s1->codeunits + i, s1->codeunits + s1->len, &c1, &l1);
+        UTF16_CHAR(s2->codeunits + i, s2->codeunits + s2->len, &c2, &l2);
+
+        if (c1 != c2) {
+            return c1 - c2;
+        }
+    }
+    return (s1->len - s2->len);
 }
 
 ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i) {
@@ -292,29 +319,32 @@ ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i) {
 }
 
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i) {
-    /* search for a code point in the string, and return the code point index (as works with _at() method) */
-    /* account for surrogate pairs */
+    size_t code16_i;
+    ssize_t cp_i;
     uint32_t c;
-    ssize_t c_i;
-    size_t i;
-    for (i = 0, c_i = 0; i < s->len; i++, c_i++) {
-        if (s->codeunits[i] >= 0xD800 && s->codeunits[i] <= 0xDBFF) {
-            /* detected high surrogate */
-            if (i + 1 < s->len && s->codeunits[i + 1] >= 0xDC00 && s->codeunits[i + 1] <= 0xDFFF) {
-                /* detected low surrogate */
-                c = 0x10000 + ((s->codeunits[i] - 0xD800) << 10) + (s->codeunits[i + 1] - 0xDC00);
-                i++;
-            } else {
-                c = 0xFFFD; /* the replacement character */
-            }
-        } else {
-            c = s->codeunits[i];            
+    int l;
+
+    for (code16_i = 0, cp_i = 0; code16_i < s->len; cp_i++) {
+        /* decode next UTF-16 code point */
+        UTF16_CHAR(s->codeunits + code16_i,
+                   s->codeunits + s->len,
+                   &c, &l);
+
+        if (l <= 0) {
+            /* invalid sequence: advance one code unit as replacement */
+            l = 1;
+            c = 0xFFFD;
         }
-        if (c_i >= start_i && search_c == c) {
-            return c_i;
+
+        /* check match once we've reached start_i */
+        if (cp_i >= (ssize_t)start_i && c == search_c) {
+            return cp_i;
         }
+
+        code16_i += l;
     }
-    return -c_i;
+
+    return -cp_i;
 }
 
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t c_len, size_t start_i) {
@@ -494,7 +524,16 @@ size_t jsstr16_get_utf8len(jsstr16_t *s) {
     return code8_i;
 }
 
-uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t index) {
+uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i) {
+    /* return the code unit at the index, or NULL if out of bounds */
+    if (i < s->len) {
+        return s->codeunits + i;
+    } else {
+        return NULL; /* out of bounds */
+    }
+}
+
+uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t index) {
     /* i is code point index, so need to count surrogate pairs of two code units as one code point */
     /* need to walk from the beginning */
     int l;
@@ -524,6 +563,14 @@ uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t index) {
 
 void jsstr16_u16_truncate(jsstr16_t *s, size_t len) {
     uint16_t *cu = jsstr16_u16s_at(s, len);
+    if (cu != NULL) {
+        s->len = cu - s->codeunits;
+    }
+}
+
+void jsstr16_u32_truncate(jsstr16_t *s, size_t len) {
+    /* truncate the string to the given code point length */
+    uint16_t *cu = jsstr16_u32s_at(s, len);
     if (cu != NULL) {
         s->len = cu - s->codeunits;
     }
@@ -603,6 +650,16 @@ void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i)
     s->cap = s->len;
 }
 
+void jsstr8_u32_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i) {
+    /* initialize from a slice of a source string, using jsstr8_u32s_at() to slice the buffer */
+    s->bytes = jsstr8_u32s_at(src, start_i);
+    s->len = src->bytes + src->len - s->bytes;
+    if (stop_i >= 0) {
+        jsstr8_u32_truncate(s, stop_i - start_i);
+    }
+    s->cap = s->len;
+}
+
 int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
     if (s1->len != s2->len) {
         return s1->len - s2->len;
@@ -613,6 +670,25 @@ int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2) {
         }
     }
     return 0;
+}
+
+int jsstr8_u32_cmp(jsstr8_t *s1, jsstr8_t *s2) {
+    /* compare two strings as UTF-32 code points */
+    if (s1->len != s2->len) {
+        return s1->len - s2->len;
+    }
+    uint32_t c1, c2;
+    int l1, l2;
+    size_t i = 0;
+    while (i < s1->len && i < s2->len) {
+        UTF8_CHAR((const char *) s1->bytes + i, (const char *) s1->bytes + s1->len, &c1, &l1);
+        UTF8_CHAR((const char *) s2->bytes + i, (const char *) s2->bytes + s2->len, &c2, &l2);
+        if (c1 != c2) {
+            return c1 - c2;
+        }
+        i += l1 > l2 ? l1 : l2; /* advance by the longer length */
+    }
+    return 0; /* equal */
 }
 
 ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i) {
@@ -817,6 +893,15 @@ size_t jsstr8_get_utf8len(jsstr8_t *s) {
 }
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i) {
+    /* return the byte at the index, or NULL if out of bounds */
+    if (i < s->len) {
+        return s->bytes + i;
+    } else {
+        return NULL; /* out of bounds */
+    }
+}
+
+uint8_t *jsstr8_u32s_at(jsstr8_t *s, size_t i) {
     /* i is code point index, so need to count each UTF-8 sequence as one code point */
     /* need to walk from the beginning */
     size_t j = 0;
@@ -834,6 +919,14 @@ uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i) {
 }
 
 void jsstr8_u8_truncate(jsstr8_t *s, size_t len) {
+    /* truncate the string to the given byte length */
+    uint8_t *bc = jsstr8_u8s_at(s, len);
+    if (bc != NULL) {
+        s->len = bc - s->bytes;
+    }
+}
+
+void jsstr8_u32_truncate(jsstr8_t *s, size_t len) {
     uint8_t *bc = jsstr8_u8s_at(s, len);
     if (bc != NULL) {
         s->len = bc - s->bytes;

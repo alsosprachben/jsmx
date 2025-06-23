@@ -166,7 +166,9 @@ void jsstr16_init_from_str(jsstr16_t *s, const uint16_t *str);
 static const jsstr16_t jsstr16_empty = {0, 0, NULL};
 
 void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
+void jsstr16_u32_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
 int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
+int jsstr16_u32_cmp(jsstr16_t *s1, jsstr16_t *s2);
 ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
@@ -186,7 +188,9 @@ size_t jsstr16_get_utf16len(jsstr16_t *s);
 size_t jsstr16_get_utf8len(jsstr16_t *s);
 
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i);
+uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t i);
 void jsstr16_u16_truncate(jsstr16_t *s, size_t len);
+void jsstr16_u32_truncate(jsstr16_t *s, size_t len);
 
 jsstr16_t jsstr16_jsstr16_at(jsstr16_t *s, ssize_t index);
 uint16_t jsstr16_u16_at(jsstr16_t *s, ssize_t index);
@@ -209,7 +213,9 @@ void jsstr8_init_from_str(jsstr8_t *s, const char *str);
 static const jsstr8_t jsstr8_empty = {0, 0, NULL};
 
 void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
+void jsstr8_u32_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
 int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
+int jsstr8_u32_cmp(jsstr8_t *s1, jsstr8_t *s2);
 ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i);
 ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
@@ -229,7 +235,9 @@ size_t jsstr8_get_utf16len(jsstr8_t *s);
 size_t jsstr8_get_utf8len(jsstr8_t *s);
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i);
+uint8_t *jsstr8_u32s_at(jsstr8_t *s, size_t i);
 void jsstr8_u8_truncate(jsstr8_t *s, size_t len);
+void jsstr8_u32_truncate(jsstr8_t *s, size_t len);
 
 jsstr8_t jsstr8_jsstr8_at(jsstr8_t *s, ssize_t index);
 uint16_t jsstr8_u16_at(jsstr8_t *s, ssize_t index, const char *buf, size_t len);
