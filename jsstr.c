@@ -854,7 +854,7 @@ void jsstr8_u8_truncate(jsstr8_t *s, size_t len) {
 }
 
 void jsstr8_u32_truncate(jsstr8_t *s, size_t len) {
-    uint8_t *bc = jsstr8_u8s_at(s, len);
+    uint8_t *bc = jsstr8_u32s_at(s, len);
     if (bc != NULL) {
         s->len = bc - s->bytes;
     }
