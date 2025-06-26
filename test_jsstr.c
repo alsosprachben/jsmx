@@ -9,8 +9,11 @@
 void test_jsstr32_lifecycle() {
     jsstr32_t s;
     jsstr32_t s_slice;
+    jsstr32_t dest;
     uint8_t buf[1024];
     size_t len = sizeof(buf);
+    uint8_t dest_buf[1024];
+    size_t dest_len = sizeof(dest_buf);
     size_t rc;
     const uint32_t *cu;
     uint32_t c;
@@ -97,6 +100,16 @@ void test_jsstr32_lifecycle() {
     printf("jsstr32_u32_startswith: %d\n", jsstr32_u32_startswith(&s, &prefix));
     printf("jsstr32_u32_endswith: %d\n", jsstr32_u32_endswith(&s, &suffix));
     printf("jsstr32_u32_includes: %d\n", jsstr32_u32_includes(&s, &sub));
+
+    jsstr32_init_from_buf(&s, (char *)buf, len);
+    jsstr32_set_from_utf32(&s, L"abc", 3);
+    jsstr32_u32_toupper(&s);
+    printf("jsstr32_toupper: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
+    jsstr32_u32_tolower(&s);
+    printf("jsstr32_tolower: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
+    jsstr32_init_from_buf(&dest, (char *)dest_buf, dest_len);
+    jsstr32_repeat(&dest, &s, 3);
+    printf("jsstr32_repeat len: %zu\n", jsstr32_get_utf32len(&dest));
 }
 
 void test_jsstr16_lifecycle() {
@@ -104,8 +117,11 @@ void test_jsstr16_lifecycle() {
     jsstr16_t s_str;
     jsstr16_t s_cmp;
     jsstr16_t s_slice;
+    jsstr16_t dest16;
     uint8_t buf[1024];
     size_t len = sizeof (buf);
+    uint8_t dest16_buf[1024];
+    size_t dest16_len = sizeof(dest16_buf);
     size_t rc;
     const uint16_t *cu;
     uint32_t c;
@@ -230,6 +246,19 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_u16_startswith: %d\n", jsstr16_u16_startswith(&s_str, &prefix));
     printf("jsstr16_u16_endswith: %d\n", jsstr16_u16_endswith(&s_str, &suffix));
     printf("jsstr16_u16_includes: %d\n", jsstr16_u16_includes(&s_str, &sub));
+
+    jsstr16_init_from_buf(&s, (char *)buf, len);
+    {
+        uint16_t tmp[3] = { 'a', 'b', 'c' };
+        jsstr16_set_from_utf16(&s, tmp, 3);
+    }
+    jsstr16_u32_toupper(&s);
+    printf("jsstr16_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_u32_tolower(&s);
+    printf("jsstr16_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_init_from_buf(&dest16, (char *)dest16_buf, dest16_len);
+    jsstr16_repeat(&dest16, &s, 3);
+    printf("jsstr16_repeat len: %zu\n", jsstr16_get_utf16len(&dest16));
 }
 
 void test_jsstr8_lifecycle() {
@@ -237,8 +266,11 @@ void test_jsstr8_lifecycle() {
     jsstr8_t s_str;
     jsstr8_t s_cmp;
     jsstr8_t s_slice;
+    jsstr8_t dest8;
     uint8_t buf[1024];
     size_t len = sizeof(buf);
+    uint8_t dest8_buf[1024];
+    size_t dest8_len = sizeof(dest8_buf);
     size_t rc;
     const uint8_t *u8;
     uint32_t c;
@@ -355,6 +387,16 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_u8_startswith: %d\n", jsstr8_u8_startswith(&s_str, &prefix));
     printf("jsstr8_u8_endswith: %d\n", jsstr8_u8_endswith(&s_str, &suffix));
     printf("jsstr8_u8_includes: %d\n", jsstr8_u8_includes(&s_str, &sub));
+
+    jsstr8_init_from_buf(&s, (char *)buf, len);
+    jsstr8_set_from_utf8(&s, (uint8_t *)"abc", 3);
+    jsstr8_u8_toupper(&s);
+    printf("jsstr8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_u8_tolower(&s);
+    printf("jsstr8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_init_from_buf(&dest8, (char *)dest8_buf, dest8_len);
+    jsstr8_repeat(&dest8, &s, 3);
+    printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));
 }
 
 

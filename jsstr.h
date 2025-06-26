@@ -165,6 +165,9 @@ ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *search_c, size_t search_c
  * Returns 0 on success, or -1 (ENOBUFS) if there is not enough capacity.
  */
 int jsstr32_concat(jsstr32_t *s, jsstr32_t *src);
+void jsstr32_u32_tolower(jsstr32_t *s);
+void jsstr32_u32_toupper(jsstr32_t *s);
+int jsstr32_repeat(jsstr32_t *dest, jsstr32_t *src, size_t count);
 
 /*
  * UTF-16 strings
@@ -215,6 +218,11 @@ ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
+void jsstr16_u16_tolower(jsstr16_t *s);
+void jsstr16_u16_toupper(jsstr16_t *s);
+void jsstr16_u32_tolower(jsstr16_t *s);
+void jsstr16_u32_toupper(jsstr16_t *s);
+int jsstr16_repeat(jsstr16_t *dest, jsstr16_t *src, size_t count);
 
 /*
  * UTF-8 strings
@@ -265,5 +273,10 @@ ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
+void jsstr8_u8_tolower(jsstr8_t *s);
+void jsstr8_u8_toupper(jsstr8_t *s);
+void jsstr8_u32_tolower(jsstr8_t *s);
+void jsstr8_u32_toupper(jsstr8_t *s);
+int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count);
 
 #endif
