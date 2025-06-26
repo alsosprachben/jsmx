@@ -145,6 +145,9 @@ void jsstr32_u32_slice(jsstr32_t *s, jsstr32_t *src, size_t start_i, ssize_t sto
  * Compare two jsstr32_t strings as UTF-32 code points.
  */
 int jsstr32_u32_cmp(jsstr32_t *s1, jsstr32_t *s2);
+int jsstr32_u32_startswith(jsstr32_t *s, jsstr32_t *prefix);
+int jsstr32_u32_endswith(jsstr32_t *s, jsstr32_t *suffix);
+int jsstr32_u32_includes(jsstr32_t *s, jsstr32_t *search);
 
 /*
  * Find the index of the first occurrence of the code point in the string.
@@ -204,6 +207,9 @@ void jsstr16_u16_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t sto
 void jsstr16_u32_slice(jsstr16_t *s, jsstr16_t *src, size_t start_i, ssize_t stop_i);
 int jsstr16_u16_cmp(jsstr16_t *s1, jsstr16_t *s2);
 int jsstr16_u32_cmp(jsstr16_t *s1, jsstr16_t *s2);
+int jsstr16_u16_startswith(jsstr16_t *s, jsstr16_t *prefix);
+int jsstr16_u16_endswith(jsstr16_t *s, jsstr16_t *suffix);
+int jsstr16_u16_includes(jsstr16_t *s, jsstr16_t *search);
 ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
@@ -251,6 +257,9 @@ void jsstr8_u8_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i)
 void jsstr8_u32_slice(jsstr8_t *s, jsstr8_t *src, size_t start_i, ssize_t stop_i);
 int jsstr8_u8_cmp(jsstr8_t *s1, jsstr8_t *s2);
 int jsstr8_u32_cmp(jsstr8_t *s1, jsstr8_t *s2);
+int jsstr8_u8_startswith(jsstr8_t *s, jsstr8_t *prefix);
+int jsstr8_u8_endswith(jsstr8_t *s, jsstr8_t *suffix);
+int jsstr8_u8_includes(jsstr8_t *s, jsstr8_t *search);
 ssize_t jsstr8_u8_indexof(jsstr8_t *s, uint8_t search_c, size_t start_i);
 ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
