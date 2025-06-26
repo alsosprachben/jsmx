@@ -395,9 +395,9 @@ void test_jsstr8_lifecycle() {
     jsstr8_init_from_buf(&s, (char *)buf, len);
     jsstr8_set_from_utf8(&s, (uint8_t *)"abc", 3);
     jsstr8_u8_toupper(&s);
-    printf("jsstr8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    printf("jsstr8_u8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u8_tolower(&s);
-    printf("jsstr8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    printf("jsstr8_u8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u32_toupper(&s);
     printf("jsstr8_u32_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u32_tolower(&s);
