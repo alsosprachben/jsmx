@@ -253,9 +253,13 @@ void test_jsstr16_lifecycle() {
         jsstr16_set_from_utf16(&s, tmp, 3);
     }
     jsstr16_u32_toupper(&s);
-    printf("jsstr16_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    printf("jsstr16_u32_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_u32_tolower(&s);
-    printf("jsstr16_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    printf("jsstr16_u32_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_u16_toupper(&s);
+    printf("jsstr16_u16_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_u16_tolower(&s);
+    printf("jsstr16_u16_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_init_from_buf(&dest16, (char *)dest16_buf, dest16_len);
     jsstr16_repeat(&dest16, &s, 3);
     printf("jsstr16_repeat len: %zu\n", jsstr16_get_utf16len(&dest16));
@@ -394,6 +398,10 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u8_tolower(&s);
     printf("jsstr8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_u32_toupper(&s);
+    printf("jsstr8_u32_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_u32_tolower(&s);
+    printf("jsstr8_u32_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_init_from_buf(&dest8, (char *)dest8_buf, dest8_len);
     jsstr8_repeat(&dest8, &s, 3);
     printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));
