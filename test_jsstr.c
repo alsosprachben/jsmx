@@ -87,6 +87,16 @@ void test_jsstr32_lifecycle() {
     size_t search_tok_len = utf32_strlen(search_tok);
     printf("jsstr32_u32_indextoken: %zd\n",
            jsstr32_u32_indextoken(&s, search_tok, search_tok_len, start_i));
+
+    jsstr32_t prefix;
+    jsstr32_t suffix;
+    jsstr32_t sub;
+    jsstr32_init_from_str(&prefix, L"Hello");
+    jsstr32_init_from_str(&suffix, L"World!");
+    jsstr32_init_from_str(&sub, L", Wo");
+    printf("jsstr32_u32_startswith: %d\n", jsstr32_u32_startswith(&s, &prefix));
+    printf("jsstr32_u32_endswith: %d\n", jsstr32_u32_endswith(&s, &suffix));
+    printf("jsstr32_u32_includes: %d\n", jsstr32_u32_includes(&s, &sub));
 }
 
 void test_jsstr16_lifecycle() {
@@ -210,6 +220,16 @@ void test_jsstr16_lifecycle() {
     /* test cmp */
     jsstr16_init_from_str(&s_cmp, utf16_str);
     printf("jsstr16_u32_cmp: %d\n", jsstr16_u32_cmp(&s_str, &s_cmp));
+
+    jsstr16_t prefix;
+    jsstr16_t suffix;
+    jsstr16_t sub;
+    jsstr16_init_from_str(&prefix, (uint16_t *)L"Hello");
+    jsstr16_init_from_str(&suffix, (uint16_t *)L"World!");
+    jsstr16_init_from_str(&sub, (uint16_t *)L", Wo");
+    printf("jsstr16_u16_startswith: %d\n", jsstr16_u16_startswith(&s_str, &prefix));
+    printf("jsstr16_u16_endswith: %d\n", jsstr16_u16_endswith(&s_str, &suffix));
+    printf("jsstr16_u16_includes: %d\n", jsstr16_u16_includes(&s_str, &sub));
 }
 
 void test_jsstr8_lifecycle() {
@@ -325,6 +345,16 @@ void test_jsstr8_lifecycle() {
     /* test cmp */
     jsstr8_init_from_str(&s_cmp, "Hello, World!");
     printf("jsstr8_u32_cmp: %d\n", jsstr8_u32_cmp(&s_str, &s_cmp));
+
+    jsstr8_t prefix;
+    jsstr8_t suffix;
+    jsstr8_t sub;
+    jsstr8_init_from_str(&prefix, "Hello");
+    jsstr8_init_from_str(&suffix, "World!");
+    jsstr8_init_from_str(&sub, ", Wo");
+    printf("jsstr8_u8_startswith: %d\n", jsstr8_u8_startswith(&s_str, &prefix));
+    printf("jsstr8_u8_endswith: %d\n", jsstr8_u8_endswith(&s_str, &suffix));
+    printf("jsstr8_u8_includes: %d\n", jsstr8_u8_includes(&s_str, &sub));
 }
 
 

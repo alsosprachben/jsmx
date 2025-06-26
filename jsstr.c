@@ -205,6 +205,52 @@ int jsstr32_concat(jsstr32_t *s, jsstr32_t *src) {
     return 0; /* success */
 }
 
+int jsstr32_u32_startswith(jsstr32_t *s, jsstr32_t *prefix) {
+    if (prefix->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix->len; i++) {
+        if (s->codepoints[i] != prefix->codepoints[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr32_u32_endswith(jsstr32_t *s, jsstr32_t *suffix) {
+    if (suffix->len > s->len) {
+        return 0;
+    }
+    size_t start = s->len - suffix->len;
+    for (size_t i = 0; i < suffix->len; i++) {
+        if (s->codepoints[start + i] != suffix->codepoints[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr32_u32_includes(jsstr32_t *s, jsstr32_t *search) {
+    if (search->len == 0) {
+        return 1;
+    }
+    if (search->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i <= s->len - search->len; i++) {
+        size_t j;
+        for (j = 0; j < search->len; j++) {
+            if (s->codepoints[i + j] != search->codepoints[j]) {
+                break;
+            }
+        }
+        if (j == search->len) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void jsstr16_init(jsstr16_t *s) {
     s->cap = 0;
     s->len = 0;
@@ -537,6 +583,52 @@ void jsstr16_u32_truncate(jsstr16_t *s, size_t len) {
     }
 }
 
+int jsstr16_u16_startswith(jsstr16_t *s, jsstr16_t *prefix) {
+    if (prefix->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix->len; i++) {
+        if (s->codeunits[i] != prefix->codeunits[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr16_u16_endswith(jsstr16_t *s, jsstr16_t *suffix) {
+    if (suffix->len > s->len) {
+        return 0;
+    }
+    size_t start = s->len - suffix->len;
+    for (size_t i = 0; i < suffix->len; i++) {
+        if (s->codeunits[start + i] != suffix->codeunits[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr16_u16_includes(jsstr16_t *s, jsstr16_t *search) {
+    if (search->len == 0) {
+        return 1;
+    }
+    if (search->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i <= s->len - search->len; i++) {
+        size_t j;
+        for (j = 0; j < search->len; j++) {
+            if (s->codeunits[i + j] != search->codeunits[j]) {
+                break;
+            }
+        }
+        if (j == search->len) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
     /* concatenate src to s, if there is enough capacity */
     if (s->len + src->len > s->cap) {
@@ -697,6 +789,52 @@ ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t c_len, siz
 
     }
     return -i;
+}
+
+int jsstr8_u8_startswith(jsstr8_t *s, jsstr8_t *prefix) {
+    if (prefix->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix->len; i++) {
+        if (s->bytes[i] != prefix->bytes[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr8_u8_endswith(jsstr8_t *s, jsstr8_t *suffix) {
+    if (suffix->len > s->len) {
+        return 0;
+    }
+    size_t start = s->len - suffix->len;
+    for (size_t i = 0; i < suffix->len; i++) {
+        if (s->bytes[start + i] != suffix->bytes[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int jsstr8_u8_includes(jsstr8_t *s, jsstr8_t *search) {
+    if (search->len == 0) {
+        return 1;
+    }
+    if (search->len > s->len) {
+        return 0;
+    }
+    for (size_t i = 0; i <= s->len - search->len; i++) {
+        size_t j;
+        for (j = 0; j < search->len; j++) {
+            if (s->bytes[i + j] != search->bytes[j]) {
+                break;
+            }
+        }
+        if (j == search->len) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 size_t jsstr8_get_cap(jsstr8_t *s) {
