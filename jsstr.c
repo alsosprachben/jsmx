@@ -1,5 +1,7 @@
 #include <string.h>
 #include <errno.h>
+#include <ctype.h>
+#include <wctype.h>
 
 #include "jsstr.h"
 #include "utf8.h"
@@ -203,6 +205,32 @@ int jsstr32_concat(jsstr32_t *s, jsstr32_t *src) {
     memcpy(s->codepoints + s->len, src->codepoints, src->len * sizeof(uint32_t));
     s->len += src->len;
     return 0; /* success */
+}
+
+void jsstr32_u32_tolower(jsstr32_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->codepoints[i] = towlower((wint_t)s->codepoints[i]);
+    }
+}
+
+void jsstr32_u32_toupper(jsstr32_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->codepoints[i] = towupper((wint_t)s->codepoints[i]);
+    }
+}
+
+int jsstr32_repeat(jsstr32_t *dest, jsstr32_t *src, size_t count) {
+    if (src->len * count > dest->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    for (size_t i = 0; i < count; i++) {
+        memcpy(dest->codepoints + i * src->len,
+               src->codepoints,
+               src->len * sizeof(uint32_t));
+    }
+    dest->len = src->len * count;
+    return 0;
 }
 
 int jsstr32_u32_startswith(jsstr32_t *s, jsstr32_t *prefix) {
@@ -640,6 +668,90 @@ int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
     return 0; /* success */
 }
 
+void jsstr16_u16_tolower(jsstr16_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->codeunits[i] = (uint16_t)towlower((wint_t)s->codeunits[i]);
+    }
+}
+
+void jsstr16_u16_toupper(jsstr16_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->codeunits[i] = (uint16_t)towupper((wint_t)s->codeunits[i]);
+    }
+}
+
+void jsstr16_u32_tolower(jsstr16_t *s) {
+    uint16_t *read = s->codeunits;
+    uint16_t *write = s->codeunits;
+    uint16_t *bs = s->codeunits + s->len;
+    uint16_t *dest_end = s->codeunits + s->cap;
+    while (read < bs && write < dest_end) {
+        uint32_t c;
+        int l;
+        UTF16_CHAR(read, bs, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        read += l;
+        c = towlower((wint_t)c);
+        int outlen = UTF16_CLEN(c);
+        if (write + outlen > dest_end) {
+            break;
+        }
+        if (outlen == 1) {
+            *write++ = (uint16_t)c;
+        } else {
+            UTF16_CODEPAIR(c, write);
+            write += 2;
+        }
+    }
+    s->len = write - s->codeunits;
+}
+
+void jsstr16_u32_toupper(jsstr16_t *s) {
+    uint16_t *read = s->codeunits;
+    uint16_t *write = s->codeunits;
+    uint16_t *bs = s->codeunits + s->len;
+    uint16_t *dest_end = s->codeunits + s->cap;
+    while (read < bs && write < dest_end) {
+        uint32_t c;
+        int l;
+        UTF16_CHAR(read, bs, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        read += l;
+        c = towupper((wint_t)c);
+        int outlen = UTF16_CLEN(c);
+        if (write + outlen > dest_end) {
+            break;
+        }
+        if (outlen == 1) {
+            *write++ = (uint16_t)c;
+        } else {
+            UTF16_CODEPAIR(c, write);
+            write += 2;
+        }
+    }
+    s->len = write - s->codeunits;
+}
+
+int jsstr16_repeat(jsstr16_t *dest, jsstr16_t *src, size_t count) {
+    if (src->len * count > dest->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    for (size_t i = 0; i < count; i++) {
+        memcpy(dest->codeunits + i * src->len,
+               src->codeunits,
+               src->len * sizeof(uint16_t));
+    }
+    dest->len = src->len * count;
+    return 0;
+}
+
 void jsstr8_init(jsstr8_t *s) {
     s->cap = 0;
     s->len = 0;
@@ -1007,4 +1119,72 @@ int jsstr8_concat(jsstr8_t *s, jsstr8_t *src) {
     memcpy(s->bytes + s->len, src->bytes, src->len);
     s->len += src->len;
     return 0; /* success */
+}
+
+void jsstr8_u8_tolower(jsstr8_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->bytes[i] = (uint8_t)tolower((unsigned char)s->bytes[i]);
+    }
+}
+
+void jsstr8_u8_toupper(jsstr8_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        s->bytes[i] = (uint8_t)toupper((unsigned char)s->bytes[i]);
+    }
+}
+
+void jsstr8_u32_tolower(jsstr8_t *s) {
+    uint8_t *read = s->bytes;
+    uint8_t *write = s->bytes;
+    uint8_t *bs = s->bytes + s->len;
+    uint8_t *dest_end = s->bytes + s->cap;
+    while (read < bs && write < dest_end) {
+        uint32_t c;
+        int l;
+        UTF8_CHAR((const char *)read, (const char *)bs, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        read += l;
+        c = towlower((wint_t)c);
+        const uint32_t *cc = &c;
+        UTF8_ENCODE(&cc, &c + 1, &write, dest_end);
+    }
+    s->len = write - s->bytes;
+}
+
+void jsstr8_u32_toupper(jsstr8_t *s) {
+    uint8_t *read = s->bytes;
+    uint8_t *write = s->bytes;
+    uint8_t *bs = s->bytes + s->len;
+    uint8_t *dest_end = s->bytes + s->cap;
+    while (read < bs && write < dest_end) {
+        uint32_t c;
+        int l;
+        UTF8_CHAR((const char *)read, (const char *)bs, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        read += l;
+        c = towupper((wint_t)c);
+        const uint32_t *cc = &c;
+        UTF8_ENCODE(&cc, &c + 1, &write, dest_end);
+    }
+    s->len = write - s->bytes;
+}
+
+int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count) {
+    if (src->len * count > dest->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    for (size_t i = 0; i < count; i++) {
+        memcpy(dest->bytes + i * src->len,
+               src->bytes,
+               src->len);
+    }
+    dest->len = src->len * count;
+    return 0;
 }
