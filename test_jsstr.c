@@ -407,11 +407,59 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));
 }
 
+void test_jsstr32_well_formed() {
+    jsstr32_t valid;
+    jsstr32_init_from_str(&valid, L"A");
+    printf("jsstr32_is_well_formed (valid): %d\n", jsstr32_is_well_formed(&valid));
+
+    uint32_t invalid_buf[2] = {0xD800, 'A'};
+    jsstr32_t invalid = {2, 2, invalid_buf};
+    printf("jsstr32_is_well_formed (invalid): %d\n", jsstr32_is_well_formed(&invalid));
+    jsstr32_to_well_formed(&invalid);
+    printf("jsstr32_is_well_formed (after): %d\n", jsstr32_is_well_formed(&invalid));
+    printf("jsstr32_to_well_formed char: %04x\n", invalid.codepoints[0]);
+}
+
+void test_jsstr16_well_formed() {
+    uint16_t valid_buf[1] = {'A'};
+    jsstr16_t valid = {1, 1, valid_buf};
+    printf("jsstr16_is_well_formed (valid): %d\n", jsstr16_is_well_formed(&valid));
+
+    uint16_t invalid_buf[2] = {0xD800, 'A'};
+    jsstr16_t invalid = {2, 2, invalid_buf};
+    printf("jsstr16_is_well_formed (invalid): %d\n", jsstr16_is_well_formed(&invalid));
+    jsstr16_to_well_formed(&invalid);
+    printf("jsstr16_is_well_formed (after): %d\n", jsstr16_is_well_formed(&invalid));
+    printf("jsstr16_to_well_formed char: %04x %04x\n", invalid.codeunits[0], invalid.codeunits[1]);
+}
+
+void test_jsstr8_well_formed() {
+    uint8_t valid_buf[1] = {'A'};
+    jsstr8_t valid = {1, 1, valid_buf};
+    printf("jsstr8_is_well_formed (valid): %d\n", jsstr8_is_well_formed(&valid));
+
+    uint8_t invalid_buf[3] = {0xE2, 0x82, 'A'};
+    jsstr8_t invalid = {3, 3, invalid_buf};
+    printf("jsstr8_is_well_formed (invalid): %d\n", jsstr8_is_well_formed(&invalid));
+    uint8_t dest_buf[8];
+    jsstr8_t dest = {sizeof(dest_buf), 0, dest_buf};
+    jsstr8_to_well_formed(&invalid, &dest);
+    printf("jsstr8_is_well_formed (after): %d\n", jsstr8_is_well_formed(&dest));
+    printf("jsstr8_to_well_formed bytes: ");
+    for (size_t i = 0; i < dest.len; i++) {
+        printf("%02x ", dest.bytes[i]);
+    }
+    printf("\n");
+}
+
 
 int main() {
     setlocale(LC_ALL, "");
     test_jsstr32_lifecycle();
     test_jsstr16_lifecycle();
     test_jsstr8_lifecycle();
+    test_jsstr32_well_formed();
+    test_jsstr16_well_formed();
+    test_jsstr8_well_formed();
     return 0;
 }
