@@ -121,6 +121,9 @@ size_t jsstr32_get_utf16len(jsstr32_t *s);
  */
 size_t jsstr32_get_utf8len(jsstr32_t *s);
 
+int jsstr32_is_well_formed(jsstr32_t *s);
+void jsstr32_to_well_formed(jsstr32_t *s);
+
 /*
  * Get the code point at the given index.
  * Returns a pointer to the code point, or NULL if out of bounds.
@@ -199,6 +202,7 @@ size_t jsstr16_get_utf16len(jsstr16_t *s);
 size_t jsstr16_get_utf8len(jsstr16_t *s);
 
 int jsstr16_is_well_formed(jsstr16_t *s);
+void jsstr16_to_well_formed(jsstr16_t *s);
 
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i);
 uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t i);
@@ -256,6 +260,7 @@ size_t jsstr8_get_utf16len(jsstr8_t *s);
 size_t jsstr8_get_utf8len(jsstr8_t *s);
 
 int jsstr8_is_well_formed(jsstr8_t *s);
+size_t jsstr8_to_well_formed(jsstr8_t *s, jsstr8_t *dest);
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i);
 uint8_t *jsstr8_u32s_at(jsstr8_t *s, size_t i);
