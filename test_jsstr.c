@@ -452,6 +452,36 @@ void test_jsstr8_well_formed() {
     printf("\n");
 }
 
+void test_jsstr32_to_well_formed() {
+    uint32_t invalid_buf[2] = {0xD800, 0x110000};
+    jsstr32_t invalid = {2, 2, invalid_buf};
+    printf("jsstr32_to_well_formed before: %04x %04x\n", invalid.codepoints[0], invalid.codepoints[1]);
+    jsstr32_to_well_formed(&invalid);
+    printf("jsstr32_to_well_formed after: %04x %04x\n", invalid.codepoints[0], invalid.codepoints[1]);
+}
+
+void test_jsstr16_to_well_formed() {
+    uint16_t invalid_buf[2] = {0xD800, 'A'};
+    jsstr16_t invalid = {2, 2, invalid_buf};
+    printf("jsstr16_to_well_formed before: %04x %04x\n", invalid.codeunits[0], invalid.codeunits[1]);
+    jsstr16_to_well_formed(&invalid);
+    printf("jsstr16_to_well_formed after: %04x %04x\n", invalid.codeunits[0], invalid.codeunits[1]);
+}
+
+void test_jsstr8_to_well_formed() {
+    uint8_t invalid_buf[2] = {0x80, 'B'};
+    jsstr8_t invalid = {2, 2, invalid_buf};
+    uint8_t dest_buf[8];
+    jsstr8_t dest = {sizeof(dest_buf), 0, dest_buf};
+    printf("jsstr8_to_well_formed before: %02x %02x\n", invalid.bytes[0], invalid.bytes[1]);
+    jsstr8_to_well_formed(&invalid, &dest);
+    printf("jsstr8_to_well_formed after: ");
+    for (size_t i = 0; i < dest.len; i++) {
+        printf("%02x ", dest.bytes[i]);
+    }
+    printf("\n");
+}
+
 
 int main() {
     setlocale(LC_ALL, "");
@@ -461,5 +491,8 @@ int main() {
     test_jsstr32_well_formed();
     test_jsstr16_well_formed();
     test_jsstr8_well_formed();
+    test_jsstr32_to_well_formed();
+    test_jsstr16_to_well_formed();
+    test_jsstr8_to_well_formed();
     return 0;
 }
