@@ -81,11 +81,11 @@ static inline void UTF8_BN(const uint8_t *bc, int i, uint32_t *c, int l, int *n)
  * UTF-8 Character Validator
  * Flip the sign of `l` if the character is invalid.
  */
-static inline void UTF8_VALID(uint32_t c, int *l) {
+static inline void UTF8_CANONICAL(uint32_t c, int *l) {
 	if ((*l) == 1 && (c) < 0x80) { /* ASCII */ 
 	} else if (
 			((*l) < 1 || (*l) > 4)                                 /* sequence length range */ 
-		||	((c) > 0x10FFFF || ((c) >= 0xd800 && (c) <= 0xdfff)) /* code point range */ 
+		||	((c) >= 0x110000 || ((c) >= 0xD800 && (c) < 0xE000)) /* code point range */ 
 		||	((*l) == 1 && (                 (c) >= 0x80))         /* over long */ 
 		||	((*l) == 2 && ((c) < 0x80    || (c) >= 0x800))        /* over long */ 
 		||	((*l) == 3 && ((c) < 0x800   || (c) >= 0x10000))      /* over long */ 
@@ -132,11 +132,60 @@ static inline void UTF8_CHAR(const uint8_t *bc, const uint8_t *bs, uint32_t *c, 
 		if (__utf8_n < __utf8_seqlen) {
 			*l = -(*l); /* error the invalid byte sequence */
 		} else {
-			UTF8_VALID(*c, l); /* error any invalid characters */
+			UTF8_CANONICAL(*c, l); /* error any invalid characters */
 		}
 	} else {
 		*l = 0; /* `bs - bc` not long enough yet */
 	}
+}
+
+static inline int UTF8_WELL_FORMED(const uint8_t *bc, const uint8_t *bs) {
+	while (bc < bs) {
+		int l;
+		uint32_t c;
+		UTF8_CHAR(bc, bs, &c, &l);
+		if (l > 0) {  // valid sequence
+			bc += l;
+		} else if (l == 0) {
+			break;  // incomplete sequence at bs
+		} else {  // malformed
+			return 0;
+		}
+	}
+	return 1;  // well-formed
+}
+
+/*
+ * UTF-8 Make Well-Formed
+ * Copy from `bc` to `out_bc`, replacing malformed sequences with U+FFFD.
+ * Return the number of bytes written to `out_bc`.
+ */
+static inline size_t UTF8_TO_WELL_FORMED(const uint8_t *bc, const uint8_t *bs, uint8_t *out_bc, size_t out_cap) {
+	size_t out_i = 0;
+  	while (bc < bs && out_i < out_cap) {
+		int l;
+		uint32_t c;
+		UTF8_CHAR(bc, bs, &c, &l);
+		if (l > 0) {  // valid sequence
+			for (int i = 0; i < l && out_i < out_cap; i++) {
+				out_bc[out_i++] = bc[i];
+			}
+			bc += l;
+		} else if (l == 0) {
+			break;  // incomplete sequence at bs
+		} else {  // malformed
+			// replace with U+FFFD
+			if (out_i + 3 <= out_cap) {
+				out_bc[out_i++] = 0xEF;
+				out_bc[out_i++] = 0xBF;
+				out_bc[out_i++] = 0xBD;
+			} else {
+				break;  // not enough space for replacement character
+			}
+			bc += -l;  // skip the invalid byte sequence
+		}
+	}
+	return out_i;  // return the number of bytes written to out_bc
 }
 
 /*
@@ -289,18 +338,74 @@ static inline int UTF16_BLEN(const uint16_t *bc, const uint16_t *bs) {
 static inline int UTF16_VALID(const uint16_t *bc, const uint16_t *bs) {
 	if (bc < bs) {
 		if (*bc >= 0xD800 && *bc < 0xDC00) { /* high surrogate */
-			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) { /* low surrogate */
-				return 1; /* valid surrogate pair */
-			} else {
-				return 0; /* invalid sequence */
+			if (bc + 1 < bs) {
+				if (*(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) {
+					return 1; /* valid surrogate pair */
+				}
+				return 0; /* invalid low-surrogate */
 			}
+			return -1;    /* need one more code unit */
 		} else if (*bc < 0xD800 || *bc >= 0xE000) { /* BMP */
 			return 1; /* valid BMP character */
-		} else {
-			return 0; /* invalid code point */
 		}
-	} else {
-		return -1; /* no more bytes */
+		return 0; /* unexpected low-surrogate */
+	}
+	return -1; /* no more bytes */
+}
+
+/*
+ * Whether the UTF-16 Code Unit sequence is well-formed.
+ */
+static int UTF16_WELL_FORMED(const uint16_t *bc, const uint16_t *bs) {
+	while (bc < bs) {
+		int r = UTF16_VALID(bc, bs);
+		if (r < 0)   return 0;  // incomplete sequence at bs
+		if (r == 0)  return 0;  // malformed
+		// r == 1: advance by 2 if we saw a surrogate pair, otherwise by 1
+		if (*bc >= 0xD800 && *bc < 0xDC00) {
+			bc += 2;
+		} else {
+			bc += 1;
+		}
+	}
+	return 1;
+}
+
+static void UTF16_TO_WELL_FORMED(uint16_t *bc, uint16_t *bs) {
+  /* like UTF16_WELL_FORMED, but each code unit that is malformed gets replaced with the replacement character */
+	while (bc < bs) {
+		int r = UTF16_VALID(bc, bs);
+		if (r <= 0) {  // malformed
+			*bc++ = 0xFFFD; /* replacement character */
+			continue;
+		}
+		// r == 1: advance by 2 if we saw a surrogate pair, otherwise by 1
+		if (*bc >= 0xD800 && *bc < 0xDC00) {
+			bc += 2;
+		} else {
+			bc += 1;
+		}
+	}
+}
+
+static int UTF32_WELL_FORMED(const uint32_t *cc, const uint32_t *cs) {
+  while (cc < cs) {
+	uint32_t c = *cc++;
+	if (c >= 0x110000 || (c >= 0xD800 && c < 0xE000)) {
+		return 0;  // malformed
+	}
+  }
+  return 1;
+}
+
+static void UTF32_TO_WELL_FORMED(uint32_t *cc, uint32_t *cs) {
+  /* like UTF32_WELL_FORMED, but each code unit that is malformed gets replaced with the replacement character */
+	while (cc < cs) {
+		uint32_t c = *cc++;
+		if (c >= 0x110000 || (c >= 0xD800 && c < 0xE000)) {
+			*cc = 0xFFFD; /* replacement character */
+		}
+		cc++;
 	}
 }
 
@@ -309,7 +414,7 @@ static inline int UTF16_VALID(const uint16_t *bc, const uint16_t *bs) {
  */
 static inline void UTF16_CHAR(const uint16_t *bc, const uint16_t *bs, uint32_t *c, int *l) {
 	if (bc < bs) {
-		if (*bc >= 0xD800 && *bc <= 0xDBFF) { /* high surrogate */
+		if (*bc >= 0xD800 && *bc < 0xDC00) { /* high surrogate */
 			if (bc + 1 < bs && *(bc + 1) >= 0xDC00 && *(bc + 1) < 0xE000) { /* low surrogate */
 				*c = 0x10000 + (((*bc - 0xD800) << 10) | (*(bc + 1) - 0xDC00));
 				*l = 2; /* surrogate pair */
@@ -537,7 +642,7 @@ static inline void JSMN_QUOTE_UNICODE(const uint32_t **cc_ptr, const uint32_t *c
 				} else {
 					break;
 				}
-			} else if (*(cc) >= 0x10000 && *(cc) <= 0x10FFFF) /* Supplementary Planes */ {
+			} else if (*(cc) >= 0x10000 && *(cc) < 0x110000) /* Supplementary Planes */ {
 				if ((qc) + 12 <= (qs)) {
 					__jsmn_char = (*(cc)) - 0x10000;
 					hex4dig1 = 0xD800 + ((__jsmn_char >> 10) & 0x03FF);
@@ -889,7 +994,7 @@ static inline void JSMN_DECODE_URL(const uint8_t **qc_ptr, const uint8_t *qs, ui
 			} else if (block) {
 				break; /* blocking for percent escape */
 			} else {
-				/* incomplete escape sequence at end of stream becomes literal */
+				/* incomplete escape sequence at bs of stream becomes literal */
 				*cc++ = *qc++;
 			}
 		} else {

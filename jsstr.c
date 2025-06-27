@@ -181,6 +181,16 @@ size_t jsstr32_get_utf8len(jsstr32_t *s) {
     return utf8len;
 }
 
+int jsstr32_is_well_formed(jsstr32_t *s) {
+    /* check if the string is well-formed UTF-32 */
+    return UTF32_WELL_FORMED(s->codepoints, s->codepoints + s->len);
+}
+
+void jsstr32_to_well_formed(jsstr32_t *s) {
+    /* convert the string to well-formed UTF-32 by replacing invalid code points with U+FFFD */
+    UTF32_TO_WELL_FORMED(s->codepoints, s->codepoints + s->len);
+}
+
 uint32_t *jsstr32_u32s_at(jsstr32_t *s, size_t i) {
     if (i < s->len) {
         return s->codepoints + i;
@@ -557,6 +567,15 @@ size_t jsstr16_get_utf8len(jsstr16_t *s) {
     }
 
     return code8_i;
+}
+
+int jsstr16_is_well_formed(jsstr16_t *s) {
+    /* check if the string is well-formed UTF-16 */
+    return UTF16_WELL_FORMED(s->codeunits, s->codeunits + s->len);
+}
+
+void jsstr16_to_well_formed(jsstr16_t *s) {
+    UTF16_TO_WELL_FORMED(s->codeunits, s->codeunits + s->len);
 }
 
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i) {
@@ -1067,6 +1086,16 @@ size_t jsstr8_get_utf16len(jsstr8_t *s) {
 
 size_t jsstr8_get_utf8len(jsstr8_t *s) {
     return s->len;
+}
+
+int jsstr8_is_well_formed(jsstr8_t *s) {
+    /* check if the string is well-formed UTF-8 */
+    return UTF8_WELL_FORMED(s->bytes, s->bytes + s->len);
+}
+
+size_t jsstr8_to_well_formed(jsstr8_t *s, jsstr8_t *dest) {
+    return dest->len = UTF8_TO_WELL_FORMED((const uint8_t *) s->bytes, s->bytes + s->len,
+                      (uint8_t *) dest->bytes, dest->cap);
 }
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i) {

@@ -198,6 +198,8 @@ size_t jsstr16_get_utf32len(jsstr16_t *s);
 size_t jsstr16_get_utf16len(jsstr16_t *s);
 size_t jsstr16_get_utf8len(jsstr16_t *s);
 
+int jsstr16_is_well_formed(jsstr16_t *s);
+
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i);
 uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t i);
 
@@ -252,6 +254,8 @@ size_t jssstr8_set_from_jsstr16(jsstr8_t *s, jsstr16_t *src);
 size_t jsstr8_get_utf32len(jsstr8_t *s);
 size_t jsstr8_get_utf16len(jsstr8_t *s);
 size_t jsstr8_get_utf8len(jsstr8_t *s);
+
+int jsstr8_is_well_formed(jsstr8_t *s);
 
 uint8_t *jsstr8_u8s_at(jsstr8_t *s, size_t i);
 uint8_t *jsstr8_u32s_at(jsstr8_t *s, size_t i);
