@@ -3,6 +3,56 @@
 #include "jsstr.h"
 #include "utf8.h"
 
+/*
+ * Locale helpers
+ *
+ * The build system can define JS_USE_LIBC_LOCALE or JS_USE_ICU_LOCALE to
+ * enable locale-aware conversions using libc or ICU respectively.  If none are
+ * defined, a small ASCII-only fallback is used instead.
+ */
+
+#ifndef JS_USE_ICU_LOCALE
+#define JS_USE_ICU_LOCALE 0
+#endif
+#ifndef JS_USE_LIBC_LOCALE
+#define JS_USE_LIBC_LOCALE 0
+#endif
+
+#if JS_USE_ICU_LOCALE
+#include <unicode/uchar.h>
+#define JS_LOCALE_TO_LOWER(cp) ((uint32_t)u_tolower(cp))
+#define JS_LOCALE_TO_UPPER(cp) ((uint32_t)u_toupper(cp))
+#define JS_LOCALE_IS_SPACE(cp) (u_isUWhiteSpace(cp))
+#elif JS_USE_LIBC_LOCALE
+#include <wctype.h>
+#include <ctype.h>
+#define JS_LOCALE_TO_LOWER(cp) ((uint32_t)towlower((wint_t)(cp)))
+#define JS_LOCALE_TO_UPPER(cp) ((uint32_t)towupper((wint_t)(cp)))
+#define JS_LOCALE_IS_SPACE(cp) (iswspace((wint_t)(cp)))
+#else
+static inline uint32_t js_locale_stub_to_lower(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z')
+        return cp + 32;
+    return cp;
+}
+static inline uint32_t js_locale_stub_to_upper(uint32_t cp) {
+    if (cp >= 'a' && cp <= 'z')
+        return cp - 32;
+    return cp;
+}
+static inline int js_locale_stub_is_space(uint32_t cp) {
+    switch (cp) {
+    case ' ': case '\t': case '\n': case '\r': case '\f': case '\v':
+        return 1;
+    default:
+        return 0;
+    }
+}
+#define JS_LOCALE_TO_LOWER(cp) js_locale_stub_to_lower(cp)
+#define JS_LOCALE_TO_UPPER(cp) js_locale_stub_to_upper(cp)
+#define JS_LOCALE_IS_SPACE(cp) js_locale_stub_is_space(cp)
+#endif
+
 
 
 size_t jsstr32_head_size() {
