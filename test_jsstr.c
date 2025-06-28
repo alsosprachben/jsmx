@@ -482,6 +482,42 @@ void test_jsstr8_to_well_formed() {
     printf("\n");
 }
 
+void test_jsstr_normalize_localecompare() {
+    jsstr32_t a32, b32;
+    jsstr16_t a16, b16;
+    jsstr8_t a8, b8;
+
+    uint32_t a32buf[1];
+    uint32_t b32buf[1];
+    jsstr32_init_from_buf(&a32, (char *)a32buf, sizeof(a32buf));
+    jsstr32_init_from_buf(&b32, (char *)b32buf, sizeof(b32buf));
+    jsstr32_set_from_utf32(&a32, (uint32_t[]){'A'}, 1);
+    jsstr32_set_from_utf32(&b32, (uint32_t[]){'a'}, 1);
+    jsstr32_normalize(&a32);
+    jsstr32_normalize(&b32);
+    printf("jsstr32_localeCompare: %d\n", jsstr32_localeCompare(&a32, &b32));
+
+    uint16_t a16buf_store[1];
+    uint16_t b16buf_store[1];
+    jsstr16_init_from_buf(&a16, (char *)a16buf_store, sizeof(a16buf_store));
+    jsstr16_init_from_buf(&b16, (char *)b16buf_store, sizeof(b16buf_store));
+    jsstr16_set_from_utf16(&a16, (uint16_t[]){'A'}, 1);
+    jsstr16_set_from_utf16(&b16, (uint16_t[]){'a'}, 1);
+    jsstr16_normalize(&a16);
+    jsstr16_normalize(&b16);
+    printf("jsstr16_localeCompare: %d\n", jsstr16_localeCompare(&a16, &b16));
+
+    uint8_t a8buf[2];
+    uint8_t b8buf[2];
+    jsstr8_init_from_buf(&a8, (char *)a8buf, sizeof(a8buf));
+    jsstr8_init_from_buf(&b8, (char *)b8buf, sizeof(b8buf));
+    jsstr8_set_from_utf8(&a8, (uint8_t *)"A", 1);
+    jsstr8_set_from_utf8(&b8, (uint8_t *)"a", 1);
+    jsstr8_normalize(&a8);
+    jsstr8_normalize(&b8);
+    printf("jsstr8_localeCompare: %d\n", jsstr8_localeCompare(&a8, &b8));
+}
+
 
 int main() {
     setlocale(LC_ALL, "");
@@ -494,5 +530,6 @@ int main() {
     test_jsstr32_to_well_formed();
     test_jsstr16_to_well_formed();
     test_jsstr8_to_well_formed();
+    test_jsstr_normalize_localecompare();
     return 0;
 }

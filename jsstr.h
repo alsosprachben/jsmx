@@ -288,4 +288,11 @@ void jsstr8_u32_tolower(jsstr8_t *s);
 void jsstr8_u32_toupper(jsstr8_t *s);
 int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count);
 
+void jsstr32_normalize(jsstr32_t *s);
+int jsstr32_localeCompare(jsstr32_t *s1, jsstr32_t *s2);
+void jsstr16_normalize(jsstr16_t *s);
+int jsstr16_localeCompare(jsstr16_t *s1, jsstr16_t *s2);
+void jsstr8_normalize(jsstr8_t *s);
+int jsstr8_localeCompare(jsstr8_t *s1, jsstr8_t *s2);
+
 #endif
