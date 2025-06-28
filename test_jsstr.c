@@ -110,6 +110,15 @@ void test_jsstr32_lifecycle() {
     jsstr32_init_from_buf(&dest, (char *)dest_buf, dest_len);
     jsstr32_repeat(&dest, &s, 3);
     printf("jsstr32_repeat len: %zu\n", jsstr32_get_utf32len(&dest));
+
+    jsstr32_init_from_buf(&s, (char *)buf, len);
+    jsstr32_set_from_utf32(&s, L"  abc  ", 7);
+    jsstr32_trim(&s);
+    printf("jsstr32_trim len: %zu\n", jsstr32_get_utf32len(&s));
+    jsstr32_pad_start(&s, 6);
+    printf("jsstr32_pad_start len: %zu\n", jsstr32_get_utf32len(&s));
+    jsstr32_pad_end(&s, 8);
+    printf("jsstr32_pad_end len: %zu\n", jsstr32_get_utf32len(&s));
 }
 
 void test_jsstr16_lifecycle() {
@@ -263,6 +272,18 @@ void test_jsstr16_lifecycle() {
     jsstr16_init_from_buf(&dest16, (char *)dest16_buf, dest16_len);
     jsstr16_repeat(&dest16, &s, 3);
     printf("jsstr16_repeat len: %zu\n", jsstr16_get_utf16len(&dest16));
+
+    jsstr16_init_from_buf(&s, (char *)buf, len);
+    {
+        uint16_t tmp[] = { ' ', ' ', 'a', 'b', 'c', ' ', 0 };
+        jsstr16_set_from_utf16(&s, tmp, 6);
+    }
+    jsstr16_trim(&s);
+    printf("jsstr16_trim len: %zu\n", jsstr16_get_utf32len(&s));
+    jsstr16_pad_start(&s, 6);
+    printf("jsstr16_pad_start len: %zu\n", jsstr16_get_utf32len(&s));
+    jsstr16_pad_end(&s, 8);
+    printf("jsstr16_pad_end len: %zu\n", jsstr16_get_utf32len(&s));
 }
 
 void test_jsstr8_lifecycle() {
@@ -405,6 +426,15 @@ void test_jsstr8_lifecycle() {
     jsstr8_init_from_buf(&dest8, (char *)dest8_buf, dest8_len);
     jsstr8_repeat(&dest8, &s, 3);
     printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));
+
+    jsstr8_init_from_buf(&s, (char *)buf, len);
+    jsstr8_set_from_utf8(&s, (uint8_t *)"  abc ", 6);
+    jsstr8_trim(&s);
+    printf("jsstr8_trim len: %zu\n", jsstr8_get_utf8len(&s));
+    jsstr8_pad_start(&s, 6);
+    printf("jsstr8_pad_start len: %zu\n", jsstr8_get_utf8len(&s));
+    jsstr8_pad_end(&s, 8);
+    printf("jsstr8_pad_end len: %zu\n", jsstr8_get_utf8len(&s));
 }
 
 void test_jsstr32_well_formed() {
