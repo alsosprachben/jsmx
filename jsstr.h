@@ -24,7 +24,6 @@
  */
 #include <stddef.h>
 #include <stdint.h>
-#include <wchar.h>
 #include <sys/types.h>
 
 /*
