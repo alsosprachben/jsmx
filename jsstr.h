@@ -27,6 +27,14 @@
 #include <wchar.h>
 #include <sys/types.h>
 
+typedef struct js_locale_ops_s {
+    uint32_t (*to_lower)(uint32_t cp);
+    uint32_t (*to_upper)(uint32_t cp);
+    int (*is_space)(uint32_t cp);
+} js_locale_ops_t;
+
+extern const js_locale_ops_t *js_locale_ops;
+
 /*
  * JavaScript string of code points
  * A string of unicode characters.

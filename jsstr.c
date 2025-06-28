@@ -6,6 +6,26 @@
 #include "jsstr.h"
 #include "utf8.h"
 
+static uint32_t locale_libc_to_lower(uint32_t cp) {
+    return (uint32_t)towlower((wint_t)cp);
+}
+
+static uint32_t locale_libc_to_upper(uint32_t cp) {
+    return (uint32_t)towupper((wint_t)cp);
+}
+
+static int locale_libc_is_space(uint32_t cp) {
+    return iswspace((wint_t)cp);
+}
+
+static const js_locale_ops_t locale_libc_ops = {
+    .to_lower = locale_libc_to_lower,
+    .to_upper = locale_libc_to_upper,
+    .is_space = locale_libc_is_space,
+};
+
+const js_locale_ops_t *js_locale_ops = &locale_libc_ops;
+
 size_t jsstr32_head_size() {
     return sizeof(jsstr32_t);
 }
@@ -219,13 +239,13 @@ int jsstr32_concat(jsstr32_t *s, jsstr32_t *src) {
 
 void jsstr32_u32_tolower(jsstr32_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->codepoints[i] = towlower((wint_t)s->codepoints[i]);
+        s->codepoints[i] = js_locale_ops->to_lower(s->codepoints[i]);
     }
 }
 
 void jsstr32_u32_toupper(jsstr32_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->codepoints[i] = towupper((wint_t)s->codepoints[i]);
+        s->codepoints[i] = js_locale_ops->to_upper(s->codepoints[i]);
     }
 }
 
@@ -277,7 +297,7 @@ void jsstr32_pad_end(jsstr32_t *s, size_t target_len) {
 
 void jsstr32_trim_start(jsstr32_t *s) {
     size_t i = 0;
-    while (i < s->len && iswspace((wint_t)s->codepoints[i])) {
+    while (i < s->len && js_locale_ops->is_space(s->codepoints[i])) {
         i++;
     }
     if (i > 0) {
@@ -287,7 +307,7 @@ void jsstr32_trim_start(jsstr32_t *s) {
 }
 
 void jsstr32_trim_end(jsstr32_t *s) {
-    while (s->len > 0 && iswspace((wint_t)s->codepoints[s->len - 1])) {
+    while (s->len > 0 && js_locale_ops->is_space(s->codepoints[s->len - 1])) {
         s->len--;
     }
 }
@@ -743,13 +763,13 @@ int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
 
 void jsstr16_u16_tolower(jsstr16_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->codeunits[i] = (uint16_t)towlower((wint_t)s->codeunits[i]);
+        s->codeunits[i] = (uint16_t)js_locale_ops->to_lower(s->codeunits[i]);
     }
 }
 
 void jsstr16_u16_toupper(jsstr16_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->codeunits[i] = (uint16_t)towupper((wint_t)s->codeunits[i]);
+        s->codeunits[i] = (uint16_t)js_locale_ops->to_upper(s->codeunits[i]);
     }
 }
 
@@ -767,7 +787,7 @@ void jsstr16_u32_tolower(jsstr16_t *s) {
             c = 0xFFFD;
         }
         read += l;
-        c = towlower((wint_t)c);
+        c = js_locale_ops->to_lower(c);
         int outlen = UTF16_CLEN(c);
         if (write + outlen > dest_end) {
             break;
@@ -796,7 +816,7 @@ void jsstr16_u32_toupper(jsstr16_t *s) {
             c = 0xFFFD;
         }
         read += l;
-        c = towupper((wint_t)c);
+        c = js_locale_ops->to_upper(c);
         int outlen = UTF16_CLEN(c);
         if (write + outlen > dest_end) {
             break;
@@ -859,7 +879,7 @@ void jsstr16_pad_end(jsstr16_t *s, size_t target_len) {
 
 void jsstr16_trim_start(jsstr16_t *s) {
     size_t i = 0;
-    while (i < s->len && iswspace((wint_t)s->codeunits[i])) {
+    while (i < s->len && js_locale_ops->is_space(s->codeunits[i])) {
         i++;
     }
     if (i > 0) {
@@ -869,7 +889,7 @@ void jsstr16_trim_start(jsstr16_t *s) {
 }
 
 void jsstr16_trim_end(jsstr16_t *s) {
-    while (s->len > 0 && iswspace((wint_t)s->codeunits[s->len - 1])) {
+    while (s->len > 0 && js_locale_ops->is_space(s->codeunits[s->len - 1])) {
         s->len--;
     }
 }
@@ -1260,13 +1280,13 @@ int jsstr8_concat(jsstr8_t *s, jsstr8_t *src) {
 
 void jsstr8_u8_tolower(jsstr8_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->bytes[i] = (uint8_t)tolower((unsigned char)s->bytes[i]);
+        s->bytes[i] = (uint8_t)js_locale_ops->to_lower((uint32_t)s->bytes[i]);
     }
 }
 
 void jsstr8_u8_toupper(jsstr8_t *s) {
     for (size_t i = 0; i < s->len; i++) {
-        s->bytes[i] = (uint8_t)toupper((unsigned char)s->bytes[i]);
+        s->bytes[i] = (uint8_t)js_locale_ops->to_upper((uint32_t)s->bytes[i]);
     }
 }
 
@@ -1284,7 +1304,7 @@ void jsstr8_u32_tolower(jsstr8_t *s) {
             c = 0xFFFD;
         }
         read += l;
-        c = towlower((wint_t)c);
+        c = js_locale_ops->to_lower(c);
         const uint32_t *cc = &c;
         UTF8_ENCODE(&cc, &c + 1, &write, dest_end);
     }
@@ -1305,7 +1325,7 @@ void jsstr8_u32_toupper(jsstr8_t *s) {
             c = 0xFFFD;
         }
         read += l;
-        c = towupper((wint_t)c);
+        c = js_locale_ops->to_upper(c);
         const uint32_t *cc = &c;
         UTF8_ENCODE(&cc, &c + 1, &write, dest_end);
     }
@@ -1356,7 +1376,7 @@ void jsstr8_pad_end(jsstr8_t *s, size_t target_len) {
 
 void jsstr8_trim_start(jsstr8_t *s) {
     size_t i = 0;
-    while (i < s->len && isspace((unsigned char)s->bytes[i])) {
+    while (i < s->len && js_locale_ops->is_space((uint32_t)s->bytes[i])) {
         i++;
     }
     if (i > 0) {
@@ -1366,7 +1386,7 @@ void jsstr8_trim_start(jsstr8_t *s) {
 }
 
 void jsstr8_trim_end(jsstr8_t *s) {
-    while (s->len > 0 && isspace((unsigned char)s->bytes[s->len - 1])) {
+    while (s->len > 0 && js_locale_ops->is_space((uint32_t)s->bytes[s->len - 1])) {
         s->len--;
     }
 }
