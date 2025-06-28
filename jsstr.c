@@ -243,6 +243,60 @@ int jsstr32_repeat(jsstr32_t *dest, jsstr32_t *src, size_t count) {
     return 0;
 }
 
+void jsstr32_pad_start(jsstr32_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    if (add == 0) {
+        return;
+    }
+    memmove(s->codepoints + add, s->codepoints, s->len * sizeof(uint32_t));
+    for (size_t i = 0; i < add; i++) {
+        s->codepoints[i] = 0x20;
+    }
+    s->len += add;
+}
+
+void jsstr32_pad_end(jsstr32_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    for (size_t i = 0; i < add; i++) {
+        s->codepoints[s->len + i] = 0x20;
+    }
+    s->len += add;
+}
+
+void jsstr32_trim_start(jsstr32_t *s) {
+    size_t i = 0;
+    while (i < s->len && iswspace((wint_t)s->codepoints[i])) {
+        i++;
+    }
+    if (i > 0) {
+        memmove(s->codepoints, s->codepoints + i, (s->len - i) * sizeof(uint32_t));
+        s->len -= i;
+    }
+}
+
+void jsstr32_trim_end(jsstr32_t *s) {
+    while (s->len > 0 && iswspace((wint_t)s->codepoints[s->len - 1])) {
+        s->len--;
+    }
+}
+
+void jsstr32_trim(jsstr32_t *s) {
+    jsstr32_trim_start(s);
+    jsstr32_trim_end(s);
+}
+
 int jsstr32_u32_startswith(jsstr32_t *s, jsstr32_t *prefix) {
     if (prefix->len > s->len) {
         return 0;
@@ -771,6 +825,60 @@ int jsstr16_repeat(jsstr16_t *dest, jsstr16_t *src, size_t count) {
     return 0;
 }
 
+void jsstr16_pad_start(jsstr16_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    if (add == 0) {
+        return;
+    }
+    memmove(s->codeunits + add, s->codeunits, s->len * sizeof(uint16_t));
+    for (size_t i = 0; i < add; i++) {
+        s->codeunits[i] = 0x20;
+    }
+    s->len += add;
+}
+
+void jsstr16_pad_end(jsstr16_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    for (size_t i = 0; i < add; i++) {
+        s->codeunits[s->len + i] = 0x20;
+    }
+    s->len += add;
+}
+
+void jsstr16_trim_start(jsstr16_t *s) {
+    size_t i = 0;
+    while (i < s->len && iswspace((wint_t)s->codeunits[i])) {
+        i++;
+    }
+    if (i > 0) {
+        memmove(s->codeunits, s->codeunits + i, (s->len - i) * sizeof(uint16_t));
+        s->len -= i;
+    }
+}
+
+void jsstr16_trim_end(jsstr16_t *s) {
+    while (s->len > 0 && iswspace((wint_t)s->codeunits[s->len - 1])) {
+        s->len--;
+    }
+}
+
+void jsstr16_trim(jsstr16_t *s) {
+    jsstr16_trim_start(s);
+    jsstr16_trim_end(s);
+}
+
 void jsstr8_init(jsstr8_t *s) {
     s->cap = 0;
     s->len = 0;
@@ -1216,4 +1324,54 @@ int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count) {
     }
     dest->len = src->len * count;
     return 0;
+}
+
+void jsstr8_pad_start(jsstr8_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    if (add == 0) {
+        return;
+    }
+    memmove(s->bytes + add, s->bytes, s->len);
+    memset(s->bytes, ' ', add);
+    s->len += add;
+}
+
+void jsstr8_pad_end(jsstr8_t *s, size_t target_len) {
+    if (s->len >= target_len) {
+        return;
+    }
+    size_t add = target_len - s->len;
+    if (target_len > s->cap) {
+        add = s->cap - s->len;
+    }
+    memset(s->bytes + s->len, ' ', add);
+    s->len += add;
+}
+
+void jsstr8_trim_start(jsstr8_t *s) {
+    size_t i = 0;
+    while (i < s->len && isspace((unsigned char)s->bytes[i])) {
+        i++;
+    }
+    if (i > 0) {
+        memmove(s->bytes, s->bytes + i, s->len - i);
+        s->len -= i;
+    }
+}
+
+void jsstr8_trim_end(jsstr8_t *s) {
+    while (s->len > 0 && isspace((unsigned char)s->bytes[s->len - 1])) {
+        s->len--;
+    }
+}
+
+void jsstr8_trim(jsstr8_t *s) {
+    jsstr8_trim_start(s);
+    jsstr8_trim_end(s);
 }
