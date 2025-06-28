@@ -1217,3 +1217,75 @@ int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count) {
     dest->len = src->len * count;
     return 0;
 }
+
+void jsstr32_normalize(jsstr32_t *s) {
+    jsstr32_to_well_formed(s);
+}
+
+int jsstr32_localeCompare(jsstr32_t *s1, jsstr32_t *s2) {
+    wchar_t buf1[s1->len + 1];
+    wchar_t buf2[s2->len + 1];
+    for (size_t i = 0; i < s1->len; i++) {
+        buf1[i] = (wchar_t)s1->codepoints[i];
+    }
+    buf1[s1->len] = 0;
+    for (size_t i = 0; i < s2->len; i++) {
+        buf2[i] = (wchar_t)s2->codepoints[i];
+    }
+    buf2[s2->len] = 0;
+    int rc = wcscoll(buf1, buf2);
+    return (rc > 0) - (rc < 0);
+}
+
+void jsstr16_normalize(jsstr16_t *s) {
+    jsstr16_to_well_formed(s);
+}
+
+int jsstr16_localeCompare(jsstr16_t *s1, jsstr16_t *s2) {
+    size_t len1 = jsstr16_get_utf32len(s1);
+    size_t len2 = jsstr16_get_utf32len(s2);
+    wchar_t buf1[len1 + 1];
+    wchar_t buf2[len2 + 1];
+    size_t code_i;
+    int l;
+    uint32_t c;
+    size_t out_i;
+
+    for (code_i = 0, out_i = 0; code_i < s1->len; code_i += l) {
+        UTF16_CHAR(s1->codeunits + code_i, s1->codeunits + s1->len, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        buf1[out_i++] = (wchar_t)c;
+    }
+    buf1[out_i] = 0;
+
+    for (code_i = 0, out_i = 0; code_i < s2->len; code_i += l) {
+        UTF16_CHAR(s2->codeunits + code_i, s2->codeunits + s2->len, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        buf2[out_i++] = (wchar_t)c;
+    }
+    buf2[out_i] = 0;
+
+    int rc = wcscoll(buf1, buf2);
+    return (rc > 0) - (rc < 0);
+}
+
+void jsstr8_normalize(jsstr8_t *s) {
+    jsstr8_to_well_formed(s, s);
+}
+
+int jsstr8_localeCompare(jsstr8_t *s1, jsstr8_t *s2) {
+    char buf1[s1->len + 1];
+    char buf2[s2->len + 1];
+    memcpy(buf1, s1->bytes, s1->len);
+    buf1[s1->len] = '\0';
+    memcpy(buf2, s2->bytes, s2->len);
+    buf2[s2->len] = '\0';
+    int rc = strcoll(buf1, buf2);
+    return (rc > 0) - (rc < 0);
+}
