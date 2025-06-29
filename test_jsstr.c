@@ -81,6 +81,7 @@ void test_jsstr32_lifecycle() {
     jsstr32_t s_cmp;
     jsstr32_init_from_str(&s_cmp, L"Hello, World!");
     printf("jsstr32_u32_cmp: %d\n", jsstr32_u32_cmp(&s, &s_cmp));
+    printf("jsstr32_u32_locale_compare: %d\n", jsstr32_u32_locale_compare(&s, &s_cmp));
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
@@ -107,6 +108,8 @@ void test_jsstr32_lifecycle() {
     printf("jsstr32_toupper: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
     jsstr32_u32_tolower(&s);
     printf("jsstr32_tolower: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
+    jsstr32_u32_normalize(&s);
+    printf("jsstr32_u32_normalize: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
     jsstr32_init_from_buf(&dest, (char *)dest_buf, dest_len);
     jsstr32_repeat(&dest, &s, 3);
     printf("jsstr32_repeat len: %zu\n", jsstr32_get_utf32len(&dest));
@@ -204,6 +207,7 @@ void test_jsstr16_lifecycle() {
     /* test cmp */
     jsstr16_init_from_str(&s_cmp, utf16_str);
     printf("jsstr16_u16_cmp: %d\n", jsstr16_u16_cmp(&s_str, &s_cmp));
+    printf("jsstr16_u16_locale_compare: %d\n", jsstr16_u16_locale_compare(&s_str, &s_cmp));
 
     /* test indexof */
     uint32_t search_c = L'o';
@@ -245,6 +249,7 @@ void test_jsstr16_lifecycle() {
     /* test cmp */
     jsstr16_init_from_str(&s_cmp, utf16_str);
     printf("jsstr16_u32_cmp: %d\n", jsstr16_u32_cmp(&s_str, &s_cmp));
+    printf("jsstr16_u32_locale_compare: %d\n", jsstr16_u32_locale_compare(&s_str, &s_cmp));
 
     jsstr16_t prefix;
     jsstr16_t suffix;
@@ -265,10 +270,14 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_u32_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_u32_tolower(&s);
     printf("jsstr16_u32_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_u32_normalize(&s);
+    printf("jsstr16_u32_normalize: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_u16_toupper(&s);
     printf("jsstr16_u16_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_u16_tolower(&s);
     printf("jsstr16_u16_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_u16_normalize(&s);
+    printf("jsstr16_u16_normalize: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_init_from_buf(&dest16, (char *)dest16_buf, dest16_len);
     jsstr16_repeat(&dest16, &s, 3);
     printf("jsstr16_repeat len: %zu\n", jsstr16_get_utf16len(&dest16));
@@ -365,6 +374,7 @@ void test_jsstr8_lifecycle() {
 
     jsstr8_init_from_str(&s_cmp, "Hello, World!");
     printf("jsstr8_u8_cmp: %d\n", jsstr8_u8_cmp(&s_str, &s_cmp));
+    printf("jsstr8_u8_locale_compare: %d\n", jsstr8_u8_locale_compare(&s_str, &s_cmp));
 
     uint32_t search_c = L'o';
     size_t start_i = 6;
@@ -402,6 +412,7 @@ void test_jsstr8_lifecycle() {
     /* test cmp */
     jsstr8_init_from_str(&s_cmp, "Hello, World!");
     printf("jsstr8_u32_cmp: %d\n", jsstr8_u32_cmp(&s_str, &s_cmp));
+    printf("jsstr8_u32_locale_compare: %d\n", jsstr8_u32_locale_compare(&s_str, &s_cmp));
 
     jsstr8_t prefix;
     jsstr8_t suffix;
@@ -419,10 +430,14 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_u8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u8_tolower(&s);
     printf("jsstr8_u8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_u8_normalize(&s);
+    printf("jsstr8_u8_normalize: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u32_toupper(&s);
     printf("jsstr8_u32_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_u32_tolower(&s);
     printf("jsstr8_u32_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_u32_normalize(&s);
+    printf("jsstr8_u32_normalize: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_init_from_buf(&dest8, (char *)dest8_buf, dest8_len);
     jsstr8_repeat(&dest8, &s, 3);
     printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));

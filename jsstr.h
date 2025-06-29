@@ -169,6 +169,8 @@ ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *search_c, size_t search_c
 int jsstr32_concat(jsstr32_t *s, jsstr32_t *src);
 void jsstr32_u32_tolower(jsstr32_t *s);
 void jsstr32_u32_toupper(jsstr32_t *s);
+void jsstr32_u32_normalize(jsstr32_t *s);
+int jsstr32_u32_locale_compare(jsstr32_t *s1, jsstr32_t *s2);
 int jsstr32_repeat(jsstr32_t *dest, jsstr32_t *src, size_t count);
 void jsstr32_pad_start(jsstr32_t *s, size_t target_len);
 void jsstr32_pad_end(jsstr32_t *s, size_t target_len);
@@ -230,8 +232,12 @@ ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
 void jsstr16_u16_tolower(jsstr16_t *s);
 void jsstr16_u16_toupper(jsstr16_t *s);
+void jsstr16_u16_normalize(jsstr16_t *s);
+int jsstr16_u16_locale_compare(jsstr16_t *s1, jsstr16_t *s2);
 void jsstr16_u32_tolower(jsstr16_t *s);
 void jsstr16_u32_toupper(jsstr16_t *s);
+void jsstr16_u32_normalize(jsstr16_t *s);
+int jsstr16_u32_locale_compare(jsstr16_t *s1, jsstr16_t *s2);
 int jsstr16_repeat(jsstr16_t *dest, jsstr16_t *src, size_t count);
 void jsstr16_pad_start(jsstr16_t *s, size_t target_len);
 void jsstr16_pad_end(jsstr16_t *s, size_t target_len);
@@ -293,8 +299,12 @@ ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_l
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
 void jsstr8_u8_tolower(jsstr8_t *s);
 void jsstr8_u8_toupper(jsstr8_t *s);
+void jsstr8_u8_normalize(jsstr8_t *s);
+int jsstr8_u8_locale_compare(jsstr8_t *s1, jsstr8_t *s2);
 void jsstr8_u32_tolower(jsstr8_t *s);
 void jsstr8_u32_toupper(jsstr8_t *s);
+void jsstr8_u32_normalize(jsstr8_t *s);
+int jsstr8_u32_locale_compare(jsstr8_t *s1, jsstr8_t *s2);
 int jsstr8_repeat(jsstr8_t *dest, jsstr8_t *src, size_t count);
 void jsstr8_pad_start(jsstr8_t *s, size_t target_len);
 void jsstr8_pad_end(jsstr8_t *s, size_t target_len);
