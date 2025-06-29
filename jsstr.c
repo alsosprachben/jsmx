@@ -234,15 +234,13 @@ static inline int js_locale_libc_compare_u8(const uint8_t *a, int32_t la, const 
 #define JS_LOCALE_NORMALIZE_U8  js_locale_libc_normalize_u8
 #define JS_LOCALE_COMPARE_U8    js_locale_libc_compare_u8
 #else
+#include "unicode.h"
+
 static inline uint32_t js_locale_stub_to_lower(uint32_t cp) {
-    if (cp >= 'A' && cp <= 'Z')
-        return cp + 32;
-    return cp;
+    return unicode_tolower(cp);
 }
 static inline uint32_t js_locale_stub_to_upper(uint32_t cp) {
-    if (cp >= 'a' && cp <= 'z')
-        return cp - 32;
-    return cp;
+    return unicode_toupper(cp);
 }
 static inline int js_locale_stub_is_space(uint32_t cp) {
     switch (cp) {
