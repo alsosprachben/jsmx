@@ -7,28 +7,76 @@ WEIGHT_RE = re.compile(r"\[([0-9A-Fa-f.]+)\]")
 
 def parse(path):
     records = []
+    implicit_rules = []   # list of (start, end, [p, s, t])
+
     with open(path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.split('#', 1)[0].strip()
-            if not line:
+            if not line or ';' not in line:
                 continue
-            if ';' not in line:
-                continue
+
             left, right = line.split(';', 1)
-            cps = [int(cp, 16) for cp in left.strip().split()]
-            # only handle single codepoint entries for now
+            left = left.strip()
+
+            # 1) capture implicit-weight metadata
+            if left.startswith('@implicitweights'):
+                # left looks like '@implicitweights 3400..4DB5'
+                rng = left[len('@implicitweights'):].strip()
+                if '..' in rng:
+                    lo, hi = rng.split('..', 1)
+                else:
+                    lo = hi = rng
+                lo = int(lo, 16)
+                hi = int(hi, 16)
+
+                m = WEIGHT_RE.search(right)
+                if not m:
+                    continue
+                w = [int(x, 16) for x in m.group(1).split('.')]
+                while len(w) < 3:
+                    w.append(0)
+
+                implicit_rules.append((lo, hi, tuple(w)))
+                continue
+
+            if not left or not right:
+                continue
+
+            # 2) explicit single-code-point entries
+            cps = [int(cp, 16) for cp in left.split() if len(cp) > 0]
             if len(cps) != 1:
                 continue
             m = WEIGHT_RE.search(right)
             if not m:
                 continue
-            weights = [int(x, 16) for x in m.group(1).split('.')]
-            while len(weights) < 3:
-                weights.append(0)
-            records.append((cps[0], weights[0], weights[1], weights[2]))
-    records.sort(key=lambda r: r[0])
-    return records
+            w = [int(x, 16) for x in m.group(1).split('.') if len(x) > 0]
+            while len(w) < 3:
+                w.append(0)
+            records.append((cps[0], w[0], w[1], w[2]))
 
+    records.sort(key=lambda r: r[0])
+
+    # 3) fill in missing points from implicit_rules
+    filled = []
+    it = iter(records)
+    next_rec = next(it, None)
+
+    # pick whatever universe of code points you need, e.g. 0..0x10FFFF
+    for cp in range(0x110000):
+        if next_rec and cp == next_rec[0]:
+            filled.append(next_rec)
+            next_rec = next(it, None)
+            continue
+
+        # find a matching implicit range
+        for lo, hi, (p, s, t) in implicit_rules:
+            if lo <= cp <= hi:
+                # you may want to increment p/s/t per cp – spec has details
+                filled.append((cp, p, s, t))
+                break
+        # otherwise skip entirely
+
+    return filled
 
 def emit(records, out):
     out.write('#ifndef UNICODE_COLLATION_H\n')
