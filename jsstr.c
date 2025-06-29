@@ -16,7 +16,7 @@
 #define JS_USE_ICU_LOCALE 0
 #endif
 #ifndef JS_USE_LIBC_LOCALE
-#define JS_USE_LIBC_LOCALE 1
+#define JS_USE_LIBC_LOCALE 0
 #endif
 
 #if JS_USE_ICU_LOCALE
