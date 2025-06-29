@@ -44,7 +44,15 @@ def parse_records(path):
     return records
 
 
-def emit(records, max_len, out):
+def compute_skip_list(records):
+    skips = [0]
+    for i in range(1, len(records)):
+        if records[i][0] != records[i-1][0] + 1:
+            skips.append(i)
+    return skips
+
+
+def emit(records, skip_list, max_len, out):
     out.write('#ifndef UNICODE_DB_H\n')
     out.write('#define UNICODE_DB_H\n')
     out.write('#include <stdint.h>\n')
@@ -91,6 +99,11 @@ def emit(records, max_len, out):
         out.write(f'    {{0x{rec[0]:04X}, {", ".join(fields)}, 0x{rec[12]:04X}, 0x{rec[13]:04X}, 0x{rec[14]:04X}}},\n')
     out.write('};\n')
     out.write('static const size_t unicode_db_len = sizeof(unicode_db)/sizeof(unicode_db[0]);\n')
+    out.write('static const size_t unicode_skip[] = {\n')
+    for idx in skip_list:
+        out.write(f'    {idx},\n')
+    out.write('};\n')
+    out.write('static const size_t unicode_skip_len = sizeof(unicode_skip)/sizeof(unicode_skip[0]);\n')
     out.write('#endif /* UNICODE_DB_H */\n')
 
 
@@ -102,8 +115,9 @@ def main(argv):
     path_out = argv[2]
     max_len = compute_max_lengths(path_in)
     records = parse_records(path_in)
+    skip_list = compute_skip_list(records)
     with open(path_out, 'w', encoding='utf-8') as out:
-        emit(records, max_len, out)
+        emit(records, skip_list, max_len, out)
 
 
 if __name__ == '__main__':
