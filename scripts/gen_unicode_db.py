@@ -26,7 +26,21 @@ def parse_records(path):
             if len(fields) < MAX_FIELDS:
                 fields += [''] * (MAX_FIELDS - len(fields))
             code = int(fields[0], 16)
-            records.append((code,) + tuple(fields[1:]))
+            # parse simple case mappings as ints (hex) or default to 0
+            try:
+                upper = int(fields[12], 16) if fields[12] else 0
+            except ValueError:
+                upper = 0
+            try:
+                lower = int(fields[13], 16) if fields[13] else 0
+            except ValueError:
+                lower = 0
+            try:
+                title = int(fields[14], 16) if fields[14] else 0
+            except ValueError:
+                title = 0
+            # other fields remain as strings
+            records.append((code,) + tuple(fields[1:12]) + (upper, lower, title))
     return records
 
 
@@ -48,9 +62,6 @@ def emit(records, max_len, out):
         ("UNICODE_MIRRORED_MAX", max_len[9] + 1),
         ("UNICODE_UNICODE1_NAME_MAX", max_len[10] + 1),
         ("UNICODE_ISO_COMMENT_MAX", max_len[11] + 1),
-        ("UNICODE_SIMPLE_UPPER_MAX", max_len[12] + 1),
-        ("UNICODE_SIMPLE_LOWER_MAX", max_len[13] + 1),
-        ("UNICODE_SIMPLE_TITLE_MAX", max_len[14] + 1),
     ]
     for name, val in macros:
         out.write(f'#define {name} {val}\n')
@@ -67,17 +78,17 @@ def emit(records, max_len, out):
     out.write('    char mirrored[UNICODE_MIRRORED_MAX];\n')
     out.write('    char unicode1_name[UNICODE_UNICODE1_NAME_MAX];\n')
     out.write('    char iso_comment[UNICODE_ISO_COMMENT_MAX];\n')
-    out.write('    char simple_upper[UNICODE_SIMPLE_UPPER_MAX];\n')
-    out.write('    char simple_lower[UNICODE_SIMPLE_LOWER_MAX];\n')
-    out.write('    char simple_title[UNICODE_SIMPLE_TITLE_MAX];\n')
+    out.write('    uint32_t simple_upper;\n')
+    out.write('    uint32_t simple_lower;\n')
+    out.write('    uint32_t simple_title;\n')
     out.write('} unicode_record_t;\n')
     out.write('static const unicode_record_t unicode_db[] = {\n')
     for rec in records:
         fields = []
-        for field in rec[1:]:
+        for field in rec[1:12]:
             esc = field.replace('\\', '\\\\').replace('"', '\\"')
             fields.append(f'"{esc}"')
-        out.write(f'    {{0x{rec[0]:04X}, ' + ', '.join(fields) + '},\n')
+        out.write(f'    {{0x{rec[0]:04X}, {", ".join(fields)}, 0x{rec[12]:04X}, 0x{rec[13]:04X}, 0x{rec[14]:04X}}},\n')
     out.write('};\n')
     out.write('static const size_t unicode_db_len = sizeof(unicode_db)/sizeof(unicode_db[0]);\n')
     out.write('#endif /* UNICODE_DB_H */\n')
