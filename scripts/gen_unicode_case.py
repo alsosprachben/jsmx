@@ -26,6 +26,7 @@ def emit(upper, lower, out):
     out.write('#ifndef UNICODE_CASE_DATA_H\n')
     out.write('#define UNICODE_CASE_DATA_H\n')
     out.write('#include <stdint.h>\n')
+    out.write('#include <stddef.h>\n')
     out.write('typedef struct { uint32_t from; uint32_t to; } unicode_case_map_t;\n')
     out.write('static const unicode_case_map_t unicode_tolower_map[] = {\n')
     for f,t in lower:
