@@ -56,7 +56,11 @@ UnicodeData.txt:
 unicode_case_data.h: UnicodeData.txt scripts/gen_unicode_case.py
 	python3 scripts/gen_unicode_case.py UnicodeData.txt unicode_case_data.h
 
-test_unicode: test_unicode.c unicode.c unicode_case_data.h
+unicode_db.h: UnicodeData.txt scripts/gen_unicode_db.py
+	python3 scripts/gen_unicode_db.py UnicodeData.txt unicode_db.h
+
+
+test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
