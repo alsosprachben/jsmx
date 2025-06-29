@@ -1,27 +1,45 @@
 #include "unicode.h"
-#include "unicode_case_data.h"
+#include "unicode_db.h"
 #include <stddef.h>
 
 uint32_t unicode_tolower(uint32_t cp) {
-    for (size_t i = 0; i < unicode_tolower_map_len; i++) {
-        if (unicode_tolower_map[i].from == cp) {
-            return unicode_tolower_map[i].to;
+    size_t left = 0;
+    size_t right = unicode_db_len;
+    while (left < right) {
+        size_t mid = left + (right - left) / 2;
+        uint32_t code = unicode_db[mid].code;
+        if (code == cp) {
+            if (unicode_db[mid].simple_lower != 0) {
+                return unicode_db[mid].simple_lower;
+            }
+            break;
         }
-    }
-    if (cp >= 'A' && cp <= 'Z') {
-        return cp + 32;
+        if (cp < code) {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
     }
     return cp;
 }
 
 uint32_t unicode_toupper(uint32_t cp) {
-    for (size_t i = 0; i < unicode_toupper_map_len; i++) {
-        if (unicode_toupper_map[i].from == cp) {
-            return unicode_toupper_map[i].to;
+    size_t left = 0;
+    size_t right = unicode_db_len;
+    while (left < right) {
+        size_t mid = left + (right - left) / 2;
+        uint32_t code = unicode_db[mid].code;
+        if (code == cp) {
+            if (unicode_db[mid].simple_upper != 0) {
+                return unicode_db[mid].simple_upper;
+            }
+            break;
         }
-    }
-    if (cp >= 'a' && cp <= 'z') {
-        return cp - 32;
+        if (cp < code) {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
     }
     return cp;
 }
