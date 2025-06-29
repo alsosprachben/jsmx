@@ -1,6 +1,6 @@
 #include "unicode.h"
-#include "unicode_db.h"
 #include <stddef.h>
+#include "unicode_db.h"
 
 static int unicode_find_index(uint32_t cp, size_t *index) {
     size_t left = 0;
