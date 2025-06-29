@@ -1,7 +1,7 @@
 # You can put your build options here
 -include config.mk
 
-all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8
+all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8 test_unicode
 
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
@@ -48,6 +48,16 @@ test_mnurl: test_mnurl.c mnurl.c jsstr.c
 
 test_utf8: utf8.c
 	$(CC) -g -DUTF8_TEST $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
+UnicodeData.txt:
+	curl -o $@ https://www.unicode.org/Public/UNIDATA/UnicodeData.txt
+
+unicode_case_data.h: UnicodeData.txt scripts/gen_unicode_case.py
+	python3 scripts/gen_unicode_case.py UnicodeData.txt unicode_case_data.h
+
+test_unicode: test_unicode.c unicode.c unicode_case_data.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
 clean:
