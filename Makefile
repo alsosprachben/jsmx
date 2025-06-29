@@ -1,7 +1,7 @@
 # You can put your build options here
 -include config.mk
 
-all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8 test_unicode
+all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8 test_unicode test_collation
 
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
@@ -59,8 +59,18 @@ unicode_case_data.h: UnicodeData.txt scripts/gen_unicode_case.py
 unicode_db.h: UnicodeData.txt scripts/gen_unicode_db.py
 	python3 scripts/gen_unicode_db.py UnicodeData.txt unicode_db.h
 
+allkeys.txt:
+	curl -o $@ https://www.unicode.org/Public/UCA/latest/allkeys.txt
+
+unicode_collation.h: allkeys.txt scripts/gen_unicode_collation.py
+	python3 scripts/gen_unicode_collation.py allkeys.txt unicode_collation.h
+
 
 test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
+test_collation: test_collation.c unicode_collation.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
@@ -71,5 +81,5 @@ clean:
 	rm -f jsondump
 	rm -rf test_jsstr test_mnurl test_utf8
 
-.PHONY: all clean test
+.PHONY: all clean test test_collation
 
