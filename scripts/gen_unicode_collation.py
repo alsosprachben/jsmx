@@ -78,7 +78,15 @@ def parse(path):
 
     return filled
 
-def emit(records, out):
+def compute_skip_list(records):
+    skips = [0]
+    for i in range(1, len(records)):
+        if records[i][0] != records[i-1][0] + 1:
+            skips.append(i)
+    return skips
+
+
+def emit(records, skip_list, out):
     out.write('#ifndef UNICODE_COLLATION_H\n')
     out.write('#define UNICODE_COLLATION_H\n')
     out.write('#include <stdint.h>\n')
@@ -89,6 +97,11 @@ def emit(records, out):
         out.write(f'    {{0x{code:04X}, 0x{p:04X}, 0x{s:04X}, 0x{t:04X}}},\n')
     out.write('};\n')
     out.write('static const size_t unicode_collation_db_len = sizeof(unicode_collation_db)/sizeof(unicode_collation_db[0]);\n')
+    out.write('static const size_t unicode_collation_skip[] = {\n')
+    for idx in skip_list:
+        out.write(f'    {idx},\n')
+    out.write('};\n')
+    out.write('static const size_t unicode_collation_skip_len = sizeof(unicode_collation_skip)/sizeof(unicode_collation_skip[0]);\n')
     out.write('#endif /* UNICODE_COLLATION_H */\n')
 
 
@@ -97,8 +110,9 @@ def main(argv):
         print('usage: gen_unicode_collation.py allkeys.txt output.h')
         return 1
     recs = parse(argv[1])
+    skip_list = compute_skip_list(recs)
     with open(argv[2], 'w', encoding='utf-8') as out:
-        emit(recs, out)
+        emit(recs, skip_list, out)
 
 
 if __name__ == '__main__':
