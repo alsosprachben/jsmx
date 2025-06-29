@@ -254,7 +254,19 @@ static inline int js_locale_stub_is_space(uint32_t cp) {
 #define JS_LOCALE_TO_UPPER(cp) js_locale_stub_to_upper(cp)
 #define JS_LOCALE_IS_SPACE(cp) js_locale_stub_is_space(cp)
 #define JS_LOCALE_NORMALIZE(cp) (cp)
-#define JS_LOCALE_COMPARE(a,b) ((int)((a)-(b)))
+
+static inline int js_locale_stub_compare_char(uint32_t a, uint32_t b) {
+    uint16_t pa = 0, sa = 0, ta = 0;
+    uint16_t pb = 0, sb = 0, tb = 0;
+    unicode_collation_lookup(a, &pa, &sa, &ta);
+    unicode_collation_lookup(b, &pb, &sb, &tb);
+    if (pa != pb) return (int)pa - (int)pb;
+    if (sa != sb) return (int)sa - (int)sb;
+    if (ta != tb) return (int)ta - (int)tb;
+    return (int)a - (int)b;
+}
+
+#define JS_LOCALE_COMPARE(a,b) js_locale_stub_compare_char(a,b)
 
 static inline int32_t js_locale_stub_normalize_u32(uint32_t *buf, int32_t len, int32_t cap) {
     (void)cap;
@@ -269,16 +281,48 @@ static inline int32_t js_locale_stub_normalize_u8(uint8_t *buf, int32_t len, int
 }
 
 static inline int js_locale_stub_compare_u32(const uint32_t *a, int32_t la, const uint32_t *b, int32_t lb) {
-    int32_t l = la < lb ? la : lb;
-    for (int32_t i=0;i<l;i++) if (a[i]!=b[i]) return (int)(a[i]-b[i]);
+    int32_t i = 0;
+    int32_t j = 0;
+    while (i < la && j < lb) {
+        int r = js_locale_stub_compare_char(a[i], b[j]);
+        if (r != 0)
+            return r;
+        i++; j++;
+    }
     return la - lb;
 }
 static inline int js_locale_stub_compare_u16(const uint16_t *a, int32_t la, const uint16_t *b, int32_t lb) {
-    return js_locale_stub_compare_u32((const uint32_t *)a, la, (const uint32_t *)b, lb);
+    int32_t ia = 0;
+    int32_t ib = 0;
+    while (ia < la && ib < lb) {
+        uint32_t ca, cb;
+        int la1, lb1;
+        UTF16_CHAR(a + ia, a + la, &ca, &la1);
+        UTF16_CHAR(b + ib, b + lb, &cb, &lb1);
+        if (la1 <= 0) { la1 = la1 ? -la1 : 1; ca = 0xFFFD; }
+        if (lb1 <= 0) { lb1 = lb1 ? -lb1 : 1; cb = 0xFFFD; }
+        ia += la1; ib += lb1;
+        int r = js_locale_stub_compare_char(ca, cb);
+        if (r != 0)
+            return r;
+    }
+    return la - lb;
 }
 static inline int js_locale_stub_compare_u8(const uint8_t *a, int32_t la, const uint8_t *b, int32_t lb) {
-    int32_t l = la < lb ? la : lb;
-    for (int32_t i=0;i<l;i++) if (a[i]!=b[i]) return (int)((int)a[i]-(int)b[i]);
+    int32_t ia = 0;
+    int32_t ib = 0;
+    while (ia < la && ib < lb) {
+        uint32_t ca, cb;
+        int la1, lb1;
+        UTF8_CHAR(a + ia, a + la, &ca, &la1);
+        UTF8_CHAR(b + ib, b + lb, &cb, &lb1);
+        if (la1 <= 0) { la1 = la1 ? -la1 : 1; ca = 0xFFFD; }
+        if (lb1 <= 0) { lb1 = lb1 ? -lb1 : 1; cb = 0xFFFD; }
+        ia += la1; ib += lb1;
+        int r = js_locale_stub_compare_char(ca, cb);
+        if (r != 0)
+            return r;
+    }
     return la - lb;
 }
 
