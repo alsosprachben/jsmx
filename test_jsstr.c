@@ -523,6 +523,62 @@ void test_jsstr8_to_well_formed() {
     printf("\n");
 }
 
+static void print_jsstr32_hex(jsstr32_t *s) {
+    for (size_t i = 0; i < s->len; i++) {
+        printf("\\u%04x", s->codepoints[i]);
+    }
+}
+
+void test_jsstr_locale_compare_ce() {
+    struct pair { const uint32_t *a; const uint32_t *b; } pairs[] = {
+        { L"o\u0308", L"\u00F6" },
+        { L"\u00E4\u0323", L"a\u0323\u0308" },
+        { L"a\u0308\u0323", L"a\u0323\u0308" },
+        { L"\u1EA1\u0308", L"a\u0323\u0308" },
+        { L"\u00E4\u0306", L"a\u0308\u0306" },
+        { L"\u0103\u0308", L"a\u0306\u0308" },
+        { L"\u1111\u1171\u11B6", L"\uD4DB" },
+        { L"\u212B", L"\u00C5" },
+        { L"\u212B", L"A\u030A" },
+        { L"x\u031B\u0323", L"x\u0323\u031B" },
+        { L"\u1EF1", L"\u1EE5\u031B" },
+        { L"\u1EF1", L"u\u031B\u0323" },
+        { L"\u1EF1", L"\u01B0\u0323" },
+        { L"\u1EF1", L"u\u0323\u031B" },
+        { L"\u00C7", L"C\u0327" },
+        { L"q\u0307\u0323", L"q\u0323\u0307" },
+        { L"\uAC00", L"\u1100\u1161" },
+        { L"\u212B", L"A\u030A" },
+        { L"\u2126", L"\u03A9" },
+        { L"\u00C5", L"A\u030A" },
+        { L"\u00F4", L"o\u0302" },
+        { L"\u1E69", L"s\u0323\u0307" },
+        { L"\u1E0B\u0323", L"d\u0323\u0307" },
+        { L"\u1E0B\u0323", L"\u1E0D\u0307" },
+        { L"q\u0307\u0323", L"q\u0323\u0307" }
+    };
+    size_t n = sizeof(pairs)/sizeof(pairs[0]);
+    for (size_t i = 0; i < n; i++) {
+        uint32_t buf1[16];
+        uint32_t buf2[16];
+        jsstr32_t s1, s2;
+        jsstr32_init_from_buf(&s1, (char *)buf1, sizeof(buf1));
+        jsstr32_init_from_buf(&s2, (char *)buf2, sizeof(buf2));
+        jsstr32_set_from_utf32(&s1, pairs[i].a, utf32_strlen(pairs[i].a));
+        jsstr32_set_from_utf32(&s2, pairs[i].b, utf32_strlen(pairs[i].b));
+        jsstr32_u32_normalize(&s1);
+        jsstr32_u32_normalize(&s2);
+        int r = jsstr32_u32_locale_compare(&s1, &s2);
+        if (r != 0) {
+            printf("CE mismatch %zu: ", i);
+            print_jsstr32_hex(&s1);
+            printf(" != ");
+            print_jsstr32_hex(&s2);
+            printf(" -> %d\n", r);
+        }
+    }
+}
+
 
 int main() {
     setlocale(LC_ALL, "");
@@ -532,6 +588,7 @@ int main() {
     test_jsstr32_well_formed();
     test_jsstr16_well_formed();
     test_jsstr8_well_formed();
+    test_jsstr_locale_compare_ce();
     test_jsstr32_to_well_formed();
     test_jsstr16_to_well_formed();
     test_jsstr8_to_well_formed();
