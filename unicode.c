@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include "unicode_db.h"
 #include "unicode_collation.h"
+#include "unicode_special_casing.h"
 
 static int unicode_find_index(uint32_t cp, size_t *index) {
     size_t left = 0;
@@ -67,6 +68,30 @@ uint32_t unicode_toupper(uint32_t cp) {
             return unicode_db[idx].simple_upper;
     }
     return cp;
+}
+
+size_t unicode_tolower_full(uint32_t cp, uint32_t out[3]) {
+    for (size_t i = 0; i < unicode_special_cases_len; i++) {
+        if (unicode_special_cases[i].code == cp) {
+            for (size_t j = 0; j < unicode_special_cases[i].lower_len; j++)
+                out[j] = unicode_special_cases[i].lower[j];
+            return unicode_special_cases[i].lower_len;
+        }
+    }
+    out[0] = unicode_tolower(cp);
+    return 1;
+}
+
+size_t unicode_toupper_full(uint32_t cp, uint32_t out[3]) {
+    for (size_t i = 0; i < unicode_special_cases_len; i++) {
+        if (unicode_special_cases[i].code == cp) {
+            for (size_t j = 0; j < unicode_special_cases[i].upper_len; j++)
+                out[j] = unicode_special_cases[i].upper[j];
+            return unicode_special_cases[i].upper_len;
+        }
+    }
+    out[0] = unicode_toupper(cp);
+    return 1;
 }
 
 int unicode_collation_lookup(uint32_t cp, uint16_t *primary, uint16_t *secondary, uint16_t *tertiary) {
