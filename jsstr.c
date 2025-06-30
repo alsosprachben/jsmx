@@ -29,6 +29,10 @@
 #define JS_LOCALE_TO_UPPER(cp) ((uint32_t)u_toupper(cp))
 #define JS_LOCALE_TO_LOWER_FULL(cp,out) ((out)[0]=(uint32_t)u_tolower(cp),1)
 #define JS_LOCALE_TO_UPPER_FULL(cp,out) ((out)[0]=(uint32_t)u_toupper(cp),1)
+#define JS_LOCALE_TO_LOWER_FULL_L(cp,locale,out) \
+    unicode_tolower_full_locale(cp, locale, out)
+#define JS_LOCALE_TO_UPPER_FULL_L(cp,locale,out) \
+    unicode_toupper_full_locale(cp, locale, out)
 #define JS_LOCALE_IS_SPACE(cp) (u_isUWhiteSpace(cp))
 static inline uint32_t js_locale_icu_normalize_char(uint32_t cp) {
     UErrorCode status = U_ZERO_ERROR;
@@ -189,6 +193,10 @@ static inline int js_locale_icu_compare_u8(const uint8_t *a, int32_t la, const u
 #define JS_LOCALE_TO_UPPER(cp) ((uint32_t)towupper((wint_t)(cp)))
 #define JS_LOCALE_TO_LOWER_FULL(cp,out) ((out)[0]=(uint32_t)towlower((wint_t)(cp)),1)
 #define JS_LOCALE_TO_UPPER_FULL(cp,out) ((out)[0]=(uint32_t)towupper((wint_t)(cp)),1)
+#define JS_LOCALE_TO_LOWER_FULL_L(cp,locale,out) \
+    unicode_tolower_full_locale(cp, locale, out)
+#define JS_LOCALE_TO_UPPER_FULL_L(cp,locale,out) \
+    unicode_toupper_full_locale(cp, locale, out)
 #define JS_LOCALE_IS_SPACE(cp) (iswspace((wint_t)(cp)))
 static inline uint32_t js_locale_libc_normalize(uint32_t cp) {
     return cp; /* no normalization API in libc */
@@ -265,6 +273,10 @@ static inline int js_locale_stub_is_space(uint32_t cp) {
 #define JS_LOCALE_TO_UPPER(cp) js_locale_stub_to_upper(cp)
 #define JS_LOCALE_TO_LOWER_FULL(cp,out) js_locale_stub_to_lower_full(cp,out)
 #define JS_LOCALE_TO_UPPER_FULL(cp,out) js_locale_stub_to_upper_full(cp,out)
+#define JS_LOCALE_TO_LOWER_FULL_L(cp,locale,out) \
+    unicode_tolower_full_locale(cp, locale, out)
+#define JS_LOCALE_TO_UPPER_FULL_L(cp,locale,out) \
+    unicode_toupper_full_locale(cp, locale, out)
 #define JS_LOCALE_IS_SPACE(cp) js_locale_stub_is_space(cp)
 #define JS_LOCALE_NORMALIZE(cp) (cp)
 
