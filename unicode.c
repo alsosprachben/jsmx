@@ -94,6 +94,48 @@ size_t unicode_toupper_full(uint32_t cp, uint32_t out[3]) {
     return 1;
 }
 
+static uint8_t unicode_locale_mask(const char *locale) {
+    if (!locale || !locale[0])
+        return 0;
+    if ((locale[0] == 't' || locale[0] == 'T') && (locale[1] == 'r' || locale[1] == 'R'))
+        return UNICODE_LOCALE_TURKIC;
+    if ((locale[0] == 'a' || locale[0] == 'A') && (locale[1] == 'z' || locale[1] == 'Z'))
+        return UNICODE_LOCALE_TURKIC;
+    if ((locale[0] == 'l' || locale[0] == 'L') && (locale[1] == 't' || locale[1] == 'T'))
+        return UNICODE_LOCALE_LITHUANIAN;
+    return 0;
+}
+
+size_t unicode_tolower_full_locale(uint32_t cp, const char *locale, uint32_t out[3]) {
+    uint8_t mask = unicode_locale_mask(locale);
+    if (mask) {
+        for (size_t i = 0; i < unicode_special_cases_locale_len; i++) {
+            if (unicode_special_cases_locale[i].code == cp &&
+                (unicode_special_cases_locale[i].locale & mask)) {
+                for (size_t j = 0; j < unicode_special_cases_locale[i].lower_len; j++)
+                    out[j] = unicode_special_cases_locale[i].lower[j];
+                return unicode_special_cases_locale[i].lower_len;
+            }
+        }
+    }
+    return unicode_tolower_full(cp, out);
+}
+
+size_t unicode_toupper_full_locale(uint32_t cp, const char *locale, uint32_t out[3]) {
+    uint8_t mask = unicode_locale_mask(locale);
+    if (mask) {
+        for (size_t i = 0; i < unicode_special_cases_locale_len; i++) {
+            if (unicode_special_cases_locale[i].code == cp &&
+                (unicode_special_cases_locale[i].locale & mask)) {
+                for (size_t j = 0; j < unicode_special_cases_locale[i].upper_len; j++)
+                    out[j] = unicode_special_cases_locale[i].upper[j];
+                return unicode_special_cases_locale[i].upper_len;
+            }
+        }
+    }
+    return unicode_toupper_full(cp, out);
+}
+
 int unicode_collation_lookup(uint32_t cp, uint16_t *primary, uint16_t *secondary, uint16_t *tertiary) {
     size_t idx;
     if (unicode_collation_find_index(cp, &idx)) {
