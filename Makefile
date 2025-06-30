@@ -38,11 +38,11 @@ simple_example: example/simple.o libjsmn.a
 jsondump: example/jsondump.o libjsmn.a
 	$(CC) $(LDFLAGS) $^ -o $@
 
-test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h
+test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h
+test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
@@ -65,6 +65,11 @@ allkeys.txt:
 unicode_collation.h: allkeys.txt scripts/gen_unicode_collation.py
 	python3 scripts/gen_unicode_collation.py allkeys.txt unicode_collation.h
 
+SpecialCastings.txt:
+	curl -o $@ https://www.unicode.org/Public/UNIDATA/SpecialCasing.txt
+
+unicode_special_casing.h: SpecialCastings.txt scripts/gen_unicode_special_casing.py
+	python3 scripts/gen_unicode_special_casing.py SpecialCastings.txt unicode_special_casing.h
 
 test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
