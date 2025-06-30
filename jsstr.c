@@ -595,12 +595,66 @@ int jsstr32_concat(jsstr32_t *s, jsstr32_t *src) {
     s->len += src->len;
     return 0; /* success */
 }
+static int js_is_cased(uint32_t cp) {
+    return unicode_tolower(cp) != unicode_toupper(cp);
+}
+static int js_is_final_sigma32(const uint32_t *buf, size_t len, size_t pos) {
+    if (buf[pos] != 0x03A3) return 0;
+    size_t j = pos;
+    int has_prev = 0;
+    while (j > 0) {
+        --j;
+        if (js_is_cased(buf[j])) { has_prev = 1; break; }
+    }
+    if (!has_prev) return 0;
+    for (j = pos + 1; j < len; j++) {
+        if (js_is_cased(buf[j])) return 0;
+    }
+    return 1;
+}
+
 
 void jsstr32_tolower(jsstr32_t *s) {
     size_t i = 0;
     while (i < s->len) {
         uint32_t seq[3];
-        size_t n = JS_LOCALE_TO_LOWER_FULL(s->codepoints[i], seq);
+        size_t n;
+        if (s->codepoints[i] == 0x03A3 &&
+            js_is_final_sigma32(s->codepoints, s->len, i)) {
+            seq[0] = 0x03C2;
+            n = 1;
+        } else {
+            n = JS_LOCALE_TO_LOWER_FULL(s->codepoints[i], seq);
+        }
+        if (n == 1) {
+            s->codepoints[i] = seq[0];
+            i++;
+        } else {
+            if (s->len + (n - 1) > s->cap)
+                break;
+            memmove(s->codepoints + i + n,
+                    s->codepoints + i + 1,
+                    (s->len - i - 1) * sizeof(uint32_t));
+            for (size_t j = 0; j < n; j++)
+                s->codepoints[i + j] = seq[j];
+            s->len += n - 1;
+            i += n;
+        }
+    }
+}
+
+void jsstr32_tolower_locale(jsstr32_t *s, const char *locale) {
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t seq[3];
+        size_t n;
+        if (s->codepoints[i] == 0x03A3 &&
+            js_is_final_sigma32(s->codepoints, s->len, i)) {
+            seq[0] = 0x03C2;
+            n = 1;
+        } else {
+            n = JS_LOCALE_TO_LOWER_FULL_L(s->codepoints[i], locale, seq);
+        }
         if (n == 1) {
             s->codepoints[i] = seq[0];
             i++;
@@ -623,6 +677,28 @@ void jsstr32_toupper(jsstr32_t *s) {
     while (i < s->len) {
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_UPPER_FULL(s->codepoints[i], seq);
+        if (n == 1) {
+            s->codepoints[i] = seq[0];
+            i++;
+        } else {
+            if (s->len + (n - 1) > s->cap)
+                break;
+            memmove(s->codepoints + i + n,
+                    s->codepoints + i + 1,
+                    (s->len - i - 1) * sizeof(uint32_t));
+            for (size_t j = 0; j < n; j++)
+                s->codepoints[i + j] = seq[j];
+            s->len += n - 1;
+            i += n;
+        }
+    }
+}
+
+void jsstr32_toupper_locale(jsstr32_t *s, const char *locale) {
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t seq[3];
+        size_t n = JS_LOCALE_TO_UPPER_FULL_L(s->codepoints[i], locale, seq);
         if (n == 1) {
             s->codepoints[i] = seq[0];
             i++;
@@ -1214,6 +1290,49 @@ void jsstr16_tolower(jsstr16_t *s) {
     }
 }
 
+void jsstr16_tolower_locale(jsstr16_t *s, const char *locale) {
+    uint16_t *end = s->codeunits + s->len;
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        UTF16_CHAR(s->codeunits + i, end, &c, &l);
+        if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        uint32_t seq[3];
+        size_t n = JS_LOCALE_TO_LOWER_FULL_L(c, locale, seq);
+        int outlen = 0;
+        for (size_t j = 0; j < n; j++)
+            outlen += UTF16_CLEN(seq[j]);
+        if (n == 1 && outlen == l) {
+            if (outlen == 1)
+                s->codeunits[i] = (uint16_t)seq[0];
+            else
+                UTF16_CODEPAIR(seq[0], s->codeunits + i);
+            i += outlen;
+        } else {
+            if (s->len + outlen - l > s->cap)
+                break;
+            memmove(s->codeunits + i + outlen,
+                    s->codeunits + i + l,
+                    (s->len - i - l) * sizeof(uint16_t));
+            uint16_t tmp[6];
+            uint16_t *p = tmp;
+            for (size_t j = 0; j < n; j++) {
+                if (UTF16_CLEN(seq[j]) == 1) {
+                    *p++ = (uint16_t)seq[j];
+                } else {
+                    UTF16_CODEPAIR(seq[j], p);
+                    p += 2;
+                }
+            }
+            memcpy(s->codeunits + i, tmp, outlen * sizeof(uint16_t));
+            s->len += outlen - l;
+            end = s->codeunits + s->len;
+            i += outlen;
+        }
+    }
+}
+
 void jsstr16_toupper(jsstr16_t *s) {
     uint16_t *end = s->codeunits + s->len;
     size_t i = 0;
@@ -1224,6 +1343,49 @@ void jsstr16_toupper(jsstr16_t *s) {
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_UPPER_FULL(c, seq);
+        int outlen = 0;
+        for (size_t j = 0; j < n; j++)
+            outlen += UTF16_CLEN(seq[j]);
+        if (n == 1 && outlen == l) {
+            if (outlen == 1)
+                s->codeunits[i] = (uint16_t)seq[0];
+            else
+                UTF16_CODEPAIR(seq[0], s->codeunits + i);
+            i += outlen;
+        } else {
+            if (s->len + outlen - l > s->cap)
+                break;
+            memmove(s->codeunits + i + outlen,
+                    s->codeunits + i + l,
+                    (s->len - i - l) * sizeof(uint16_t));
+            uint16_t tmp[6];
+            uint16_t *p = tmp;
+            for (size_t j = 0; j < n; j++) {
+                if (UTF16_CLEN(seq[j]) == 1) {
+                    *p++ = (uint16_t)seq[j];
+                } else {
+                    UTF16_CODEPAIR(seq[j], p);
+                    p += 2;
+                }
+            }
+            memcpy(s->codeunits + i, tmp, outlen * sizeof(uint16_t));
+            s->len += outlen - l;
+            end = s->codeunits + s->len;
+            i += outlen;
+        }
+    }
+}
+
+void jsstr16_toupper_locale(jsstr16_t *s, const char *locale) {
+    uint16_t *end = s->codeunits + s->len;
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        UTF16_CHAR(s->codeunits + i, end, &c, &l);
+        if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        uint32_t seq[3];
+        size_t n = JS_LOCALE_TO_UPPER_FULL_L(c, locale, seq);
         int outlen = 0;
         for (size_t j = 0; j < n; j++)
             outlen += UTF16_CLEN(seq[j]);
@@ -1748,6 +1910,40 @@ void jsstr8_tolower(jsstr8_t *s) {
     }
 }
 
+void jsstr8_tolower_locale(jsstr8_t *s, const char *locale) {
+    uint8_t *end = s->bytes + s->len;
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
+        if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        uint32_t seq[3];
+        size_t n = JS_LOCALE_TO_LOWER_FULL_L(c, locale, seq);
+        uint8_t buf[12];
+        uint8_t *p = buf;
+        for (size_t j = 0; j < n; j++) {
+            const uint32_t *cc = &seq[j];
+            UTF8_ENCODE(&cc, &seq[j] + 1, &p, buf + sizeof(buf));
+        }
+        size_t outlen = (size_t)(p - buf);
+        if (n == 1 && outlen == (size_t)l) {
+            memcpy(s->bytes + i, buf, outlen);
+            i += outlen;
+        } else {
+            if (s->len + outlen - l > s->cap)
+                break;
+            memmove(s->bytes + i + outlen,
+                    s->bytes + i + l,
+                    s->len - i - l);
+            memcpy(s->bytes + i, buf, outlen);
+            s->len += outlen - l;
+            end = s->bytes + s->len;
+            i += outlen;
+        }
+    }
+}
+
 void jsstr8_toupper(jsstr8_t *s) {
     uint8_t *end = s->bytes + s->len;
     size_t i = 0;
@@ -1758,6 +1954,40 @@ void jsstr8_toupper(jsstr8_t *s) {
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_UPPER_FULL(c, seq);
+        uint8_t buf[12];
+        uint8_t *p = buf;
+        for (size_t j = 0; j < n; j++) {
+            const uint32_t *cc = &seq[j];
+            UTF8_ENCODE(&cc, &seq[j] + 1, &p, buf + sizeof(buf));
+        }
+        size_t outlen = (size_t)(p - buf);
+        if (n == 1 && outlen == (size_t)l) {
+            memcpy(s->bytes + i, buf, outlen);
+            i += outlen;
+        } else {
+            if (s->len + outlen - l > s->cap)
+                break;
+            memmove(s->bytes + i + outlen,
+                    s->bytes + i + l,
+                    s->len - i - l);
+            memcpy(s->bytes + i, buf, outlen);
+            s->len += outlen - l;
+            end = s->bytes + s->len;
+            i += outlen;
+        }
+    }
+}
+
+void jsstr8_toupper_locale(jsstr8_t *s, const char *locale) {
+    uint8_t *end = s->bytes + s->len;
+    size_t i = 0;
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
+        if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        uint32_t seq[3];
+        size_t n = JS_LOCALE_TO_UPPER_FULL_L(c, locale, seq);
         uint8_t buf[12];
         uint8_t *p = buf;
         for (size_t j = 0; j < n; j++) {
