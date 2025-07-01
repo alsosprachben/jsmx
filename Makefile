@@ -71,6 +71,18 @@ SpecialCastings.txt:
 unicode_special_casing.h: SpecialCastings.txt scripts/gen_unicode_special_casing.py
 	python3 scripts/gen_unicode_special_casing.py SpecialCastings.txt unicode_special_casing.h
 
+CompositionExclusions.txt:
+	curl -o $@ https://www.unicode.org/Public/UNIDATA/CompositionExclusions.txt
+
+unicode_exclusions.h: CompositionExclusions.txt scripts/gen_unicode_exclusions.py
+	python3 scripts/gen_unicode_exclusions.py CompositionExclusions.txt unicode_exclusions.h
+
+DerivedNormalizationProps.txt:
+	curl -o $@ https://www.unicode.org/Public/UNIDATA/DerivedNormalizationProps.txt
+
+unicode_derived_normalization_props.h: DerivedNormalizationProps.txt scripts/gen_unicode_derived_normalization_props.py
+	python3 scripts/gen_unicode_derived_normalization_props.py DerivedNormalizationProps.txt unicode_derived_normalization_props.h
+
 test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
