@@ -38,11 +38,11 @@ simple_example: example/simple.o libjsmn.a
 jsondump: example/jsondump.o libjsmn.a
 	$(CC) $(LDFLAGS) $^ -o $@
 
-test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h
+test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h
+test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
