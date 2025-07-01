@@ -24,4 +24,6 @@ size_t unicode_nfkc_cf(uint32_t cp, uint32_t out[UNICODE_NFKC_CF_MAX]);
 size_t unicode_nfkc_scf(uint32_t cp, uint32_t out[UNICODE_NFKC_SCF_MAX]);
 int unicode_changes_when_nfkc_casefolded(uint32_t cp);
 
+size_t unicode_normalize(uint32_t *buf, size_t len, size_t cap);
+
 #endif /* UNICODE_H */
