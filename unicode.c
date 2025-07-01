@@ -271,3 +271,9 @@ size_t unicode_nfkc_scf(uint32_t cp, uint32_t out[UNICODE_NFKC_SCF_MAX]) {
 int unicode_changes_when_nfkc_casefolded(uint32_t cp) {
     return unicode_range_contains(unicode_cwkcf, unicode_cwkcf_len, cp);
 }
+
+size_t unicode_normalize(uint32_t *buf, size_t len, size_t cap) {
+    (void)cap;
+    /* TODO: full Unicode normalization (NFC) */
+    return len;
+}

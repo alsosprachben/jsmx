@@ -108,8 +108,8 @@ void test_jsstr32_lifecycle() {
     printf("jsstr32_toupper: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
     jsstr32_tolower(&s);
     printf("jsstr32_tolower: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
-    jsstr32_u32_normalize(&s);
-    printf("jsstr32_u32_normalize: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
+    jsstr32_normalize(&s);
+    printf("jsstr32_normalize: %lc%lc%lc\n", s.codepoints[0], s.codepoints[1], s.codepoints[2]);
     jsstr32_init_from_buf(&dest, (char *)dest_buf, dest_len);
     jsstr32_repeat(&dest, &s, 3);
     printf("jsstr32_repeat len: %zu\n", jsstr32_get_utf32len(&dest));
@@ -270,10 +270,8 @@ void test_jsstr16_lifecycle() {
     printf("jsstr16_toupper: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_tolower(&s);
     printf("jsstr16_tolower: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
-    jsstr16_u32_normalize(&s);
-    printf("jsstr16_u32_normalize: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
-    jsstr16_u16_normalize(&s);
-    printf("jsstr16_u16_normalize: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
+    jsstr16_normalize(&s);
+    printf("jsstr16_normalize: %04x %04x %04x\n", s.codeunits[0], s.codeunits[1], s.codeunits[2]);
     jsstr16_init_from_buf(&dest16, (char *)dest16_buf, dest16_len);
     jsstr16_repeat(&dest16, &s, 3);
     printf("jsstr16_repeat len: %zu\n", jsstr16_get_utf16len(&dest16));
@@ -426,14 +424,12 @@ void test_jsstr8_lifecycle() {
     printf("jsstr8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_tolower(&s);
     printf("jsstr8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
-    jsstr8_u8_normalize(&s);
-    printf("jsstr8_u8_normalize: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
+    jsstr8_normalize(&s);
+    printf("jsstr8_normalize: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_toupper(&s);
     printf("jsstr8_toupper: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_tolower(&s);
     printf("jsstr8_tolower: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
-    jsstr8_u32_normalize(&s);
-    printf("jsstr8_u32_normalize: %c%c%c\n", s.bytes[0], s.bytes[1], s.bytes[2]);
     jsstr8_init_from_buf(&dest8, (char *)dest8_buf, dest8_len);
     jsstr8_repeat(&dest8, &s, 3);
     printf("jsstr8_repeat len: %zu\n", jsstr8_get_utf8len(&dest8));
@@ -566,8 +562,8 @@ void test_jsstr_locale_compare_ce() {
         jsstr32_init_from_buf(&s2, (char *)buf2, sizeof(buf2));
         jsstr32_set_from_utf32(&s1, pairs[i].a, utf32_strlen(pairs[i].a));
         jsstr32_set_from_utf32(&s2, pairs[i].b, utf32_strlen(pairs[i].b));
-        jsstr32_u32_normalize(&s1);
-        jsstr32_u32_normalize(&s2);
+        jsstr32_normalize(&s1);
+        jsstr32_normalize(&s2);
         int r = jsstr32_u32_locale_compare(&s1, &s2);
         if (r != 0) {
             printf("CE mismatch %zu: ", i);

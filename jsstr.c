@@ -728,8 +728,8 @@ void jsstr32_toupper_locale(jsstr32_t *s, const char *locale) {
     }
 }
 
-void jsstr32_u32_normalize(jsstr32_t *s) {
-    s->len = JS_LOCALE_NORMALIZE_U32(s->codepoints, (int32_t)s->len, (int32_t)s->cap);
+void jsstr32_normalize(jsstr32_t *s) {
+    s->len = unicode_normalize(s->codepoints, s->len, s->cap);
 }
 
 int jsstr32_u32_locale_compare(jsstr32_t *s1, jsstr32_t *s2) {
@@ -1250,8 +1250,16 @@ int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
 }
 
 
-void jsstr16_u16_normalize(jsstr16_t *s) {
-    s->len = JS_LOCALE_NORMALIZE_U16(s->codeunits, (int32_t)s->len, (int32_t)s->cap);
+void jsstr16_normalize(jsstr16_t *s) {
+    jsstr32_t tmp;
+    tmp.cap = s->cap;
+    tmp.codepoints = malloc(sizeof(uint32_t) * tmp.cap);
+    if (!tmp.codepoints)
+        return;
+    jsstr32_set_from_utf16(&tmp, s->codeunits, s->len);
+    tmp.len = unicode_normalize(tmp.codepoints, tmp.len, tmp.cap);
+    jsstr16_set_from_jsstr32(s, &tmp);
+    free(tmp.codepoints);
 }
 
 int jsstr16_u16_locale_compare(jsstr16_t *s1, jsstr16_t *s2) {
@@ -1431,9 +1439,6 @@ void jsstr16_toupper_locale(jsstr16_t *s, const char *locale) {
     }
 }
 
-void jsstr16_u32_normalize(jsstr16_t *s) {
-    s->len = JS_LOCALE_NORMALIZE_U16(s->codeunits, (int32_t)s->len, (int32_t)s->cap);
-}
 
 int jsstr16_u32_locale_compare(jsstr16_t *s1, jsstr16_t *s2) {
     return JS_LOCALE_COMPARE_U16(s1->codeunits, (int32_t)s1->len,
@@ -2024,12 +2029,16 @@ void jsstr8_toupper_locale(jsstr8_t *s, const char *locale) {
     }
 }
 
-void jsstr8_u8_normalize(jsstr8_t *s) {
-    s->len = JS_LOCALE_NORMALIZE_U8(s->bytes, (int32_t)s->len, (int32_t)s->cap);
-}
-
-void jsstr8_u32_normalize(jsstr8_t *s) {
-    s->len = JS_LOCALE_NORMALIZE_U8(s->bytes, (int32_t)s->len, (int32_t)s->cap);
+void jsstr8_normalize(jsstr8_t *s) {
+    jsstr32_t tmp;
+    tmp.cap = s->cap;
+    tmp.codepoints = malloc(sizeof(uint32_t) * tmp.cap);
+    if (!tmp.codepoints)
+        return;
+    jsstr32_set_from_utf8(&tmp, s->bytes, s->len);
+    tmp.len = unicode_normalize(tmp.codepoints, tmp.len, tmp.cap);
+    jsstr8_set_from_jsstr32(s, &tmp);
+    free(tmp.codepoints);
 }
 
 int jsstr8_u8_locale_compare(jsstr8_t *s1, jsstr8_t *s2) {
