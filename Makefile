@@ -83,7 +83,7 @@ DerivedNormalizationProps.txt:
 unicode_derived_normalization_props.h: DerivedNormalizationProps.txt scripts/gen_unicode_derived_normalization_props.py
 	python3 scripts/gen_unicode_derived_normalization_props.py DerivedNormalizationProps.txt unicode_derived_normalization_props.h
 
-test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h
+test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
