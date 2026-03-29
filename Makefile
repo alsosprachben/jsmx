@@ -108,10 +108,12 @@ test_collation: test_collation.c unicode_collation.h
 	./$@
 
 clean:
-	rm -f jsmn.o jsval.o jsmndom.o jsmn_test.o example/simple.o
+	rm -f jsmn.o jsval.o jsmndom.o jsmn_test.o example/simple.o example/jsondump.o
 	rm -f libjsmn.a libjsmx.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
-	rm -rf test_jsstr test_jsval test_codegen test_mnurl test_utf8
+	rm -f test_jsstr test_jsval test_codegen test_mnurl test_utf8 test_unicode test_collation
+	rm -f test/test_default test/test_strict test/test_links test/test_strict_links test/test_emitter
+	rm -f test_compliance_*
 
 .PHONY: all clean test test_collation test_compliance
