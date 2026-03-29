@@ -497,6 +497,167 @@ static generated_status_t generated_smoke_jsval_native_containers(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_lookup_capacity_contracts(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"keep\":7,\"items\":[1,2],\"nested\":{\"flag\":true}}";
+	static const uint8_t expected_json[] =
+		"{\"keep\":9,\"items\":[1,8,3],\"nested\":{\"flag\":true}}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t items;
+	jsval_t got;
+	size_t bytes;
+	size_t object_size;
+	size_t array_len;
+	int has;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"missing", 7,
+			&got) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(missing)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected missing property read to return undefined");
+	}
+	if (jsval_object_has_own_utf8(&region, root, (const uint8_t *)"keep", 4,
+			&has) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_has_own_utf8(keep)");
+	}
+	if (!has) {
+		return generated_failf(detail, cap,
+				"expected keep to be an own property before promotion");
+	}
+	if (jsval_object_has_own_utf8(&region, root, (const uint8_t *)"missing", 7,
+			&has) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_has_own_utf8(missing)");
+	}
+	if (has) {
+		return generated_failf(detail, cap,
+				"missing property unexpectedly reported as present");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(items)");
+	}
+	if (jsval_array_get(&region, items, 4, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(items[4])");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected out-of-range JSON-backed array read to return undefined");
+	}
+
+	errno = 0;
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"keep", 4,
+			jsval_number(9.0)) == 0) {
+		return generated_failf(detail, cap,
+				"JSON-backed object overwrite unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP before object promotion, got %d", errno);
+	}
+	errno = 0;
+	if (jsval_array_push(&region, items, jsval_number(3.0)) == 0) {
+		return generated_failf(detail, cap,
+				"JSON-backed array push unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP before array promotion, got %d", errno);
+	}
+	errno = 0;
+	if (jsval_promote_object_shallow_measure(&region, root, 2, &bytes) == 0) {
+		return generated_failf(detail, cap,
+				"undersized shallow object plan unexpectedly succeeded");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from undersized object plan, got %d", errno);
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 3) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(root)");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
+	}
+	object_size = jsval_object_size(&region, root);
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"keep", 4,
+			jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(keep)");
+	}
+	if (jsval_object_size(&region, root) != object_size) {
+		return generated_failf(detail, cap,
+				"object overwrite unexpectedly changed object size");
+	}
+
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(items after root promotion)");
+	}
+	errno = 0;
+	if (jsval_promote_array_shallow_measure(&region, items, 1, &bytes) == 0) {
+		return generated_failf(detail, cap,
+				"undersized shallow array plan unexpectedly succeeded");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from undersized array plan, got %d", errno);
+	}
+	if (jsval_promote_array_shallow_in_place(&region, &items, 3) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_array_shallow_in_place(items)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"items", 5,
+			items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(items)");
+	}
+	array_len = jsval_array_length(&region, items);
+	if (jsval_array_set(&region, items, 1, jsval_number(8.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(items[1])");
+	}
+	if (jsval_array_length(&region, items) != array_len) {
+		return generated_failf(detail, cap,
+				"array overwrite unexpectedly changed logical length");
+	}
+	if (jsval_array_push(&region, items, jsval_number(3.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(items)");
+	}
+	errno = 0;
+	if (jsval_array_push(&region, items, jsval_number(4.0)) == 0) {
+		return generated_failf(detail, cap,
+				"push past planned capacity unexpectedly succeeded");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from push past capacity, got %d", errno);
+	}
+	errno = 0;
+	if (jsval_array_set_length(&region, items, 4) == 0) {
+		return generated_failf(detail, cap,
+				"length past planned capacity unexpectedly succeeded");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from length past capacity, got %d", errno);
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail,
 		size_t cap)
 {
@@ -817,6 +978,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
+	{"smoke", "jsval_lookup_capacity_contracts", generated_smoke_jsval_lookup_capacity_contracts},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},

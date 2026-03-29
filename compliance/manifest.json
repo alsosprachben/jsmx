@@ -366,6 +366,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic shallow-promotion fixture for selectively promoting a parsed child array with explicit dense capacity and writing it back into the native parent slot before mutation."
+    },
+    {
+      "id": "jsmx-objects-json-readonly-lookups",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-readonly-lookups.js",
+      "generated": "compliance/generated/objects/jsmx/json-readonly-lookups.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic lookup fixture for JSON-backed property/index reads, hasOwn checks, and the current ENOTSUP mutation boundary before promotion."
+    },
+    {
+      "id": "jsmx-objects-native-overwrite-and-missing",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/native-overwrite-and-missing.js",
+      "generated": "compliance/generated/objects/jsmx/native-overwrite-and-missing.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object/array fixture for overwrite behavior that preserves object size and array length while missing reads continue to return undefined."
+    },
+    {
+      "id": "jsmx-objects-planned-capacity-errors",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/planned-capacity-errors.js",
+      "generated": "compliance/generated/objects/jsmx/planned-capacity-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic lowering-contract fixture for ENOBUFS on undersized shallow-promotion plans and dense native array mutation beyond the translator-chosen capacity."
     }
   ]
 }

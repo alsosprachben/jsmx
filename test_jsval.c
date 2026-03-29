@@ -630,6 +630,88 @@ static void test_shallow_planned_promotion(void)
 			"{\"profile\":{\"name\":\"Ada\"},\"scores\":[1,2,3,4],\"status\":\"ok\",\"ready\":true}");
 }
 
+static void test_lookup_and_capacity_contracts(void)
+{
+	static const char json[] =
+		"{\"keep\":7,\"items\":[1,2],\"nested\":{\"flag\":true}}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t items;
+	jsval_t got;
+	size_t size_before;
+	size_t len_before;
+	size_t bytes;
+	int has;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 32,
+			&root) == 0);
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"missing", 7,
+			&got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"keep", 4,
+			&has) == 0);
+	assert(has == 1);
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"missing",
+			7, &has) == 0);
+	assert(has == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) == 0);
+	assert(jsval_array_get(&region, items, 4, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+
+	errno = 0;
+	assert(jsval_object_set_utf8(&region, root, (const uint8_t *)"keep", 4,
+			jsval_number(9.0)) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_array_push(&region, items, jsval_number(3.0)) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_promote_object_shallow_measure(&region, root, 2, &bytes) < 0);
+	assert(errno == ENOBUFS);
+
+	assert(jsval_promote_object_shallow_in_place(&region, &root, 3) == 0);
+	assert(jsval_region_set_root(&region, root) == 0);
+	size_before = jsval_object_size(&region, root);
+	assert(size_before == 3);
+	assert(jsval_object_set_utf8(&region, root, (const uint8_t *)"keep", 4,
+			jsval_number(9.0)) == 0);
+	assert(jsval_object_size(&region, root) == size_before);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"missing", 7,
+			&got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) == 0);
+	assert(jsval_is_json_backed(items) == 1);
+	errno = 0;
+	assert(jsval_promote_array_shallow_measure(&region, items, 1, &bytes) < 0);
+	assert(errno == ENOBUFS);
+	assert(jsval_promote_array_shallow_in_place(&region, &items, 3) == 0);
+	assert(jsval_object_set_utf8(&region, root, (const uint8_t *)"items", 5,
+			items) == 0);
+	len_before = jsval_array_length(&region, items);
+	assert(len_before == 2);
+	assert(jsval_array_set(&region, items, 1, jsval_number(8.0)) == 0);
+	assert(jsval_array_length(&region, items) == len_before);
+	assert(jsval_array_get(&region, items, 4, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_push(&region, items, jsval_number(3.0)) == 0);
+	assert(jsval_array_length(&region, items) == 3);
+	errno = 0;
+	assert(jsval_array_push(&region, items, jsval_number(4.0)) < 0);
+	assert(errno == ENOBUFS);
+	errno = 0;
+	assert(jsval_array_set_length(&region, items, 4) < 0);
+	assert(errno == ENOBUFS);
+
+	assert_json(&region, root,
+			"{\"keep\":9,\"items\":[1,8,3],\"nested\":{\"flag\":true}}");
+}
+
 int main(void)
 {
 	test_native_storage();
@@ -643,6 +725,7 @@ int main(void)
 	test_method_bridge();
 	test_method_normalize_bridge();
 	test_shallow_planned_promotion();
+	test_lookup_and_capacity_contracts();
 	puts("test_jsval: ok");
 	return 0;
 }
