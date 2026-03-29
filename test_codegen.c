@@ -269,6 +269,95 @@ static generated_status_t generated_smoke_jsval_method_normalize(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_method_lower(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] = "{\"message\":\"Hello, WoRlD!\"}";
+	static const uint8_t expected_string[] = "hello, world!";
+	static const uint8_t expected_json[] = "{\"message\":\"hello, world!\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t message;
+	jsval_t lower;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"message", 7,
+			&message) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(message)");
+	}
+	if (jsval_method_string_to_lower_case(&region, message, &lower,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_to_lower_case failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	status = generated_expect_string(&region, lower, expected_string,
+			sizeof(expected_string) - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_region_promote_root(&region, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"message", 7,
+			lower) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(message)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_method_is_well_formed(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] = "{\"kind\":\"probe\",\"isWellFormed\":true}";
+	static const uint16_t broken_units[] = {0xD83D};
+	static const uint8_t expected_json[] =
+		"{\"kind\":\"probe\",\"isWellFormed\":false}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t broken;
+	jsval_t result;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_string_new_utf16(&region, broken_units,
+			sizeof(broken_units) / sizeof(broken_units[0]), &broken) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf16");
+	}
+	if (jsval_method_string_is_well_formed(&region, broken, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_is_well_formed failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (result.kind != JSVAL_KIND_BOOL || result.as.boolean != 0) {
+		return generated_failf(detail, cap,
+				"expected isWellFormed result to be false");
+	}
+	if (jsval_region_promote_root(&region, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"isWellFormed",
+			12, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(isWellFormed)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -388,6 +477,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
+	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},
+	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

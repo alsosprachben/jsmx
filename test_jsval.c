@@ -283,8 +283,10 @@ static void test_method_bridge()
 	jsval_t root;
 	jsval_t city;
 	jsval_t broken;
+	jsval_t mixed;
 	jsval_t locale;
 	jsval_t upper;
+	jsval_t lower;
 	jsval_t repaired;
 	jsval_t well_formed;
 	jsmethod_error_t error;
@@ -295,12 +297,19 @@ static void test_method_bridge()
 	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"city", 4, &city) == 0);
 	assert(jsval_string_new_utf16(&region, broken_units,
 			sizeof(broken_units) / sizeof(broken_units[0]), &broken) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"Hello, WoRlD!", 13, &mixed) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"tr", 2, &locale) == 0);
 
 	assert(jsval_method_string_to_locale_upper_case(&region, city, 1, locale,
 			&upper, &error) == 0);
 	assert(jsval_is_native(upper) == 1);
 	assert_string(&region, upper, "\xC4\xB0STANBUL");
+
+	assert(jsval_method_string_to_lower_case(&region, mixed, &lower,
+			&error) == 0);
+	assert(jsval_is_native(lower) == 1);
+	assert_string(&region, lower, "hello, world!");
 
 	assert(jsval_method_string_is_well_formed(&region, broken, &well_formed,
 			&error) == 0);

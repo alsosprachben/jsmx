@@ -138,6 +138,16 @@
       "notes": "Translated against the thin jsmethod normalize layer, which rejects undefined receivers before string normalization."
     },
     {
+      "id": "test262-strings-S15.5.4.16_A2_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/S15.5.4.16_A2_T1.js",
+      "generated": "compliance/generated/strings/test262/S15.5.4.16_A2_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod toLowerCase layer. The original primitive-vs-String-object distinction is intentionally omitted at the library layer."
+    },
+    {
       "id": "test262-strings-S15.5.4.18_A1_T1",
       "suite": "strings",
       "source": "compliance/js/strings/test262/S15.5.4.18_A1_T1.js",
@@ -206,6 +216,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Translated against the thin jsmethod toLocaleUpperCase layer for the Azeri conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-returns-boolean",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/returns-boolean.js",
+      "generated": "compliance/generated/strings/test262/returns-boolean.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod isWellFormed layer. The original typeof assertion is intentionally omitted at the library layer."
     },
     {
       "id": "test262-strings-this-value-tostring-throws-toprimitive",
