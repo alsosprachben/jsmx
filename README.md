@@ -25,6 +25,7 @@ That makes semantic correctness more important than surface familiarity. New API
 - `jsstr.c`, `jsstr.h`: string and Unicode-facing helpers, including explicit `NFC`/`NFD`/`NFKC`/`NFKD` normalization APIs with NFC-preserving wrappers
 - `unicode.c`, `unicode.h`, `unicode_*.h`: generated Unicode databases, normalization-form parsing, and lookup logic
 - `mnurl.c`, `mnurl.h`: URL utilities
+- `docs/flattening-boundary.md`: the contract between `jsmx`, the translator, and any future slow path
 - `compliance/`: committed JS compliance sources, generated C fixtures, and the manifest/contract used by the generated-test workflow
 - `example/`: small example programs
 - `test/` and `test_*.c`: parser, generated-C smoke tests, and feature-specific tests
@@ -44,5 +45,7 @@ Use `make` for the standard workflow:
 - `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`, `make test_collation`: run focused feature tests
 
 Generated compliance fixtures are checked in under `compliance/generated/`. The translation workflow is an authoring step guided by `skills/jsmx-transpile-tests/`; it is not part of `make` or CI. `make test_compliance` reads `compliance/manifest.json`, compiles each listed fixture against the runtime sources, and checks the fixture exit code against the manifest contract. The string layer now supports explicit normalization-form selection for generated code while keeping `jsstr*_normalize()` as the NFC default, and the lower layers now expose exact normalization sizing helpers such as `unicode_normalize_form_workspace_len()` and `jsstr*_normalize_form_needed()` so generated C can measure first and then provide exact caller-owned memory. The `jsmethod` layer now carries that pattern upward through `jsmethod_string_normalize_measure()` and `jsmethod_string_normalize_into()`, while `jsval` mirrors it with `jsval_method_string_normalize_measure()` and `jsval_method_string_normalize()` for page-resident generated C.
+
+The boundary in [`docs/flattening-boundary.md`](docs/flattening-boundary.md) is intentional: `jsmx` should stay the flattened semantic layer, while the translator decides when to lower directly, when to emit an explicit slow path, and when to reject unsupported semantics. The compliance manifest now records that distinction separately from pass/fail execution status through a `lowering_class` field.
 
 See [the jsmn README](README-jsmn.md) for upstream parser background.

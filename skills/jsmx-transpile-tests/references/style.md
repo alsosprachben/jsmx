@@ -43,7 +43,7 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
 
 ## Unsupported Semantics
 
-If the source test depends on behavior not yet supported by `jsmx`, return `KNOWN_UNSUPPORTED` through the shared contract header.
+If the source test depends on behavior not yet supported by `jsmx`, classify it using `docs/flattening-boundary.md` and return `KNOWN_UNSUPPORTED` through the shared contract header when the current repo cannot execute it directly.
 
 Examples:
 
@@ -56,6 +56,19 @@ Examples:
 - `JSON.stringify`-specific handling of `undefined` or holes
 
 Do not approximate unsupported behavior just to preserve the source test structure.
+
+## Lowering Classification
+
+Every manifest entry should declare one `lowering_class`:
+
+- `static_pass`
+  - the fixture is expected to run entirely through current `jsmx` / `jsmethod` APIs
+- `slow_path_needed`
+  - the semantics are valid JS, but a correct lowering needs a translator-emitted dynamic slow path outside current `jsmx`
+- `unsupported`
+  - the behavior is intentionally out of scope for the current project
+
+`expected_status` is the runtime outcome for the current fixture. `lowering_class` explains where that fixture belongs relative to the flattening boundary.
 
 ## Generated File Rules
 

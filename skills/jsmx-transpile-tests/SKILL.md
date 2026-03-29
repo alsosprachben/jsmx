@@ -1,6 +1,6 @@
 ---
 name: jsmx-transpile-tests
-description: Translate real JavaScript compliance tests into self-contained C fixtures that target jsmx. Use when converting JS test-suite files into committed C tests under compliance/generated, with explicit jsmx APIs, explicit known-unsupported outcomes, and no hidden promotion or allocation semantics.
+description: Translate real JavaScript compliance tests into self-contained C fixtures that target jsmx. Use when converting JS test-suite files into committed C tests under compliance/generated, with explicit jsmx APIs, explicit lowering classification, and no hidden promotion or allocation semantics.
 ---
 
 # JSMX Transpile Tests
@@ -23,13 +23,17 @@ Read these references before generating or editing fixtures:
    - `PASS`
    - `KNOWN_UNSUPPORTED`
    - `FAIL`
-5. Add or update the corresponding `compliance/manifest.json` entry.
+5. Add or update the corresponding `compliance/manifest.json` entry, including its `lowering_class`.
 6. Build and run the generated fixture locally if possible.
 
 ## Rules
 
 - Do not invent semantics to force a pass.
 - Prefer explicit `KNOWN_UNSUPPORTED` to partial or fake implementations.
+- Set `lowering_class` using `docs/flattening-boundary.md`:
+  - `static_pass`
+  - `slow_path_needed`
+  - `unsupported`
 - Keep promotion explicit with `jsval_region_promote_root()` or `jsval_promote_in_place()`.
 - Keep all storage caller-owned; do not introduce heap allocation patterns foreign to `jsmx`.
 - Commit generated C outputs and manifest updates. Do not require live model calls in `make` or CI.

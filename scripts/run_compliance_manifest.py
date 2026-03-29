@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 
@@ -18,6 +19,12 @@ RUNTIME_SOURCES = [
     "utf8.c",
     "mnurl.c",
 ]
+
+LOWERING_CLASSES = {
+    "static_pass",
+    "slow_path_needed",
+    "unsupported",
+}
 
 
 def status_from_exit(contract, code):
@@ -67,6 +74,17 @@ def run_case(repo_root, binary, case, contract):
     return True
 
 
+def validate_case(case):
+    lowering_class = case.get("lowering_class")
+    if lowering_class not in LOWERING_CLASSES:
+        print(
+            f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
+            f"invalid lowering_class {lowering_class!r}"
+        )
+        return False
+    return True
+
+
 def main():
     repo_root = Path(__file__).resolve().parent.parent
     manifest_path = repo_root / "compliance" / "manifest.json"
@@ -78,9 +96,13 @@ def main():
     cases = manifest["cases"]
     built = 0
     passed = 0
+    class_counts = Counter()
 
     with tempfile.TemporaryDirectory(prefix="jsmx-compliance-", dir="/tmp") as tmpdir:
         for case in cases:
+            if not validate_case(case):
+                return 1
+            class_counts[case["lowering_class"]] += 1
             binary = compile_case(repo_root, tmpdir, case)
             if binary is None:
                 return 1
@@ -90,6 +112,13 @@ def main():
             passed += 1
 
     print(f"compliance cases: {passed}/{built} matched expected status")
+    print(
+        "lowering classes: "
+        + ", ".join(
+            f"{name}={class_counts.get(name, 0)}"
+            for name in ("static_pass", "slow_path_needed", "unsupported")
+        )
+    )
     return 0
 
 

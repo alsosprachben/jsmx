@@ -29,6 +29,7 @@ Each case in `compliance/manifest.json` should include:
 - `suite`: logical suite name
 - `source`: repo-relative JS source path
 - `generated`: repo-relative generated C path
+- `lowering_class`: one of `static_pass`, `slow_path_needed`, `unsupported`
 - `expected_status`: one of `pass`, `known_unsupported`
 - `notes`: short explanation when useful
 
