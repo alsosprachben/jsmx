@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/intl402-toLocaleUpperCase-special_casing_Lithuanian"
@@ -97,8 +97,10 @@ run_literal_case(const char *label, const char *input_escaped,
 {
 	uint16_t input_storage[16];
 	uint16_t expected_storage[16];
+	uint16_t locale_storage[8];
 	jsstr16_t input;
 	jsstr16_t expected;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = load_escaped_u16(&input, input_storage,
@@ -114,7 +116,14 @@ run_literal_case(const char *label, const char *input_escaped,
 		return rc;
 	}
 
-	jsstr16_toupper_locale(&input, "lt");
+	if (jsmethod_string_to_locale_upper_case(&input,
+			jsmethod_value_string_utf16(input.codeunits, input.len),
+			1, jsmethod_value_string_utf8((const uint8_t *)"lt", 2),
+			locale_storage, sizeof(locale_storage) / sizeof(locale_storage[0]),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toLocaleUpperCase failed", label);
+	}
 	return expect_equal_u16(&input, &expected, label);
 }
 
@@ -126,10 +135,12 @@ run_soft_dotted_case(const char *label, const char *base_escaped,
 	uint16_t input_storage[32];
 	uint16_t expected_storage[32];
 	uint16_t scratch_storage[16];
+	uint16_t locale_storage[8];
 	jsstr16_t base;
 	jsstr16_t input;
 	jsstr16_t expected;
 	jsstr16_t suffix;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = load_escaped_u16(&base, base_storage,
@@ -174,7 +185,14 @@ run_soft_dotted_case(const char *label, const char *base_escaped,
 				"%s: could not append expected suffix", label);
 	}
 
-	jsstr16_toupper_locale(&input, "lt");
+	if (jsmethod_string_to_locale_upper_case(&input,
+			jsmethod_value_string_utf16(input.codeunits, input.len),
+			1, jsmethod_value_string_utf8((const uint8_t *)"lt", 2),
+			locale_storage, sizeof(locale_storage) / sizeof(locale_storage[0]),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toLocaleUpperCase failed", label);
+	}
 	return expect_equal_u16(&input, &expected, label);
 }
 
@@ -223,7 +241,7 @@ main(void)
 	 *
 	 * This fixture keeps the upstream escaped code-unit corpus and exercises
 	 * the locale-conditional Lithuanian uppercasing path through
-	 * `jsstr16_toupper_locale(..., "lt")`.
+	 * `jsmethod_string_to_locale_upper_case(..., "lt")`.
 	 */
 
 	rc = run_literal_case(

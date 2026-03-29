@@ -1,26 +1,29 @@
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/S15.5.4.18_A2_T1"
 
 static int
-expect_utf8(const char *label, jsstr8_t *actual, const uint8_t *expected,
+expect_utf16(const char *label, jsstr16_t *actual, const uint16_t *expected,
 		size_t expected_len)
 {
+	size_t i;
+
 	if (actual->len != expected_len) {
 		return generated_test_fail(SUITE, CASE_NAME,
-				"%s: expected %zu bytes, got %zu",
+				"%s: expected %zu code units, got %zu",
 				label, expected_len, actual->len);
 	}
-	if (memcmp(actual->bytes, expected, expected_len) != 0) {
-		return generated_test_fail(SUITE, CASE_NAME,
-				"%s: uppercased bytes did not match expected result",
-				label);
+	for (i = 0; i < expected_len; i++) {
+		if (actual->codeunits[i] != expected[i]) {
+			return generated_test_fail(SUITE, CASE_NAME,
+					"%s: uppercased code units did not match expected result",
+					label);
+		}
 	}
 	return GENERATED_TEST_PASS;
 }
@@ -29,26 +32,30 @@ int
 main(void)
 {
 	static const uint8_t input[] = "Hello, WoRlD!";
-	static const uint8_t expected[] = "HELLO, WORLD!";
-	uint8_t storage[64];
-	jsstr8_t value;
+	static const uint16_t expected[] = {
+		'H', 'E', 'L', 'L', 'O', ',', ' ', 'W', 'O', 'R', 'L', 'D', '!',
+	};
+	uint16_t storage[64];
+	jsstr16_t value;
+	jsmethod_error_t error;
 
 	/*
 	 * Generated from test262:
 	 * test/built-ins/String/prototype/toUpperCase/S15.5.4.18_A2_T1.js
 	 *
 	 * The original JS file also distinguishes primitive string return values
-	 * from String objects. At the `jsstr8` layer, the relevant preserved
-	 * semantics are the uppercased string bytes themselves.
+	 * from String objects. At the `jsmethod` layer, the preserved semantics are
+	 * receiver coercion plus the uppercased string result itself.
 	 */
 
-	jsstr8_init_from_buf(&value, (const char *)storage, sizeof(storage));
-	if (jsstr8_set_from_utf8(&value, input, sizeof(input) - 1) != sizeof(input) - 1) {
+	jsstr16_init_from_buf(&value, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_to_upper_case(&value,
+			jsmethod_value_string_utf8(input, sizeof(input) - 1),
+			&error) < 0) {
 		return generated_test_fail(SUITE, CASE_NAME,
-				"failed to initialize UTF-8 source bytes");
+				"failed to uppercase ASCII receiver through jsmethod");
 	}
 
-	jsstr8_toupper(&value);
-	return expect_utf8("basic ASCII uppercase", &value,
-			expected, sizeof(expected) - 1);
+	return expect_utf16("basic ASCII uppercase", &value,
+			expected, sizeof(expected) / sizeof(expected[0]));
 }

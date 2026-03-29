@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/intl402-toLocaleLowerCase-special_casing_Lithuanian"
@@ -101,8 +101,10 @@ run_case(const lower_case_t *tc)
 {
 	uint16_t input_storage[24];
 	uint16_t expected_storage[24];
+	uint16_t locale_storage[8];
 	jsstr16_t input;
 	jsstr16_t expected;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = load_escaped_u16(&input, input_storage,
@@ -118,7 +120,14 @@ run_case(const lower_case_t *tc)
 		return rc;
 	}
 
-	jsstr16_tolower_locale(&input, "lt");
+	if (jsmethod_string_to_locale_lower_case(&input,
+			jsmethod_value_string_utf16(input.codeunits, input.len),
+			1, jsmethod_value_string_utf8((const uint8_t *)"lt", 2),
+			locale_storage, sizeof(locale_storage) / sizeof(locale_storage[0]),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toLocaleLowerCase failed", tc->label);
+	}
 	return expect_equal_u16(&input, &expected, tc->label);
 }
 
@@ -161,7 +170,7 @@ main(void)
 	 * test/intl402/String/prototype/toLocaleLowerCase/special_casing_Lithuanian.js
 	 *
 	 * This fixture exercises the Lithuanian locale-conditional lowercase path
-	 * through `jsstr16_tolower_locale(..., "lt")`.
+	 * through `jsmethod_string_to_locale_lower_case(..., "lt")`.
 	 */
 
 	for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {

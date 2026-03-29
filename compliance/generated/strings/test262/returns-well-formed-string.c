@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/returns-well-formed-string"
@@ -56,6 +56,7 @@ run_to_well_formed_case(const char *label, const uint16_t *input,
 {
 	uint16_t storage[16];
 	jsstr16_t value;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = set_utf16(&value, storage, sizeof(storage) / sizeof(storage[0]),
@@ -64,7 +65,12 @@ run_to_well_formed_case(const char *label, const uint16_t *input,
 		return rc;
 	}
 
-	jsstr16_to_well_formed(&value);
+	if (jsmethod_string_to_well_formed(&value,
+			jsmethod_value_string_utf16(input, input_len),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toWellFormed failed", label);
+	}
 	return expect_utf16(label, &value, expected, expected_len);
 }
 
@@ -76,6 +82,7 @@ run_sliced_surrogate_case(const char *label, size_t start_i, ssize_t stop_i,
 	uint16_t storage[4];
 	jsstr16_t whole;
 	jsstr16_t slice;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = set_utf16(&whole, storage, sizeof(storage) / sizeof(storage[0]),
@@ -85,7 +92,12 @@ run_sliced_surrogate_case(const char *label, size_t start_i, ssize_t stop_i,
 	}
 
 	jsstr16_u16_slice(&slice, &whole, start_i, stop_i);
-	jsstr16_to_well_formed(&slice);
+	if (jsmethod_string_to_well_formed(&slice,
+			jsmethod_value_string_utf16(slice.codeunits, slice.len),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toWellFormed failed for slice", label);
+	}
 	return expect_utf16(label, &slice, expected, expected_len);
 }
 
@@ -110,8 +122,8 @@ main(void)
 	 * test/built-ins/String/prototype/toWellFormed/returns-well-formed-string.js
 	 *
 	 * The original JS file also checks `typeof String.prototype.toWellFormed`.
-	 * That prototype-shape assertion is outside the `jsstr16` semantic surface,
-	 * so this fixture keeps only the string-behavior cases.
+	 * That prototype-shape assertion is outside the thin method layer here, so
+	 * this fixture keeps only the receiver-coercion and string-behavior cases.
 	 */
 
 	rc = run_to_well_formed_case(

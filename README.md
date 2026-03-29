@@ -21,6 +21,7 @@ That makes semantic correctness more important than surface familiarity. New API
 
 - `jsmn.c`, `jsmn.h`: parser core and token model
 - `jsval.c`, `jsval.h`: versioned page-set storage with an in-page root handle, plus native and JSON-backed JS value/object/array representations, explicit promotion helpers for generated C, and JSON emission for JSON-compatible values
+- `jsmethod.c`, `jsmethod.h`: thin JS-method helpers layered over `jsstr`/`unicode` for receiver coercion, Symbol rejection, typed method errors, and `String.prototype.normalize`/case-conversion/`toWellFormed`-style behavior
 - `jsstr.c`, `jsstr.h`: string and Unicode-facing helpers, including explicit `NFC`/`NFD`/`NFKC`/`NFKD` normalization APIs with NFC-preserving wrappers
 - `unicode.c`, `unicode.h`, `unicode_*.h`: generated Unicode databases, normalization-form parsing, and lookup logic
 - `mnurl.c`, `mnurl.h`: URL utilities
@@ -37,10 +38,11 @@ Use `make` for the standard workflow:
 - `make`: build the library, examples, and tests
 - `make test`: run the parser test matrix
 - `make test_jsval`: run the page-resident value/object storage tests
+- `make test_jsmethod`: run the thin JS-method coercion and normalize tests
 - `make test_codegen`: run the generated-C smoke harness and formalized string compliance slice
 - `make test_compliance`: compile and run committed generated compliance fixtures listed in `compliance/manifest.json`
 - `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`, `make test_collation`: run focused feature tests
 
-Generated compliance fixtures are checked in under `compliance/generated/`. The translation workflow is an authoring step guided by `skills/jsmx-transpile-tests/`; it is not part of `make` or CI. `make test_compliance` reads `compliance/manifest.json`, compiles each listed fixture against the runtime sources, and checks the fixture exit code against the manifest contract. The string layer now supports explicit normalization-form selection for generated code while keeping `jsstr*_normalize()` as the NFC default.
+Generated compliance fixtures are checked in under `compliance/generated/`. The translation workflow is an authoring step guided by `skills/jsmx-transpile-tests/`; it is not part of `make` or CI. `make test_compliance` reads `compliance/manifest.json`, compiles each listed fixture against the runtime sources, and checks the fixture exit code against the manifest contract. The string layer now supports explicit normalization-form selection for generated code while keeping `jsstr*_normalize()` as the NFC default, and the thin `jsmethod` layer covers the JS-facing string-method boundary where receiver/form coercion, locale-tag coercion, and Symbol rejection matter.
 
 See [the jsmn README](README-jsmn.md) for upstream parser background.

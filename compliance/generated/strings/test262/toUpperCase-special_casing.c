@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/toUpperCase-special_casing"
@@ -103,6 +103,7 @@ run_special_case(const special_case_t *tc)
 	uint16_t expected_storage[16];
 	jsstr16_t input;
 	jsstr16_t expected;
+	jsmethod_error_t error;
 	int rc;
 
 	rc = load_escaped_u16(&input, input_storage,
@@ -118,7 +119,12 @@ run_special_case(const special_case_t *tc)
 		return rc;
 	}
 
-	jsstr16_toupper(&input);
+	if (jsmethod_string_to_upper_case(&input,
+			jsmethod_value_string_utf16(input.codeunits, input.len),
+			&error) < 0) {
+		return generated_test_fail(SUITE, CASE_NAME,
+				"%s: jsmethod toUpperCase failed", tc->label);
+	}
 	return expect_equal_u16(&input, &expected, tc->label);
 }
 
@@ -238,7 +244,7 @@ main(void)
 	 * test/built-ins/String/prototype/toUpperCase/special_casing.js
 	 *
 	 * This fixture keeps the upstream escaped code-unit inputs and expected
-	 * outputs, then exercises `jsstr16_toupper()` directly over the same
+	 * outputs, then exercises `jsmethod_string_to_upper_case()` over the same
 	 * locale-insensitive Unicode special-casing surface.
 	 */
 

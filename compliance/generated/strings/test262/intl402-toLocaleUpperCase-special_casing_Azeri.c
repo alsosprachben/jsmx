@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "compliance/generated/test_contract.h"
-#include "jsstr.h"
+#include "jsmethod.h"
 
 #define SUITE "strings"
 #define CASE_NAME "test262/intl402-toLocaleUpperCase-special_casing_Azeri"
@@ -43,17 +43,20 @@ static int
 run_case(const az_case_t *tc)
 {
 	uint16_t storage[8];
+	uint16_t locale_storage[8];
 	jsstr16_t value;
-	size_t written;
+	jsmethod_error_t error;
 
 	jsstr16_init_from_buf(&value, (const char *)storage, sizeof(storage));
-	written = jsstr16_set_from_utf16(&value, tc->input, tc->input_len);
-	if (written != tc->input_len) {
+	if (jsmethod_string_to_locale_upper_case(&value,
+			jsmethod_value_string_utf16(tc->input, tc->input_len),
+			1, jsmethod_value_string_utf8((const uint8_t *)"az", 2),
+			locale_storage, sizeof(locale_storage) / sizeof(locale_storage[0]),
+			&error) < 0) {
 		return generated_test_fail(SUITE, CASE_NAME,
-				"%s: failed to initialize UTF-16 source", tc->label);
+				"%s: jsmethod toLocaleUpperCase failed", tc->label);
 	}
 
-	jsstr16_toupper_locale(&value, "az");
 	return expect_u16(&value, tc->expected, tc->expected_len, tc->label);
 }
 
@@ -101,7 +104,7 @@ main(void)
 	 * test/intl402/String/prototype/toLocaleUpperCase/special_casing_Azeri.js
 	 *
 	 * This fixture exercises the locale-conditional Azeri uppercasing path
-	 * through `jsstr16_toupper_locale(..., "az")`.
+	 * through `jsmethod_string_to_locale_upper_case(..., "az")`.
 	 */
 
 	for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {

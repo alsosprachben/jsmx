@@ -12,6 +12,7 @@ from pathlib import Path
 RUNTIME_SOURCES = [
     "jsmn.c",
     "jsval.c",
+    "jsmethod.c",
     "jsstr.c",
     "unicode.c",
     "utf8.c",
