@@ -536,6 +536,100 @@ static void test_value_semantics(void)
 	assert_string(&region, sum, "11");
 }
 
+static void test_json_backed_value_parity(void)
+{
+	static const char json[] =
+		"{\"num\":1,\"flag\":true,\"off\":false,\"text\":\"2\",\"nothing\":null,\"obj\":{},\"obj2\":{},\"arr\":[],\"arr2\":[]}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t num;
+	jsval_t flag;
+	jsval_t off;
+	jsval_t text;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t obj_again;
+	jsval_t obj2;
+	jsval_t arr;
+	jsval_t arr_again;
+	jsval_t arr2;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t native_obj_other;
+	jsval_t native_arr;
+	jsval_t native_arr_other;
+	jsval_t sum;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 48,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"off", 3,
+			&off) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj_again) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj2", 4,
+			&obj2) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr_again) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr2", 4,
+			&arr2) == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&native_text) == 0);
+	assert(jsval_object_new(&region, 0, &native_obj) == 0);
+	assert(jsval_object_new(&region, 0, &native_obj_other) == 0);
+	assert(jsval_array_new(&region, 0, &native_arr) == 0);
+	assert(jsval_array_new(&region, 0, &native_arr_other) == 0);
+
+	assert(jsval_truthy(&region, num) == jsval_truthy(&region, jsval_number(1.0)));
+	assert(jsval_truthy(&region, flag) == jsval_truthy(&region, jsval_bool(1)));
+	assert(jsval_truthy(&region, off) == jsval_truthy(&region, jsval_bool(0)));
+	assert(jsval_truthy(&region, text) == jsval_truthy(&region, native_text));
+	assert(jsval_truthy(&region, nothing) == jsval_truthy(&region, jsval_null()));
+
+	assert(jsval_strict_eq(&region, num, jsval_number(1.0)) == 1);
+	assert(jsval_strict_eq(&region, flag, jsval_bool(1)) == 1);
+	assert(jsval_strict_eq(&region, off, jsval_bool(0)) == 1);
+	assert(jsval_strict_eq(&region, text, native_text) == 1);
+	assert(jsval_strict_eq(&region, nothing, jsval_null()) == 1);
+
+	assert(jsval_add(&region, text, jsval_number(1.0), &sum) == 0);
+	assert_string(&region, sum, "21");
+	assert(jsval_add(&region, flag, jsval_number(1.0), &sum) == 0);
+	assert(sum.kind == JSVAL_KIND_NUMBER);
+	assert(sum.as.number == 2.0);
+	assert(jsval_add(&region, nothing, jsval_number(1.0), &sum) == 0);
+	assert(sum.kind == JSVAL_KIND_NUMBER);
+	assert(sum.as.number == 1.0);
+
+	assert(jsval_truthy(&region, obj) == 1);
+	assert(jsval_truthy(&region, arr) == 1);
+	assert(jsval_truthy(&region, native_obj) == 1);
+	assert(jsval_truthy(&region, native_arr) == 1);
+
+	assert(jsval_strict_eq(&region, obj, obj_again) == 1);
+	assert(jsval_strict_eq(&region, obj, obj2) == 0);
+	assert(jsval_strict_eq(&region, arr, arr_again) == 1);
+	assert(jsval_strict_eq(&region, arr, arr2) == 0);
+	assert(jsval_strict_eq(&region, native_obj, native_obj) == 1);
+	assert(jsval_strict_eq(&region, native_obj, native_obj_other) == 0);
+	assert(jsval_strict_eq(&region, native_arr, native_arr) == 1);
+	assert(jsval_strict_eq(&region, native_arr, native_arr_other) == 0);
+}
+
 static void test_shallow_planned_promotion(void)
 {
 	static const char json[] =
@@ -716,6 +810,7 @@ int main(void)
 {
 	test_native_storage();
 	test_value_semantics();
+	test_json_backed_value_parity();
 	test_json_storage();
 	test_json_root_rebase();
 	test_json_mutation_requires_promotion();

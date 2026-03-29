@@ -318,6 +318,36 @@
       "notes": "Repo-authored idiomatic strict-equality coverage for primitive jsval semantics that are cleaner to express directly than through the wrapper-heavy legacy upstream files."
     },
     {
+      "id": "test262-values-S12.5_A1_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S12.5_A1_T2.js",
+      "generated": "compliance/generated/values/test262/S12.5_A1_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_truthy for object and array truthiness through direct native container operands."
+    },
+    {
+      "id": "jsmx-values-json-backed-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/json-backed-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/json-backed-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic parity fixture for truthiness, strict equality, and supported addition on parsed JSON-backed primitives versus equivalent native values."
+    },
+    {
+      "id": "jsmx-values-container-identity-truthiness",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/container-identity-truthiness.js",
+      "generated": "compliance/generated/values/jsmx/container-identity-truthiness.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for object and array truthiness plus same-vs-different identity across native and JSON-backed containers."
+    },
+    {
       "id": "jsmx-objects-json-promote-mutate-emit",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-promote-mutate-emit.js",

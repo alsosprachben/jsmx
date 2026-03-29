@@ -297,6 +297,144 @@ static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
 			detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_json_value_parity(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"num\":1,\"flag\":true,\"off\":false,\"text\":\"2\",\"nothing\":null,\"obj\":{},\"obj2\":{},\"arr\":[],\"arr2\":[]}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t num;
+	jsval_t flag;
+	jsval_t off;
+	jsval_t text;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t obj_again;
+	jsval_t obj2;
+	jsval_t arr;
+	jsval_t arr_again;
+	jsval_t arr2;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t native_obj_other;
+	jsval_t native_arr;
+	jsval_t native_arr_other;
+	jsval_t sum;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 48, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(num)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(flag)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"off", 3,
+			&off) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(off)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(nothing)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) < 0 || jsval_object_get_utf8(&region, root,
+			(const uint8_t *)"obj", 3, &obj_again) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"obj2", 4,
+			&obj2) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(obj)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) < 0 || jsval_object_get_utf8(&region, root,
+			(const uint8_t *)"arr", 3, &arr_again) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"arr2", 4,
+			&arr2) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(arr)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&native_text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"2\")");
+	}
+	if (jsval_object_new(&region, 0, &native_obj) < 0
+			|| jsval_object_new(&region, 0, &native_obj_other) < 0
+			|| jsval_array_new(&region, 0, &native_arr) < 0
+			|| jsval_array_new(&region, 0, &native_arr_other) < 0) {
+		return generated_fail_errno(detail, cap, "jsval native container allocation");
+	}
+
+	if (jsval_truthy(&region, num) != jsval_truthy(&region, jsval_number(1.0))
+			|| jsval_truthy(&region, flag) != jsval_truthy(&region, jsval_bool(1))
+			|| jsval_truthy(&region, off) != jsval_truthy(&region, jsval_bool(0))
+			|| jsval_truthy(&region, text) != jsval_truthy(&region, native_text)
+			|| jsval_truthy(&region, nothing) != jsval_truthy(&region, jsval_null())) {
+		return generated_failf(detail, cap,
+				"expected parsed primitive truthiness to match native values");
+	}
+	if (jsval_strict_eq(&region, num, jsval_number(1.0)) != 1
+			|| jsval_strict_eq(&region, flag, jsval_bool(1)) != 1
+			|| jsval_strict_eq(&region, off, jsval_bool(0)) != 1
+			|| jsval_strict_eq(&region, text, native_text) != 1
+			|| jsval_strict_eq(&region, nothing, jsval_null()) != 1) {
+		return generated_failf(detail, cap,
+				"expected parsed primitive strict equality to match native values");
+	}
+
+	if (jsval_add(&region, text, jsval_number(1.0), &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(text, 1)");
+	}
+	status = generated_expect_string(&region, sum, (const uint8_t *)"21", 2,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_add(&region, flag, jsval_number(1.0), &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(flag, 1)");
+	}
+	status = generated_expect_number(&region, sum, 2.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_add(&region, nothing, jsval_number(1.0), &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(null, 1)");
+	}
+	status = generated_expect_number(&region, sum, 1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, obj) != 1 || jsval_truthy(&region, arr) != 1
+			|| jsval_truthy(&region, native_obj) != 1
+			|| jsval_truthy(&region, native_arr) != 1) {
+		return generated_failf(detail, cap,
+				"expected objects and arrays to stay truthy");
+	}
+	if (jsval_strict_eq(&region, obj, obj_again) != 1
+			|| jsval_strict_eq(&region, obj, obj2) != 0
+			|| jsval_strict_eq(&region, arr, arr_again) != 1
+			|| jsval_strict_eq(&region, arr, arr2) != 0
+			|| jsval_strict_eq(&region, native_obj, native_obj) != 1
+			|| jsval_strict_eq(&region, native_obj, native_obj_other) != 0
+			|| jsval_strict_eq(&region, native_arr, native_arr) != 1
+			|| jsval_strict_eq(&region, native_arr, native_arr_other) != 0) {
+		return generated_failf(detail, cap,
+				"unexpected container identity result");
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_shallow_planned_promotion(
 		char *detail, size_t cap)
 {
@@ -976,6 +1114,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
+	{"smoke", "jsval_json_value_parity", generated_smoke_jsval_json_value_parity},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
 	{"smoke", "jsval_lookup_capacity_contracts", generated_smoke_jsval_lookup_capacity_contracts},
