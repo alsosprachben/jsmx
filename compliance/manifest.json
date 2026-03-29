@@ -346,6 +346,26 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for push and explicit length writes through the native jsval array helpers."
+    },
+    {
+      "id": "jsmx-objects-json-shallow-object-add-property",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-shallow-object-add-property.js",
+      "generated": "compliance/generated/objects/jsmx/json-shallow-object-add-property.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic shallow-promotion fixture for promoting only the parsed root object with explicit property capacity while leaving child values JSON-backed."
+    },
+    {
+      "id": "jsmx-objects-json-shallow-child-array-growth",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-shallow-child-array-growth.js",
+      "generated": "compliance/generated/objects/jsmx/json-shallow-child-array-growth.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic shallow-promotion fixture for selectively promoting a parsed child array with explicit dense capacity and writing it back into the native parent slot before mutation."
     }
   ]
 }

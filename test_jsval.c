@@ -536,6 +536,100 @@ static void test_value_semantics(void)
 	assert_string(&region, sum, "11");
 }
 
+static void test_shallow_planned_promotion(void)
+{
+	static const char json[] =
+		"{\"profile\":{\"name\":\"Ada\"},\"scores\":[1,2],\"status\":\"ok\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t profile;
+	jsval_t status;
+	jsval_t scores;
+	jsval_t same_root;
+	jsval_t same_scores;
+	jsval_t got;
+	size_t bytes;
+	size_t before_used;
+	int has;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 32,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7,
+			&profile) == 0);
+	assert(jsval_is_json_backed(profile) == 1);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"scores", 6,
+			&scores) == 0);
+	assert(jsval_is_json_backed(scores) == 1);
+
+	errno = 0;
+	assert(jsval_promote_object_shallow_measure(&region, root, 2, &bytes) < 0);
+	assert(errno == ENOBUFS);
+
+	before_used = region.used;
+	assert(jsval_promote_object_shallow_measure(&region, root, 4, &bytes) == 0);
+	assert(bytes > 0);
+	assert(jsval_promote_object_shallow_in_place(&region, &root, 4) == 0);
+	assert(jsval_is_native(root) == 1);
+	assert(region.used == before_used + bytes);
+	assert(jsval_region_set_root(&region, root) == 0);
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7,
+			&profile) == 0);
+	assert(jsval_is_json_backed(profile) == 1);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"status", 6,
+			&status) == 0);
+	assert(jsval_is_json_backed(status) == 1);
+	assert_string(&region, status, "ok");
+	assert(jsval_object_set_utf8(&region, root, (const uint8_t *)"ready", 5,
+			jsval_bool(1)) == 0);
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"ready", 5,
+			&has) == 0);
+	assert(has == 1);
+
+	assert(jsval_promote_object_shallow_measure(&region, root, 4, &bytes) == 0);
+	assert(bytes == 0);
+	assert(jsval_promote_object_shallow(&region, root, 4, &same_root) == 0);
+	assert(same_root.off == root.off);
+	errno = 0;
+	assert(jsval_promote_object_shallow_measure(&region, root, 5, &bytes) < 0);
+	assert(errno == ENOBUFS);
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"scores", 6,
+			&scores) == 0);
+	assert(jsval_is_json_backed(scores) == 1);
+	errno = 0;
+	assert(jsval_promote_array_shallow_measure(&region, scores, 1, &bytes) < 0);
+	assert(errno == ENOBUFS);
+
+	before_used = region.used;
+	assert(jsval_promote_array_shallow_measure(&region, scores, 4, &bytes) == 0);
+	assert(bytes > 0);
+	assert(jsval_promote_array_shallow_in_place(&region, &scores, 4) == 0);
+	assert(jsval_is_native(scores) == 1);
+	assert(region.used == before_used + bytes);
+	assert(jsval_object_set_utf8(&region, root, (const uint8_t *)"scores", 6,
+			scores) == 0);
+
+	assert(jsval_array_push(&region, scores, jsval_number(3.0)) == 0);
+	assert(jsval_array_set_length(&region, scores, 4) == 0);
+	assert(jsval_array_get(&region, scores, 3, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_set(&region, scores, 3, jsval_number(4.0)) == 0);
+
+	assert(jsval_promote_array_shallow_measure(&region, scores, 4, &bytes) == 0);
+	assert(bytes == 0);
+	assert(jsval_promote_array_shallow(&region, scores, 4, &same_scores) == 0);
+	assert(same_scores.off == scores.off);
+	errno = 0;
+	assert(jsval_promote_array_shallow_measure(&region, scores, 5, &bytes) < 0);
+	assert(errno == ENOBUFS);
+
+	assert_json(&region, root,
+			"{\"profile\":{\"name\":\"Ada\"},\"scores\":[1,2,3,4],\"status\":\"ok\",\"ready\":true}");
+}
+
 int main(void)
 {
 	test_native_storage();
@@ -548,6 +642,7 @@ int main(void)
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();
+	test_shallow_planned_promotion();
 	puts("test_jsval: ok");
 	return 0;
 }

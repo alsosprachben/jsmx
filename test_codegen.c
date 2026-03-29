@@ -297,6 +297,121 @@ static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
 			detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_shallow_planned_promotion(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"profile\":{\"name\":\"Ada\"},\"scores\":[1,2],\"status\":\"ok\"}";
+	static const uint8_t expected_json[] =
+		"{\"profile\":{\"name\":\"Ada\"},\"scores\":[1,2,3,4],\"status\":\"ok\",\"ready\":true}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t profile;
+	jsval_t scores;
+	jsval_t got;
+	size_t bytes;
+	size_t before_used;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7,
+			&profile) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(profile)");
+	}
+	if (!jsval_is_json_backed(profile)) {
+		return generated_failf(detail, cap,
+				"expected parsed child object to remain JSON-backed");
+	}
+
+	before_used = region.used;
+	if (jsval_promote_object_shallow_measure(&region, root, 4, &bytes) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_measure(root)");
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 4) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(root)");
+	}
+	if (!jsval_is_native(root)) {
+		return generated_failf(detail, cap,
+				"expected shallow-promoted root to be native");
+	}
+	if (region.used != before_used + bytes) {
+		return generated_failf(detail, cap,
+				"unexpected byte count from shallow object promotion");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7,
+			&profile) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(profile after root promote)");
+	}
+	if (!jsval_is_json_backed(profile)) {
+		return generated_failf(detail, cap,
+				"expected shallow-promoted root to keep child object JSON-backed");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"ready", 5,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(ready)");
+	}
+
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"scores", 6,
+			&scores) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(scores)");
+	}
+	if (!jsval_is_json_backed(scores)) {
+		return generated_failf(detail, cap,
+				"expected child array to stay JSON-backed until explicitly promoted");
+	}
+	before_used = region.used;
+	if (jsval_promote_array_shallow_measure(&region, scores, 4, &bytes) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_array_shallow_measure(scores)");
+	}
+	if (jsval_promote_array_shallow_in_place(&region, &scores, 4) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_array_shallow_in_place(scores)");
+	}
+	if (!jsval_is_native(scores)) {
+		return generated_failf(detail, cap,
+				"expected shallow-promoted scores array to be native");
+	}
+	if (region.used != before_used + bytes) {
+		return generated_failf(detail, cap,
+				"unexpected byte count from shallow array promotion");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"scores", 6,
+			scores) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(scores)");
+	}
+	if (jsval_array_push(&region, scores, jsval_number(3.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(scores)");
+	}
+	if (jsval_array_set_length(&region, scores, 4) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_set_length(scores)");
+	}
+	if (jsval_array_get(&region, scores, 3, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(scores[3])");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected grown dense slot to read back as undefined");
+	}
+	if (jsval_array_set(&region, scores, 3, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(scores[3])");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_native_containers(char *detail,
 		size_t cap)
 {
@@ -700,6 +815,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
+	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},

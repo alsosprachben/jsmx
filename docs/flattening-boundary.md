@@ -32,6 +32,7 @@ It is responsible for:
 - choosing native vs JSON-backed storage
 - measuring and providing exact scratch/result storage
 - emitting explicit promotion on first semantic mutation
+- choosing final native object/array capacities up front rather than relying on clone-to-bigger repair paths
 - selecting specialized helpers when a direct lowering exists
 - routing non-flattenable behavior to a separate slow path
 
@@ -62,6 +63,6 @@ If the translator can compute the needed storage, select the target helper, and 
 
 If correct behavior depends on dynamic object semantics, hidden hooks, or general runtime dispatch, the translator should emit a slow path instead of teaching `jsval` to become a dynamic object system.
 
-Dense native arrays fit that flattened model. Hole-preserving `delete arr[i]`, sparse-index behavior, and other semantics that depend on distinguishing absent elements from explicit `undefined` values remain outside the current slice.
+Dense native arrays fit that flattened model. So do shallow promotion patterns where the translator promotes only the object or array that will mutate and leaves surrounding child values JSON-backed until they are explicitly selected. Hole-preserving `delete arr[i]`, sparse-index behavior, and other semantics that depend on distinguishing absent elements from explicit `undefined` values remain outside the current slice.
 
 When the corpus includes those cases, prefer an idiomatic slow-path translation that still passes over a boundary-only `KNOWN_UNSUPPORTED` placeholder, unless the required slow-path contract has not been designed yet.

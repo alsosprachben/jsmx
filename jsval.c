@@ -110,6 +110,32 @@ static int jsval_region_reserve(jsval_region_t *region, size_t len, size_t align
 	return 0;
 }
 
+static int jsval_region_measure_reserve(const jsval_region_t *region,
+		size_t *used_ptr, size_t len, size_t align)
+{
+	size_t start;
+	size_t stop;
+
+	if (!jsval_region_valid(region) || used_ptr == NULL || align == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	start = jsval_align_up(*used_ptr, align);
+	stop = start + len;
+	if (stop < start || stop > region->pages->total_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (stop > UINT32_MAX) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	*used_ptr = stop;
+	return 0;
+}
+
 static jsval_native_string_t *jsval_native_string(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_STRING) {
@@ -1068,6 +1094,25 @@ static int jsval_string_reserve_utf16(jsval_region_t *region, size_t cap,
 		*string_ptr = string;
 	}
 	return 0;
+}
+
+static int jsval_string_measure_utf16(const jsval_region_t *region,
+		size_t *used_ptr, size_t cap)
+{
+	size_t units_cap = cap > 0 ? cap : 1;
+	size_t bytes_len;
+
+	if (used_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (units_cap > (SIZE_MAX - sizeof(jsval_native_string_t)) / sizeof(uint16_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	bytes_len = sizeof(jsval_native_string_t) + units_cap * sizeof(uint16_t);
+	return jsval_region_measure_reserve(region, used_ptr, bytes_len, JSVAL_ALIGN);
 }
 
 static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *len_ptr)
@@ -2508,6 +2553,344 @@ int jsval_method_string_is_well_formed(jsval_region_t *region,
 
 	*value_ptr = jsval_bool(is_well_formed);
 	return 0;
+}
+
+int jsval_promote_object_shallow_measure(jsval_region_t *region, jsval_t object,
+		size_t prop_cap, size_t *bytes_ptr)
+{
+	size_t start_used;
+	size_t used;
+	size_t len;
+
+	if (!jsval_region_valid(region) || bytes_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	len = jsval_object_size(region, object);
+	if (len > prop_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (prop_cap > native->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+
+		*bytes_ptr = 0;
+		return 0;
+	}
+	if (object.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (prop_cap > (SIZE_MAX - sizeof(jsval_native_object_t)) /
+			sizeof(jsval_native_prop_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	used = region->pages->used_len;
+	start_used = used;
+	if (jsval_region_measure_reserve(region, &used,
+			sizeof(jsval_native_object_t) + prop_cap * sizeof(jsval_native_prop_t),
+			JSVAL_ALIGN) < 0) {
+		return -1;
+	}
+
+	{
+		int cursor;
+		unsigned int i;
+		jsval_json_doc_t *doc = jsval_json_doc(region, object);
+		jsmntok_t *tokens = jsval_json_doc_tokens(region, doc);
+
+		cursor = (int)object.as.index + 1;
+		for (i = 0; i < (unsigned int)tokens[object.as.index].size; i++) {
+			int key_index = cursor;
+			int value_index = jsval_json_next(region, doc, key_index);
+			size_t key_utf16_len;
+
+			if (value_index < 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_json_string_copy_utf16(region, doc, (uint32_t)key_index, NULL,
+					0, &key_utf16_len) < 0) {
+				return -1;
+			}
+			if (jsval_string_measure_utf16(region, &used, key_utf16_len) < 0) {
+				return -1;
+			}
+
+			cursor = jsval_json_next(region, doc, value_index);
+			if (cursor < 0) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+	}
+
+	*bytes_ptr = used - start_used;
+	return 0;
+}
+
+int jsval_promote_object_shallow(jsval_region_t *region, jsval_t object,
+		size_t prop_cap, jsval_t *value_ptr)
+{
+	size_t len;
+
+	if (!jsval_region_valid(region) || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	len = jsval_object_size(region, object);
+	if (len > prop_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (prop_cap > native->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+
+		*value_ptr = object;
+		return 0;
+	}
+	if (object.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	{
+		size_t needed;
+		int cursor;
+		unsigned int i;
+		jsval_t out;
+		jsval_json_doc_t *doc = jsval_json_doc(region, object);
+		jsmntok_t *tokens = jsval_json_doc_tokens(region, doc);
+
+		if (jsval_promote_object_shallow_measure(region, object, prop_cap,
+				&needed) < 0) {
+			return -1;
+		}
+		(void)needed;
+		if (jsval_object_new(region, prop_cap, &out) < 0) {
+			return -1;
+		}
+
+		cursor = (int)object.as.index + 1;
+		for (i = 0; i < (unsigned int)tokens[object.as.index].size; i++) {
+			int key_index = cursor;
+			int value_index = jsval_json_next(region, doc, key_index);
+			size_t key_len;
+			jsval_t child;
+
+			if (value_index < 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_json_string_copy_utf8_internal(region, doc,
+					(uint32_t)key_index, NULL, 0, &key_len) < 0) {
+				return -1;
+			}
+
+			{
+				uint8_t key_buf[key_len ? key_len : 1];
+
+				if (jsval_json_string_copy_utf8_internal(region, doc,
+						(uint32_t)key_index, key_buf, key_len, NULL) < 0) {
+					return -1;
+				}
+				child = jsval_json_value(region, object, (uint32_t)value_index);
+				if (jsval_object_set_utf8(region, out, key_buf, key_len, child) < 0) {
+					return -1;
+				}
+			}
+
+			cursor = jsval_json_next(region, doc, value_index);
+			if (cursor < 0) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+
+		*value_ptr = out;
+		return 0;
+	}
+}
+
+int jsval_promote_object_shallow_in_place(jsval_region_t *region,
+		jsval_t *value_ptr, size_t prop_cap)
+{
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_promote_object_shallow(region, *value_ptr, prop_cap, value_ptr);
+}
+
+int jsval_promote_array_shallow_measure(jsval_region_t *region, jsval_t array,
+		size_t elem_cap, size_t *bytes_ptr)
+{
+	size_t len;
+	size_t used;
+	size_t start_used;
+
+	if (!jsval_region_valid(region) || bytes_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	len = jsval_array_length(region, array);
+	if (len > elem_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (array.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_array_t *native = jsval_native_array(region, array);
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (elem_cap > native->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+
+		*bytes_ptr = 0;
+		return 0;
+	}
+	if (array.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (elem_cap > (SIZE_MAX - sizeof(jsval_native_array_t)) / sizeof(jsval_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	used = region->pages->used_len;
+	start_used = used;
+	if (jsval_region_measure_reserve(region, &used,
+			sizeof(jsval_native_array_t) + elem_cap * sizeof(jsval_t),
+			JSVAL_ALIGN) < 0) {
+		return -1;
+	}
+	*bytes_ptr = used - start_used;
+	return 0;
+}
+
+int jsval_promote_array_shallow(jsval_region_t *region, jsval_t array,
+		size_t elem_cap, jsval_t *value_ptr)
+{
+	size_t len;
+
+	if (!jsval_region_valid(region) || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	len = jsval_array_length(region, array);
+	if (len > elem_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (array.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_array_t *native = jsval_native_array(region, array);
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (elem_cap > native->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+
+		*value_ptr = array;
+		return 0;
+	}
+	if (array.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	{
+		size_t needed;
+		size_t i;
+		jsval_t out;
+
+		if (jsval_promote_array_shallow_measure(region, array, elem_cap,
+				&needed) < 0) {
+			return -1;
+		}
+		(void)needed;
+		if (jsval_array_new(region, elem_cap, &out) < 0) {
+			return -1;
+		}
+		for (i = 0; i < len; i++) {
+			jsval_t child;
+
+			if (jsval_array_get(region, array, i, &child) < 0) {
+				return -1;
+			}
+			if (jsval_array_set(region, out, i, child) < 0) {
+				return -1;
+			}
+		}
+
+		*value_ptr = out;
+		return 0;
+	}
+}
+
+int jsval_promote_array_shallow_in_place(jsval_region_t *region,
+		jsval_t *value_ptr, size_t elem_cap)
+{
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_promote_array_shallow(region, *value_ptr, elem_cap, value_ptr);
 }
 
 int jsval_promote(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)

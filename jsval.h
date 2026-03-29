@@ -81,6 +81,12 @@ int jsval_json_parse(jsval_region_t *region, const uint8_t *json, size_t len, un
 int jsval_promote(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
 int jsval_promote_in_place(jsval_region_t *region, jsval_t *value_ptr);
 int jsval_region_promote_root(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_promote_object_shallow_measure(jsval_region_t *region, jsval_t object, size_t prop_cap, size_t *bytes_ptr);
+int jsval_promote_object_shallow(jsval_region_t *region, jsval_t object, size_t prop_cap, jsval_t *value_ptr);
+int jsval_promote_object_shallow_in_place(jsval_region_t *region, jsval_t *value_ptr, size_t prop_cap);
+int jsval_promote_array_shallow_measure(jsval_region_t *region, jsval_t array, size_t elem_cap, size_t *bytes_ptr);
+int jsval_promote_array_shallow(jsval_region_t *region, jsval_t array, size_t elem_cap, jsval_t *value_ptr);
+int jsval_promote_array_shallow_in_place(jsval_region_t *region, jsval_t *value_ptr, size_t elem_cap);
 int jsval_copy_json(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t cap, size_t *len_ptr);
 
 int jsval_string_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t cap, size_t *len_ptr);
