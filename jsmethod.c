@@ -132,6 +132,67 @@ jsmethod_number_text(double number, char buf[64])
 	return buf;
 }
 
+static int
+jsmethod_value_utf16_len(jsmethod_value_t value, int require_object_coercible,
+		size_t *len_ptr, jsmethod_error_t *error)
+{
+	char numbuf[64];
+	const char *text;
+
+	if (len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (value.kind) {
+	case JSMETHOD_VALUE_UNDEFINED:
+		if (require_object_coercible) {
+			jsmethod_error_set(error, JSMETHOD_ERROR_TYPE,
+					"undefined is not object-coercible");
+			return -1;
+		}
+		*len_ptr = sizeof("undefined") - 1;
+		return 0;
+	case JSMETHOD_VALUE_NULL:
+		if (require_object_coercible) {
+			jsmethod_error_set(error, JSMETHOD_ERROR_TYPE,
+					"null is not object-coercible");
+			return -1;
+		}
+		*len_ptr = sizeof("null") - 1;
+		return 0;
+	case JSMETHOD_VALUE_BOOL:
+		*len_ptr = value.as.boolean ? sizeof("true") - 1 : sizeof("false") - 1;
+		return 0;
+	case JSMETHOD_VALUE_NUMBER:
+		text = jsmethod_number_text(value.as.number, numbuf);
+		*len_ptr = strlen(text);
+		return 0;
+	case JSMETHOD_VALUE_STRING_UTF8:
+	{
+		jsstr8_t s;
+		jsstr8_init_from_buf(&s, (const char *)value.as.utf8.bytes,
+				value.as.utf8.len);
+		s.len = value.as.utf8.len;
+		*len_ptr = jsstr8_get_utf16len(&s);
+		return 0;
+	}
+	case JSMETHOD_VALUE_STRING_UTF16:
+		*len_ptr = value.as.utf16.len;
+		return 0;
+	case JSMETHOD_VALUE_SYMBOL:
+		jsmethod_error_set(error, JSMETHOD_ERROR_TYPE,
+				"symbol cannot be converted to string");
+		return -1;
+	case JSMETHOD_VALUE_COERCIBLE:
+		errno = ENOTSUP;
+		return -1;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
 int
 jsmethod_value_to_string(jsstr16_t *out, jsmethod_value_t value,
 		int require_object_coercible, jsmethod_error_t *error)
@@ -405,26 +466,112 @@ jsmethod_parse_form_utf16(const jsstr16_t *form_str,
 }
 
 int
-jsmethod_string_normalize(jsstr16_t *out, jsmethod_value_t this_value,
+jsmethod_string_normalize_measure(jsmethod_value_t this_value,
+		int have_form, jsmethod_value_t form_value,
+		jsmethod_string_normalize_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	unicode_normalization_form_t form = UNICODE_NORMALIZE_NFC;
+	size_t this_storage_len;
+	size_t form_storage_len = 0;
+
+	if (sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	sizes->this_storage_len = 0;
+	sizes->form_storage_len = 0;
+	sizes->workspace_len = 0;
+	sizes->result_len = 0;
+
+	if (jsmethod_value_utf16_len(this_value, 1, &this_storage_len, error) < 0) {
+		return -1;
+	}
+	sizes->this_storage_len = this_storage_len;
+
+	if (have_form && form_value.kind != JSMETHOD_VALUE_UNDEFINED) {
+		jsstr16_t form_str;
+
+		if (jsmethod_value_utf16_len(form_value, 0, &form_storage_len, error) < 0) {
+			return -1;
+		}
+		sizes->form_storage_len = form_storage_len;
+		{
+			uint16_t form_buf[form_storage_len ? form_storage_len : 1];
+			jsstr16_init_from_buf(&form_str, (const char *)form_buf,
+					sizeof(form_buf));
+			if (jsmethod_value_to_string(&form_str, form_value, 0, error) < 0) {
+				return -1;
+			}
+			if (jsmethod_parse_form_utf16(&form_str, &form, error) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	if (this_storage_len == 0) {
+		return 0;
+	}
+	{
+		jsstr16_t this_str;
+		uint16_t this_storage[this_storage_len];
+		uint32_t *workspace = NULL;
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_value_to_string(&this_str, this_value, 1, error) < 0) {
+			return -1;
+		}
+		if (jsstr16_normalize_form_workspace_len(&this_str, form,
+				&sizes->workspace_len) < 0) {
+			return -1;
+		}
+		if (sizes->workspace_len > 0) {
+			uint32_t workspace_buf[sizes->workspace_len];
+			workspace = workspace_buf;
+			if (jsstr16_normalize_form_needed(&this_str, form, workspace,
+					sizes->workspace_len, &sizes->result_len) < 0) {
+				return -1;
+			}
+		} else {
+			sizes->result_len = 0;
+		}
+	}
+	return 0;
+}
+
+int
+jsmethod_string_normalize_into(jsstr16_t *out, jsmethod_value_t this_value,
+		uint16_t *this_storage, size_t this_storage_cap,
 		int have_form, jsmethod_value_t form_value,
 		uint16_t *form_storage, size_t form_storage_cap,
 		uint32_t *workspace, size_t workspace_cap,
 		jsmethod_error_t *error)
 {
 	unicode_normalization_form_t form = UNICODE_NORMALIZE_NFC;
-	jsstr16_t form_str;
+	jsstr16_t value;
+	jsstr32_t decoded;
+	jsstr32_t normalized;
+	size_t decoded_len;
+	size_t needed_len;
 
-	if (out == NULL || workspace == NULL) {
+	if (out == NULL || (this_storage_cap > 0 && this_storage == NULL) ||
+			(workspace_cap > 0 && workspace == NULL)) {
 		errno = EINVAL;
 		return -1;
 	}
 	jsmethod_error_clear(error);
 
-	if (jsmethod_value_to_string(out, this_value, 1, error) < 0) {
+	jsstr16_init_from_buf(&value, (const char *)this_storage,
+			this_storage_cap * sizeof(this_storage[0]));
+	if (jsmethod_value_to_string(&value, this_value, 1, error) < 0) {
 		return -1;
 	}
 
 	if (have_form && form_value.kind != JSMETHOD_VALUE_UNDEFINED) {
+		jsstr16_t form_str;
+
 		if (form_storage == NULL) {
 			errno = EINVAL;
 			return -1;
@@ -439,8 +586,99 @@ jsmethod_string_normalize(jsstr16_t *out, jsmethod_value_t this_value,
 		}
 	}
 
-	if (jsstr16_normalize_form_buf(out, form, workspace, workspace_cap) < 0) {
+	if (jsstr16_normalize_form_needed(&value, form, workspace, workspace_cap,
+			&needed_len) < 0) {
+		return -1;
+	}
+	if (needed_len == 0) {
+		out->len = 0;
+		return 0;
+	}
+	if (out->cap < needed_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	decoded_len = jsstr16_get_utf32len(&value);
+	if (decoded_len == 0 && value.len > 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsstr32_init_from_buf(&decoded, (const char *)workspace,
+			decoded_len * sizeof(uint32_t));
+	if (jsstr32_set_from_utf16(&decoded, value.codeunits, value.len) != value.len) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsstr32_init_from_buf(&normalized, (const char *)(workspace + decoded_len),
+			(workspace_cap - decoded_len) * sizeof(uint32_t));
+	normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
+			normalized.codepoints, normalized.cap, form);
+	if (jsstr16_set_from_jsstr32(out, &normalized) != normalized.len) {
+		errno = ENOBUFS;
 		return -1;
 	}
 	return 0;
+}
+
+int
+jsmethod_string_normalize(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_form, jsmethod_value_t form_value,
+		uint16_t *form_storage, size_t form_storage_cap,
+		uint32_t *workspace, size_t workspace_cap,
+		jsmethod_error_t *error)
+{
+	if (out == NULL || workspace == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	{
+		size_t this_storage_len;
+		size_t this_storage_cap;
+
+		if (jsmethod_value_utf16_len(this_value, 1, &this_storage_len, error) < 0) {
+			unicode_normalization_form_t form = UNICODE_NORMALIZE_NFC;
+			jsstr16_t form_str;
+
+			if (!(errno == ENOTSUP && error != NULL &&
+					error->kind == JSMETHOD_ERROR_NONE)) {
+				return -1;
+			}
+			jsmethod_error_clear(error);
+			if (jsmethod_value_to_string(out, this_value, 1, error) < 0) {
+				return -1;
+			}
+			if (have_form && form_value.kind != JSMETHOD_VALUE_UNDEFINED) {
+				if (form_storage == NULL) {
+					errno = EINVAL;
+					return -1;
+				}
+				jsstr16_init_from_buf(&form_str, (const char *)form_storage,
+						form_storage_cap * sizeof(form_storage[0]));
+				if (jsmethod_value_to_string(&form_str, form_value, 0, error) < 0) {
+					return -1;
+				}
+				if (jsmethod_parse_form_utf16(&form_str, &form, error) < 0) {
+					return -1;
+				}
+			}
+			if (jsstr16_normalize_form_buf(out, form, workspace, workspace_cap) < 0) {
+				return -1;
+			}
+			return 0;
+		}
+		if (this_storage_len == 0) {
+			this_storage_cap = 1;
+		} else {
+			this_storage_cap = this_storage_len;
+		}
+		{
+			uint16_t this_storage[this_storage_cap];
+			return jsmethod_string_normalize_into(out, this_value,
+					this_storage, this_storage_len,
+					have_form, form_value,
+					form_storage, form_storage_cap,
+					workspace, workspace_cap, error);
+		}
+	}
 }

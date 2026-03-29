@@ -316,6 +316,48 @@ static void test_method_bridge()
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_normalize_bridge(void)
+{
+	static const char json[] = "{\"name\":\"A\xCC\x8A\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t name;
+	jsval_t normalized;
+	jsmethod_error_t error;
+	jsmethod_string_normalize_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"name", 4, &name) == 0);
+
+	assert(jsval_method_string_normalize_measure(&region, name, 0,
+			jsval_undefined(), &sizes, &error) == 0);
+	assert(sizes.this_storage_len == 2);
+	assert(sizes.form_storage_len == 0);
+	assert(sizes.workspace_len == 4);
+	assert(sizes.result_len == 1);
+
+	{
+		uint16_t this_storage[sizes.this_storage_len];
+		uint32_t workspace[sizes.workspace_len];
+
+		assert(jsval_method_string_normalize(&region, name, 0, jsval_undefined(),
+				this_storage, sizes.this_storage_len,
+				NULL, 0,
+				workspace, sizes.workspace_len,
+				&normalized, &error) == 0);
+	}
+	assert(jsval_is_native(normalized) == 1);
+	assert_string(&region, normalized, "\xC3\x85");
+
+	errno = 0;
+	assert(jsval_method_string_normalize_measure(&region, root, 0,
+			jsval_undefined(), &sizes, &error) == -1);
+	assert(errno == ENOTSUP);
+}
+
 int main(void)
 {
 	test_native_storage();
@@ -324,6 +366,7 @@ int main(void)
 	test_json_mutation_requires_promotion();
 	test_policy_layer();
 	test_method_bridge();
+	test_method_normalize_bridge();
 	puts("test_jsval: ok");
 	return 0;
 }

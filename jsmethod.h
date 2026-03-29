@@ -53,6 +53,13 @@ typedef struct jsmethod_value_s {
 	} as;
 } jsmethod_value_t;
 
+typedef struct jsmethod_string_normalize_sizes_s {
+	size_t this_storage_len;
+	size_t form_storage_len;
+	size_t workspace_len;
+	size_t result_len;
+} jsmethod_string_normalize_sizes_t;
+
 void jsmethod_error_clear(jsmethod_error_t *error);
 
 jsmethod_value_t jsmethod_value_undefined(void);
@@ -83,6 +90,16 @@ int jsmethod_string_to_well_formed(jsstr16_t *out,
 		jsmethod_value_t this_value, jsmethod_error_t *error);
 int jsmethod_string_is_well_formed(int *is_well_formed,
 		jsmethod_value_t this_value, uint16_t *storage, size_t storage_cap,
+		jsmethod_error_t *error);
+int jsmethod_string_normalize_measure(jsmethod_value_t this_value,
+		int have_form, jsmethod_value_t form_value,
+		jsmethod_string_normalize_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_normalize_into(jsstr16_t *out, jsmethod_value_t this_value,
+		uint16_t *this_storage, size_t this_storage_cap,
+		int have_form, jsmethod_value_t form_value,
+		uint16_t *form_storage, size_t form_storage_cap,
+		uint32_t *workspace, size_t workspace_cap,
 		jsmethod_error_t *error);
 int jsmethod_string_normalize(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_form, jsmethod_value_t form_value,

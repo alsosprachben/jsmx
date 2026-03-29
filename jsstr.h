@@ -211,8 +211,8 @@ size_t jsstr16_set_from_utf16(jsstr16_t *s, const uint16_t *str, size_t len);
 size_t jsstr16_set_from_utf8(jsstr16_t *s, const uint8_t *str, size_t len);
 #define jsstr16_set_from_literal(s, str) jsstr16_set_from_utf8(s, str, sizeof(str) - 1)
 
-size_t jssstr16_set_from_jsstr32(jsstr16_t *s, jsstr32_t *src);
-size_t jssstr16_set_from_jsstr8(jsstr16_t *s, jsstr8_t *src);
+size_t jsstr16_set_from_jsstr32(jsstr16_t *s, jsstr32_t *src);
+size_t jsstr16_set_from_jsstr8(jsstr16_t *s, jsstr8_t *src);
 
 size_t jsstr16_get_utf32len(jsstr16_t *s);
 size_t jsstr16_get_utf16len(jsstr16_t *s);
@@ -285,8 +285,8 @@ size_t jsstr8_set_from_utf16(jsstr8_t *s, const uint16_t *str, size_t len);
 size_t jsstr8_set_from_utf8(jsstr8_t *s, const uint8_t *str, size_t len);
 #define jsstr8_set_from_literal(s, str) jsstr8_set_from_utf8(s, str, sizeof(str) - 1)
 
-size_t jssstr8_set_from_jsstr32(jsstr8_t *s, jsstr32_t *src);
-size_t jssstr8_set_from_jsstr16(jsstr8_t *s, jsstr16_t *src);
+size_t jsstr8_set_from_jsstr32(jsstr8_t *s, jsstr32_t *src);
+size_t jsstr8_set_from_jsstr16(jsstr8_t *s, jsstr16_t *src);
 
 size_t jsstr8_get_utf32len(jsstr8_t *s);
 size_t jsstr8_get_utf16len(jsstr8_t *s);

@@ -128,6 +128,62 @@ test_string_normalize_method(void)
 }
 
 static void
+test_string_normalize_measure(void)
+{
+	static const uint8_t receiver_utf8[] = "A\xCC\x8A";
+	static const uint16_t receiver_u16[] = {0x1E9B, 0x0323};
+	static const uint16_t nfd_form[] = {'N', 'F', 'D'};
+	uint16_t out_storage[3];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	jsmethod_string_normalize_sizes_t sizes;
+	callback_ctx_t form_ctx = {0, nfd_form, sizeof(nfd_form) / sizeof(nfd_form[0])};
+
+	assert(jsmethod_string_normalize_measure(
+			jsmethod_value_string_utf8(receiver_utf8, sizeof(receiver_utf8) - 1),
+			0, jsmethod_value_undefined(), &sizes, &error) == 0);
+	assert(sizes.this_storage_len == 2);
+	assert(sizes.form_storage_len == 0);
+	assert(sizes.workspace_len == 4);
+	assert(sizes.result_len == 1);
+
+	jsstr16_init_from_buf(&out, (const char *)out_storage,
+			sizes.result_len * sizeof(out_storage[0]));
+	{
+		uint16_t this_storage[sizes.this_storage_len];
+		uint32_t workspace[sizes.workspace_len];
+
+		assert(jsmethod_string_normalize_into(&out,
+				jsmethod_value_string_utf8(receiver_utf8, sizeof(receiver_utf8) - 1),
+				this_storage, sizes.this_storage_len,
+				0, jsmethod_value_undefined(),
+				NULL, 0,
+				workspace, sizes.workspace_len,
+				&error) == 0);
+	}
+	expect_utf16(&out, (const uint16_t[]){0x00C5}, 1);
+
+	assert(jsmethod_string_normalize_measure(
+			jsmethod_value_string_utf16(receiver_u16,
+				sizeof(receiver_u16) / sizeof(receiver_u16[0])),
+			1, jsmethod_value_string_utf16(nfd_form,
+				sizeof(nfd_form) / sizeof(nfd_form[0])),
+			&sizes, &error) == 0);
+	assert(sizes.this_storage_len == 2);
+	assert(sizes.form_storage_len == 3);
+	assert(sizes.workspace_len == 5);
+	assert(sizes.result_len == 3);
+
+	errno = 0;
+	assert(jsmethod_string_normalize_measure(
+			jsmethod_value_string_utf8(receiver_utf8, sizeof(receiver_utf8) - 1),
+			1, jsmethod_value_coercible(&form_ctx, callback_to_string),
+			&sizes, &error) == -1);
+	assert(errno == ENOTSUP);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+}
+
+static void
 test_string_normalize_errors(void)
 {
 	static const uint8_t receiver_utf8[] = "foo";
@@ -297,6 +353,7 @@ main(void)
 	test_value_to_string_primitives();
 	test_value_to_string_errors();
 	test_string_normalize_method();
+	test_string_normalize_measure();
 	test_string_normalize_errors();
 	test_string_case_methods();
 	test_well_formed_methods();

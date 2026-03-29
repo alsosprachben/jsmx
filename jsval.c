@@ -1279,6 +1279,14 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 		}
 		if (value.repr == JSVAL_REPR_JSON) {
 			doc = jsval_json_doc(region, value);
+			if (jsval_json_string_copy_utf16(region, doc, value.as.index, NULL, 0,
+					&len) < 0) {
+				return -1;
+			}
+			if (len == 0) {
+				*method_value_ptr = jsmethod_value_string_utf16(NULL, 0);
+				return 0;
+			}
 			if (string_storage == NULL) {
 				errno = EINVAL;
 				return -1;
@@ -1411,6 +1419,104 @@ static int jsval_method_string_locale_bridge(jsval_region_t *region,
 				locale_storage, locale_storage_cap, error) < 0) {
 			return -1;
 		}
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
+	return 0;
+}
+
+int jsval_method_string_normalize_measure(jsval_region_t *region,
+		jsval_t this_value, int have_form, jsval_t form_value,
+		jsmethod_string_normalize_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t form_method_value = jsmethod_value_undefined();
+	size_t this_storage_cap = 0;
+	size_t form_storage_cap = 0;
+
+	if (region == NULL || sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_form && form_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, form_value, &form_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t form_storage[form_storage_cap ? form_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_form && form_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, form_value, form_storage,
+					form_storage_cap, &form_method_value) < 0) {
+			return -1;
+		}
+		return jsmethod_string_normalize_measure(this_method_value, have_form,
+				form_method_value, sizes, error);
+	}
+}
+
+int jsval_method_string_normalize(jsval_region_t *region, jsval_t this_value,
+		int have_form, jsval_t form_value,
+		uint16_t *this_storage, size_t this_storage_cap,
+		uint16_t *form_storage, size_t form_storage_cap,
+		uint32_t *workspace, size_t workspace_cap,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsmethod_string_normalize_sizes_t sizes;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t form_method_value = jsmethod_value_undefined();
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_method_string_normalize_measure(region, this_value, have_form,
+			form_value, &sizes, error) < 0) {
+		return -1;
+	}
+	if (this_storage_cap < sizes.this_storage_len ||
+			form_storage_cap < sizes.form_storage_len ||
+			workspace_cap < sizes.workspace_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, sizes.result_len, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	jsstr16_init_from_buf(&out,
+			(const char *)jsval_native_string_units(result_string),
+			result_string->cap * sizeof(uint16_t));
+	if (jsval_method_value_from_jsval(region, this_value, this_storage,
+			this_storage_cap, &this_method_value) < 0) {
+		return -1;
+	}
+	if (have_form && form_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_method_value_from_jsval(region, form_value, form_storage,
+				form_storage_cap, &form_method_value) < 0) {
+		return -1;
+	}
+	if (jsmethod_string_normalize_into(&out, this_method_value,
+			this_storage, this_storage_cap,
+			have_form, form_method_value,
+			form_storage, form_storage_cap,
+			workspace, workspace_cap, error) < 0) {
+		return -1;
 	}
 
 	result_string->len = out.len;

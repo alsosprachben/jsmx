@@ -109,5 +109,15 @@ int jsval_method_string_to_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_is_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_normalize_measure(jsval_region_t *region,
+		jsval_t this_value, int have_form, jsval_t form_value,
+		jsmethod_string_normalize_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_normalize(jsval_region_t *region, jsval_t this_value,
+		int have_form, jsval_t form_value,
+		uint16_t *this_storage, size_t this_storage_cap,
+		uint16_t *form_storage, size_t form_storage_cap,
+		uint32_t *workspace, size_t workspace_cap,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 
 #endif

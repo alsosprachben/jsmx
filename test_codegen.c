@@ -209,6 +209,66 @@ static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_method_normalize(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] = "{\"name\":\"A\xCC\x8A\"}";
+	static const uint8_t expected_string[] = {0xC3, 0x85};
+	static const uint8_t expected_json[] = "{\"name\":\"\xC3\x85\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t name;
+	jsval_t normalized;
+	jsmethod_error_t error;
+	jsmethod_string_normalize_sizes_t sizes;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"name", 4, &name) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(name)");
+	}
+	if (jsval_method_string_normalize_measure(&region, name, 0,
+			jsval_undefined(), &sizes, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_normalize_measure failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	{
+		uint16_t this_storage[sizes.this_storage_len ? sizes.this_storage_len : 1];
+		uint32_t workspace[sizes.workspace_len ? sizes.workspace_len : 1];
+
+		if (jsval_method_string_normalize(&region, name, 0, jsval_undefined(),
+				this_storage, sizes.this_storage_len,
+				NULL, 0,
+				workspace, sizes.workspace_len,
+				&normalized, &error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_method_string_normalize failed: errno=%d kind=%d",
+					errno, (int)error.kind);
+		}
+	}
+
+	status = generated_expect_string(&region, normalized, expected_string,
+			sizeof(expected_string), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_region_promote_root(&region, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"name", 4,
+			normalized) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(name)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -327,6 +387,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
+	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},
