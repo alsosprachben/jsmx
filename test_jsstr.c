@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include "jsstr.h"
@@ -525,6 +526,151 @@ static void print_jsstr32_hex(jsstr32_t *s) {
     }
 }
 
+static void expect_jsstr32_eq(jsstr32_t *s, const uint32_t *expected, size_t expected_len)
+{
+    assert(s->len == expected_len);
+    for (size_t i = 0; i < expected_len; i++) {
+        assert(s->codepoints[i] == expected[i]);
+    }
+}
+
+static void expect_jsstr16_eq(jsstr16_t *s, const uint16_t *expected, size_t expected_len)
+{
+    assert(s->len == expected_len);
+    for (size_t i = 0; i < expected_len; i++) {
+        assert(s->codeunits[i] == expected[i]);
+    }
+}
+
+static void expect_jsstr8_eq(jsstr8_t *s, const uint8_t *expected, size_t expected_len)
+{
+    assert(s->len == expected_len);
+    for (size_t i = 0; i < expected_len; i++) {
+        assert(s->bytes[i] == expected[i]);
+    }
+}
+
+void test_jsstr_normalize_buffers() {
+    uint32_t buf32[8];
+    uint32_t scratch32[8];
+    jsstr32_t s32;
+    uint16_t src16[] = {0x0041, 0x030A};
+
+    jsstr32_init_from_buf(&s32, (char *)buf32, sizeof(buf32));
+    jsstr32_set_from_utf32(&s32, (const uint32_t *)L"A\u030A", 2);
+    assert(jsstr32_normalize_buf(&s32, scratch32, 8) == 0);
+    assert(s32.len == 1);
+    assert(s32.codepoints[0] == 0x00C5);
+    jsstr32_set_from_utf32(&s32, (const uint32_t *)L"A\u030A", 2);
+    jsstr32_normalize(&s32);
+    assert(s32.len == 1);
+    assert(s32.codepoints[0] == 0x00C5);
+
+    {
+        uint16_t buf16[8];
+        uint32_t workspace16[16];
+        jsstr16_t s16;
+
+        jsstr16_init_from_buf(&s16, (char *)buf16, sizeof(buf16));
+        jsstr16_set_from_utf16(&s16, src16, 2);
+        assert(jsstr16_normalize_buf(&s16, workspace16, 16) == 0);
+        assert(s16.len == 1);
+        assert(s16.codeunits[0] == 0x00C5);
+        jsstr16_set_from_utf16(&s16, src16, 2);
+        jsstr16_normalize(&s16);
+        assert(s16.len == 1);
+        assert(s16.codeunits[0] == 0x00C5);
+    }
+
+    {
+        uint8_t buf8[16];
+        uint8_t src8[] = {'A', 0xCC, 0x8A};
+        uint32_t workspace8[32];
+        jsstr8_t s8;
+
+        jsstr8_init_from_buf(&s8, (char *)buf8, sizeof(buf8));
+        jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+        assert(jsstr8_normalize_buf(&s8, workspace8, 32) == 0);
+        assert(s8.len == 2);
+        assert(s8.bytes[0] == 0xC3);
+        assert(s8.bytes[1] == 0x85);
+        jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+        jsstr8_normalize(&s8);
+        assert(s8.len == 2);
+        assert(s8.bytes[0] == 0xC3);
+        assert(s8.bytes[1] == 0x85);
+    }
+}
+
+void test_jsstr_normalize_forms() {
+    static const uint32_t src32[] = {0x1E9B, 0x0323};
+    static const uint32_t expected32_nfc[] = {0x1E9B, 0x0323};
+    static const uint32_t expected32_nfd[] = {0x017F, 0x0323, 0x0307};
+    static const uint32_t expected32_nfkc[] = {0x1E69};
+    static const uint32_t expected32_nfkd[] = {0x0073, 0x0323, 0x0307};
+    static const uint16_t src16[] = {0x1E9B, 0x0323};
+    static const uint16_t expected16_nfc[] = {0x1E9B, 0x0323};
+    static const uint16_t expected16_nfd[] = {0x017F, 0x0323, 0x0307};
+    static const uint16_t expected16_nfkc[] = {0x1E69};
+    static const uint16_t expected16_nfkd[] = {0x0073, 0x0323, 0x0307};
+    static const uint8_t src8[] = {0xE1, 0xBA, 0x9B, 0xCC, 0xA3};
+    static const uint8_t expected8_nfc[] = {0xE1, 0xBA, 0x9B, 0xCC, 0xA3};
+    static const uint8_t expected8_nfd[] = {0xC5, 0xBF, 0xCC, 0xA3, 0xCC, 0x87};
+    static const uint8_t expected8_nfkc[] = {0xE1, 0xB9, 0xA9};
+    static const uint8_t expected8_nfkd[] = {'s', 0xCC, 0xA3, 0xCC, 0x87};
+    uint32_t buf32[8];
+    uint32_t scratch32[8];
+    uint16_t buf16[8];
+    uint32_t workspace16[16];
+    uint8_t buf8[16];
+    uint32_t workspace8[32];
+    jsstr32_t s32;
+    jsstr16_t s16;
+    jsstr8_t s8;
+
+    jsstr32_init_from_buf(&s32, (char *)buf32, sizeof(buf32));
+    jsstr32_set_from_utf32(&s32, src32, sizeof(src32) / sizeof(src32[0]));
+    assert(jsstr32_normalize_form_buf(&s32, UNICODE_NORMALIZE_NFC, scratch32, 8) == 0);
+    expect_jsstr32_eq(&s32, expected32_nfc, sizeof(expected32_nfc) / sizeof(expected32_nfc[0]));
+    jsstr32_set_from_utf32(&s32, src32, sizeof(src32) / sizeof(src32[0]));
+    jsstr32_normalize_form(&s32, UNICODE_NORMALIZE_NFD);
+    expect_jsstr32_eq(&s32, expected32_nfd, sizeof(expected32_nfd) / sizeof(expected32_nfd[0]));
+    jsstr32_set_from_utf32(&s32, src32, sizeof(src32) / sizeof(src32[0]));
+    jsstr32_normalize_form(&s32, UNICODE_NORMALIZE_NFKC);
+    expect_jsstr32_eq(&s32, expected32_nfkc, sizeof(expected32_nfkc) / sizeof(expected32_nfkc[0]));
+    jsstr32_set_from_utf32(&s32, src32, sizeof(src32) / sizeof(src32[0]));
+    assert(jsstr32_normalize_form_buf(&s32, UNICODE_NORMALIZE_NFKD, scratch32, 8) == 0);
+    expect_jsstr32_eq(&s32, expected32_nfkd, sizeof(expected32_nfkd) / sizeof(expected32_nfkd[0]));
+
+    jsstr16_init_from_buf(&s16, (char *)buf16, sizeof(buf16));
+    jsstr16_set_from_utf16(&s16, src16, sizeof(src16) / sizeof(src16[0]));
+    assert(jsstr16_normalize_form_buf(&s16, UNICODE_NORMALIZE_NFC, workspace16, 16) == 0);
+    expect_jsstr16_eq(&s16, expected16_nfc, sizeof(expected16_nfc) / sizeof(expected16_nfc[0]));
+    jsstr16_set_from_utf16(&s16, src16, sizeof(src16) / sizeof(src16[0]));
+    jsstr16_normalize_form(&s16, UNICODE_NORMALIZE_NFD);
+    expect_jsstr16_eq(&s16, expected16_nfd, sizeof(expected16_nfd) / sizeof(expected16_nfd[0]));
+    jsstr16_set_from_utf16(&s16, src16, sizeof(src16) / sizeof(src16[0]));
+    jsstr16_normalize_form(&s16, UNICODE_NORMALIZE_NFKC);
+    expect_jsstr16_eq(&s16, expected16_nfkc, sizeof(expected16_nfkc) / sizeof(expected16_nfkc[0]));
+    jsstr16_set_from_utf16(&s16, src16, sizeof(src16) / sizeof(src16[0]));
+    assert(jsstr16_normalize_form_buf(&s16, UNICODE_NORMALIZE_NFKD, workspace16, 16) == 0);
+    expect_jsstr16_eq(&s16, expected16_nfkd, sizeof(expected16_nfkd) / sizeof(expected16_nfkd[0]));
+
+    jsstr8_init_from_buf(&s8, (char *)buf8, sizeof(buf8));
+    jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+    assert(jsstr8_normalize_form_buf(&s8, UNICODE_NORMALIZE_NFC, workspace8, 32) == 0);
+    expect_jsstr8_eq(&s8, expected8_nfc, sizeof(expected8_nfc));
+    jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+    jsstr8_normalize_form(&s8, UNICODE_NORMALIZE_NFD);
+    expect_jsstr8_eq(&s8, expected8_nfd, sizeof(expected8_nfd));
+    jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+    jsstr8_normalize_form(&s8, UNICODE_NORMALIZE_NFKC);
+    expect_jsstr8_eq(&s8, expected8_nfkc, sizeof(expected8_nfkc));
+    jsstr8_set_from_utf8(&s8, src8, sizeof(src8));
+    assert(jsstr8_normalize_form_buf(&s8, UNICODE_NORMALIZE_NFKD, workspace8, 32) == 0);
+    expect_jsstr8_eq(&s8, expected8_nfkd, sizeof(expected8_nfkd));
+}
+
 void test_jsstr_locale_compare_ce() {
     struct pair { const uint32_t *a; const uint32_t *b; } pairs[] = {
         { L"o\u0308", L"\u00F6" },
@@ -588,5 +734,7 @@ int main() {
     test_jsstr32_to_well_formed();
     test_jsstr16_to_well_formed();
     test_jsstr8_to_well_formed();
+    test_jsstr_normalize_buffers();
+    test_jsstr_normalize_forms();
     return 0;
 }

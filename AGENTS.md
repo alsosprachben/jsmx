@@ -1,0 +1,26 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+This repository is a C runtime support library for transpiling JavaScript to C. Core parsing lives in `jsmn.c` and `jsmn.h`, while JS-facing helpers sit in top-level modules such as `jsval.c`, `jsstr.c`, `unicode.c`, `mnurl.c`, and `utf8.h`. `jsval` now stores values inside a versioned page-set with an in-page root handle so relocated buffers remain self-describing, keeps JSON-backed values readable without implicit mutation, exposes explicit promotion helpers for generated C, and can emit JSON-compatible values back to JSON text. `jsstr` exposes explicit normalization-form APIs for `NFC`, `NFD`, `NFKC`, and `NFKD`, while the legacy `jsstr*_normalize()` entrypoints remain NFC wrappers; `unicode` also exposes a small parser for mapping JS form strings onto that enum surface. Example programs live in `example/`. Parser regression tests are in [`test/tests.c`](/home/ben/repos/jsmx/test/tests.c), while feature-specific executables use files like `test_jsval.c`, `test_codegen.c`, `test_jsstr.c`, `test_unicode.c`, and `test_mnurl.c`. Real compliance sources and committed generated fixtures live under `compliance/`, and the repo-local translation workflow guidance lives in `skills/jsmx-transpile-tests/`. Unicode source data (`UnicodeData.txt`, `allkeys.txt`, etc.) and generated headers (`unicode_*.h`) also live at the repository root. Generator scripts are in `scripts/`.
+
+## Build, Test, and Development Commands
+Use `make` to build the library, examples, and all test binaries. Common targets:
+
+- `make`: builds `libjsmn.a`, example binaries, and all tests.
+- `make test`: runs the parser matrix in `test/` (`default`, `strict`, `links`, `strict_links`, `emitter`).
+- `make test_jsval`: builds and runs the page-resident value/object storage tests.
+- `make test_codegen`: builds and runs the generated-C smoke harness and formalized string compliance slice.
+- `make test_compliance`: builds and runs committed generated compliance fixtures listed in `compliance/manifest.json`.
+- `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`, `make test_collation`: build and run focused feature tests.
+- `make clean`: removes common build artifacts, but check `git status` afterward because some generated test binaries may remain.
+
+If you need custom compiler flags, add a local `config.mk` rather than editing `Makefile`.
+
+## Coding Style & Naming Conventions
+Match the existing C style: tabs for indentation, opening braces on the same line, and short `/* ... */` comments only where logic is non-obvious. Use `snake_case` for functions and helpers, `UPPER_CASE` for macros, and keep new modules paired as `name.c` and `name.h` when they expose public APIs. Prefer C-idiomatic interfaces that preserve JavaScript semantics instead of mirroring JS syntax directly. There is no repo-managed formatter or linter, so preserve local include order and whitespace patterns.
+
+## Testing Guidelines
+There is no formal coverage gate, but new behavior should ship with a targeted test. Add parser cases to `test/tests.c`; add standalone feature tests as `test_<area>.c` at the repo root when they need separate fixtures or generated Unicode data. For real JS compliance translations, commit the source under `compliance/js/`, the generated C fixture under `compliance/generated/`, and update `compliance/manifest.json`. `make test_compliance` is manifest-driven, so new committed fixtures should become runnable by updating the manifest rather than editing `Makefile`. Run the narrowest relevant target first, then `make test` before opening a PR.
+
+## Commit & Pull Request Guidelines
+Recent history favors short imperative subjects, for example `Implement NFC normalization` and `Refactor normalize API`. Keep commits focused and explain regenerated data files explicitly when Unicode headers change. Pull requests should include a brief problem statement, the main files touched, and the exact test commands you ran. Screenshots are not relevant here; `git status` should be clean of build outputs before review.

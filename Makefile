@@ -1,12 +1,17 @@
 # You can put your build options here
 -include config.mk
 
-all: libjsmn.a simple_example jsondump test test_jsstr test_mnurl test_utf8 test_unicode test_collation
+all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_mnurl test_utf8 test_unicode test_collation test_jsval test_codegen test_compliance
 
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
+libjsmx.a: jsmn.o jsval.o
+	$(AR) rc $@ $^
+
 jsmn.o: jsmn.c jsmn.h
+
+jsval.o: jsval.c jsval.h jsmn.h utf8.h
 
 libjsmndom.a: jsmndom.o
 
@@ -46,6 +51,17 @@ test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collatio
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
+test_jsval: test_jsval.c jsval.c jsmn.c jsval.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
+test_codegen: test_codegen.c jsval.c jsmn.c jsstr.c unicode.c jsval.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+	./$@
+
+test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
+	python3 scripts/run_compliance_manifest.py
+
 test_utf8: utf8.c
 	$(CC) -g -DUTF8_TEST $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
@@ -83,7 +99,7 @@ DerivedNormalizationProps.txt:
 unicode_derived_normalization_props.h: DerivedNormalizationProps.txt scripts/gen_unicode_derived_normalization_props.py
 	python3 scripts/gen_unicode_derived_normalization_props.py DerivedNormalizationProps.txt unicode_derived_normalization_props.h
 
-test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_unicode: test_unicode.c unicode.c unicode_case_data.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
@@ -92,11 +108,10 @@ test_collation: test_collation.c unicode_collation.h
 	./$@
 
 clean:
-	rm -f jsmn.o jsmndom.o jsmn_test.o example/simple.o
-	rm -f libjsmn.a libjsmndom.a
+	rm -f jsmn.o jsval.o jsmndom.o jsmn_test.o example/simple.o
+	rm -f libjsmn.a libjsmx.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
-	rm -rf test_jsstr test_mnurl test_utf8
+	rm -rf test_jsstr test_jsval test_codegen test_mnurl test_utf8
 
-.PHONY: all clean test test_collation
-
+.PHONY: all clean test test_collation test_compliance

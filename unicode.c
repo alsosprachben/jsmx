@@ -1,4 +1,5 @@
 #include "unicode.h"
+#include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,53 @@ static int unicode_collation_find_index(uint32_t cp, size_t *index) {
         }
     }
     return 0;
+}
+
+int unicode_normalization_form_parse(const char *form, size_t len,
+        unicode_normalization_form_t *out) {
+    if (!form || !out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (len == 3) {
+        if (memcmp(form, "NFC", 3) == 0) {
+            *out = UNICODE_NORMALIZE_NFC;
+            return 0;
+        }
+        if (memcmp(form, "NFD", 3) == 0) {
+            *out = UNICODE_NORMALIZE_NFD;
+            return 0;
+        }
+    } else if (len == 4) {
+        if (memcmp(form, "NFKC", 4) == 0) {
+            *out = UNICODE_NORMALIZE_NFKC;
+            return 0;
+        }
+        if (memcmp(form, "NFKD", 4) == 0) {
+            *out = UNICODE_NORMALIZE_NFKD;
+            return 0;
+        }
+    }
+
+    errno = EINVAL;
+    return -1;
+}
+
+const char *unicode_normalization_form_name(unicode_normalization_form_t form) {
+    switch (form) {
+    case UNICODE_NORMALIZE_NFC:
+        return "NFC";
+    case UNICODE_NORMALIZE_NFD:
+        return "NFD";
+    case UNICODE_NORMALIZE_NFKC:
+        return "NFKC";
+    case UNICODE_NORMALIZE_NFKD:
+        return "NFKD";
+    default:
+        errno = EINVAL;
+        return NULL;
+    }
 }
 
 uint32_t unicode_tolower(uint32_t cp) {
@@ -202,7 +250,7 @@ static int unicode_range_contains(const unicode_range_t *ranges, size_t len, uin
 }
 
 /* helper: get canonical combining class */
-static int unicode_combining_class(uint32_t cp) {
+int unicode_combining_class(uint32_t cp) {
     size_t idx;
     if (unicode_find_index(cp, &idx)) {
         return atoi(unicode_db[idx].combining_class);
@@ -210,15 +258,45 @@ static int unicode_combining_class(uint32_t cp) {
     return 0;
 }
 
-/* parse decomposition string as sequence of code points
-   returns number of code points parsed, or 0 if none or compatibility */
-static size_t unicode_parse_decomp(const char *str, uint32_t *out, size_t cap) {
+static unicode_normalization_form_t unicode_normalize_canonicalize_form(
+        unicode_normalization_form_t form)
+{
+    switch (form) {
+    case UNICODE_NORMALIZE_NFC:
+    case UNICODE_NORMALIZE_NFD:
+    case UNICODE_NORMALIZE_NFKC:
+    case UNICODE_NORMALIZE_NFKD:
+        return form;
+    default:
+        return UNICODE_NORMALIZE_NFC;
+    }
+}
+
+static int unicode_normalize_uses_compat(unicode_normalization_form_t form)
+{
+    return form == UNICODE_NORMALIZE_NFKC || form == UNICODE_NORMALIZE_NFKD;
+}
+
+static int unicode_normalize_uses_compose(unicode_normalization_form_t form)
+{
+    return form == UNICODE_NORMALIZE_NFC || form == UNICODE_NORMALIZE_NFKC;
+}
+
+/* parse decomposition string as sequence of code points */
+static size_t unicode_parse_decomp(const char *str, uint32_t *out, size_t cap,
+        int compatibility) {
     if (!str || !str[0])
         return 0;
-    if (str[0] == '<')
-        return 0; /* compatibility mapping */
     size_t n = 0;
     const char *p = str;
+    if (p[0] == '<') {
+        if (!compatibility)
+            return 0;
+        while (*p && *p != '>')
+            p++;
+        if (*p == '>')
+            p++;
+    }
     while (*p && n < cap) {
         while (*p == ' ')
             p++;
@@ -234,8 +312,9 @@ static size_t unicode_parse_decomp(const char *str, uint32_t *out, size_t cap) {
     return n;
 }
 
-/* canonical decomposition of single code point */
-static size_t unicode_decompose_char(uint32_t cp, uint32_t *out, size_t cap) {
+/* decomposition of single code point */
+static size_t unicode_decompose_char(uint32_t cp, uint32_t *out, size_t cap,
+        int compatibility) {
     /* Hangul decomposition */
     const uint32_t SBase = 0xAC00;
     const uint32_t LBase = 0x1100;
@@ -264,7 +343,8 @@ static size_t unicode_decompose_char(uint32_t cp, uint32_t *out, size_t cap) {
     size_t idx;
     if (unicode_find_index(cp, &idx)) {
         uint32_t tmp[18];
-        size_t n = unicode_parse_decomp(unicode_db[idx].decomposition, tmp, 18);
+        size_t n = unicode_parse_decomp(unicode_db[idx].decomposition, tmp, 18,
+                compatibility);
         if (n > 0 && n <= cap) {
             for (size_t i = 0; i < n; i++)
                 out[i] = tmp[i];
@@ -276,16 +356,18 @@ static size_t unicode_decompose_char(uint32_t cp, uint32_t *out, size_t cap) {
     return 1;
 }
 
-/* recursive canonical decomposition */
-static size_t unicode_decompose(uint32_t cp, uint32_t *out, size_t cap) {
+/* recursive decomposition */
+static size_t unicode_decompose(uint32_t cp, uint32_t *out, size_t cap,
+        int compatibility) {
     uint32_t tmp[18];
-    size_t n = unicode_decompose_char(cp, tmp, 18);
+    size_t n = unicode_decompose_char(cp, tmp, 18, compatibility);
     size_t total = 0;
     for (size_t i = 0; i < n && total < cap; i++) {
         if (tmp[i] == cp && n == 1) {
             out[total++] = tmp[i];
         } else {
-            total += unicode_decompose(tmp[i], out + total, cap - total);
+            total += unicode_decompose(tmp[i], out + total, cap - total,
+                    compatibility);
         }
     }
     return total;
@@ -318,7 +400,7 @@ static int unicode_compose_pair(uint32_t a, uint32_t b, uint32_t *out) {
 
     uint32_t seq[3];
     for (size_t i = 0; i < unicode_db_len; i++) {
-        size_t n = unicode_parse_decomp(unicode_db[i].decomposition, seq, 3);
+        size_t n = unicode_parse_decomp(unicode_db[i].decomposition, seq, 3, 0);
         if (n == 2 && seq[0] == a && seq[1] == b) {
             uint32_t cp = unicode_db[i].code;
             if (!unicode_is_composition_exclusion(cp)) {
@@ -402,63 +484,95 @@ int unicode_changes_when_nfkc_casefolded(uint32_t cp) {
     return unicode_range_contains(unicode_cwkcf, unicode_cwkcf_len, cp);
 }
 
-size_t unicode_normalize(uint32_t *buf, size_t len, size_t cap) {
-    if (!buf)
+size_t unicode_normalize_into_form(const uint32_t *src, size_t len, uint32_t *dst,
+        size_t cap, unicode_normalization_form_t form) {
+    if (!src || !dst)
         return 0;
 
-    uint32_t *tmp = (uint32_t *)malloc(sizeof(uint32_t) * cap);
-    if (!tmp)
-        return len;
+    form = unicode_normalize_canonicalize_form(form);
 
-    /* Canonical decomposition with ordering */
+    /* Decomposition with canonical ordering */
     size_t out_len = 0;
     size_t segment_start = 0;
     for (size_t i = 0; i < len && out_len < cap; i++) {
         uint32_t dec[18];
-        size_t dlen = unicode_decompose(buf[i], dec, 18);
+        size_t dlen = unicode_decompose(src[i], dec, 18,
+                unicode_normalize_uses_compat(form));
         for (size_t j = 0; j < dlen && out_len < cap; j++) {
             uint32_t c = dec[j];
             int cc = unicode_combining_class(c);
             if (cc == 0) {
                 segment_start = out_len;
-                tmp[out_len++] = c;
+                dst[out_len++] = c;
             } else {
                 size_t k = out_len;
-                while (k > segment_start && unicode_combining_class(tmp[k - 1]) > cc) {
-                    tmp[k] = tmp[k - 1];
+                while (k > segment_start && unicode_combining_class(dst[k - 1]) > cc) {
+                    dst[k] = dst[k - 1];
                     k--;
                 }
-                tmp[k] = c;
+                dst[k] = c;
                 out_len++;
             }
         }
+    }
+
+    if (!unicode_normalize_uses_compose(form)) {
+        if (out_len > cap)
+            out_len = cap;
+        return out_len;
     }
 
     /* Canonical composition */
     size_t starter = 0;
     int prev_cc = 0;
     for (size_t i = 1; i < out_len; i++) {
-        int cc = unicode_combining_class(tmp[i]);
+        int cc = unicode_combining_class(dst[i]);
         uint32_t comp;
-        if (cc != 0 && prev_cc < cc && unicode_compose_pair(tmp[starter], tmp[i], &comp)) {
-            tmp[starter] = comp;
-            memmove(tmp + i, tmp + i + 1, (out_len - i - 1) * sizeof(uint32_t));
+        if ((prev_cc == 0 || prev_cc < cc) &&
+            unicode_compose_pair(dst[starter], dst[i], &comp)) {
+            dst[starter] = comp;
+            memmove(dst + i, dst + i + 1, (out_len - i - 1) * sizeof(uint32_t));
             out_len--;
             i--; /* re-evaluate at same index */
-            prev_cc = 0;
             continue;
         }
         if (cc == 0) {
             starter = i;
-            prev_cc = 0;
-        } else {
-            prev_cc = cc;
         }
+        prev_cc = cc;
     }
 
     if (out_len > cap)
         out_len = cap;
-    memcpy(buf, tmp, out_len * sizeof(uint32_t));
-    free(tmp);
     return out_len;
+}
+
+size_t unicode_normalize_form(uint32_t *buf, size_t len, size_t cap,
+        unicode_normalization_form_t form) {
+    size_t out_len;
+    size_t tmp_cap;
+
+    if (!buf)
+        return 0;
+    if (cap == 0)
+        return 0;
+
+    tmp_cap = cap;
+    {
+        uint32_t tmp[tmp_cap];
+
+        out_len = unicode_normalize_into_form(buf, len, tmp, cap, form);
+        memcpy(buf, tmp, out_len * sizeof(uint32_t));
+    }
+
+    return out_len;
+}
+
+size_t unicode_normalize_into(const uint32_t *src, size_t len, uint32_t *dst,
+        size_t cap) {
+    return unicode_normalize_into_form(src, len, dst, cap, UNICODE_NORMALIZE_NFC);
+}
+
+size_t unicode_normalize(uint32_t *buf, size_t len, size_t cap) {
+    return unicode_normalize_form(buf, len, cap, UNICODE_NORMALIZE_NFC);
 }

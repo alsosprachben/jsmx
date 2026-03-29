@@ -73,15 +73,13 @@ static inline int32_t js_locale_icu_normalize_u16(UChar *buf, int32_t len, int32
     UErrorCode status = U_ZERO_ERROR;
     const UNorm2 *norm = unorm2_getNFCInstance(&status);
     if (U_FAILURE(status)) return len;
-    UChar *tmp = (UChar *)malloc(sizeof(UChar) * cap);
-    if (!tmp) return len;
+    if (cap <= 0) return len;
+    UChar tmp[(size_t)cap];
     int32_t out = unorm2_normalize(norm, buf, len, tmp, cap, &status);
     if (U_FAILURE(status)) {
-        free(tmp);
         return len;
     }
     memcpy(buf, tmp, out * sizeof(UChar));
-    free(tmp);
     return out;
 }
 
@@ -95,9 +93,9 @@ static inline int js_locale_icu_compare_u16(const UChar *a, int32_t la, const UC
 }
 
 static inline int32_t js_locale_icu_normalize_u32(uint32_t *buf, int32_t len, int32_t cap) {
-    UChar *tmp = (UChar *)malloc(sizeof(UChar) * cap * 2);
-    if (!tmp)
+    if (cap <= 0)
         return len;
+    UChar tmp[(size_t)cap * 2];
     int32_t off = 0;
     for (int32_t i = 0; i < len; i++) {
         U16_APPEND_UNSAFE(tmp, off, buf[i]);
@@ -110,33 +108,25 @@ static inline int32_t js_locale_icu_normalize_u32(uint32_t *buf, int32_t len, in
         U16_NEXT_UNSAFE(tmp, pos, c);
         buf[out_cp++] = (uint32_t)c;
     }
-    free(tmp);
     return out_cp;
 }
 
 static inline int js_locale_icu_compare_u32(const uint32_t *a, int32_t la, const uint32_t *b, int32_t lb) {
-    UChar *ua = (UChar *)malloc(sizeof(UChar) * la * 2);
-    UChar *ub = (UChar *)malloc(sizeof(UChar) * lb * 2);
-    if (!ua || !ub) {
-        free(ua);
-        free(ub);
-        return 0;
-    }
+    UChar ua[(size_t)(la > 0 ? la * 2 : 1)];
+    UChar ub[(size_t)(lb > 0 ? lb * 2 : 1)];
     int32_t la16 = 0, lb16 = 0;
     for (int32_t i = 0; i < la; i++)
         U16_APPEND_UNSAFE(ua, la16, a[i]);
     for (int32_t i = 0; i < lb; i++)
         U16_APPEND_UNSAFE(ub, lb16, b[i]);
     int r = js_locale_icu_compare_u16(ua, la16, ub, lb16);
-    free(ua);
-    free(ub);
     return r;
 }
 
 static inline int32_t js_locale_icu_normalize_u8(uint8_t *buf, int32_t len, int32_t cap) {
-    UChar *tmp = (UChar *)malloc(sizeof(UChar) * cap * 2);
-    if (!tmp)
+    if (cap <= 0)
         return len;
+    UChar tmp[(size_t)cap * 2];
     int32_t u16len = 0;
     for (int32_t i = 0; i < len;) {
         uint32_t c;
@@ -155,18 +145,12 @@ static inline int32_t js_locale_icu_normalize_u8(uint8_t *buf, int32_t len, int3
         const uint32_t *cc = (const uint32_t *)&c;
         UTF8_ENCODE(&cc, &c + 1, &write, end);
     }
-    free(tmp);
     return (int32_t)(write - buf);
 }
 
 static inline int js_locale_icu_compare_u8(const uint8_t *a, int32_t la, const uint8_t *b, int32_t lb) {
-    UChar *ua = (UChar *)malloc(sizeof(UChar) * la * 2);
-    UChar *ub = (UChar *)malloc(sizeof(UChar) * lb * 2);
-    if (!ua || !ub) {
-        free(ua);
-        free(ub);
-        return 0;
-    }
+    UChar ua[(size_t)(la > 0 ? la * 2 : 1)];
+    UChar ub[(size_t)(lb > 0 ? lb * 2 : 1)];
     int32_t la16 = 0, lb16 = 0;
     for (int32_t i = 0; i < la;) {
         uint32_t c; int l; UTF8_CHAR((const char *)a + i, (const char *)a + la, &c, &l); i += l; U16_APPEND_UNSAFE(ua, la16, c);
@@ -175,8 +159,6 @@ static inline int js_locale_icu_compare_u8(const uint8_t *a, int32_t la, const u
         uint32_t c; int l; UTF8_CHAR((const char *)b + i, (const char *)b + lb, &c, &l); i += l; U16_APPEND_UNSAFE(ub, lb16, c);
     }
     int r = js_locale_icu_compare_u16(ua, la16, ub, lb16);
-    free(ua);
-    free(ub);
     return r;
 }
 #define JS_LOCALE_NORMALIZE_U32 js_locale_icu_normalize_u32
@@ -220,15 +202,13 @@ static inline int32_t js_locale_libc_normalize_u8(uint8_t *buf, int32_t len, int
 }
 
 static inline int js_locale_libc_compare_u16(const uint16_t *a, int32_t la, const uint16_t *b, int32_t lb) {
-    wchar_t *wa = (wchar_t *)malloc(sizeof(wchar_t) * (la + 1));
-    wchar_t *wb = (wchar_t *)malloc(sizeof(wchar_t) * (lb + 1));
-    if (!wa || !wb) { free(wa); free(wb); return 0; }
+    wchar_t wa[(size_t)(la >= 0 ? la + 1 : 1)];
+    wchar_t wb[(size_t)(lb >= 0 ? lb + 1 : 1)];
     for (int32_t i = 0; i < la; i++) wa[i] = (wchar_t)a[i];
     wa[la] = L'\0';
     for (int32_t i = 0; i < lb; i++) wb[i] = (wchar_t)b[i];
     wb[lb] = L'\0';
     int r = wcscoll(wa, wb);
-    free(wa); free(wb);
     return r;
 }
 
@@ -358,6 +338,199 @@ static inline int js_locale_stub_compare_u8(const uint8_t *a, int32_t la, const 
 #define JS_LOCALE_NORMALIZE_U8  js_locale_stub_normalize_u8
 #define JS_LOCALE_COMPARE_U8    js_locale_stub_compare_u8
 #endif
+
+static int js_locale_is_lithuanian(const char *locale)
+{
+    if (!locale || !locale[0]) {
+        return 0;
+    }
+    return (locale[0] == 'l' || locale[0] == 'L') &&
+           (locale[1] == 't' || locale[1] == 'T');
+}
+
+static int js_locale_is_turkic(const char *locale)
+{
+    if (!locale || !locale[0]) {
+        return 0;
+    }
+
+    return (((locale[0] == 't' || locale[0] == 'T') &&
+             (locale[1] == 'r' || locale[1] == 'R')) ||
+            ((locale[0] == 'a' || locale[0] == 'A') &&
+             (locale[1] == 'z' || locale[1] == 'Z')));
+}
+
+static int js_locale_is_soft_dotted(uint32_t cp)
+{
+    static const uint32_t soft_dotted[] = {
+        0x0069, 0x006A, 0x012F, 0x0249, 0x0268, 0x029D, 0x02B2, 0x03F3,
+        0x0456, 0x0458, 0x1D62, 0x1D96, 0x1DA4, 0x1DA8, 0x1E2D, 0x1ECB,
+        0x2071, 0x2148, 0x2149, 0x2C7C, 0x1D422, 0x1D423, 0x1D456, 0x1D457,
+        0x1D48A, 0x1D48B, 0x1D4BE, 0x1D4BF, 0x1D4F2, 0x1D4F3, 0x1D526, 0x1D527,
+        0x1D55A, 0x1D55B, 0x1D58E, 0x1D58F, 0x1D5C2, 0x1D5C3, 0x1D5F6, 0x1D5F7,
+        0x1D62A, 0x1D62B, 0x1D65E, 0x1D65F, 0x1D692, 0x1D693,
+    };
+    size_t left = 0;
+    size_t right = sizeof(soft_dotted) / sizeof(soft_dotted[0]);
+
+    while (left < right) {
+        size_t mid = left + (right - left) / 2;
+        if (soft_dotted[mid] == cp) {
+            return 1;
+        }
+        if (cp < soft_dotted[mid]) {
+            right = mid;
+        } else {
+            left = mid + 1;
+        }
+    }
+
+    return 0;
+}
+
+static int js_locale_lt_has_more_above_u32(const uint32_t *codepoints, size_t len, size_t start_i)
+{
+    for (size_t j = start_i; j < len; j++) {
+        int cc = unicode_combining_class(codepoints[j]);
+        if (cc == 230) {
+            return 1;
+        }
+        if (cc == 0) {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+static int js_locale_lt_has_more_above_u16(jsstr16_t *s, size_t start_i)
+{
+    uint16_t *end = s->codeunits + s->len;
+    size_t i = start_i;
+
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        int cc;
+
+        UTF16_CHAR(s->codeunits + i, end, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        cc = unicode_combining_class(c);
+        if (cc == 230) {
+            return 1;
+        }
+        if (cc == 0) {
+            return 0;
+        }
+        i += (size_t)l;
+    }
+
+    return 0;
+}
+
+static int js_locale_lt_has_more_above_u8(jsstr8_t *s, size_t start_i)
+{
+    uint8_t *end = s->bytes + s->len;
+    size_t i = start_i;
+
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        int cc;
+
+        UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        cc = unicode_combining_class(c);
+        if (cc == 230) {
+            return 1;
+        }
+        if (cc == 0) {
+            return 0;
+        }
+        i += (size_t)l;
+    }
+
+    return 0;
+}
+
+static int js_locale_tr_before_dot_u32(const uint32_t *codepoints, size_t len, size_t start_i)
+{
+    for (size_t j = start_i; j < len; j++) {
+        uint32_t c = codepoints[j];
+        int cc = unicode_combining_class(c);
+
+        if (c == 0x0307) {
+            return 1;
+        }
+        if (cc == 0 || cc == 230) {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+static int js_locale_tr_before_dot_u16(jsstr16_t *s, size_t start_i)
+{
+    uint16_t *end = s->codeunits + s->len;
+    size_t i = start_i;
+
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        int cc;
+
+        UTF16_CHAR(s->codeunits + i, end, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        cc = unicode_combining_class(c);
+        if (c == 0x0307) {
+            return 1;
+        }
+        if (cc == 0 || cc == 230) {
+            return 0;
+        }
+        i += (size_t)l;
+    }
+
+    return 0;
+}
+
+static int js_locale_tr_before_dot_u8(jsstr8_t *s, size_t start_i)
+{
+    uint8_t *end = s->bytes + s->len;
+    size_t i = start_i;
+
+    while (i < s->len) {
+        uint32_t c;
+        int l;
+        int cc;
+
+        UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
+        if (l <= 0) {
+            l = l ? -l : 1;
+            c = 0xFFFD;
+        }
+        cc = unicode_combining_class(c);
+        if (c == 0x0307) {
+            return 1;
+        }
+        if (cc == 0 || cc == 230) {
+            return 0;
+        }
+        i += (size_t)l;
+    }
+
+    return 0;
+}
 
 static int jsstr16_requires_full_case(jsstr16_t *s, int upper)
 {
@@ -656,16 +829,42 @@ void jsstr32_tolower(jsstr32_t *s) {
 }
 
 void jsstr32_tolower_locale(jsstr32_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int is_tr = js_locale_is_turkic(locale);
+    int tr_after_i = 0;
     size_t i = 0;
     while (i < s->len) {
+        uint32_t c = s->codepoints[i];
+        int cc = unicode_combining_class(c);
         uint32_t seq[3];
         size_t n;
-        if (s->codepoints[i] == 0x03A3 &&
+        if (c == 0x03A3 &&
             js_is_final_sigma32(s->codepoints, s->len, i)) {
             seq[0] = 0x03C2;
             n = 1;
+        } else if (is_tr && c == 0x0307 && tr_after_i) {
+            memmove(s->codepoints + i,
+                    s->codepoints + i + 1,
+                    (s->len - i - 1) * sizeof(uint32_t));
+            s->len--;
+            tr_after_i = 0;
+            continue;
         } else {
-            n = JS_LOCALE_TO_LOWER_FULL_L(s->codepoints[i], locale, seq);
+            n = JS_LOCALE_TO_LOWER_FULL_L(c, locale, seq);
+            if (is_tr &&
+                c == 0x0049 &&
+                !js_locale_tr_before_dot_u32(s->codepoints, s->len, i + 1)) {
+                seq[0] = 0x0131;
+                n = 1;
+            }
+            if (is_lt &&
+                (c == 0x0049 ||
+                 c == 0x004A ||
+                 c == 0x012E) &&
+                js_locale_lt_has_more_above_u32(s->codepoints, s->len, i + 1) &&
+                n < sizeof(seq) / sizeof(seq[0])) {
+                seq[n++] = 0x0307;
+            }
         }
         if (n == 1) {
             s->codepoints[i] = seq[0];
@@ -680,6 +879,13 @@ void jsstr32_tolower_locale(jsstr32_t *s, const char *locale) {
                 s->codepoints[i + j] = seq[j];
             s->len += n - 1;
             i += n;
+        }
+        if (is_tr) {
+            if (c == 0x0049) {
+                tr_after_i = 1;
+            } else if (cc == 0 || cc == 230) {
+                tr_after_i = 0;
+            }
         }
     }
 }
@@ -707,10 +913,23 @@ void jsstr32_toupper(jsstr32_t *s) {
 }
 
 void jsstr32_toupper_locale(jsstr32_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int lt_after_soft_dotted = 0;
     size_t i = 0;
     while (i < s->len) {
+        uint32_t c = s->codepoints[i];
+        int cc = unicode_combining_class(c);
+
+        if (is_lt && c == 0x0307 && lt_after_soft_dotted) {
+            memmove(s->codepoints + i,
+                    s->codepoints + i + 1,
+                    (s->len - i - 1) * sizeof(uint32_t));
+            s->len--;
+            lt_after_soft_dotted = 0;
+            continue;
+        }
         uint32_t seq[3];
-        size_t n = JS_LOCALE_TO_UPPER_FULL_L(s->codepoints[i], locale, seq);
+        size_t n = JS_LOCALE_TO_UPPER_FULL_L(c, locale, seq);
         if (n == 1) {
             s->codepoints[i] = seq[0];
             i++;
@@ -725,11 +944,57 @@ void jsstr32_toupper_locale(jsstr32_t *s, const char *locale) {
             s->len += n - 1;
             i += n;
         }
+        if (is_lt) {
+            if (cc == 0) {
+                lt_after_soft_dotted = js_locale_is_soft_dotted(c);
+            } else if (cc == 230) {
+                lt_after_soft_dotted = 0;
+            }
+        }
+    }
+}
+
+int jsstr32_normalize_form_buf(jsstr32_t *s, unicode_normalization_form_t form,
+        uint32_t *scratch, size_t scratch_cap) {
+    size_t out_len;
+
+    if (s == NULL || (s->cap > 0 && (s->codepoints == NULL || scratch == NULL))) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (scratch_cap < s->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (s->cap == 0) {
+        s->len = 0;
+        return 0;
+    }
+
+    out_len = unicode_normalize_into_form(s->codepoints, s->len, scratch, s->cap,
+            form);
+    memcpy(s->codepoints, scratch, out_len * sizeof(uint32_t));
+    s->len = out_len;
+    return 0;
+}
+
+int jsstr32_normalize_buf(jsstr32_t *s, uint32_t *scratch, size_t scratch_cap) {
+    return jsstr32_normalize_form_buf(s, UNICODE_NORMALIZE_NFC, scratch,
+            scratch_cap);
+}
+
+void jsstr32_normalize_form(jsstr32_t *s, unicode_normalization_form_t form) {
+    if (s == NULL || s->cap == 0) {
+        return;
+    }
+    {
+        uint32_t scratch[s->cap];
+        jsstr32_normalize_form_buf(s, form, scratch, s->cap);
     }
 }
 
 void jsstr32_normalize(jsstr32_t *s) {
-    s->len = unicode_normalize(s->codepoints, s->len, s->cap);
+    jsstr32_normalize_form(s, UNICODE_NORMALIZE_NFC);
 }
 
 int jsstr32_u32_locale_compare(jsstr32_t *s1, jsstr32_t *s2) {
@@ -1249,17 +1514,50 @@ int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
     return 0; /* success */
 }
 
+int jsstr16_normalize_form_buf(jsstr16_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap) {
+    jsstr32_t decoded;
+    jsstr32_t normalized;
+
+    if (s == NULL || (s->cap > 0 && (s->codeunits == NULL || workspace == NULL))) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (workspace_cap < s->cap * 2) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (s->cap == 0) {
+        s->len = 0;
+        return 0;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace, s->cap * sizeof(uint32_t));
+    jsstr32_set_from_utf16(&decoded, s->codeunits, s->len);
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + s->cap), s->cap * sizeof(uint32_t));
+    normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
+            normalized.codepoints, normalized.cap, form);
+    jsstr16_set_from_jsstr32(s, &normalized);
+    return 0;
+}
+
+int jsstr16_normalize_buf(jsstr16_t *s, uint32_t *workspace, size_t workspace_cap) {
+    return jsstr16_normalize_form_buf(s, UNICODE_NORMALIZE_NFC, workspace,
+            workspace_cap);
+}
+
+void jsstr16_normalize_form(jsstr16_t *s, unicode_normalization_form_t form) {
+    if (s == NULL || s->cap == 0 || s->cap > SIZE_MAX / 2) {
+        return;
+    }
+    {
+        uint32_t workspace[s->cap * 2];
+        jsstr16_normalize_form_buf(s, form, workspace, s->cap * 2);
+    }
+}
 
 void jsstr16_normalize(jsstr16_t *s) {
-    jsstr32_t tmp;
-    tmp.cap = s->cap;
-    tmp.codepoints = malloc(sizeof(uint32_t) * tmp.cap);
-    if (!tmp.codepoints)
-        return;
-    jsstr32_set_from_utf16(&tmp, s->codeunits, s->len);
-    tmp.len = unicode_normalize(tmp.codepoints, tmp.len, tmp.cap);
-    jsstr16_set_from_jsstr32(s, &tmp);
-    free(tmp.codepoints);
+    jsstr16_normalize_form(s, UNICODE_NORMALIZE_NFC);
 }
 
 int jsstr16_u16_locale_compare(jsstr16_t *s1, jsstr16_t *s2) {
@@ -1311,15 +1609,41 @@ void jsstr16_tolower(jsstr16_t *s) {
 }
 
 void jsstr16_tolower_locale(jsstr16_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int is_tr = js_locale_is_turkic(locale);
+    int tr_after_i = 0;
     uint16_t *end = s->codeunits + s->len;
     size_t i = 0;
     while (i < s->len) {
         uint32_t c;
         int l;
+        int cc;
         UTF16_CHAR(s->codeunits + i, end, &c, &l);
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        cc = unicode_combining_class(c);
+        if (is_tr && c == 0x0307 && tr_after_i) {
+            memmove(s->codeunits + i,
+                    s->codeunits + i + l,
+                    (s->len - i - l) * sizeof(uint16_t));
+            s->len -= (size_t)l;
+            end = s->codeunits + s->len;
+            tr_after_i = 0;
+            continue;
+        }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_LOWER_FULL_L(c, locale, seq);
+        if (is_tr &&
+            c == 0x0049 &&
+            !js_locale_tr_before_dot_u16(s, i + (size_t)l)) {
+            seq[0] = 0x0131;
+            n = 1;
+        }
+        if (is_lt &&
+            (c == 0x0049 || c == 0x004A || c == 0x012E) &&
+            js_locale_lt_has_more_above_u16(s, i + (size_t)l) &&
+            n < sizeof(seq) / sizeof(seq[0])) {
+            seq[n++] = 0x0307;
+        }
         int outlen = 0;
         for (size_t j = 0; j < n; j++)
             outlen += UTF16_CLEN(seq[j]);
@@ -1349,6 +1673,13 @@ void jsstr16_tolower_locale(jsstr16_t *s, const char *locale) {
             s->len += outlen - l;
             end = s->codeunits + s->len;
             i += outlen;
+        }
+        if (is_tr) {
+            if (c == 0x0049) {
+                tr_after_i = 1;
+            } else if (cc == 0 || cc == 230) {
+                tr_after_i = 0;
+            }
         }
     }
 }
@@ -1397,13 +1728,26 @@ void jsstr16_toupper(jsstr16_t *s) {
 }
 
 void jsstr16_toupper_locale(jsstr16_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int lt_after_soft_dotted = 0;
     uint16_t *end = s->codeunits + s->len;
     size_t i = 0;
     while (i < s->len) {
         uint32_t c;
         int l;
+        int cc;
         UTF16_CHAR(s->codeunits + i, end, &c, &l);
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        cc = unicode_combining_class(c);
+        if (is_lt && c == 0x0307 && lt_after_soft_dotted) {
+            memmove(s->codeunits + i,
+                    s->codeunits + i + l,
+                    (s->len - i - l) * sizeof(uint16_t));
+            s->len -= l;
+            end = s->codeunits + s->len;
+            lt_after_soft_dotted = 0;
+            continue;
+        }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_UPPER_FULL_L(c, locale, seq);
         int outlen = 0;
@@ -1435,6 +1779,13 @@ void jsstr16_toupper_locale(jsstr16_t *s, const char *locale) {
             s->len += outlen - l;
             end = s->codeunits + s->len;
             i += outlen;
+        }
+        if (is_lt) {
+            if (cc == 0) {
+                lt_after_soft_dotted = js_locale_is_soft_dotted(c);
+            } else if (cc == 230) {
+                lt_after_soft_dotted = 0;
+            }
         }
     }
 }
@@ -1928,15 +2279,41 @@ void jsstr8_tolower(jsstr8_t *s) {
 }
 
 void jsstr8_tolower_locale(jsstr8_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int is_tr = js_locale_is_turkic(locale);
+    int tr_after_i = 0;
     uint8_t *end = s->bytes + s->len;
     size_t i = 0;
     while (i < s->len) {
         uint32_t c;
         int l;
+        int cc;
         UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        cc = unicode_combining_class(c);
+        if (is_tr && c == 0x0307 && tr_after_i) {
+            memmove(s->bytes + i,
+                    s->bytes + i + l,
+                    s->len - i - (size_t)l);
+            s->len -= (size_t)l;
+            end = s->bytes + s->len;
+            tr_after_i = 0;
+            continue;
+        }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_LOWER_FULL_L(c, locale, seq);
+        if (is_tr &&
+            c == 0x0049 &&
+            !js_locale_tr_before_dot_u8(s, i + (size_t)l)) {
+            seq[0] = 0x0131;
+            n = 1;
+        }
+        if (is_lt &&
+            (c == 0x0049 || c == 0x004A || c == 0x012E) &&
+            js_locale_lt_has_more_above_u8(s, i + (size_t)l) &&
+            n < sizeof(seq) / sizeof(seq[0])) {
+            seq[n++] = 0x0307;
+        }
         uint8_t buf[12];
         uint8_t *p = buf;
         for (size_t j = 0; j < n; j++) {
@@ -1957,6 +2334,13 @@ void jsstr8_tolower_locale(jsstr8_t *s, const char *locale) {
             s->len += outlen - l;
             end = s->bytes + s->len;
             i += outlen;
+        }
+        if (is_tr) {
+            if (c == 0x0049) {
+                tr_after_i = 1;
+            } else if (cc == 0 || cc == 230) {
+                tr_after_i = 0;
+            }
         }
     }
 }
@@ -1996,13 +2380,26 @@ void jsstr8_toupper(jsstr8_t *s) {
 }
 
 void jsstr8_toupper_locale(jsstr8_t *s, const char *locale) {
+    int is_lt = js_locale_is_lithuanian(locale);
+    int lt_after_soft_dotted = 0;
     uint8_t *end = s->bytes + s->len;
     size_t i = 0;
     while (i < s->len) {
         uint32_t c;
         int l;
+        int cc;
         UTF8_CHAR((const char *)s->bytes + i, (const char *)end, &c, &l);
         if (l <= 0) { l = l ? -l : 1; c = 0xFFFD; }
+        cc = unicode_combining_class(c);
+        if (is_lt && c == 0x0307 && lt_after_soft_dotted) {
+            memmove(s->bytes + i,
+                    s->bytes + i + l,
+                    s->len - i - l);
+            s->len -= l;
+            end = s->bytes + s->len;
+            lt_after_soft_dotted = 0;
+            continue;
+        }
         uint32_t seq[3];
         size_t n = JS_LOCALE_TO_UPPER_FULL_L(c, locale, seq);
         uint8_t buf[12];
@@ -2026,19 +2423,60 @@ void jsstr8_toupper_locale(jsstr8_t *s, const char *locale) {
             end = s->bytes + s->len;
             i += outlen;
         }
+        if (is_lt) {
+            if (cc == 0) {
+                lt_after_soft_dotted = js_locale_is_soft_dotted(c);
+            } else if (cc == 230) {
+                lt_after_soft_dotted = 0;
+            }
+        }
+    }
+}
+
+int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap) {
+    jsstr32_t decoded;
+    jsstr32_t normalized;
+
+    if (s == NULL || (s->cap > 0 && (s->bytes == NULL || workspace == NULL))) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (workspace_cap < s->cap * 2) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (s->cap == 0) {
+        s->len = 0;
+        return 0;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace, s->cap * sizeof(uint32_t));
+    jsstr32_set_from_utf8(&decoded, s->bytes, s->len);
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + s->cap), s->cap * sizeof(uint32_t));
+    normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
+            normalized.codepoints, normalized.cap, form);
+    jsstr8_set_from_jsstr32(s, &normalized);
+    return 0;
+}
+
+int jsstr8_normalize_buf(jsstr8_t *s, uint32_t *workspace, size_t workspace_cap) {
+    return jsstr8_normalize_form_buf(s, UNICODE_NORMALIZE_NFC, workspace,
+            workspace_cap);
+}
+
+void jsstr8_normalize_form(jsstr8_t *s, unicode_normalization_form_t form) {
+    if (s == NULL || s->cap == 0 || s->cap > SIZE_MAX / 2) {
+        return;
+    }
+    {
+        uint32_t workspace[s->cap * 2];
+        jsstr8_normalize_form_buf(s, form, workspace, s->cap * 2);
     }
 }
 
 void jsstr8_normalize(jsstr8_t *s) {
-    jsstr32_t tmp;
-    tmp.cap = s->cap;
-    tmp.codepoints = malloc(sizeof(uint32_t) * tmp.cap);
-    if (!tmp.codepoints)
-        return;
-    jsstr32_set_from_utf8(&tmp, s->bytes, s->len);
-    tmp.len = unicode_normalize(tmp.codepoints, tmp.len, tmp.cap);
-    jsstr8_set_from_jsstr32(s, &tmp);
-    free(tmp.codepoints);
+    jsstr8_normalize_form(s, UNICODE_NORMALIZE_NFC);
 }
 
 int jsstr8_u8_locale_compare(jsstr8_t *s1, jsstr8_t *s2) {

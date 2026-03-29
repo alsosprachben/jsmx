@@ -1,0 +1,72 @@
+# Translation Style
+
+This document defines how JS compliance tests should be translated into `jsmx`-style C.
+
+## Goal
+
+Translate the semantic intent of the JS test into reviewable, self-contained C that exercises the `jsmx` runtime surfaces directly.
+
+The output is not a generic C translation. It is a `jsmx`-targeted fixture.
+
+## API Selection
+
+- Use `jsstr` for pure string semantics:
+  - normalization
+  - case mapping
+  - UTF-8 / UTF-16 / UTF-32 length behavior
+  - concatenation
+  - substring or inclusion checks
+  - well-formedness conversion
+- Use `jsval` when the test involves:
+  - JS value tags
+  - truthiness
+  - strict equality
+  - JSON-backed values
+  - object or array access
+  - promotion from JSON-backed to native
+  - JSON emission through `jsval_copy_json()`
+
+## Memory Model
+
+- Prefer caller-owned stack or page-backed buffers.
+- Use `*_init_from_buf()` forms for strings.
+- Use `jsval_region_init()` for page-resident values.
+- Do not add `malloc`, `realloc`, or `free` to generated fixtures.
+
+## Promotion Policy
+
+- JSON-backed `jsval` values are readable but not JS-mutable.
+- On first semantic mutation, use:
+  - `jsval_region_promote_root()` for the in-page root
+  - `jsval_promote_in_place()` for a local slot
+- Do not hide promotion inside mutation helpers.
+
+## Unsupported Semantics
+
+If the source test depends on behavior not yet supported by `jsmx`, return `KNOWN_UNSUPPORTED` through the shared contract header.
+
+Examples:
+
+- prototype chain semantics
+- descriptors or accessors
+- symbols
+- functions or closures
+- promises
+- sparse-array behavior
+- `JSON.stringify`-specific handling of `undefined` or holes
+
+Do not approximate unsupported behavior just to preserve the source test structure.
+
+## Generated File Rules
+
+- Include `compliance/generated/test_contract.h`.
+- Provide a single `main(void)` entry point.
+- Keep the file self-contained.
+- Add a short comment near the top naming the upstream JS source and the semantic intent.
+- Use clear local variable names over prompt-shaped names.
+
+## Result Policy
+
+- `PASS` means the translated semantic check succeeded.
+- `KNOWN_UNSUPPORTED` means the test is intentionally deferred.
+- `FAIL` means the translated test compiled and ran, but the observed result was wrong.

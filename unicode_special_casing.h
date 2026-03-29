@@ -2,6 +2,8 @@
 #define UNICODE_SPECIAL_CASING_H
 #include <stdint.h>
 #include <stddef.h>
+#define UNICODE_LOCALE_TURKIC 0x01
+#define UNICODE_LOCALE_LITHUANIAN 0x02
 typedef struct {
     uint32_t code;
     uint8_t lower_len;
@@ -9,6 +11,14 @@ typedef struct {
     uint32_t lower[3];
     uint32_t upper[3];
 } unicode_special_case_t;
+typedef struct {
+    uint32_t code;
+    uint8_t locale;
+    uint8_t lower_len;
+    uint8_t upper_len;
+    uint32_t lower[3];
+    uint32_t upper[3];
+} unicode_special_case_locale_t;
 static const unicode_special_case_t unicode_special_cases[] = {
     {0x00DF, 1, 2, {0x00DF, 0, 0}, {0x0053, 0x0053, 0}},
     {0x0130, 2, 1, {0x0069, 0x0307, 0}, {0x0130, 0, 0}},
@@ -114,27 +124,13 @@ static const unicode_special_case_t unicode_special_cases[] = {
     {0xFB16, 1, 2, {0xFB16, 0, 0}, {0x054E, 0x0546, 0}},
     {0xFB17, 1, 2, {0xFB17, 0, 0}, {0x0544, 0x053D, 0}},
 };
-static const size_t unicode_special_cases_len = sizeof(unicode_special_cases)/sizeof(unicode_special_cases[0]);
-
-/* Locale aware special casing */
-#define UNICODE_LOCALE_TURKIC 0x01 /* tr, az */
-#define UNICODE_LOCALE_LITHUANIAN 0x02 /* lt */
-
-typedef struct {
-    uint32_t code;
-    uint8_t locale;
-    uint8_t lower_len;
-    uint8_t upper_len;
-    uint32_t lower[3];
-    uint32_t upper[3];
-} unicode_special_case_locale_t;
-
+static const size_t unicode_special_cases_len = sizeof(unicode_special_cases) / sizeof(unicode_special_cases[0]);
 static const unicode_special_case_locale_t unicode_special_cases_locale[] = {
-    {0x0049, UNICODE_LOCALE_TURKIC, 1, 1, {0x0131, 0, 0}, {0x0049, 0, 0}},
-    {0x0049, UNICODE_LOCALE_LITHUANIAN, 2, 1, {0x0069, 0x0307, 0}, {0x0049, 0, 0}},
-    {0x004A, UNICODE_LOCALE_LITHUANIAN, 2, 1, {0x006A, 0x0307, 0}, {0x004A, 0, 0}},
-    {0x012E, UNICODE_LOCALE_LITHUANIAN, 2, 1, {0x012F, 0x0307, 0}, {0x012E, 0, 0}},
-    {0x0069, UNICODE_LOCALE_TURKIC, 1, 1, {0x0069, 0, 0}, {0x0130, 0, 0}},
+    {0x0069, 1, 1, 1, {0x0069, 0, 0}, {0x0130, 0, 0}},
+    {0x00CC, 2, 3, 1, {0x0069, 0x0307, 0x0300, }, {0x00CC, 0, 0}},
+    {0x00CD, 2, 3, 1, {0x0069, 0x0307, 0x0301, }, {0x00CD, 0, 0}},
+    {0x0128, 2, 3, 1, {0x0069, 0x0307, 0x0303, }, {0x0128, 0, 0}},
+    {0x0130, 1, 1, 1, {0x0069, 0, 0}, {0x0130, 0, 0}},
 };
-static const size_t unicode_special_cases_locale_len = sizeof(unicode_special_cases_locale)/sizeof(unicode_special_cases_locale[0]);
+static const size_t unicode_special_cases_locale_len = 5;
 #endif /* UNICODE_SPECIAL_CASING_H */

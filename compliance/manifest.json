@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "runner_contract": {
+    "header": "compliance/generated/test_contract.h",
+    "pass_exit_code": 0,
+    "wrong_result_exit_code": 1,
+    "known_unsupported_exit_code": 2
+  },
+  "cases": [
+    {
+      "id": "test262-strings-returns-well-formed-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/returns-well-formed-string.js",
+      "generated": "compliance/generated/strings/test262/returns-well-formed-string.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 string semantics. The original typeof/prototype assertion is intentionally omitted at the library layer."
+    },
+    {
+      "id": "test262-strings-return-normalized-string-using-default-parameter",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-normalized-string-using-default-parameter.js",
+      "generated": "compliance/generated/strings/test262/return-normalized-string-using-default-parameter.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 NFC normalization semantics. The JS-level distinction between normalize() and normalize(undefined) collapses to the same library operation."
+    },
+    {
+      "id": "test262-strings-return-normalized-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-normalized-string.js",
+      "generated": "compliance/generated/strings/test262/return-normalized-string.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 explicit normalization-form semantics, mapping the JS form strings to unicode_normalization_form_t."
+    },
+    {
+      "id": "test262-strings-return-normalized-string-from-coerced-form",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-normalized-string-from-coerced-form.js",
+      "generated": "compliance/generated/strings/test262/return-normalized-string-from-coerced-form.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 explicit normalization-form semantics after JS coercion has collapsed the form argument to a string."
+    },
+    {
+      "id": "test262-strings-form-is-not-valid-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/form-is-not-valid-throws.js",
+      "generated": "compliance/generated/strings/test262/form-is-not-valid-throws.c",
+      "expected_status": "pass",
+      "notes": "Translated against unicode_normalization_form_parse, mapping JS invalid-form RangeError behavior to EINVAL at the C layer."
+    },
+    {
+      "id": "test262-strings-return-abrupt-from-form",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-abrupt-from-form.js",
+      "generated": "compliance/generated/strings/test262/return-abrupt-from-form.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks the JS-object coercion boundary. Abrupt ToString(form) completion and exception propagation remain above the jsmx string layer."
+    },
+    {
+      "id": "test262-strings-return-abrupt-from-form-as-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-abrupt-from-form-as-symbol.js",
+      "generated": "compliance/generated/strings/test262/return-abrupt-from-form-as-symbol.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks the Symbol/coercion boundary. JS ToString(form) TypeError semantics are not represented directly in jsmx yet."
+    },
+    {
+      "id": "test262-strings-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/return-abrupt-from-this.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks the JS receiver-coercion boundary for String.prototype.normalize."
+    },
+    {
+      "id": "test262-strings-return-abrupt-from-this-as-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/return-abrupt-from-this-as-symbol.js",
+      "generated": "compliance/generated/strings/test262/return-abrupt-from-this-as-symbol.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks the Symbol receiver boundary for String.prototype.normalize."
+    },
+    {
+      "id": "test262-strings-this-is-null-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/this-is-null-throws.js",
+      "generated": "compliance/generated/strings/test262/this-is-null-throws.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks RequireObjectCoercible(this) behavior, which belongs to the JS method/runtime layer above jsmx."
+    },
+    {
+      "id": "test262-strings-this-is-undefined-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/this-is-undefined-throws.js",
+      "generated": "compliance/generated/strings/test262/this-is-undefined-throws.c",
+      "expected_status": "known_unsupported",
+      "notes": "Tracks undefined receiver rejection for String.prototype.normalize, which is outside the jsstr primitive API."
+    },
+    {
+      "id": "test262-strings-S15.5.4.18_A2_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/S15.5.4.18_A2_T1.js",
+      "generated": "compliance/generated/strings/test262/S15.5.4.18_A2_T1.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr8 string semantics. The original primitive-vs-String-object distinction is intentionally omitted at the library layer."
+    },
+    {
+      "id": "test262-strings-toUpperCase-special-casing",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/toUpperCase-special_casing.js",
+      "generated": "compliance/generated/strings/test262/toUpperCase-special_casing.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 string semantics using the upstream escaped code-unit cases from test262 special_casing.js."
+    },
+    {
+      "id": "test262-strings-S15.5.4.19_A2_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/S15.5.4.19_A2_T1.js",
+      "generated": "compliance/generated/strings/test262/S15.5.4.19_A2_T1.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr8 locale-uppercase semantics through the locale-insensitive path used when no locale tag is supplied."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleUpperCase-special-casing-turkish",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleUpperCase-special_casing_Turkish.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleUpperCase-special_casing_Turkish.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-uppercase semantics for the Turkish conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleUpperCase-special-casing-lithuanian",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleUpperCase-special_casing_Lithuanian.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleUpperCase-special_casing_Lithuanian.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-uppercase semantics for the Lithuanian conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleUpperCase-special-casing-azeri",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleUpperCase-special_casing_Azeri.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleUpperCase-special_casing_Azeri.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-uppercase semantics for the Azeri conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleLowerCase-special-casing-turkish",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleLowerCase-special_casing_Turkish.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleLowerCase-special_casing_Turkish.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-lowercase semantics for the Turkish conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleLowerCase-special-casing-azeri",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleLowerCase-special_casing_Azeri.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleLowerCase-special_casing_Azeri.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-lowercase semantics for the Azeri conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-strings-intl402-toLocaleLowerCase-special-casing-lithuanian",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/intl402-toLocaleLowerCase-special_casing_Lithuanian.js",
+      "generated": "compliance/generated/strings/test262/intl402-toLocaleLowerCase-special_casing_Lithuanian.c",
+      "expected_status": "pass",
+      "notes": "Translated against jsstr16 locale-lowercase semantics for the Lithuanian conditional mappings from the intl402 test262 suite."
+    }
+  ]
+}

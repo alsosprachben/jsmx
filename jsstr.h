@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include "unicode.h"
 
 /*
  * JavaScript string of code points
@@ -171,6 +172,10 @@ void jsstr32_tolower(jsstr32_t *s);
 void jsstr32_toupper(jsstr32_t *s);
 void jsstr32_tolower_locale(jsstr32_t *s, const char *locale);
 void jsstr32_toupper_locale(jsstr32_t *s, const char *locale);
+int jsstr32_normalize_form_buf(jsstr32_t *s, unicode_normalization_form_t form,
+        uint32_t *scratch, size_t scratch_cap);
+void jsstr32_normalize_form(jsstr32_t *s, unicode_normalization_form_t form);
+int jsstr32_normalize_buf(jsstr32_t *s, uint32_t *scratch, size_t scratch_cap);
 void jsstr32_normalize(jsstr32_t *s);
 int jsstr32_u32_locale_compare(jsstr32_t *s1, jsstr32_t *s2);
 int jsstr32_repeat(jsstr32_t *dest, jsstr32_t *src, size_t count);
@@ -232,6 +237,10 @@ ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
+int jsstr16_normalize_form_buf(jsstr16_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap);
+void jsstr16_normalize_form(jsstr16_t *s, unicode_normalization_form_t form);
+int jsstr16_normalize_buf(jsstr16_t *s, uint32_t *workspace, size_t workspace_cap);
 void jsstr16_normalize(jsstr16_t *s);
 int jsstr16_u16_locale_compare(jsstr16_t *s1, jsstr16_t *s2);
 void jsstr16_tolower(jsstr16_t *s);
@@ -298,6 +307,10 @@ ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
+int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap);
+void jsstr8_normalize_form(jsstr8_t *s, unicode_normalization_form_t form);
+int jsstr8_normalize_buf(jsstr8_t *s, uint32_t *workspace, size_t workspace_cap);
 void jsstr8_normalize(jsstr8_t *s);
 int jsstr8_u8_locale_compare(jsstr8_t *s1, jsstr8_t *s2);
 void jsstr8_tolower(jsstr8_t *s);

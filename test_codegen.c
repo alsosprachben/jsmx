@@ -1,0 +1,292 @@
+#include <errno.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "jsstr.h"
+#include "jsval.h"
+
+typedef enum generated_status_e {
+	GENERATED_PASS = 0,
+	GENERATED_KNOWN_UNSUPPORTED = 1,
+	GENERATED_WRONG_RESULT = 2
+} generated_status_t;
+
+typedef generated_status_t (*generated_case_fn)(char *detail, size_t cap);
+
+typedef struct generated_case_s {
+	const char *suite;
+	const char *name;
+	generated_case_fn run;
+} generated_case_t;
+
+static generated_status_t generated_write_detail(generated_status_t status, char *detail, size_t cap, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (detail != NULL && cap > 0) {
+		va_start(ap, fmt);
+		vsnprintf(detail, cap, fmt, ap);
+		va_end(ap);
+	}
+	return status;
+}
+
+static generated_status_t generated_failf(char *detail, size_t cap, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (detail != NULL && cap > 0) {
+		va_start(ap, fmt);
+		vsnprintf(detail, cap, fmt, ap);
+		va_end(ap);
+	}
+	return GENERATED_WRONG_RESULT;
+}
+
+static generated_status_t generated_fail_errno(char *detail, size_t cap, const char *context)
+{
+	int err = errno;
+	return generated_failf(detail, cap, "%s failed: %s", context, strerror(err));
+}
+
+static generated_status_t generated_expect_jsstr8(jsstr8_t *value, const uint8_t *expected, size_t expected_len, char *detail, size_t cap)
+{
+	if (value->len != expected_len) {
+		return generated_failf(detail, cap, "expected %zu bytes, got %zu", expected_len, value->len);
+	}
+	if (memcmp(value->bytes, expected, expected_len) != 0) {
+		return generated_failf(detail, cap, "string bytes did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_expect_json(jsval_region_t *region, jsval_t value, const uint8_t *expected, size_t expected_len, char *detail, size_t cap)
+{
+	size_t actual_len = 0;
+	uint8_t actual_buf[expected_len ? expected_len : 1];
+
+	if (jsval_copy_json(region, value, NULL, 0, &actual_len) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_copy_json(length)");
+	}
+	if (actual_len != expected_len) {
+		return generated_failf(detail, cap, "expected %zu JSON bytes, got %zu", expected_len, actual_len);
+	}
+	if (jsval_copy_json(region, value, actual_buf, actual_len, NULL) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_copy_json(copy)");
+	}
+	if (memcmp(actual_buf, expected, expected_len) != 0) {
+		return generated_failf(detail, cap, "emitted JSON did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t cap)
+{
+	static const uint8_t input[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
+	static const uint8_t expected[] = "{\"message\":\"line\\n\\\"quoted\\\"\",\"items\":[7,true,null]}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t items;
+	jsval_t replacement;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 32, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (!jsval_is_json_backed(root)) {
+		return generated_failf(detail, cap, "expected parsed root to stay JSON-backed");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5, &items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(items)");
+	}
+
+	errno = 0;
+	if (jsval_array_set(&region, items, 0, jsval_number(7.0)) == 0) {
+		return generated_failf(detail, cap, "JSON-backed array mutation unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap, "expected ENOTSUP before promotion, got %d", errno);
+	}
+
+	if (jsval_region_promote_root(&region, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	}
+	if (!jsval_is_native(root)) {
+		return generated_failf(detail, cap, "expected promoted root to be native");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5, &items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(promoted items)");
+	}
+	if (!jsval_is_native(items)) {
+		return generated_failf(detail, cap, "expected promoted child array to be native");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"line\n\"quoted\"", 13, &replacement) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"message", 7, replacement) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8");
+	}
+	if (jsval_array_set(&region, items, 0, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set");
+	}
+
+	return generated_expect_json(&region, root, expected, sizeof(expected) - 1, detail, cap);
+}
+
+static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
+{
+	static const uint8_t input[] = {'A', 0xCC, 0x8A};
+	static const uint8_t expected[] = {0xC3, 0x85};
+	uint8_t storage[32];
+	uint32_t workspace[64];
+	jsstr8_t value;
+
+	jsstr8_init_from_buf(&value, (const char *)storage, sizeof(storage));
+	jsstr8_set_from_utf8(&value, input, sizeof(input));
+	if (jsstr8_normalize_buf(&value, workspace, sizeof(workspace) / sizeof(workspace[0])) < 0) {
+		return generated_fail_errno(detail, cap, "jsstr8_normalize_buf");
+	}
+
+	return generated_expect_jsstr8(&value, expected, sizeof(expected), detail, cap);
+}
+
+static generated_status_t generated_string_utf16_length_surrogate_pair(char *detail, size_t cap)
+{
+	static const uint8_t input[] = {'A', 0xF0, 0x9F, 0x98, 0x80};
+	uint8_t storage[32];
+	jsstr8_t value;
+
+	jsstr8_init_from_buf(&value, (const char *)storage, sizeof(storage));
+	jsstr8_set_from_utf8(&value, input, sizeof(input));
+
+	if (jsstr8_get_utf32len(&value) != 2) {
+		return generated_failf(detail, cap, "expected 2 code points");
+	}
+	if (jsstr8_get_utf16len(&value) != 3) {
+		return generated_failf(detail, cap, "expected 3 UTF-16 code units");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_string_concat_multibyte(char *detail, size_t cap)
+{
+	static const uint8_t left_input[] = "Jazz ";
+	static const uint8_t right_input[] = {0xF0, 0x9F, 0x8E, 0xB7};
+	static const uint8_t expected[] = {'J', 'a', 'z', 'z', ' ', 0xF0, 0x9F, 0x8E, 0xB7};
+	uint8_t left_storage[64];
+	uint8_t right_storage[16];
+	jsstr8_t left;
+	jsstr8_t right;
+
+	jsstr8_init_from_buf(&left, (const char *)left_storage, sizeof(left_storage));
+	jsstr8_init_from_buf(&right, (const char *)right_storage, sizeof(right_storage));
+	jsstr8_set_from_utf8(&left, left_input, sizeof(left_input) - 1);
+	jsstr8_set_from_utf8(&right, right_input, sizeof(right_input));
+	if (jsstr8_concat(&left, &right) < 0) {
+		return generated_fail_errno(detail, cap, "jsstr8_concat");
+	}
+
+	return generated_expect_jsstr8(&left, expected, sizeof(expected), detail, cap);
+}
+
+static generated_status_t generated_string_includes_multibyte(char *detail, size_t cap)
+{
+	static const uint8_t haystack_input[] = {'A', 0xF0, 0x9F, 0x98, 0x80, 'B'};
+	static const uint8_t needle_input[] = {0xF0, 0x9F, 0x98, 0x80};
+	uint8_t haystack_storage[32];
+	uint8_t needle_storage[16];
+	jsstr8_t haystack;
+	jsstr8_t needle;
+
+	jsstr8_init_from_buf(&haystack, (const char *)haystack_storage, sizeof(haystack_storage));
+	jsstr8_init_from_buf(&needle, (const char *)needle_storage, sizeof(needle_storage));
+	jsstr8_set_from_utf8(&haystack, haystack_input, sizeof(haystack_input));
+	jsstr8_set_from_utf8(&needle, needle_input, sizeof(needle_input));
+	if (!jsstr8_u8_includes(&haystack, &needle)) {
+		return generated_failf(detail, cap, "expected multibyte substring to be found");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_string_toupper_locale_tr(char *detail, size_t cap)
+{
+	static const uint8_t input[] = "istanbul";
+	static const uint8_t expected[] = {0xC4, 0xB0, 'S', 'T', 'A', 'N', 'B', 'U', 'L'};
+	uint8_t storage[64];
+	jsstr8_t value;
+
+	jsstr8_init_from_buf(&value, (const char *)storage, sizeof(storage));
+	jsstr8_set_from_utf8(&value, input, sizeof(input) - 1);
+	jsstr8_toupper_locale(&value, "tr");
+
+	return generated_expect_jsstr8(&value, expected, sizeof(expected), detail, cap);
+}
+
+static generated_status_t generated_string_to_well_formed_invalid_utf8(char *detail, size_t cap)
+{
+	static const uint8_t invalid_input[] = {0x80, 'A'};
+	static const uint8_t expected[] = {0xEF, 0xBF, 0xBD, 'A'};
+	uint8_t dest_storage[16];
+	jsstr8_t source;
+	jsstr8_t dest;
+	size_t written;
+
+	source.cap = sizeof(invalid_input);
+	source.len = sizeof(invalid_input);
+	source.bytes = (uint8_t *)invalid_input;
+	dest.cap = sizeof(dest_storage);
+	dest.len = 0;
+	dest.bytes = dest_storage;
+
+	written = jsstr8_to_well_formed(&source, &dest);
+	if (written != sizeof(expected)) {
+		return generated_failf(detail, cap, "expected %zu bytes from jsstr8_to_well_formed, got %zu", sizeof(expected), written);
+	}
+
+	return generated_expect_jsstr8(&dest, expected, sizeof(expected), detail, cap);
+}
+
+static const generated_case_t generated_cases[] = {
+	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
+	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
+	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
+	{"strings", "concat_multibyte", generated_string_concat_multibyte},
+	{"strings", "includes_multibyte", generated_string_includes_multibyte},
+	{"strings", "toupper_locale_tr", generated_string_toupper_locale_tr},
+	{"strings", "to_well_formed_invalid_utf8", generated_string_to_well_formed_invalid_utf8},
+};
+
+int main(void)
+{
+	size_t i;
+	size_t passed = 0;
+	size_t unsupported = 0;
+	size_t failed = 0;
+
+	for (i = 0; i < sizeof(generated_cases) / sizeof(generated_cases[0]); i++) {
+		char detail[256] = {0};
+		generated_status_t status = generated_cases[i].run(detail, sizeof(detail));
+
+		switch (status) {
+		case GENERATED_PASS:
+			passed++;
+			printf("PASS %s/%s\n", generated_cases[i].suite, generated_cases[i].name);
+			break;
+		case GENERATED_KNOWN_UNSUPPORTED:
+			unsupported++;
+			printf("UNSUPPORTED %s/%s: %s\n", generated_cases[i].suite, generated_cases[i].name, detail[0] ? detail : "known unsupported");
+			break;
+		default:
+			failed++;
+			printf("FAIL %s/%s: %s\n", generated_cases[i].suite, generated_cases[i].name, detail[0] ? detail : "wrong result");
+			break;
+		}
+	}
+
+	printf("generated cases: %zu passed, %zu known unsupported, %zu wrong result\n", passed, unsupported, failed);
+	return failed == 0 ? 0 : 1;
+}
