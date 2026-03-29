@@ -11,7 +11,7 @@ libjsmx.a: jsmn.o jsval.o jsmethod.o
 
 jsmn.o: jsmn.c jsmn.h
 
-jsval.o: jsval.c jsval.h jsmn.h utf8.h
+jsval.o: jsval.c jsval.h jsmethod.h jsmn.h utf8.h
 
 jsmethod.o: jsmethod.c jsmethod.h jsstr.h unicode.h
 
@@ -57,11 +57,11 @@ test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collatio
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_jsval: test_jsval.c jsval.c jsmn.c jsval.h
+test_jsval: test_jsval.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_codegen: test_codegen.c jsval.c jsmn.c jsstr.c unicode.c jsval.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_codegen: test_codegen.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 

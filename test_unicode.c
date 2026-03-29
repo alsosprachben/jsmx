@@ -91,6 +91,39 @@ static void test_normalize_forms() {
     assert(hangul_comp[1] == 0x1161);
 }
 
+static void test_normalize_measure(void) {
+    uint32_t src[] = {0x0041, 0x030A};
+    uint32_t src_nfkd[] = {0x1E9B, 0x0323};
+    uint32_t workspace[4] = {0};
+    size_t workspace_cap;
+    size_t needed_len;
+
+    assert(unicode_normalize_form_decompose_len_codepoint(0xAC00,
+            UNICODE_NORMALIZE_NFD) == 2);
+    assert(unicode_normalize_form_workspace_len(src, 2, UNICODE_NORMALIZE_NFC,
+            &workspace_cap) == 0);
+    assert(workspace_cap == 2);
+    assert(unicode_normalize_form_needed(src, 2, UNICODE_NORMALIZE_NFC, workspace,
+            workspace_cap, &needed_len) == 0);
+    assert(needed_len == 1);
+    assert(workspace[0] == 0x00C5);
+
+    assert(unicode_normalize_form_workspace_len(src_nfkd, 2,
+            UNICODE_NORMALIZE_NFKD, &workspace_cap) == 0);
+    assert(workspace_cap == 3);
+    assert(unicode_normalize_form_needed(src_nfkd, 2, UNICODE_NORMALIZE_NFKD,
+            workspace, workspace_cap, &needed_len) == 0);
+    assert(needed_len == 3);
+    assert(workspace[0] == 0x0073);
+    assert(workspace[1] == 0x0323);
+    assert(workspace[2] == 0x0307);
+
+    errno = 0;
+    assert(unicode_normalize_form_needed(src, 2, UNICODE_NORMALIZE_NFC, workspace,
+            1, &needed_len) == -1);
+    assert(errno == ENOBUFS);
+}
+
 static void test_locale_special_casing() {
     uint32_t out[3] = {0};
     size_t len;
@@ -150,6 +183,7 @@ int main() {
     test_nfkc_maps();
     test_normalize_api();
     test_normalize_forms();
+    test_normalize_measure();
     test_locale_special_casing();
     test_normalization_form_parse();
     return 0;

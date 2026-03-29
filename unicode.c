@@ -373,6 +373,21 @@ static size_t unicode_decompose(uint32_t cp, uint32_t *out, size_t cap,
     return total;
 }
 
+static size_t unicode_decompose_len(uint32_t cp, int compatibility) {
+    uint32_t tmp[18];
+    size_t n = unicode_decompose_char(cp, tmp, 18, compatibility);
+    size_t total = 0;
+
+    for (size_t i = 0; i < n; i++) {
+        if (tmp[i] == cp && n == 1) {
+            total++;
+        } else {
+            total += unicode_decompose_len(tmp[i], compatibility);
+        }
+    }
+    return total;
+}
+
 /* lookup composition of pair */
 static int unicode_compose_pair(uint32_t a, uint32_t b, uint32_t *out) {
     const uint32_t SBase = 0xAC00;
@@ -482,6 +497,52 @@ size_t unicode_nfkc_scf(uint32_t cp, uint32_t out[UNICODE_NFKC_SCF_MAX]) {
 
 int unicode_changes_when_nfkc_casefolded(uint32_t cp) {
     return unicode_range_contains(unicode_cwkcf, unicode_cwkcf_len, cp);
+}
+
+size_t unicode_normalize_form_decompose_len_codepoint(uint32_t cp,
+        unicode_normalization_form_t form) {
+    form = unicode_normalize_canonicalize_form(form);
+    return unicode_decompose_len(cp, unicode_normalize_uses_compat(form));
+}
+
+int unicode_normalize_form_workspace_len(const uint32_t *src, size_t len,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr) {
+    size_t total = 0;
+
+    if ((len > 0 && src == NULL) || workspace_cap_ptr == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    form = unicode_normalize_canonicalize_form(form);
+    for (size_t i = 0; i < len; i++) {
+        total += unicode_decompose_len(src[i], unicode_normalize_uses_compat(form));
+    }
+    *workspace_cap_ptr = total;
+    return 0;
+}
+
+int unicode_normalize_form_needed(const uint32_t *src, size_t len,
+        unicode_normalization_form_t form, uint32_t *workspace,
+        size_t workspace_cap, size_t *needed_len_ptr) {
+    size_t needed_workspace;
+
+    if ((len > 0 && src == NULL) || needed_len_ptr == NULL ||
+            (workspace_cap > 0 && workspace == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (unicode_normalize_form_workspace_len(src, len, form,
+            &needed_workspace) < 0) {
+        return -1;
+    }
+    if (workspace_cap < needed_workspace) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    *needed_len_ptr = unicode_normalize_into_form(src, len, workspace,
+            workspace_cap, form);
+    return 0;
 }
 
 size_t unicode_normalize_into_form(const uint32_t *src, size_t len, uint32_t *dst,

@@ -81,6 +81,29 @@ static generated_status_t generated_expect_json(jsval_region_t *region, jsval_t 
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_string(jsval_region_t *region,
+		jsval_t value, const uint8_t *expected, size_t expected_len,
+		char *detail, size_t cap)
+{
+	size_t actual_len = 0;
+	uint8_t actual_buf[expected_len ? expected_len : 1];
+
+	if (jsval_string_copy_utf8(region, value, NULL, 0, &actual_len) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_copy_utf8(length)");
+	}
+	if (actual_len != expected_len) {
+		return generated_failf(detail, cap, "expected %zu string bytes, got %zu",
+				expected_len, actual_len);
+	}
+	if (jsval_string_copy_utf8(region, value, actual_buf, actual_len, NULL) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_copy_utf8(copy)");
+	}
+	if (memcmp(actual_buf, expected, expected_len) != 0) {
+		return generated_failf(detail, cap, "string bytes did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t cap)
 {
 	static const uint8_t input[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -133,6 +156,57 @@ static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t
 	}
 
 	return generated_expect_json(&region, root, expected, sizeof(expected) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] = "{\"city\":\"istanbul\"}";
+	static const uint8_t expected_string[] = {
+		0xC4, 0xB0, 'S', 'T', 'A', 'N', 'B', 'U', 'L'
+	};
+	static const uint8_t expected_json[] =
+		"{\"city\":\"\xC4\xB0STANBUL\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t city;
+	jsval_t locale;
+	jsval_t upper;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"city", 4, &city) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(city)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"tr", 2, &locale) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(locale)");
+	}
+	if (jsval_method_string_to_locale_upper_case(&region, city, 1, locale,
+			&upper, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_to_locale_upper_case failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	status = generated_expect_string(&region, upper, expected_string,
+			sizeof(expected_string), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_region_promote_root(&region, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"city", 4, upper) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(city)");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
 }
 
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
@@ -252,6 +326,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
+	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

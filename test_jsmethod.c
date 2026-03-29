@@ -92,7 +92,7 @@ test_string_normalize_method(void)
 	static const uint16_t receiver_u16[] = {0x1E9B, 0x0323};
 	uint16_t storage[32];
 	uint16_t form_storage[8];
-	uint32_t workspace[64];
+	uint32_t workspace[5];
 	jsstr16_t out;
 	jsmethod_error_t error;
 	callback_ctx_t form_ctx = {0, nfd_form, sizeof(nfd_form) / sizeof(nfd_form[0])};

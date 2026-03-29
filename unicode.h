@@ -36,6 +36,14 @@ size_t unicode_nfkc_cf(uint32_t cp, uint32_t out[UNICODE_NFKC_CF_MAX]);
 size_t unicode_nfkc_scf(uint32_t cp, uint32_t out[UNICODE_NFKC_SCF_MAX]);
 int unicode_changes_when_nfkc_casefolded(uint32_t cp);
 
+size_t unicode_normalize_form_decompose_len_codepoint(uint32_t cp,
+        unicode_normalization_form_t form);
+int unicode_normalize_form_workspace_len(const uint32_t *src, size_t len,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr);
+int unicode_normalize_form_needed(const uint32_t *src, size_t len,
+        unicode_normalization_form_t form, uint32_t *workspace,
+        size_t workspace_cap, size_t *needed_len_ptr);
+
 size_t unicode_normalize_into_form(const uint32_t *src, size_t len, uint32_t *dst,
         size_t cap, unicode_normalization_form_t form);
 size_t unicode_normalize_form(uint32_t *buf, size_t len, size_t cap,

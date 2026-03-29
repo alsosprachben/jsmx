@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jsmethod.h"
 #include "jsmn.h"
 
 typedef uint32_t jsval_off_t;
@@ -72,6 +73,7 @@ jsval_t jsval_bool(int boolean);
 jsval_t jsval_number(double number);
 
 int jsval_string_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len, jsval_t *value_ptr);
+int jsval_string_new_utf16(jsval_region_t *region, const uint16_t *str, size_t len, jsval_t *value_ptr);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 
@@ -93,5 +95,19 @@ int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);
 int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_method_string_to_lower_case(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_to_upper_case(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_to_locale_lower_case(jsval_region_t *region,
+		jsval_t this_value, int have_locale, jsval_t locale_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_to_locale_upper_case(jsval_region_t *region,
+		jsval_t this_value, int have_locale, jsval_t locale_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_to_well_formed(jsval_region_t *region,
+		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_is_well_formed(jsval_region_t *region,
+		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
 
 #endif

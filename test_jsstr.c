@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include "jsstr.h"
@@ -671,6 +672,79 @@ void test_jsstr_normalize_forms() {
     expect_jsstr8_eq(&s8, expected8_nfkd, sizeof(expected8_nfkd));
 }
 
+static void test_jsstr_normalize_sizing(void) {
+    static const uint32_t src32[] = {0x0041, 0x030A};
+    static const uint16_t src16[] = {0x0041, 0x030A};
+    static const uint8_t src8[] = "A\xCC\x8A";
+    static const uint16_t src16_nfkd[] = {0x1E9B, 0x0323};
+    uint32_t buf32[8];
+    uint16_t buf16[8];
+    uint8_t buf8[16];
+    uint16_t small16_buf[2];
+    uint32_t scratch32[2];
+    uint32_t workspace16[4];
+    uint32_t workspace8[4];
+    uint32_t workspace_small16[5];
+    jsstr32_t s32;
+    jsstr16_t s16;
+    jsstr8_t s8;
+    jsstr16_t small16;
+    size_t workspace_cap;
+    size_t needed_len;
+
+    jsstr32_init_from_buf(&s32, (char *)buf32, sizeof(buf32));
+    jsstr32_set_from_utf32(&s32, src32, sizeof(src32) / sizeof(src32[0]));
+    assert(jsstr32_normalize_form_workspace_len(&s32, UNICODE_NORMALIZE_NFC,
+            &workspace_cap) == 0);
+    assert(workspace_cap == 2);
+    assert(jsstr32_normalize_form_needed(&s32, UNICODE_NORMALIZE_NFC, scratch32,
+            workspace_cap, &needed_len) == 0);
+    assert(needed_len == 1);
+    assert(jsstr32_normalize_form_buf(&s32, UNICODE_NORMALIZE_NFC, scratch32,
+            workspace_cap) == 0);
+    expect_jsstr32_eq(&s32, (const uint32_t[]){0x00C5}, 1);
+
+    jsstr16_init_from_buf(&s16, (char *)buf16, sizeof(buf16));
+    jsstr16_set_from_utf16(&s16, src16, sizeof(src16) / sizeof(src16[0]));
+    assert(jsstr16_normalize_form_workspace_len(&s16, UNICODE_NORMALIZE_NFC,
+            &workspace_cap) == 0);
+    assert(workspace_cap == 4);
+    assert(jsstr16_normalize_form_needed(&s16, UNICODE_NORMALIZE_NFC, workspace16,
+            workspace_cap, &needed_len) == 0);
+    assert(needed_len == 1);
+    assert(jsstr16_normalize_form_buf(&s16, UNICODE_NORMALIZE_NFC, workspace16,
+            workspace_cap) == 0);
+    expect_jsstr16_eq(&s16, (const uint16_t[]){0x00C5}, 1);
+
+    jsstr8_init_from_buf(&s8, (char *)buf8, sizeof(buf8));
+    jsstr8_set_from_utf8(&s8, src8, sizeof(src8) - 1);
+    assert(jsstr8_normalize_form_workspace_len(&s8, UNICODE_NORMALIZE_NFC,
+            &workspace_cap) == 0);
+    assert(workspace_cap == 4);
+    assert(jsstr8_normalize_form_needed(&s8, UNICODE_NORMALIZE_NFC, workspace8,
+            workspace_cap, &needed_len) == 0);
+    assert(needed_len == 2);
+    assert(jsstr8_normalize_form_buf(&s8, UNICODE_NORMALIZE_NFC, workspace8,
+            workspace_cap) == 0);
+    expect_jsstr8_eq(&s8, (const uint8_t[]){0xC3, 0x85}, 2);
+
+    jsstr16_init_from_buf(&small16, (char *)small16_buf, sizeof(small16_buf));
+    jsstr16_set_from_utf16(&small16, src16_nfkd,
+            sizeof(src16_nfkd) / sizeof(src16_nfkd[0]));
+    assert(jsstr16_normalize_form_workspace_len(&small16, UNICODE_NORMALIZE_NFKD,
+            &workspace_cap) == 0);
+    assert(workspace_cap == 5);
+    assert(jsstr16_normalize_form_needed(&small16, UNICODE_NORMALIZE_NFKD,
+            workspace_small16, workspace_cap, &needed_len) == 0);
+    assert(needed_len == 3);
+    errno = 0;
+    assert(jsstr16_normalize_form_buf(&small16, UNICODE_NORMALIZE_NFKD,
+            workspace_small16, workspace_cap) == -1);
+    assert(errno == ENOBUFS);
+    expect_jsstr16_eq(&small16, src16_nfkd,
+            sizeof(src16_nfkd) / sizeof(src16_nfkd[0]));
+}
+
 void test_jsstr_locale_compare_ce() {
     struct pair { const uint32_t *a; const uint32_t *b; } pairs[] = {
         { L"o\u0308", L"\u00F6" },
@@ -736,5 +810,6 @@ int main() {
     test_jsstr8_to_well_formed();
     test_jsstr_normalize_buffers();
     test_jsstr_normalize_forms();
+    test_jsstr_normalize_sizing();
     return 0;
 }

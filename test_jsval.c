@@ -274,6 +274,48 @@ static void test_policy_layer()
 	assert(jsval_is_json_backed(got) == 1);
 }
 
+static void test_method_bridge()
+{
+	static const char json[] = "{\"city\":\"istanbul\"}";
+	static const uint16_t broken_units[] = {0xD83D};
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t city;
+	jsval_t broken;
+	jsval_t locale;
+	jsval_t upper;
+	jsval_t repaired;
+	jsval_t well_formed;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"city", 4, &city) == 0);
+	assert(jsval_string_new_utf16(&region, broken_units,
+			sizeof(broken_units) / sizeof(broken_units[0]), &broken) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"tr", 2, &locale) == 0);
+
+	assert(jsval_method_string_to_locale_upper_case(&region, city, 1, locale,
+			&upper, &error) == 0);
+	assert(jsval_is_native(upper) == 1);
+	assert_string(&region, upper, "\xC4\xB0STANBUL");
+
+	assert(jsval_method_string_is_well_formed(&region, broken, &well_formed,
+			&error) == 0);
+	assert(well_formed.kind == JSVAL_KIND_BOOL);
+	assert(well_formed.as.boolean == 0);
+
+	assert(jsval_method_string_to_well_formed(&region, broken, &repaired,
+			&error) == 0);
+	assert_string(&region, repaired, "\xEF\xBF\xBD");
+
+	errno = 0;
+	assert(jsval_method_string_to_upper_case(&region, root, &upper, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 int main(void)
 {
 	test_native_storage();
@@ -281,6 +323,7 @@ int main(void)
 	test_json_root_rebase();
 	test_json_mutation_requires_promotion();
 	test_policy_layer();
+	test_method_bridge();
 	puts("test_jsval: ok");
 	return 0;
 }

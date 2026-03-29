@@ -954,25 +954,127 @@ void jsstr32_toupper_locale(jsstr32_t *s, const char *locale) {
     }
 }
 
+static int jsstr16_normalize_measure(jsstr16_t *s,
+        unicode_normalization_form_t form, size_t *decoded_len_ptr,
+        size_t *normalized_cap_ptr) {
+    const uint16_t *bc;
+    const uint16_t *bs;
+    size_t decoded_len = 0;
+    size_t normalized_cap = 0;
+
+    if (s == NULL || decoded_len_ptr == NULL || normalized_cap_ptr == NULL ||
+            (s->len > 0 && s->codeunits == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    bc = s->codeunits;
+    bs = s->codeunits + s->len;
+    while (bc < bs) {
+        uint32_t c;
+        int l;
+
+        UTF16_CHAR(bc, bs, &c, &l);
+        if (l <= 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        decoded_len++;
+        normalized_cap += unicode_normalize_form_decompose_len_codepoint(c, form);
+        bc += l;
+    }
+
+    *decoded_len_ptr = decoded_len;
+    *normalized_cap_ptr = normalized_cap;
+    return 0;
+}
+
+static int jsstr8_normalize_measure(jsstr8_t *s,
+        unicode_normalization_form_t form, size_t *decoded_len_ptr,
+        size_t *normalized_cap_ptr) {
+    const char *bc;
+    const char *bs;
+    size_t decoded_len = 0;
+    size_t normalized_cap = 0;
+
+    if (s == NULL || decoded_len_ptr == NULL || normalized_cap_ptr == NULL ||
+            (s->len > 0 && s->bytes == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    bc = (const char *)s->bytes;
+    bs = (const char *)s->bytes + s->len;
+    while (bc < bs) {
+        uint32_t c;
+        int l;
+
+        UTF8_CHAR(bc, bs, &c, &l);
+        if (l <= 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        decoded_len++;
+        normalized_cap += unicode_normalize_form_decompose_len_codepoint(c, form);
+        bc += l;
+    }
+
+    *decoded_len_ptr = decoded_len;
+    *normalized_cap_ptr = normalized_cap;
+    return 0;
+}
+
+int jsstr32_normalize_form_workspace_len(jsstr32_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr) {
+    if (s == NULL || workspace_cap_ptr == NULL ||
+            (s->len > 0 && s->codepoints == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+    return unicode_normalize_form_workspace_len(s->codepoints, s->len, form,
+            workspace_cap_ptr);
+}
+
+int jsstr32_normalize_form_needed(jsstr32_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr) {
+    if (s == NULL || needed_len_ptr == NULL ||
+            (s->len > 0 && s->codepoints == NULL) ||
+            (workspace_cap > 0 && workspace == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+    return unicode_normalize_form_needed(s->codepoints, s->len, form, workspace,
+            workspace_cap, needed_len_ptr);
+}
+
 int jsstr32_normalize_form_buf(jsstr32_t *s, unicode_normalization_form_t form,
         uint32_t *scratch, size_t scratch_cap) {
+    size_t needed_workspace;
     size_t out_len;
 
     if (s == NULL || (s->cap > 0 && (s->codepoints == NULL || scratch == NULL))) {
         errno = EINVAL;
         return -1;
     }
-    if (scratch_cap < s->cap) {
-        errno = ENOBUFS;
-        return -1;
-    }
     if (s->cap == 0) {
         s->len = 0;
         return 0;
     }
+    if (jsstr32_normalize_form_workspace_len(s, form, &needed_workspace) < 0) {
+        return -1;
+    }
+    if (scratch_cap < needed_workspace) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (jsstr32_normalize_form_needed(s, form, scratch, scratch_cap, &out_len) < 0) {
+        return -1;
+    }
+    if (out_len > s->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
 
-    out_len = unicode_normalize_into_form(s->codepoints, s->len, scratch, s->cap,
-            form);
     memcpy(s->codepoints, scratch, out_len * sizeof(uint32_t));
     s->len = out_len;
     return 0;
@@ -984,12 +1086,18 @@ int jsstr32_normalize_buf(jsstr32_t *s, uint32_t *scratch, size_t scratch_cap) {
 }
 
 void jsstr32_normalize_form(jsstr32_t *s, unicode_normalization_form_t form) {
+    size_t scratch_cap;
+
     if (s == NULL || s->cap == 0) {
         return;
     }
+    if (jsstr32_normalize_form_workspace_len(s, form, &scratch_cap) < 0 ||
+            scratch_cap == 0) {
+        return;
+    }
     {
-        uint32_t scratch[s->cap];
-        jsstr32_normalize_form_buf(s, form, scratch, s->cap);
+        uint32_t scratch[scratch_cap];
+        jsstr32_normalize_form_buf(s, form, scratch, scratch_cap);
     }
 }
 
@@ -1514,17 +1622,69 @@ int jsstr16_concat(jsstr16_t *s, jsstr16_t *src) {
     return 0; /* success */
 }
 
+int jsstr16_normalize_form_workspace_len(jsstr16_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr) {
+    size_t decoded_len;
+    size_t normalized_cap;
+
+    if (workspace_cap_ptr == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (jsstr16_normalize_measure(s, form, &decoded_len, &normalized_cap) < 0) {
+        return -1;
+    }
+    *workspace_cap_ptr = decoded_len + normalized_cap;
+    return 0;
+}
+
+int jsstr16_normalize_form_needed(jsstr16_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr) {
+    jsstr32_t decoded;
+    jsstr32_t normalized;
+    size_t decoded_len;
+    size_t normalized_cap;
+
+    if (needed_len_ptr == NULL || (workspace_cap > 0 && workspace == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (jsstr16_normalize_measure(s, form, &decoded_len, &normalized_cap) < 0) {
+        return -1;
+    }
+    if (workspace_cap < decoded_len + normalized_cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (decoded_len == 0) {
+        *needed_len_ptr = 0;
+        return 0;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace,
+            decoded_len * sizeof(uint32_t));
+    if (jsstr32_set_from_utf16(&decoded, s->codeunits, s->len) != s->len) {
+        errno = EINVAL;
+        return -1;
+    }
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + decoded_len),
+            normalized_cap * sizeof(uint32_t));
+    normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
+            normalized.codepoints, normalized.cap, form);
+    *needed_len_ptr = jsstr32_get_utf16len(&normalized);
+    return 0;
+}
+
 int jsstr16_normalize_form_buf(jsstr16_t *s, unicode_normalization_form_t form,
         uint32_t *workspace, size_t workspace_cap) {
     jsstr32_t decoded;
     jsstr32_t normalized;
+    size_t decoded_len;
+    size_t needed_len;
+    size_t processed;
 
     if (s == NULL || (s->cap > 0 && (s->codeunits == NULL || workspace == NULL))) {
         errno = EINVAL;
-        return -1;
-    }
-    if (workspace_cap < s->cap * 2) {
-        errno = ENOBUFS;
         return -1;
     }
     if (s->cap == 0) {
@@ -1532,12 +1692,34 @@ int jsstr16_normalize_form_buf(jsstr16_t *s, unicode_normalization_form_t form,
         return 0;
     }
 
-    jsstr32_init_from_buf(&decoded, (char *)workspace, s->cap * sizeof(uint32_t));
-    jsstr32_set_from_utf16(&decoded, s->codeunits, s->len);
-    jsstr32_init_from_buf(&normalized, (char *)(workspace + s->cap), s->cap * sizeof(uint32_t));
+    if (jsstr16_normalize_measure(s, form, &decoded_len, &normalized.cap) < 0) {
+        return -1;
+    }
+    if (workspace_cap < decoded_len + normalized.cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace,
+            decoded_len * sizeof(uint32_t));
+    if (jsstr32_set_from_utf16(&decoded, s->codeunits, s->len) != s->len) {
+        errno = EINVAL;
+        return -1;
+    }
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + decoded_len),
+            normalized.cap * sizeof(uint32_t));
     normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
             normalized.codepoints, normalized.cap, form);
-    jsstr16_set_from_jsstr32(s, &normalized);
+    needed_len = jsstr32_get_utf16len(&normalized);
+    if (needed_len > s->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    processed = jsstr16_set_from_jsstr32(s, &normalized);
+    if (processed != normalized.len) {
+        errno = ENOBUFS;
+        return -1;
+    }
     return 0;
 }
 
@@ -1547,12 +1729,18 @@ int jsstr16_normalize_buf(jsstr16_t *s, uint32_t *workspace, size_t workspace_ca
 }
 
 void jsstr16_normalize_form(jsstr16_t *s, unicode_normalization_form_t form) {
-    if (s == NULL || s->cap == 0 || s->cap > SIZE_MAX / 2) {
+    size_t workspace_cap;
+
+    if (s == NULL || s->cap == 0) {
+        return;
+    }
+    if (jsstr16_normalize_form_workspace_len(s, form, &workspace_cap) < 0 ||
+            workspace_cap == 0) {
         return;
     }
     {
-        uint32_t workspace[s->cap * 2];
-        jsstr16_normalize_form_buf(s, form, workspace, s->cap * 2);
+        uint32_t workspace[workspace_cap];
+        jsstr16_normalize_form_buf(s, form, workspace, workspace_cap);
     }
 }
 
@@ -2433,17 +2621,69 @@ void jsstr8_toupper_locale(jsstr8_t *s, const char *locale) {
     }
 }
 
-int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
-        uint32_t *workspace, size_t workspace_cap) {
-    jsstr32_t decoded;
-    jsstr32_t normalized;
+int jsstr8_normalize_form_workspace_len(jsstr8_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr) {
+    size_t decoded_len;
+    size_t normalized_cap;
 
-    if (s == NULL || (s->cap > 0 && (s->bytes == NULL || workspace == NULL))) {
+    if (workspace_cap_ptr == NULL) {
         errno = EINVAL;
         return -1;
     }
-    if (workspace_cap < s->cap * 2) {
+    if (jsstr8_normalize_measure(s, form, &decoded_len, &normalized_cap) < 0) {
+        return -1;
+    }
+    *workspace_cap_ptr = decoded_len + normalized_cap;
+    return 0;
+}
+
+int jsstr8_normalize_form_needed(jsstr8_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr) {
+    jsstr32_t decoded;
+    jsstr32_t normalized;
+    size_t decoded_len;
+    size_t normalized_cap;
+
+    if (needed_len_ptr == NULL || (workspace_cap > 0 && workspace == NULL)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (jsstr8_normalize_measure(s, form, &decoded_len, &normalized_cap) < 0) {
+        return -1;
+    }
+    if (workspace_cap < decoded_len + normalized_cap) {
         errno = ENOBUFS;
+        return -1;
+    }
+    if (decoded_len == 0) {
+        *needed_len_ptr = 0;
+        return 0;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace,
+            decoded_len * sizeof(uint32_t));
+    if (jsstr32_set_from_utf8(&decoded, s->bytes, s->len) != s->len) {
+        errno = EINVAL;
+        return -1;
+    }
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + decoded_len),
+            normalized_cap * sizeof(uint32_t));
+    normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
+            normalized.codepoints, normalized.cap, form);
+    *needed_len_ptr = jsstr32_get_utf8len(&normalized);
+    return 0;
+}
+
+int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap) {
+    jsstr32_t normalized;
+    jsstr32_t decoded;
+    size_t decoded_len;
+    size_t needed_len;
+    size_t processed;
+
+    if (s == NULL || (s->cap > 0 && (s->bytes == NULL || workspace == NULL))) {
+        errno = EINVAL;
         return -1;
     }
     if (s->cap == 0) {
@@ -2451,12 +2691,34 @@ int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
         return 0;
     }
 
-    jsstr32_init_from_buf(&decoded, (char *)workspace, s->cap * sizeof(uint32_t));
-    jsstr32_set_from_utf8(&decoded, s->bytes, s->len);
-    jsstr32_init_from_buf(&normalized, (char *)(workspace + s->cap), s->cap * sizeof(uint32_t));
+    if (jsstr8_normalize_measure(s, form, &decoded_len, &normalized.cap) < 0) {
+        return -1;
+    }
+    if (workspace_cap < decoded_len + normalized.cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+
+    jsstr32_init_from_buf(&decoded, (char *)workspace,
+            decoded_len * sizeof(uint32_t));
+    if (jsstr32_set_from_utf8(&decoded, s->bytes, s->len) != s->len) {
+        errno = EINVAL;
+        return -1;
+    }
+    jsstr32_init_from_buf(&normalized, (char *)(workspace + decoded_len),
+            normalized.cap * sizeof(uint32_t));
     normalized.len = unicode_normalize_into_form(decoded.codepoints, decoded.len,
             normalized.codepoints, normalized.cap, form);
-    jsstr8_set_from_jsstr32(s, &normalized);
+    needed_len = jsstr32_get_utf8len(&normalized);
+    if (needed_len > s->cap) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    processed = jsstr8_set_from_jsstr32(s, &normalized);
+    if (processed != normalized.len) {
+        errno = ENOBUFS;
+        return -1;
+    }
     return 0;
 }
 
@@ -2466,12 +2728,18 @@ int jsstr8_normalize_buf(jsstr8_t *s, uint32_t *workspace, size_t workspace_cap)
 }
 
 void jsstr8_normalize_form(jsstr8_t *s, unicode_normalization_form_t form) {
-    if (s == NULL || s->cap == 0 || s->cap > SIZE_MAX / 2) {
+    size_t workspace_cap;
+
+    if (s == NULL || s->cap == 0) {
+        return;
+    }
+    if (jsstr8_normalize_form_workspace_len(s, form, &workspace_cap) < 0 ||
+            workspace_cap == 0) {
         return;
     }
     {
-        uint32_t workspace[s->cap * 2];
-        jsstr8_normalize_form_buf(s, form, workspace, s->cap * 2);
+        uint32_t workspace[workspace_cap];
+        jsstr8_normalize_form_buf(s, form, workspace, workspace_cap);
     }
 }
 

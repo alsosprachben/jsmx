@@ -172,6 +172,10 @@ void jsstr32_tolower(jsstr32_t *s);
 void jsstr32_toupper(jsstr32_t *s);
 void jsstr32_tolower_locale(jsstr32_t *s, const char *locale);
 void jsstr32_toupper_locale(jsstr32_t *s, const char *locale);
+int jsstr32_normalize_form_workspace_len(jsstr32_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr);
+int jsstr32_normalize_form_needed(jsstr32_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr);
 int jsstr32_normalize_form_buf(jsstr32_t *s, unicode_normalization_form_t form,
         uint32_t *scratch, size_t scratch_cap);
 void jsstr32_normalize_form(jsstr32_t *s, unicode_normalization_form_t form);
@@ -237,6 +241,10 @@ ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
+int jsstr16_normalize_form_workspace_len(jsstr16_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr);
+int jsstr16_normalize_form_needed(jsstr16_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr);
 int jsstr16_normalize_form_buf(jsstr16_t *s, unicode_normalization_form_t form,
         uint32_t *workspace, size_t workspace_cap);
 void jsstr16_normalize_form(jsstr16_t *s, unicode_normalization_form_t form);
@@ -307,6 +315,10 @@ ssize_t jsstr8_u32_indexof(jsstr8_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr8_u32_indextoken(jsstr8_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
 int jsstr8_concat(jsstr8_t *s, jsstr8_t *src);
+int jsstr8_normalize_form_workspace_len(jsstr8_t *s,
+        unicode_normalization_form_t form, size_t *workspace_cap_ptr);
+int jsstr8_normalize_form_needed(jsstr8_t *s, unicode_normalization_form_t form,
+        uint32_t *workspace, size_t workspace_cap, size_t *needed_len_ptr);
 int jsstr8_normalize_form_buf(jsstr8_t *s, unicode_normalization_form_t form,
         uint32_t *workspace, size_t workspace_cap);
 void jsstr8_normalize_form(jsstr8_t *s, unicode_normalization_form_t form);

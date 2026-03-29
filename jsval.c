@@ -10,6 +10,7 @@
 
 #define JSVAL_ALIGN sizeof(void *)
 #define JSVAL_JSON_EMIT_MAX_DEPTH 256
+#define JSVAL_METHOD_CASE_EXPANSION_MAX 3u
 
 typedef struct jsval_native_string_s {
 	size_t len;
@@ -1034,6 +1035,41 @@ static const char *jsval_number_text(double number, char buf[64])
 	return buf;
 }
 
+static int jsval_string_reserve_utf16(jsval_region_t *region, size_t cap,
+		jsval_t *value_ptr, jsval_native_string_t **string_ptr)
+{
+	jsval_native_string_t *string;
+	jsval_off_t off;
+	size_t units_cap = cap > 0 ? cap : 1;
+	size_t bytes_len;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (units_cap > (SIZE_MAX - sizeof(*string)) / sizeof(uint16_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	bytes_len = sizeof(*string) + units_cap * sizeof(uint16_t);
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&string) < 0) {
+		return -1;
+	}
+
+	string->len = 0;
+	string->cap = units_cap;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_STRING;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	if (string_ptr != NULL) {
+		*string_ptr = string;
+	}
+	return 0;
+}
+
 static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *len_ptr)
 {
 	jsval_json_doc_t *doc;
@@ -1162,6 +1198,224 @@ static int jsval_to_number(jsval_region_t *region, jsval_t value, double *number
 		errno = ENOTSUP;
 		return -1;
 	}
+}
+
+static int jsval_method_output_cap(size_t input_len, size_t factor,
+		size_t *cap_ptr)
+{
+	size_t cap;
+
+	if (cap_ptr == NULL || factor == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (input_len > SIZE_MAX / factor) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	cap = input_len * factor;
+	if (cap == 0) {
+		cap = 1;
+	}
+	*cap_ptr = cap;
+	return 0;
+}
+
+static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
+		uint16_t *string_storage, size_t string_storage_cap,
+		jsmethod_value_t *method_value_ptr)
+{
+	jsval_json_doc_t *doc;
+	jsval_native_string_t *string;
+	double number;
+	int boolean;
+	size_t len;
+
+	if (region == NULL || method_value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (value.kind) {
+	case JSVAL_KIND_UNDEFINED:
+		*method_value_ptr = jsmethod_value_undefined();
+		return 0;
+	case JSVAL_KIND_NULL:
+		*method_value_ptr = jsmethod_value_null();
+		return 0;
+	case JSVAL_KIND_BOOL:
+		if (value.repr == JSVAL_REPR_JSON) {
+			doc = jsval_json_doc(region, value);
+			if (jsval_json_bool_value(region, doc, value.as.index, &boolean) < 0) {
+				return -1;
+			}
+			*method_value_ptr = jsmethod_value_bool(boolean);
+			return 0;
+		}
+		*method_value_ptr = jsmethod_value_bool(value.as.boolean);
+		return 0;
+	case JSVAL_KIND_NUMBER:
+		if (value.repr == JSVAL_REPR_JSON) {
+			doc = jsval_json_doc(region, value);
+			if (jsval_json_number_value(region, doc, value.as.index, &number) < 0) {
+				return -1;
+			}
+			*method_value_ptr = jsmethod_value_number(number);
+			return 0;
+		}
+		*method_value_ptr = jsmethod_value_number(value.as.number);
+		return 0;
+	case JSVAL_KIND_STRING:
+		if (value.repr == JSVAL_REPR_NATIVE) {
+			string = jsval_native_string(region, value);
+			if (string == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			*method_value_ptr = jsmethod_value_string_utf16(
+					jsval_native_string_units(string), string->len);
+			return 0;
+		}
+		if (value.repr == JSVAL_REPR_JSON) {
+			doc = jsval_json_doc(region, value);
+			if (string_storage == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_json_string_copy_utf16(region, doc, value.as.index,
+					string_storage, string_storage_cap, &len) < 0) {
+				return -1;
+			}
+			*method_value_ptr = jsmethod_value_string_utf16(string_storage, len);
+			return 0;
+		}
+		break;
+	case JSVAL_KIND_OBJECT:
+	case JSVAL_KIND_ARRAY:
+		errno = ENOTSUP;
+		return -1;
+	default:
+		break;
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
+typedef int (*jsval_method_unary_fn)(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+
+typedef int (*jsval_method_locale_fn)(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_locale, jsmethod_value_t locale_value,
+		uint16_t *locale_storage, size_t locale_storage_cap,
+		jsmethod_error_t *error);
+
+static int jsval_method_string_unary_bridge(jsval_region_t *region,
+		jsval_t this_value, size_t expansion_factor,
+		jsval_method_unary_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+	jsmethod_value_t method_value;
+	size_t input_len;
+	size_t output_cap;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &input_len) < 0) {
+		return -1;
+	}
+	if (jsval_method_output_cap(input_len, expansion_factor, &output_cap) < 0) {
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, output_cap, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	jsstr16_init_from_buf(&out,
+			(const char *)jsval_native_string_units(result_string),
+			result_string->cap * sizeof(uint16_t));
+	if (jsval_method_value_from_jsval(region, this_value, out.codeunits, out.cap,
+			&method_value) < 0) {
+		return -1;
+	}
+	if (fn(&out, method_value, error) < 0) {
+		return -1;
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
+	return 0;
+}
+
+static int jsval_method_string_locale_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_locale, jsval_t locale_value,
+		size_t expansion_factor, jsval_method_locale_fn fn,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t locale_method_value = jsmethod_value_undefined();
+	size_t input_len;
+	size_t output_cap;
+	size_t locale_storage_cap = 1;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &input_len) < 0) {
+		return -1;
+	}
+	if (jsval_method_output_cap(input_len, expansion_factor, &output_cap) < 0) {
+		return -1;
+	}
+	if (have_locale && locale_value.kind != JSVAL_KIND_UNDEFINED) {
+		if (jsval_value_utf16_len(region, locale_value, &locale_storage_cap) < 0) {
+			return -1;
+		}
+		if (locale_storage_cap == 0) {
+			locale_storage_cap = 1;
+		}
+	}
+	if (jsval_string_reserve_utf16(region, output_cap, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	jsstr16_init_from_buf(&out,
+			(const char *)jsval_native_string_units(result_string),
+			result_string->cap * sizeof(uint16_t));
+	if (jsval_method_value_from_jsval(region, this_value, out.codeunits, out.cap,
+			&this_method_value) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t locale_storage[locale_storage_cap ? locale_storage_cap : 1];
+
+		if (have_locale &&
+		    jsval_method_value_from_jsval(region, locale_value, locale_storage,
+			    locale_storage_cap, &locale_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&out, this_method_value, have_locale, locale_method_value,
+				locale_storage, locale_storage_cap, error) < 0) {
+			return -1;
+		}
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
+	return 0;
 }
 
 void jsval_region_init(jsval_region_t *region, void *buf, size_t len)
@@ -1348,6 +1602,27 @@ int jsval_string_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len
 	value_ptr->kind = JSVAL_KIND_STRING;
 	value_ptr->repr = JSVAL_REPR_NATIVE;
 	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_string_new_utf16(jsval_region_t *region, const uint16_t *str, size_t len,
+		jsval_t *value_ptr)
+{
+	jsval_native_string_t *string;
+	jsval_t value;
+
+	if (region == NULL || value_ptr == NULL || (len > 0 && str == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, len, &value, &string) < 0) {
+		return -1;
+	}
+	if (len > 0) {
+		memcpy(jsval_native_string_units(string), str, len * sizeof(uint16_t));
+	}
+	string->len = len;
+	*value_ptr = value;
 	return 0;
 }
 
@@ -1869,6 +2144,82 @@ int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *valu
 		*value_ptr = jsval_number(left_number + right_number);
 		return 0;
 	}
+}
+
+int jsval_method_string_to_lower_case(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_unary_bridge(region, this_value,
+			JSVAL_METHOD_CASE_EXPANSION_MAX,
+			jsmethod_string_to_lower_case, value_ptr, error);
+}
+
+int jsval_method_string_to_upper_case(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_unary_bridge(region, this_value,
+			JSVAL_METHOD_CASE_EXPANSION_MAX,
+			jsmethod_string_to_upper_case, value_ptr, error);
+}
+
+int jsval_method_string_to_locale_lower_case(jsval_region_t *region,
+		jsval_t this_value, int have_locale, jsval_t locale_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_locale_bridge(region, this_value, have_locale,
+			locale_value, JSVAL_METHOD_CASE_EXPANSION_MAX,
+			jsmethod_string_to_locale_lower_case, value_ptr, error);
+}
+
+int jsval_method_string_to_locale_upper_case(jsval_region_t *region,
+		jsval_t this_value, int have_locale, jsval_t locale_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_locale_bridge(region, this_value, have_locale,
+			locale_value, JSVAL_METHOD_CASE_EXPANSION_MAX,
+			jsmethod_string_to_locale_upper_case, value_ptr, error);
+}
+
+int jsval_method_string_to_well_formed(jsval_region_t *region,
+		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_unary_bridge(region, this_value, 1,
+			jsmethod_string_to_well_formed, value_ptr, error);
+}
+
+int jsval_method_string_is_well_formed(jsval_region_t *region,
+		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsmethod_value_t method_value;
+	int is_well_formed;
+	size_t storage_cap;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &storage_cap) < 0) {
+		return -1;
+	}
+	if (storage_cap == 0) {
+		storage_cap = 1;
+	}
+
+	{
+		uint16_t storage[storage_cap];
+
+		if (jsval_method_value_from_jsval(region, this_value, storage,
+				storage_cap, &method_value) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_is_well_formed(&is_well_formed, method_value,
+				storage, storage_cap, error) < 0) {
+			return -1;
+		}
+	}
+
+	*value_ptr = jsval_bool(is_well_formed);
+	return 0;
 }
 
 int jsval_promote(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
