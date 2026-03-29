@@ -20,6 +20,7 @@ The design target is:
 - strings, Unicode, casing, normalization, and well-formedness
 - page-resident values, objects, arrays, and JSON-backed reads
 - explicit promotion from JSON-backed storage to native storage
+- dense, capacity-bounded native array semantics such as push and explicit length writes
 - deterministic JS-method helpers such as `String.prototype.normalize`
 
 ### Translator
@@ -60,5 +61,7 @@ Compliance entries and translator planning should use these classes:
 If the translator can compute the needed storage, select the target helper, and preserve semantics without hidden callbacks, the behavior belongs in `jsmx`.
 
 If correct behavior depends on dynamic object semantics, hidden hooks, or general runtime dispatch, the translator should emit a slow path instead of teaching `jsval` to become a dynamic object system.
+
+Dense native arrays fit that flattened model. Hole-preserving `delete arr[i]`, sparse-index behavior, and other semantics that depend on distinguishing absent elements from explicit `undefined` values remain outside the current slice.
 
 When the corpus includes those cases, prefer an idiomatic slow-path translation that still passes over a boundary-only `KNOWN_UNSUPPORTED` placeholder, unless the required slow-path contract has not been designed yet.

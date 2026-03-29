@@ -297,6 +297,91 @@ static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
 			detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_native_containers(char *detail,
+		size_t cap)
+{
+	static const uint8_t expected_json[] = "{\"keep\":true,\"items\":[1,2]}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t items;
+	jsval_t got;
+	int has;
+	int deleted;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 3, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new");
+	}
+	if (jsval_array_new(&region, 4, &items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(keep)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"drop", 4,
+			jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(drop)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"items", 5,
+			items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(items)");
+	}
+
+	if (jsval_object_has_own_utf8(&region, root, (const uint8_t *)"keep", 4,
+			&has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_has_own_utf8(keep)");
+	}
+	if (!has) {
+		return generated_failf(detail, cap, "expected keep to be an own property");
+	}
+	if (jsval_object_has_own_utf8(&region, root, (const uint8_t *)"missing", 7,
+			&has) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_has_own_utf8(missing)");
+	}
+	if (has) {
+		return generated_failf(detail, cap,
+				"missing property unexpectedly reported as present");
+	}
+	if (jsval_object_delete_utf8(&region, root, (const uint8_t *)"drop", 4,
+			&deleted) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_delete_utf8(drop)");
+	}
+	if (!deleted) {
+		return generated_failf(detail, cap, "expected drop deletion to report success");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"drop", 4, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(drop)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap, "expected deleted property to read back as undefined");
+	}
+
+	if (jsval_array_push(&region, items, jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(1)");
+	}
+	if (jsval_array_push(&region, items, jsval_number(2.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(2)");
+	}
+	if (jsval_array_set_length(&region, items, 4) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set_length(grow)");
+	}
+	if (jsval_array_get(&region, items, 2, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(2)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap, "expected grown dense slot to be undefined");
+	}
+	if (jsval_array_set_length(&region, items, 2) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set_length(shrink)");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail,
 		size_t cap)
 {
@@ -615,6 +700,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
+	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},

@@ -87,10 +87,14 @@ int jsval_string_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf, 
 size_t jsval_object_size(jsval_region_t *region, jsval_t object);
 size_t jsval_array_length(jsval_region_t *region, jsval_t array);
 
+int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, int *has_ptr);
 int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t *value_ptr);
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value);
+int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, int *deleted_ptr);
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr);
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
+int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);
+int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len);
 
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);

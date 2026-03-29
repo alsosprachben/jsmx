@@ -230,6 +230,131 @@ static void test_json_root_rebase()
 	assert(jsval_truthy(&moved, got) == 1);
 }
 
+static void test_native_container_helpers(void)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t object;
+	jsval_t array;
+	jsval_t got;
+	int has;
+	int deleted;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_object_new(&region, 4, &object) == 0);
+	assert(jsval_array_new(&region, 5, &array) == 0);
+	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) == 0);
+	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"drop", 4,
+			jsval_number(7.0)) == 0);
+	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"items", 5,
+			array) == 0);
+
+	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"keep", 4,
+			&has) == 0);
+	assert(has == 1);
+	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"drop", 4,
+			&has) == 0);
+	assert(has == 1);
+	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"missing",
+			7, &has) == 0);
+	assert(has == 0);
+
+	assert(jsval_object_delete_utf8(&region, object, (const uint8_t *)"missing", 7,
+			&deleted) == 0);
+	assert(deleted == 0);
+	assert(jsval_object_delete_utf8(&region, object, (const uint8_t *)"drop", 4,
+			&deleted) == 0);
+	assert(deleted == 1);
+	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"drop", 4,
+			&has) == 0);
+	assert(has == 0);
+	assert(jsval_object_get_utf8(&region, object, (const uint8_t *)"drop", 4,
+			&got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_object_size(&region, object) == 2);
+
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_length(&region, array) == 2);
+	assert(jsval_array_set_length(&region, array, 5) == 0);
+	assert(jsval_array_length(&region, array) == 5);
+	assert(jsval_array_get(&region, array, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_get(&region, array, 4, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_set_length(&region, array, 2) == 0);
+	assert(jsval_array_length(&region, array) == 2);
+	assert(jsval_array_get(&region, array, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_length(&region, array) == 3);
+	errno = 0;
+	assert(jsval_array_set_length(&region, array, 6) < 0);
+	assert(errno == ENOBUFS);
+	assert(jsval_array_push(&region, array, jsval_number(4.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(5.0)) == 0);
+	errno = 0;
+	assert(jsval_array_push(&region, array, jsval_number(6.0)) < 0);
+	assert(errno == ENOBUFS);
+
+	assert_json(&region, object, "{\"keep\":true,\"items\":[1,2,3,4,5]}");
+}
+
+static void test_json_container_helpers(void)
+{
+	static const char json[] = "{\"drop\":1,\"keep\":true,\"items\":[1,2]}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t items;
+	int has;
+	int deleted;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 32,
+			&root) == 0);
+
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"drop", 4,
+			&has) == 0);
+	assert(has == 1);
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"missing",
+			7, &has) == 0);
+	assert(has == 0);
+
+	errno = 0;
+	assert(jsval_object_delete_utf8(&region, root, (const uint8_t *)"drop", 4,
+			&deleted) < 0);
+	assert(errno == ENOTSUP);
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) == 0);
+	errno = 0;
+	assert(jsval_array_push(&region, items, jsval_number(3.0)) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_array_set_length(&region, items, 3) < 0);
+	assert(errno == ENOTSUP);
+
+	assert(jsval_region_promote_root(&region, &root) == 0);
+	assert(jsval_object_delete_utf8(&region, root, (const uint8_t *)"drop", 4,
+			&deleted) == 0);
+	assert(deleted == 1);
+	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"drop", 4,
+			&has) == 0);
+	assert(has == 0);
+	assert_json(&region, root, "{\"keep\":true,\"items\":[1,2]}");
+
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
+			&items) == 0);
+	errno = 0;
+	assert(jsval_array_push(&region, items, jsval_number(3.0)) < 0);
+	assert(errno == ENOBUFS);
+	errno = 0;
+	assert(jsval_array_set_length(&region, items, 3) < 0);
+	assert(errno == ENOBUFS);
+}
+
 static void test_policy_layer()
 {
 	static const char json[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -418,6 +543,8 @@ int main(void)
 	test_json_storage();
 	test_json_root_rebase();
 	test_json_mutation_requires_promotion();
+	test_native_container_helpers();
+	test_json_container_helpers();
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();

@@ -326,6 +326,26 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic object/array lowering fixture for JSON-backed reads, explicit root promotion on first mutation, native writes, and JSON emission."
+    },
+    {
+      "id": "jsmx-objects-object-has-own-delete",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-has-own-delete.js",
+      "generated": "compliance/generated/objects/jsmx/object-has-own-delete.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for own-property checks and deletion through the explicit jsval object helpers."
+    },
+    {
+      "id": "jsmx-objects-array-push-length",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-push-length.js",
+      "generated": "compliance/generated/objects/jsmx/array-push-length.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for push and explicit length writes through the native jsval array helpers."
     }
   ]
 }

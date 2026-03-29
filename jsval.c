@@ -1902,6 +1902,91 @@ size_t jsval_array_length(jsval_region_t *region, jsval_t array)
 	return 0;
 }
 
+static int jsval_native_object_find_utf8(jsval_region_t *region,
+		jsval_native_object_t *native, const uint8_t *key, size_t key_len,
+		size_t *index_ptr)
+{
+	size_t i;
+	jsval_native_prop_t *props;
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	props = jsval_native_object_props(native);
+	for (i = 0; i < native->len; i++) {
+		jsval_t name = jsval_undefined();
+
+		name.kind = JSVAL_KIND_STRING;
+		name.repr = JSVAL_REPR_NATIVE;
+		name.off = props[i].name_off;
+		if (jsval_native_string_eq_utf8(region, name, key, key_len)) {
+			if (index_ptr != NULL) {
+				*index_ptr = i;
+			}
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object,
+		const uint8_t *key, size_t key_len, int *has_ptr)
+{
+	if (has_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+		int found = jsval_native_object_find_utf8(region, native, key, key_len, NULL);
+
+		if (found < 0) {
+			return -1;
+		}
+		*has_ptr = found;
+		return 0;
+	}
+
+	if (object.repr == JSVAL_REPR_JSON) {
+		int cursor;
+		unsigned int i;
+		jsval_json_doc_t *doc = jsval_json_doc(region, object);
+		jsmntok_t *tokens = jsval_json_doc_tokens(region, doc);
+
+		cursor = (int)object.as.index + 1;
+		for (i = 0; i < (unsigned int)tokens[object.as.index].size; i++) {
+			int key_index = cursor;
+			int value_index = jsval_json_next(region, doc, key_index);
+
+			if (value_index < 0) {
+				break;
+			}
+			if (jsval_json_string_eq_utf8(region, doc, key_index, key, key_len)) {
+				*has_ptr = 1;
+				return 0;
+			}
+			cursor = jsval_json_next(region, doc, value_index);
+			if (cursor < 0) {
+				break;
+			}
+		}
+
+		*has_ptr = 0;
+		return 0;
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
 int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t *value_ptr)
 {
 	if (object.kind != JSVAL_KIND_OBJECT) {
@@ -1910,25 +1995,19 @@ int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 	}
 
 	if (object.repr == JSVAL_REPR_NATIVE) {
-		size_t i;
 		jsval_native_object_t *native = jsval_native_object(region, object);
 		jsval_native_prop_t *props;
+		size_t index;
+		int found;
 
-		if (native == NULL) {
-			errno = EINVAL;
+		found = jsval_native_object_find_utf8(region, native, key, key_len, &index);
+		if (found < 0) {
 			return -1;
 		}
-
 		props = jsval_native_object_props(native);
-		for (i = 0; i < native->len; i++) {
-			jsval_t name = jsval_undefined();
-			name.kind = JSVAL_KIND_STRING;
-			name.repr = JSVAL_REPR_NATIVE;
-			name.off = props[i].name_off;
-			if (jsval_native_string_eq_utf8(region, name, key, key_len)) {
-				*value_ptr = props[i].value;
-				return 0;
-			}
+		if (found) {
+			*value_ptr = props[index].value;
+			return 0;
 		}
 
 		*value_ptr = jsval_undefined();
@@ -1968,9 +2047,10 @@ int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value)
 {
-	size_t i;
+	size_t index;
 	jsval_native_object_t *native;
 	jsval_native_prop_t *props;
+	int found;
 
 	if (object.kind != JSVAL_KIND_OBJECT || object.repr != JSVAL_REPR_NATIVE) {
 		errno = ENOTSUP;
@@ -1984,15 +2064,13 @@ int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 	}
 
 	props = jsval_native_object_props(native);
-	for (i = 0; i < native->len; i++) {
-		jsval_t name = jsval_undefined();
-		name.kind = JSVAL_KIND_STRING;
-		name.repr = JSVAL_REPR_NATIVE;
-		name.off = props[i].name_off;
-		if (jsval_native_string_eq_utf8(region, name, key, key_len)) {
-			props[i].value = value;
-			return 0;
-		}
+	found = jsval_native_object_find_utf8(region, native, key, key_len, &index);
+	if (found < 0) {
+		return -1;
+	}
+	if (found) {
+		props[index].value = value;
+		return 0;
 	}
 
 	if (native->len >= native->cap) {
@@ -2010,6 +2088,54 @@ int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 		native->len++;
 	}
 
+	return 0;
+}
+
+int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object,
+		const uint8_t *key, size_t key_len, int *deleted_ptr)
+{
+	jsval_native_object_t *native;
+	jsval_native_prop_t *props;
+	size_t index;
+	size_t i;
+	int found;
+
+	if (deleted_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_object(region, object);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	found = jsval_native_object_find_utf8(region, native, key, key_len, &index);
+	if (found < 0) {
+		return -1;
+	}
+	if (!found) {
+		*deleted_ptr = 0;
+		return 0;
+	}
+
+	props = jsval_native_object_props(native);
+	for (i = index + 1; i < native->len; i++) {
+		props[i - 1] = props[i];
+	}
+	props[native->len - 1].name_off = 0;
+	props[native->len - 1].value = jsval_undefined();
+	native->len--;
+	*deleted_ptr = 1;
 	return 0;
 }
 
@@ -2091,6 +2217,62 @@ int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t
 	if (index >= native->len) {
 		native->len = index + 1;
 	}
+	return 0;
+}
+
+int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value)
+{
+	size_t len;
+
+	if (array.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	len = jsval_array_length(region, array);
+	return jsval_array_set(region, array, len, value);
+}
+
+int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len)
+{
+	jsval_native_array_t *native;
+	jsval_t *values;
+	size_t i;
+
+	if (array.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_array(region, array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (new_len > native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	values = jsval_native_array_values(native);
+	if (new_len < native->len) {
+		for (i = new_len; i < native->len; i++) {
+			values[i] = jsval_undefined();
+		}
+	} else if (new_len > native->len) {
+		for (i = native->len; i < new_len; i++) {
+			values[i] = jsval_undefined();
+		}
+	}
+	native->len = new_len;
 	return 0;
 }
 
