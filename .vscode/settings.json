@@ -1,0 +1,13 @@
+{
+    "cSpell.words": [
+        "jsstr",
+        "MNURL",
+        "wchars",
+        "whatwg"
+    ],
+    "files.associations": {
+        "compare": "c",
+        "cstdint": "c",
+        "string": "c"
+    }
+}
