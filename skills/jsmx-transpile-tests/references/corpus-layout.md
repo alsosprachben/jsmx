@@ -30,6 +30,7 @@ Each case in `compliance/manifest.json` should include:
 - `source`: repo-relative JS source path
 - `generated`: repo-relative generated C path
 - `lowering_class`: one of `static_pass`, `slow_path_needed`, `unsupported`
+- `translation_mode`: one of `idiomatic_flattened`, `idiomatic_slow_path`, `literal`
 - `expected_status`: one of `pass`, `known_unsupported`
 - `notes`: short explanation when useful
 

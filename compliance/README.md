@@ -16,6 +16,12 @@ Each manifest case also carries a `lowering_class`:
 - `slow_path_needed`: the behavior is valid JS but needs a translator-emitted dynamic slow path outside current `jsmx`
 - `unsupported`: the behavior is intentionally outside the current project scope
 
-That classification is descriptive. `expected_status` remains the executable contract for the current runner.
+Each case also carries a `translation_mode`:
+
+- `idiomatic_flattened`: the fixture demonstrates the intended flattened lowering, not a literal restaging of the JS source
+- `idiomatic_slow_path`: the fixture demonstrates the intended translator-emitted slow path outside `jsmx`
+- `literal`: the fixture intentionally mirrors the upstream source shape more directly
+
+That classification is descriptive. `expected_status` remains the executable contract for the current runner, so a `slow_path_needed` case may still pass when the fixture demonstrates the intended slow path explicitly.
 
 The repo-local skill at `skills/jsmx-transpile-tests/` and the boundary doc at `docs/flattening-boundary.md` define the preferred translation workflow and output contract.

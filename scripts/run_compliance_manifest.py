@@ -26,6 +26,12 @@ LOWERING_CLASSES = {
     "unsupported",
 }
 
+TRANSLATION_MODES = {
+    "idiomatic_flattened",
+    "idiomatic_slow_path",
+    "literal",
+}
+
 
 def status_from_exit(contract, code):
     if code == contract["pass_exit_code"]:
@@ -76,10 +82,17 @@ def run_case(repo_root, binary, case, contract):
 
 def validate_case(case):
     lowering_class = case.get("lowering_class")
+    translation_mode = case.get("translation_mode")
     if lowering_class not in LOWERING_CLASSES:
         print(
             f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
             f"invalid lowering_class {lowering_class!r}"
+        )
+        return False
+    if translation_mode not in TRANSLATION_MODES:
+        print(
+            f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
+            f"invalid translation_mode {translation_mode!r}"
         )
         return False
     return True
@@ -97,12 +110,14 @@ def main():
     built = 0
     passed = 0
     class_counts = Counter()
+    mode_counts = Counter()
 
     with tempfile.TemporaryDirectory(prefix="jsmx-compliance-", dir="/tmp") as tmpdir:
         for case in cases:
             if not validate_case(case):
                 return 1
             class_counts[case["lowering_class"]] += 1
+            mode_counts[case["translation_mode"]] += 1
             binary = compile_case(repo_root, tmpdir, case)
             if binary is None:
                 return 1
@@ -117,6 +132,13 @@ def main():
         + ", ".join(
             f"{name}={class_counts.get(name, 0)}"
             for name in ("static_pass", "slow_path_needed", "unsupported")
+        )
+    )
+    print(
+        "translation modes: "
+        + ", ".join(
+            f"{name}={mode_counts.get(name, 0)}"
+            for name in ("idiomatic_flattened", "idiomatic_slow_path", "literal")
         )
     )
     return 0

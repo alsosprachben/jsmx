@@ -70,6 +70,17 @@ Every manifest entry should declare one `lowering_class`:
 
 `expected_status` is the runtime outcome for the current fixture. `lowering_class` explains where that fixture belongs relative to the flattening boundary.
 
+Every manifest entry should also declare one `translation_mode`:
+
+- `idiomatic_flattened`
+  - the fixture demonstrates the intended flattened lowering into `jsmx` / `jsmethod`
+- `idiomatic_slow_path`
+  - the fixture demonstrates the intended translator-emitted slow path outside the flattened layer
+- `literal`
+  - the fixture intentionally mirrors the upstream test structure more directly
+
+Prefer `idiomatic_flattened` and `idiomatic_slow_path` over `literal` unless literal structure is itself what needs review.
+
 ## Generated File Rules
 
 - Include `compliance/generated/test_contract.h`.
@@ -83,3 +94,5 @@ Every manifest entry should declare one `lowering_class`:
 - `PASS` means the translated semantic check succeeded.
 - `KNOWN_UNSUPPORTED` means the test is intentionally deferred.
 - `FAIL` means the translated test compiled and ran, but the observed result was wrong.
+
+When the slow-path contract is already clear, prefer a passing `idiomatic_slow_path` fixture to a boundary-only `KNOWN_UNSUPPORTED` placeholder.

@@ -23,7 +23,7 @@ Read these references before generating or editing fixtures:
    - `PASS`
    - `KNOWN_UNSUPPORTED`
    - `FAIL`
-5. Add or update the corresponding `compliance/manifest.json` entry, including its `lowering_class`.
+5. Add or update the corresponding `compliance/manifest.json` entry, including its `lowering_class` and `translation_mode`.
 6. Build and run the generated fixture locally if possible.
 
 ## Rules
@@ -34,6 +34,10 @@ Read these references before generating or editing fixtures:
   - `static_pass`
   - `slow_path_needed`
   - `unsupported`
+- Set `translation_mode` to show how the fixture was translated:
+  - `idiomatic_flattened`
+  - `idiomatic_slow_path`
+  - `literal`
 - Keep promotion explicit with `jsval_region_promote_root()` or `jsval_promote_in_place()`.
 - Keep all storage caller-owned; do not introduce heap allocation patterns foreign to `jsmx`.
 - Commit generated C outputs and manifest updates. Do not require live model calls in `make` or CI.

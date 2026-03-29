@@ -53,10 +53,12 @@ Compliance entries and translator planning should use these classes:
 - `slow_path_needed`: the behavior is valid JS, but flattening would require dynamic runtime behavior outside the current `jsmx` model
 - `unsupported`: the behavior is intentionally outside the current project scope
 
-`expected_status` in the compliance manifest remains an execution result. `lowering_class` describes why the test fits, or does not fit, the flattened layer.
+`expected_status` in the compliance manifest remains an execution result. `lowering_class` describes why the test fits, or does not fit, the flattened layer. `translation_mode` says whether the committed fixture demonstrates an idiomatic flattened lowering or an idiomatic slow path.
 
 ## Rule Of Thumb
 
 If the translator can compute the needed storage, select the target helper, and preserve semantics without hidden callbacks, the behavior belongs in `jsmx`.
 
 If correct behavior depends on dynamic object semantics, hidden hooks, or general runtime dispatch, the translator should emit a slow path instead of teaching `jsval` to become a dynamic object system.
+
+When the corpus includes those cases, prefer an idiomatic slow-path translation that still passes over a boundary-only `KNOWN_UNSUPPORTED` placeholder, unless the required slow-path contract has not been designed yet.
