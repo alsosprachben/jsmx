@@ -104,14 +104,33 @@ static generated_status_t generated_expect_string(jsval_region_t *region,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_number(jsval_region_t *region, jsval_t value, double expected,
+		char *detail, size_t cap)
+{
+	if (value.kind != JSVAL_KIND_NUMBER) {
+		return generated_failf(detail, cap, "expected numeric result");
+	}
+	if (jsval_strict_eq(region, value, jsval_number(expected)) != 1) {
+		return generated_failf(detail, cap, "expected numeric result %.17g",
+				expected);
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t cap)
 {
-	static const uint8_t input[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
-	static const uint8_t expected[] = "{\"message\":\"line\\n\\\"quoted\\\"\",\"items\":[7,true,null]}";
+	static const uint8_t input[] =
+		"{\"profile\":{\"name\":\"Ada\",\"active\":true},\"scores\":[1,2,3],\"note\":\"hi\"}";
+	static const uint8_t expected[] =
+		"{\"profile\":{\"name\":\"Ada\",\"active\":false},\"scores\":[7,2,3],\"note\":\"updated\"}";
 	uint8_t storage[32768];
 	jsval_region_t region;
 	jsval_t root;
-	jsval_t items;
+	jsval_t profile;
+	jsval_t name;
+	jsval_t active;
+	jsval_t scores;
+	jsval_t second_score;
 	jsval_t replacement;
 
 	jsval_region_init(&region, storage, sizeof(storage));
@@ -121,16 +140,50 @@ static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t
 	if (!jsval_is_json_backed(root)) {
 		return generated_failf(detail, cap, "expected parsed root to stay JSON-backed");
 	}
-	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5, &items) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(items)");
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7, &profile) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(profile)");
+	}
+	if (!jsval_is_json_backed(profile)) {
+		return generated_failf(detail, cap, "expected nested profile to stay JSON-backed");
+	}
+	if (jsval_object_get_utf8(&region, profile, (const uint8_t *)"name", 4, &name) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(profile.name)");
+	}
+	if (generated_expect_string(&region, name, (const uint8_t *)"Ada", 3,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"scores", 6, &scores) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(scores)");
+	}
+	if (!jsval_is_json_backed(scores)) {
+		return generated_failf(detail, cap, "expected parsed scores to stay JSON-backed");
+	}
+	if (jsval_array_get(&region, scores, 1, &second_score) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(scores[1])");
+	}
+	if (generated_expect_number(&region, second_score, 2.0, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
 	}
 
 	errno = 0;
-	if (jsval_array_set(&region, items, 0, jsval_number(7.0)) == 0) {
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"note", 4,
+			jsval_null()) == 0) {
+		return generated_failf(detail, cap,
+				"JSON-backed object mutation unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap, "expected ENOTSUP before promotion, got %d",
+				errno);
+	}
+
+	errno = 0;
+	if (jsval_array_set(&region, scores, 0, jsval_number(7.0)) == 0) {
 		return generated_failf(detail, cap, "JSON-backed array mutation unexpectedly succeeded");
 	}
 	if (errno != ENOTSUP) {
-		return generated_failf(detail, cap, "expected ENOTSUP before promotion, got %d", errno);
+		return generated_failf(detail, cap, "expected ENOTSUP before array promotion, got %d",
+				errno);
 	}
 
 	if (jsval_region_promote_root(&region, &root) < 0) {
@@ -139,23 +192,109 @@ static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t
 	if (!jsval_is_native(root)) {
 		return generated_failf(detail, cap, "expected promoted root to be native");
 	}
-	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5, &items) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(promoted items)");
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"profile", 7, &profile) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(promoted profile)");
 	}
-	if (!jsval_is_native(items)) {
+	if (!jsval_is_native(profile)) {
+		return generated_failf(detail, cap, "expected promoted child object to be native");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"scores", 6, &scores) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(promoted scores)");
+	}
+	if (!jsval_is_native(scores)) {
 		return generated_failf(detail, cap, "expected promoted child array to be native");
 	}
-	if (jsval_string_new_utf8(&region, (const uint8_t *)"line\n\"quoted\"", 13, &replacement) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_string_new_utf8");
+	if (jsval_object_get_utf8(&region, profile, (const uint8_t *)"active", 6, &active) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(profile.active)");
 	}
-	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"message", 7, replacement) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_object_set_utf8");
+	if (active.kind != JSVAL_KIND_BOOL || active.as.boolean != 1) {
+		return generated_failf(detail, cap, "expected profile.active to start true");
 	}
-	if (jsval_array_set(&region, items, 0, jsval_number(7.0)) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_array_set");
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"updated", 7, &replacement) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(updated)");
+	}
+	if (jsval_object_set_utf8(&region, profile, (const uint8_t *)"active", 6,
+			jsval_bool(0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(profile.active)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"note", 4, replacement) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(note)");
+	}
+	if (jsval_array_set(&region, scores, 0, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(scores[0])");
 	}
 
 	return generated_expect_json(&region, root, expected, sizeof(expected) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
+{
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t empty;
+	jsval_t one_string;
+	jsval_t x_string;
+	jsval_t same_a;
+	jsval_t same_b;
+	jsval_t sum;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(empty)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(one)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &x_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(x)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(same_a)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(same_b)");
+	}
+
+	if (jsval_truthy(&region, jsval_number(1.0)) != 1
+			|| jsval_truthy(&region, jsval_bool(1)) != 1
+			|| jsval_truthy(&region, one_string) != 1) {
+		return generated_failf(detail, cap, "expected primitive truthy cases to stay truthy");
+	}
+	if (jsval_truthy(&region, jsval_number(0.0)) != 0
+			|| jsval_truthy(&region, jsval_bool(0)) != 0
+			|| jsval_truthy(&region, jsval_null()) != 0
+			|| jsval_truthy(&region, jsval_undefined()) != 0
+			|| jsval_truthy(&region, empty) != 0) {
+		return generated_failf(detail, cap, "expected primitive falsy cases to stay falsy");
+	}
+	if (jsval_strict_eq(&region, same_a, same_b) != 1
+			|| jsval_strict_eq(&region, jsval_number(+0.0), jsval_number(-0.0)) != 1
+			|| jsval_strict_eq(&region, jsval_number(1.0), one_string) != 0
+			|| jsval_strict_eq(&region, jsval_bool(1), jsval_number(1.0)) != 0
+			|| jsval_strict_eq(&region, jsval_null(), jsval_undefined()) != 0) {
+		return generated_failf(detail, cap, "unexpected strict equality result");
+	}
+
+	if (jsval_add(&region, jsval_number(1.0), jsval_number(1.0), &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(number, number)");
+	}
+	status = generated_expect_number(&region, sum, 2.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_add(&region, one_string, jsval_number(1.0), &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(string, number)");
+	}
+	status = generated_expect_string(&region, sum, (const uint8_t *)"11", 2, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_add(&region, jsval_number(1.0), x_string, &sum) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(number, string)");
+	}
+	return generated_expect_string(&region, sum, (const uint8_t *)"1x", 2,
+			detail, cap);
 }
 
 static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail,
@@ -475,6 +614,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
+	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},

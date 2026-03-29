@@ -15,7 +15,7 @@ The compliance corpus is repository data, not an interactive prompt artifact.
 
 ## Naming
 
-- Keep suite names stable and lowercase, for example `strings`.
+- Keep suite names stable and lowercase, for example `strings`, `values`, and `objects`.
 - Name generated fixtures after the source stem when possible.
 - Prefer deterministic paths like:
   - `compliance/js/strings/test262-normalize-nfc.js`

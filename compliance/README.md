@@ -1,6 +1,6 @@
 # Compliance Corpus
 
-This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures.
+This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures. The current committed suites cover string built-ins, core `jsval` value semantics, and explicit object/array promotion flows.
 
 Layout:
 

@@ -266,6 +266,66 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Translated against the thin jsmethod toLocaleLowerCase layer for the Lithuanian conditional mappings from the intl402 test262 suite."
+    },
+    {
+      "id": "test262-values-S11.6.1_A2.1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",
+      "generated": "compliance/generated/values/test262/S11.6.1_A2.1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_add numeric addition semantics after the original JS reference reads have collapsed to flattened value operands."
+    },
+    {
+      "id": "test262-values-S11.6.1_A3.2_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.6.1_A3.2_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.6.1_A3.2_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_add string concatenation semantics for the primitive string/number cases; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S12.5_A1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S12.5_A1_T1.js",
+      "generated": "compliance/generated/values/test262/S12.5_A1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_truthy for the primitive truthy cases from the upstream if-statement test."
+    },
+    {
+      "id": "test262-values-S12.5_A1.1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S12.5_A1.1_T1.js",
+      "generated": "compliance/generated/values/test262/S12.5_A1.1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_truthy for the primitive falsy cases from the upstream if-statement test."
+    },
+    {
+      "id": "jsmx-values-strict-eq-primitives",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/strict-eq-primitives.js",
+      "generated": "compliance/generated/values/jsmx/strict-eq-primitives.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic strict-equality coverage for primitive jsval semantics that are cleaner to express directly than through the wrapper-heavy legacy upstream files."
+    },
+    {
+      "id": "jsmx-objects-json-promote-mutate-emit",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-promote-mutate-emit.js",
+      "generated": "compliance/generated/objects/jsmx/json-promote-mutate-emit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object/array lowering fixture for JSON-backed reads, explicit root promotion on first mutation, native writes, and JSON emission."
     }
   ]
 }

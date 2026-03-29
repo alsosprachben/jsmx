@@ -367,9 +367,54 @@ static void test_method_normalize_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_value_semantics(void)
+{
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t empty_string;
+	jsval_t one_string;
+	jsval_t same_a;
+	jsval_t same_b;
+	jsval_t sum;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_a) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_b) == 0);
+
+	assert(jsval_truthy(&region, jsval_number(1.0)) == 1);
+	assert(jsval_truthy(&region, jsval_bool(1)) == 1);
+	assert(jsval_truthy(&region, one_string) == 1);
+	assert(jsval_truthy(&region, jsval_number(0.0)) == 0);
+	assert(jsval_truthy(&region, jsval_bool(0)) == 0);
+	assert(jsval_truthy(&region, jsval_null()) == 0);
+	assert(jsval_truthy(&region, jsval_undefined()) == 0);
+	assert(jsval_truthy(&region, empty_string) == 0);
+	assert(jsval_truthy(&region, jsval_number(NAN)) == 0);
+
+	assert(jsval_strict_eq(&region, jsval_undefined(), jsval_undefined()) == 1);
+	assert(jsval_strict_eq(&region, jsval_null(), jsval_null()) == 1);
+	assert(jsval_strict_eq(&region, jsval_number(+0.0), jsval_number(-0.0)) == 1);
+	assert(jsval_strict_eq(&region, same_a, same_b) == 1);
+	assert(jsval_strict_eq(&region, jsval_number(NAN), jsval_number(NAN)) == 0);
+	assert(jsval_strict_eq(&region, jsval_number(1.0), one_string) == 0);
+	assert(jsval_strict_eq(&region, jsval_bool(1), jsval_number(1.0)) == 0);
+	assert(jsval_strict_eq(&region, jsval_null(), jsval_undefined()) == 0);
+
+	assert(jsval_add(&region, jsval_number(1.0), jsval_number(1.0), &sum) == 0);
+	assert(sum.kind == JSVAL_KIND_NUMBER);
+	assert(sum.as.number == 2.0);
+	assert(jsval_add(&region, one_string, jsval_number(1.0), &sum) == 0);
+	assert_string(&region, sum, "11");
+	assert(jsval_add(&region, jsval_number(1.0), one_string, &sum) == 0);
+	assert_string(&region, sum, "11");
+}
+
 int main(void)
 {
 	test_native_storage();
+	test_value_semantics();
 	test_json_storage();
 	test_json_root_rebase();
 	test_json_mutation_requires_promotion();
