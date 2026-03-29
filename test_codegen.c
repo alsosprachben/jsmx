@@ -796,6 +796,116 @@ static generated_status_t generated_smoke_jsval_lookup_capacity_contracts(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_dense_array_semantics(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] = "[4,5]";
+	static const uint8_t expected_json[] =
+		"{\"native\":[1,9],\"parsed\":[4,5,6]}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t native_items;
+	jsval_t parsed_items;
+	jsval_t got;
+	size_t bytes;
+	size_t len_before;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 8, &parsed_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (!jsval_is_json_backed(parsed_items)) {
+		return generated_failf(detail, cap,
+				"expected parsed array to start JSON-backed");
+	}
+	if (jsval_array_get(&region, parsed_items, 1, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(parsed[1])");
+	}
+	if (generated_expect_number(&region, got, 5.0, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_promote_array_shallow_measure(&region, parsed_items, 3, &bytes) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_array_shallow_measure(parsed)");
+	}
+	if (bytes == 0) {
+		return generated_failf(detail, cap,
+				"expected shallow promotion with extra capacity to consume bytes");
+	}
+	if (jsval_promote_array_shallow_in_place(&region, &parsed_items, 3) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_array_shallow_in_place(parsed)");
+	}
+	if (!jsval_is_native(parsed_items)) {
+		return generated_failf(detail, cap,
+				"expected shallow-promoted parsed array to become native");
+	}
+	if (jsval_array_push(&region, parsed_items, jsval_number(6.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(parsed)");
+	}
+
+	if (jsval_array_new(&region, 4, &native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(native)");
+	}
+	if (jsval_array_set(&region, native_items, 0, jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native[0])");
+	}
+	if (jsval_array_set(&region, native_items, 1, jsval_number(2.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native[1])");
+	}
+	len_before = jsval_array_length(&region, native_items);
+	if (jsval_array_set(&region, native_items, 1, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native[1]=9)");
+	}
+	if (jsval_array_length(&region, native_items) != len_before) {
+		return generated_failf(detail, cap,
+				"native overwrite unexpectedly changed logical length");
+	}
+	if (jsval_array_set_length(&region, native_items, 4) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set_length(native grow)");
+	}
+	if (jsval_array_get(&region, native_items, 2, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(native[2])");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected grown native dense slot to read as undefined");
+	}
+	if (jsval_array_set(&region, native_items, 2, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native[2]=7)");
+	}
+	if (jsval_array_set(&region, native_items, 3, jsval_number(8.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native[3]=8)");
+	}
+	if (jsval_array_set_length(&region, native_items, 2) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set_length(native shrink)");
+	}
+	if (jsval_array_get(&region, native_items, 2, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(native[2] after shrink)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected truncated native slot to read as undefined");
+	}
+
+	if (jsval_object_new(&region, 2, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(root)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"native", 6,
+			native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(native)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"parsed", 6,
+			parsed_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(parsed)");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_locale_upper(char *detail,
 		size_t cap)
 {
@@ -1118,6 +1228,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
 	{"smoke", "jsval_lookup_capacity_contracts", generated_smoke_jsval_lookup_capacity_contracts},
+	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},

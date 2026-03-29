@@ -426,6 +426,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic lowering-contract fixture for ENOBUFS on undersized shallow-promotion plans and dense native array mutation beyond the translator-chosen capacity."
+    },
+    {
+      "id": "jsmx-objects-array-index-overwrite-and-emit",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-index-overwrite-and-emit.js",
+      "generated": "compliance/generated/objects/jsmx/array-index-overwrite-and-emit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for overwriting existing indices without changing logical length, then emitting the updated dense sequence."
+    },
+    {
+      "id": "jsmx-objects-array-length-grow-shrink-emit",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-length-grow-shrink-emit.js",
+      "generated": "compliance/generated/objects/jsmx/array-length-grow-shrink-emit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for observable length growth, writes into grown slots, and a later shrink that truncates the visible dense prefix."
+    },
+    {
+      "id": "jsmx-objects-json-array-shallow-promote-and-update",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-array-shallow-promote-and-update.js",
+      "generated": "compliance/generated/objects/jsmx/json-array-shallow-promote-and-update.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for reading a parsed JSON-backed array, then shallow-promoting it with exact final capacity before overwrite and append."
     }
   ]
 }

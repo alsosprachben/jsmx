@@ -806,6 +806,59 @@ static void test_lookup_and_capacity_contracts(void)
 			"{\"keep\":9,\"items\":[1,8,3],\"nested\":{\"flag\":true}}");
 }
 
+static void test_dense_array_observable_behavior(void)
+{
+	static const char json[] = "[1,2]";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t native_array;
+	jsval_t parsed_array;
+	jsval_t got;
+	size_t len_before;
+	size_t bytes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_array_new(&region, 4, &native_array) == 0);
+	assert(jsval_array_set(&region, native_array, 0, jsval_number(1.0)) == 0);
+	assert(jsval_array_set(&region, native_array, 1, jsval_number(2.0)) == 0);
+	len_before = jsval_array_length(&region, native_array);
+	assert(len_before == 2);
+	assert(jsval_array_set(&region, native_array, 1, jsval_number(9.0)) == 0);
+	assert(jsval_array_length(&region, native_array) == len_before);
+	assert(jsval_array_get(&region, native_array, 1, &got) == 0);
+	assert(got.kind == JSVAL_KIND_NUMBER);
+	assert(got.as.number == 9.0);
+
+	assert(jsval_array_set_length(&region, native_array, 4) == 0);
+	assert(jsval_array_get(&region, native_array, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_get(&region, native_array, 3, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_set(&region, native_array, 2, jsval_number(7.0)) == 0);
+	assert(jsval_array_set(&region, native_array, 3, jsval_number(8.0)) == 0);
+	assert_json(&region, native_array, "[1,9,7,8]");
+	assert(jsval_array_set_length(&region, native_array, 2) == 0);
+	assert(jsval_array_get(&region, native_array, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert_json(&region, native_array, "[1,9]");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 8,
+			&parsed_array) == 0);
+	assert(jsval_is_json_backed(parsed_array) == 1);
+	assert(jsval_array_get(&region, parsed_array, 1, &got) == 0);
+	assert(jsval_strict_eq(&region, got, jsval_number(2.0)) == 1);
+	assert(jsval_promote_array_shallow_measure(&region, parsed_array, 3, &bytes)
+			== 0);
+	assert(bytes > 0);
+	assert(jsval_promote_array_shallow_in_place(&region, &parsed_array, 3) == 0);
+	assert(jsval_is_native(parsed_array) == 1);
+	assert(jsval_region_set_root(&region, parsed_array) == 0);
+	assert(jsval_array_set(&region, parsed_array, 0, jsval_number(7.0)) == 0);
+	assert(jsval_array_push(&region, parsed_array, jsval_number(3.0)) == 0);
+	assert_json(&region, parsed_array, "[7,2,3]");
+}
+
 int main(void)
 {
 	test_native_storage();
@@ -821,6 +874,7 @@ int main(void)
 	test_method_normalize_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
+	test_dense_array_observable_behavior();
 	puts("test_jsval: ok");
 	return 0;
 }
