@@ -21,6 +21,18 @@ generated_logical_or(jsval_region_t *region, jsval_t left, jsval_t right)
 	return jsval_truthy(region, left) ? left : right;
 }
 
+static inline jsval_t
+generated_slow_boxed_boolean(int value)
+{
+	return jsval_bool(!!value);
+}
+
+static inline jsval_t
+generated_slow_boxed_number(double value)
+{
+	return jsval_number(value);
+}
+
 static inline int
 generated_expect_value_string(jsval_region_t *region, jsval_t value,
 		const uint8_t *expected, size_t expected_len, const char *suite,
@@ -57,6 +69,21 @@ generated_expect_value_strict_eq(jsval_region_t *region, jsval_t actual,
 	if (jsval_strict_eq(region, actual, expected) != 1) {
 		return generated_test_fail(suite, case_name,
 				"%s: strict equality check failed", label);
+	}
+	return GENERATED_TEST_PASS;
+}
+
+static inline int
+generated_expect_number(jsval_region_t *region, jsval_t value, double expected,
+		const char *suite, const char *case_name, const char *label)
+{
+	if (value.kind != JSVAL_KIND_NUMBER) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected numeric result", label);
+	}
+	if (jsval_strict_eq(region, value, jsval_number(expected)) != 1) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected numeric result %.17g", label, expected);
 	}
 	return GENERATED_TEST_PASS;
 }

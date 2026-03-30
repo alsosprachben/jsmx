@@ -1272,6 +1272,36 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	}
 }
 
+int jsval_to_int32(jsval_region_t *region, jsval_t value, int32_t *result_ptr)
+{
+	double number;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, value, &number) < 0) {
+		return -1;
+	}
+	*result_ptr = jsnum_to_int32(number);
+	return 0;
+}
+
+int jsval_to_uint32(jsval_region_t *region, jsval_t value, uint32_t *result_ptr)
+{
+	double number;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, value, &number) < 0) {
+		return -1;
+	}
+	*result_ptr = jsnum_to_uint32(number);
+	return 0;
+}
+
 static int jsval_method_output_cap(size_t input_len, size_t factor,
 		size_t *cap_ptr)
 {
@@ -2756,6 +2786,122 @@ int jsval_unary_minus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	return 0;
 }
 
+int jsval_bitwise_not(jsval_region_t *region, jsval_t value,
+		jsval_t *value_ptr)
+{
+	int32_t integer;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_int32(region, value, &integer) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number((double)(~integer));
+	return 0;
+}
+
+typedef enum jsval_bitwise_op_e {
+	JSVAL_BITWISE_AND,
+	JSVAL_BITWISE_OR,
+	JSVAL_BITWISE_XOR
+} jsval_bitwise_op_t;
+
+typedef enum jsval_shift_op_e {
+	JSVAL_SHIFT_LEFT,
+	JSVAL_SHIFT_RIGHT,
+	JSVAL_SHIFT_RIGHT_UNSIGNED
+} jsval_shift_op_t;
+
+static int jsval_bitwise(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_bitwise_op_t op, jsval_t *value_ptr)
+{
+	int32_t left_integer;
+	int32_t right_integer;
+	int32_t result;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_int32(region, left, &left_integer) < 0
+			|| jsval_to_int32(region, right, &right_integer) < 0) {
+		return -1;
+	}
+
+	switch (op) {
+	case JSVAL_BITWISE_AND:
+		result = left_integer & right_integer;
+		break;
+	case JSVAL_BITWISE_OR:
+		result = left_integer | right_integer;
+		break;
+	case JSVAL_BITWISE_XOR:
+		result = left_integer ^ right_integer;
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	*value_ptr = jsval_number((double)result);
+	return 0;
+}
+
+static int jsval_shift(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_shift_op_t op, jsval_t *value_ptr)
+{
+	uint32_t right_integer;
+	uint32_t shift_count;
+	uint32_t bits;
+	int32_t left_integer;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_uint32(region, right, &right_integer) < 0) {
+		return -1;
+	}
+
+	shift_count = right_integer & 0x1f;
+	switch (op) {
+	case JSVAL_SHIFT_LEFT:
+		if (jsval_to_int32(region, left, &left_integer) < 0) {
+			return -1;
+		}
+		bits = ((uint32_t)left_integer) << shift_count;
+		*value_ptr = jsval_number((double)(int32_t)bits);
+		return 0;
+	case JSVAL_SHIFT_RIGHT:
+		if (jsval_to_int32(region, left, &left_integer) < 0) {
+			return -1;
+		}
+		if (shift_count == 0) {
+			*value_ptr = jsval_number((double)left_integer);
+			return 0;
+		}
+
+		bits = ((uint32_t)left_integer) >> shift_count;
+		if (left_integer < 0) {
+			bits |= (~(uint32_t)0) << (32 - shift_count);
+		}
+		*value_ptr = jsval_number((double)(int32_t)bits);
+		return 0;
+	case JSVAL_SHIFT_RIGHT_UNSIGNED:
+		if (jsval_to_uint32(region, left, &bits) < 0) {
+			return -1;
+		}
+		*value_ptr = jsval_number((double)(bits >> shift_count));
+		return 0;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
 int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right,
 		jsval_t *value_ptr)
 {
@@ -2773,6 +2919,43 @@ int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right,
 
 	*value_ptr = jsval_number(left_number - right_number);
 	return 0;
+}
+
+int jsval_bitwise_and(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	return jsval_bitwise(region, left, right, JSVAL_BITWISE_AND, value_ptr);
+}
+
+int jsval_bitwise_or(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	return jsval_bitwise(region, left, right, JSVAL_BITWISE_OR, value_ptr);
+}
+
+int jsval_bitwise_xor(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	return jsval_bitwise(region, left, right, JSVAL_BITWISE_XOR, value_ptr);
+}
+
+int jsval_shift_left(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	return jsval_shift(region, left, right, JSVAL_SHIFT_LEFT, value_ptr);
+}
+
+int jsval_shift_right(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	return jsval_shift(region, left, right, JSVAL_SHIFT_RIGHT, value_ptr);
+}
+
+int jsval_shift_right_unsigned(jsval_region_t *region, jsval_t left,
+		jsval_t right, jsval_t *value_ptr)
+{
+	return jsval_shift(region, left, right, JSVAL_SHIFT_RIGHT_UNSIGNED,
+			value_ptr);
 }
 
 int jsval_multiply(jsval_region_t *region, jsval_t left, jsval_t right,

@@ -725,6 +725,190 @@ static generated_status_t generated_smoke_jsval_numeric_coercion(char *detail,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_bitwise(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"truth\":true,\"zero\":\"0\",\"one\":\"1\",\"bad\":\"x\",\"nothing\":null,\"num\":5,\"obj\":{}}";
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t zero;
+	jsval_t one;
+	jsval_t bad;
+	jsval_t nothing;
+	jsval_t num;
+	jsval_t obj;
+	jsval_t result;
+	int32_t i32;
+	uint32_t u32;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"zero", 4,
+				&zero) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"one", 3,
+				&one) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"bad", 3,
+				&bad) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+				&nothing) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+				&num) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+				&obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+
+	if (jsval_to_int32(&region, one, &i32) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_to_int32(\"1\")");
+	}
+	if (i32 != 1) {
+		return generated_failf(detail, cap, "expected ToInt32(\"1\") to be 1");
+	}
+	if (jsval_to_uint32(&region, jsval_number(4294967295.0), &u32) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_to_uint32(4294967295)");
+	}
+	if (u32 != 4294967295u) {
+		return generated_failf(detail, cap,
+				"expected ToUint32(4294967295) to be 4294967295");
+	}
+	if (jsval_bitwise_not(&region, nothing, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bitwise_not(null)");
+	}
+	if (generated_expect_number(&region, result, -1.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_bitwise_and(&region, truth, num, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bitwise_and(true, 5)");
+	}
+	if (generated_expect_number(&region, result, 1.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_bitwise_or(&region, one, jsval_bool(0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bitwise_or(\"1\", false)");
+	}
+	if (generated_expect_number(&region, result, 1.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_bitwise_xor(&region, bad, jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bitwise_xor(\"x\", true)");
+	}
+	if (generated_expect_number(&region, result, 1.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	errno = 0;
+	if (jsval_bitwise_not(&region, obj, &result) == 0) {
+		return generated_failf(detail, cap,
+				"object bitwise-not unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP for object bitwise-not, got %d", errno);
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_shift(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"truth\":true,\"count\":\"33\",\"neg\":-1,\"num\":5,\"obj\":{}}";
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t count;
+	jsval_t neg;
+	jsval_t num;
+	jsval_t obj;
+	jsval_t result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"count", 5,
+				&count) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"neg", 3,
+				&neg) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+				&num) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+				&obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+
+	if (jsval_shift_left(&region, jsval_bool(1), jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_shift_left(true, true)");
+	}
+	if (generated_expect_number(&region, result, 2.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_shift_right(&region, jsval_number(-1.0), jsval_number(1.0),
+			&result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_shift_right(-1, 1)");
+	}
+	if (generated_expect_number(&region, result, -1.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_shift_right_unsigned(&region, jsval_number(-1.0),
+			jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_shift_right_unsigned(-1, 1)");
+	}
+	if (generated_expect_number(&region, result, 2147483647.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_shift_left(&region, truth, count, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_shift_left(parsed truth, parsed count)");
+	}
+	if (generated_expect_number(&region, result, 2.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_shift_right(&region, num, count, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_shift_right(parsed num, parsed count)");
+	}
+	if (generated_expect_number(&region, result, 2.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_shift_right_unsigned(&region, neg, truth, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_shift_right_unsigned(parsed neg, parsed truth)");
+	}
+	if (generated_expect_number(&region, result, 2147483647.0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	errno = 0;
+	if (jsval_shift_left(&region, obj, jsval_bool(1), &result) == 0) {
+		return generated_failf(detail, cap,
+				"object shift unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP for object shift, got %d", errno);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_relational(char *detail,
 		size_t cap)
 {
@@ -1871,6 +2055,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
 	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
 	{"smoke", "jsval_numeric_coercion", generated_smoke_jsval_numeric_coercion},
+	{"smoke", "jsval_bitwise", generated_smoke_jsval_bitwise},
+	{"smoke", "jsval_shift", generated_smoke_jsval_shift},
 	{"smoke", "jsval_relational", generated_smoke_jsval_relational},
 	{"smoke", "jsval_abstract_equality",
 		generated_smoke_jsval_abstract_equality},

@@ -105,11 +105,37 @@ static void test_remainder(void)
 	assert(value == 1.0);
 }
 
+static void test_int_coercion(void)
+{
+	assert(jsnum_to_int32(NAN) == 0);
+	assert(jsnum_to_uint32(NAN) == 0);
+	assert(jsnum_to_int32(INFINITY) == 0);
+	assert(jsnum_to_uint32(-INFINITY) == 0);
+	assert(jsnum_to_int32(0.0) == 0);
+	assert(jsnum_to_uint32(-0.0) == 0);
+
+	assert(jsnum_to_int32(1.9) == 1);
+	assert(jsnum_to_int32(-1.9) == -1);
+	assert(jsnum_to_uint32(-1.9) == 4294967295u);
+
+	assert(jsnum_to_int32(2147483648.0) == (-2147483647 - 1));
+	assert(jsnum_to_uint32(2147483648.0) == 2147483648u);
+	assert(jsnum_to_int32(4294967295.0) == -1);
+	assert(jsnum_to_uint32(4294967295.0) == 4294967295u);
+	assert(jsnum_to_int32(4294967296.0) == 0);
+	assert(jsnum_to_uint32(4294967296.0) == 0);
+	assert(jsnum_to_int32(4294967297.0) == 1);
+	assert(jsnum_to_uint32(4294967297.0) == 1);
+	assert(jsnum_to_int32(-4294967297.0) == -1);
+	assert(jsnum_to_uint32(-4294967297.0) == 4294967295u);
+}
+
 int main(void)
 {
 	test_parse_json();
 	test_parse_string();
 	test_format();
 	test_remainder();
+	test_int_coercion();
 	return 0;
 }

@@ -833,6 +833,38 @@ int jsnum_format(double number, char *buf, size_t cap, size_t *len_ptr)
 #endif
 }
 
+uint32_t jsnum_to_uint32(double number)
+{
+	double mod;
+	int64_t truncated;
+
+	if (number == 0.0 || number != number || number == INFINITY
+			|| number == -INFINITY) {
+		return 0;
+	}
+
+	mod = jsnum_remainder(number, 4294967296.0);
+	if (mod == 0.0 || mod != mod) {
+		return 0;
+	}
+
+	truncated = (int64_t)mod;
+	return (uint32_t)truncated;
+}
+
+int32_t jsnum_to_int32(double number)
+{
+	uint32_t value = jsnum_to_uint32(number);
+	int64_t signed_value;
+
+	if (value >= 2147483648u) {
+		signed_value = (int64_t)value - 4294967296LL;
+	} else {
+		signed_value = (int64_t)value;
+	}
+	return (int32_t)signed_value;
+}
+
 double jsnum_remainder(double left, double right)
 {
 #ifdef USE_LIBC

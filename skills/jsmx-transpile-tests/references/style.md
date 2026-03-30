@@ -22,9 +22,11 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
   - planned-capacity behavior
   - shallow promotion policy
   - page-resident identity or locality concerns
-- If an upstream file mixes flattenable checks with unsupported wrapper,
-  object, or dynamic behavior, preserve the flattenable subset and document
-  every omitted check in the generated fixture comment and manifest notes.
+- If an upstream file mixes flattenable checks with behavior that already has
+  a known slow-path contract, preserve the whole file through one idiomatic
+  generated translation rather than omitting those checks.
+- Only preserve a flattenable subset and document omissions when the missing
+  behavior does not yet have a clear slow-path contract.
 
 ## API Selection
 

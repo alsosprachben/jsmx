@@ -103,6 +103,9 @@ int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);
 int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len);
 
 int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
+int jsval_to_int32(jsval_region_t *region, jsval_t value, int32_t *result_ptr);
+int jsval_to_uint32(jsval_region_t *region, jsval_t value,
+		uint32_t *result_ptr);
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);
 int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
@@ -115,7 +118,21 @@ int jsval_greater_than(jsval_region_t *region, jsval_t left, jsval_t right, int 
 int jsval_greater_equal(jsval_region_t *region, jsval_t left, jsval_t right, int *result_ptr);
 int jsval_unary_plus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
 int jsval_unary_minus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
+int jsval_bitwise_not(jsval_region_t *region, jsval_t value,
+		jsval_t *value_ptr);
 int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_bitwise_and(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr);
+int jsval_bitwise_or(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr);
+int jsval_bitwise_xor(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr);
+int jsval_shift_left(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr);
+int jsval_shift_right(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr);
+int jsval_shift_right_unsigned(jsval_region_t *region, jsval_t left,
+		jsval_t right, jsval_t *value_ptr);
 int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
 int jsval_multiply(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
 int jsval_divide(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);

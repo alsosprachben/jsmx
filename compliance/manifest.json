@@ -958,6 +958,186 @@
       "notes": "Translated against jsval_greater_equal for primitive string/string ordering; the String-object checks are intentionally omitted at the flattened layer."
     },
     {
+      "id": "test262-values-S11.7.1_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.1_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.1_A3_T1.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_left for the primitive checks, with the boxed Boolean cases preserved through an explicit translator-emitted boxed-wrapper coercion helper outside jsmx."
+    },
+    {
+      "id": "test262-values-S11.7.1_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.1_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.1_A3_T2.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_left for the primitive checks, with the boxed Boolean/Number cases preserved through explicit translator-emitted boxed-wrapper coercion helpers outside jsmx."
+    },
+    {
+      "id": "test262-values-S11.7.2_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.2_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.2_A3_T1.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_right for the primitive checks, with the boxed Boolean cases preserved through an explicit translator-emitted boxed-wrapper coercion helper outside jsmx."
+    },
+    {
+      "id": "test262-values-S11.7.2_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.2_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.2_A3_T2.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_right for the primitive checks, with the boxed Boolean/Number cases preserved through explicit translator-emitted boxed-wrapper coercion helpers outside jsmx."
+    },
+    {
+      "id": "test262-values-S11.7.3_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.3_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.3_A3_T1.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_right_unsigned for the primitive checks, with the boxed Boolean cases preserved through an explicit translator-emitted boxed-wrapper coercion helper outside jsmx."
+    },
+    {
+      "id": "test262-values-S11.7.3_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.7.3_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.7.3_A3_T2.1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_shift_right_unsigned for the primitive checks, with the boxed Boolean/Number cases preserved through explicit translator-emitted boxed-wrapper coercion helpers outside jsmx."
+    },
+    {
+      "id": "jsmx-values-json-backed-shift-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/json-backed-shift-parity.js",
+      "generated": "compliance/generated/values/jsmx/json-backed-shift-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic parity fixture for JSON-backed/native primitive shift behavior across <<, >>, and >>>, including count masking through ToUint32."
+    },
+    {
+      "id": "test262-values-S11.4.8_A3_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.8_A3_T1.js",
+      "generated": "compliance/generated/values/test262/S11.4.8_A3_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_not for the primitive boolean cases; the Boolean-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.4.8_A3_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.8_A3_T2.js",
+      "generated": "compliance/generated/values/test262/S11.4.8_A3_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_not for primitive numeric operands, preserving the NaN and Infinity cases while omitting the Number-object checks."
+    },
+    {
+      "id": "test262-values-S11.4.8_A3_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.8_A3_T3.js",
+      "generated": "compliance/generated/values/test262/S11.4.8_A3_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_not for primitive string operands, preserving the numeric, empty-string, and invalid-string cases while omitting the String-object checks."
+    },
+    {
+      "id": "test262-values-S11.4.8_A3_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.8_A3_T4.js",
+      "generated": "compliance/generated/values/test262/S11.4.8_A3_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_not for primitive null and undefined cases."
+    },
+    {
+      "id": "test262-values-S11.10.1_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.1_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.1_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_and for primitive boolean operands; the Boolean-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.10.1_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.1_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.1_A3_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_and for primitive boolean/number mixes; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.10.2_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.2_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.2_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_xor for primitive boolean operands; the Boolean-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.10.2_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.2_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.2_A3_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_xor for primitive boolean/number mixes; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.10.3_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.3_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.3_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_or for primitive boolean operands; the Boolean-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.10.3_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.10.3_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.10.3_A3_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_bitwise_or for primitive boolean/number mixes; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "jsmx-values-json-backed-bitwise-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/json-backed-bitwise-parity.js",
+      "generated": "compliance/generated/values/jsmx/json-backed-bitwise-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic parity fixture for JSON-backed/native primitive bitwise behavior across ToInt32 and the ~, &, |, and ^ operators."
+    },
+    {
       "id": "jsmx-values-json-backed-primitive-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/json-backed-primitive-parity.js",
