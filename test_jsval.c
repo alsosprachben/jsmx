@@ -497,16 +497,21 @@ static void test_value_semantics(void)
 	uint8_t storage[8192];
 	jsval_region_t region;
 	jsval_t empty_string;
+	jsval_t null_word;
 	jsval_t one_string;
 	jsval_t same_a;
 	jsval_t same_b;
 	jsval_t sum;
+	jsval_t undefined_word;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"null", 4, &null_word) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_a) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"same", 4, &same_b) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"undefined", 9,
+			&undefined_word) == 0);
 
 	assert(jsval_truthy(&region, jsval_number(1.0)) == 1);
 	assert(jsval_truthy(&region, jsval_bool(1)) == 1);
@@ -520,12 +525,20 @@ static void test_value_semantics(void)
 
 	assert(jsval_strict_eq(&region, jsval_undefined(), jsval_undefined()) == 1);
 	assert(jsval_strict_eq(&region, jsval_null(), jsval_null()) == 1);
+	assert(jsval_strict_eq(&region, jsval_number(INFINITY), jsval_number(INFINITY)) == 1);
+	assert(jsval_strict_eq(&region, jsval_number(-INFINITY), jsval_number(-INFINITY)) == 1);
 	assert(jsval_strict_eq(&region, jsval_number(+0.0), jsval_number(-0.0)) == 1);
 	assert(jsval_strict_eq(&region, same_a, same_b) == 1);
+	assert(jsval_strict_eq(&region, jsval_number(1.0), jsval_number(0.999999999999)) == 0);
+	assert(jsval_strict_eq(&region, jsval_number(NAN), jsval_bool(1)) == 0);
 	assert(jsval_strict_eq(&region, jsval_number(NAN), jsval_number(NAN)) == 0);
 	assert(jsval_strict_eq(&region, jsval_number(1.0), one_string) == 0);
 	assert(jsval_strict_eq(&region, jsval_bool(1), jsval_number(1.0)) == 0);
 	assert(jsval_strict_eq(&region, jsval_null(), jsval_undefined()) == 0);
+	assert(jsval_strict_eq(&region, jsval_null(), null_word) == 0);
+	assert(jsval_strict_eq(&region, jsval_undefined(), undefined_word) == 0);
+	assert((jsval_strict_eq(&region, jsval_null(), jsval_undefined()) == 0) == 1);
+	assert((jsval_strict_eq(&region, jsval_number(1.0), one_string) == 0) == 1);
 
 	assert(jsval_add(&region, jsval_number(1.0), jsval_number(1.0), &sum) == 0);
 	assert(sum.kind == JSVAL_KIND_NUMBER);
@@ -534,6 +547,53 @@ static void test_value_semantics(void)
 	assert_string(&region, sum, "11");
 	assert(jsval_add(&region, jsval_number(1.0), one_string, &sum) == 0);
 	assert_string(&region, sum, "11");
+}
+
+static void test_logical_not_semantics(void)
+{
+	uint8_t storage[2048];
+	jsval_region_t region;
+	jsval_t empty_string;
+	jsval_t one_string;
+	jsval_t x;
+	int c = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) == 0);
+	x = jsval_bool(1);
+
+	assert((!jsval_truthy(&region, jsval_bool(1))) == 0);
+	assert((!(!jsval_truthy(&region, jsval_bool(1)))) == 1);
+	assert((!jsval_truthy(&region, x)) == 0);
+	assert((!(!jsval_truthy(&region, x))) == 1);
+	assert((!jsval_truthy(&region, jsval_bool(0))) == 1);
+	assert((!jsval_truthy(&region, jsval_null())) == 1);
+	assert((!jsval_truthy(&region, jsval_undefined())) == 1);
+	assert((!jsval_truthy(&region, jsval_number(+0.0))) == 1);
+	assert((!jsval_truthy(&region, jsval_number(-0.0))) == 1);
+	assert((!jsval_truthy(&region, jsval_number(NAN))) == 1);
+	assert((!jsval_truthy(&region, jsval_number(INFINITY))) == 0);
+	assert((!jsval_truthy(&region, jsval_number(-13.0))) == 0);
+	assert((!jsval_truthy(&region, empty_string)) == 1);
+	assert((!jsval_truthy(&region, one_string)) == 0);
+
+	if (!jsval_truthy(&region, jsval_number(1.0))) {
+		assert(0);
+	} else {
+		c++;
+	}
+	if (!jsval_truthy(&region, jsval_bool(1))) {
+		assert(0);
+	} else {
+		c++;
+	}
+	if (!jsval_truthy(&region, one_string)) {
+		assert(0);
+	} else {
+		c++;
+	}
+	assert(c == 3);
 }
 
 static void test_json_backed_value_parity(void)
@@ -863,6 +923,7 @@ int main(void)
 {
 	test_native_storage();
 	test_value_semantics();
+	test_logical_not_semantics();
 	test_json_backed_value_parity();
 	test_json_storage();
 	test_json_root_rebase();

@@ -8,6 +8,24 @@ Translate the semantic intent of the JS test into reviewable, self-contained C t
 
 The output is not a generic C translation. It is a `jsmx`-targeted fixture.
 
+## Source Policy
+
+- Prefer a real upstream official source file when the suite expresses the
+  behavior you want to prove.
+- For official-source cases, commit one idiomatic generated translation by
+  default. Do not keep a second literal witness fixture unless the literal
+  structure itself needs review.
+- Use repo-authored sources only when the behavior is specifically about the
+  flattened `jsmx` contract rather than the upstream language/library
+  contract, such as:
+  - JSON-backed parity
+  - planned-capacity behavior
+  - shallow promotion policy
+  - page-resident identity or locality concerns
+- If an upstream file mixes flattenable checks with unsupported wrapper,
+  object, or dynamic behavior, preserve the flattenable subset and document
+  every omitted check in the generated fixture comment and manifest notes.
+
 ## API Selection
 
 - Use `jsstr` for pure string semantics:

@@ -308,14 +308,134 @@
       "notes": "Translated against jsval_truthy for the primitive falsy cases from the upstream if-statement test."
     },
     {
-      "id": "jsmx-values-strict-eq-primitives",
+      "id": "test262-values-S11.9.4_A4.1_T1",
       "suite": "values",
-      "source": "compliance/js/values/jsmx/strict-eq-primitives.js",
-      "generated": "compliance/generated/values/jsmx/strict-eq-primitives.c",
+      "source": "compliance/js/values/test262/S11.9.4_A4.1_T1.js",
+      "generated": "compliance/generated/values/test262/S11.9.4_A4.1_T1.c",
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic strict-equality coverage for primitive jsval semantics that are cleaner to express directly than through the wrapper-heavy legacy upstream files."
+      "notes": "Translated against jsval_strict_eq for the primitive NaN strict-equality checks; the object comparison from the upstream file is intentionally omitted at this flattened slice."
+    },
+    {
+      "id": "test262-values-S11.9.4_A4.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.4_A4.2.js",
+      "generated": "compliance/generated/values/test262/S11.9.4_A4.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_strict_eq for the +0 / -0 strict-equality edge case."
+    },
+    {
+      "id": "test262-values-S11.9.4_A4.3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.4_A4.3.js",
+      "generated": "compliance/generated/values/test262/S11.9.4_A4.3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_strict_eq for primitive numeric strict equality, including equal-number and unequal-number cases."
+    },
+    {
+      "id": "test262-values-S11.9.4_A8_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.4_A8_T2.js",
+      "generated": "compliance/generated/values/test262/S11.9.4_A8_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_strict_eq for primitive cross-type number checks; wrapper-object and valueOf cases from the upstream file are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.9.4_A8_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.4_A8_T4.js",
+      "generated": "compliance/generated/values/test262/S11.9.4_A8_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_strict_eq for primitive null and undefined cross-type checks; the object comparisons from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.5_A8_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.5_A8_T4.js",
+      "generated": "compliance/generated/values/test262/S11.9.5_A8_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against direct negation of jsval_strict_eq for primitive null and undefined strict-inequality checks; the object comparisons from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.4.9_A2.1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.9_A2.1_T1.js",
+      "generated": "compliance/generated/values/test262/S11.4.9_A2.1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-not over direct values, local slots, and a native object property read to preserve the upstream GetValue cases through the current jsval surface."
+    },
+    {
+      "id": "test262-values-S11.4.9_A3_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.9_A3_T4.js",
+      "generated": "compliance/generated/values/test262/S11.4.9_A3_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over undefined and null through jsval_truthy."
+    },
+    {
+      "id": "test262-values-S9.2_A3_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.2_A3_T2.js",
+      "generated": "compliance/generated/values/test262/S9.2_A3_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over primitive boolean operands through jsval_truthy."
+    },
+    {
+      "id": "test262-values-S9.2_A4_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.2_A4_T2.js",
+      "generated": "compliance/generated/values/test262/S9.2_A4_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over falsy numeric edge cases +0, -0, and NaN."
+    },
+    {
+      "id": "test262-values-S9.2_A4_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.2_A4_T4.js",
+      "generated": "compliance/generated/values/test262/S9.2_A4_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over truthy numeric operands including infinities and representative finite values."
+    },
+    {
+      "id": "test262-values-S9.2_A5_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.2_A5_T2.js",
+      "generated": "compliance/generated/values/test262/S9.2_A5_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over the empty-string falsy case."
+    },
+    {
+      "id": "test262-values-S9.2_A5_T4",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.2_A5_T4.js",
+      "generated": "compliance/generated/values/test262/S9.2_A5_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against logical-not over representative nonempty-string truthy cases."
     },
     {
       "id": "test262-values-S12.5_A1_T2",
@@ -325,7 +445,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_truthy for object and array truthiness through direct native container operands."
+      "notes": "Translated against jsval_truthy for the primitive if/else truthiness checks from the real upstream test262 file."
     },
     {
       "id": "jsmx-values-json-backed-primitive-parity",

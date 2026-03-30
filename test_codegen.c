@@ -1,3 +1,4 @@
+#include <math.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -295,6 +296,142 @@ static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
 	}
 	return generated_expect_string(&region, sum, (const uint8_t *)"1x", 2,
 			detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_strict_equality(char *detail,
+		size_t cap)
+{
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t null_word;
+	jsval_t one_string;
+	jsval_t undefined_word;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"1\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"null", 4, &null_word) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"null\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"undefined", 9,
+			&undefined_word) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(\"undefined\")");
+	}
+
+	if (jsval_strict_eq(&region, jsval_number(NAN), jsval_bool(1)) != 0
+			|| jsval_strict_eq(&region, jsval_number(NAN), jsval_number(1.0)) != 0
+			|| jsval_strict_eq(&region, jsval_number(NAN), jsval_number(NAN)) != 0
+			|| jsval_strict_eq(&region, jsval_number(NAN), jsval_number(INFINITY)) != 0) {
+		return generated_failf(detail, cap,
+				"expected NaN strict-equality checks to stay false");
+	}
+	if (jsval_strict_eq(&region, jsval_number(+0.0), jsval_number(-0.0)) != 1
+			|| jsval_strict_eq(&region, jsval_number(-0.0), jsval_number(+0.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected +0 and -0 to stay strictly equal");
+	}
+	if (jsval_strict_eq(&region, jsval_number(INFINITY), jsval_number(INFINITY)) != 1
+			|| jsval_strict_eq(&region, jsval_number(-INFINITY), jsval_number(-INFINITY)) != 1
+			|| jsval_strict_eq(&region, jsval_number(13.0), jsval_number(13.0)) != 1
+			|| jsval_strict_eq(&region, jsval_number(1.3), jsval_number(1.3)) != 1
+			|| jsval_strict_eq(&region, jsval_number(1.0), jsval_number(0.999999999999)) != 0) {
+		return generated_failf(detail, cap,
+				"unexpected primitive numeric strict-equality result");
+	}
+	if (jsval_strict_eq(&region, jsval_number(1.0), jsval_bool(1)) != 0
+			|| jsval_strict_eq(&region, jsval_number(1.0), one_string) != 0
+			|| jsval_strict_eq(&region, jsval_bool(0), jsval_number(0.0)) != 0) {
+		return generated_failf(detail, cap,
+				"expected primitive cross-type strict equality to stay false");
+	}
+	if (jsval_strict_eq(&region, jsval_undefined(), jsval_null()) != 0
+			|| jsval_strict_eq(&region, jsval_null(), jsval_undefined()) != 0
+			|| jsval_strict_eq(&region, jsval_null(), jsval_number(0.0)) != 0
+			|| jsval_strict_eq(&region, jsval_null(), jsval_bool(0)) != 0
+			|| jsval_strict_eq(&region, jsval_null(), null_word) != 0
+			|| jsval_strict_eq(&region, jsval_undefined(), undefined_word) != 0) {
+		return generated_failf(detail, cap,
+				"expected null/undefined strict equality to stay type-sensitive");
+	}
+
+	if (!(jsval_strict_eq(&region, jsval_undefined(), jsval_null()) == 0)
+			|| !(jsval_strict_eq(&region, jsval_number(1.0), one_string) == 0)) {
+		return generated_failf(detail, cap,
+				"expected explicit strict-inequality mirrors to hold");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_logical_not(char *detail,
+		size_t cap)
+{
+	uint8_t storage[1024];
+	jsval_region_t region;
+	jsval_t empty_string;
+	jsval_t one_string;
+	jsval_t object;
+	jsval_t prop;
+	int c = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"1\")");
+	}
+	if (jsval_object_new(&region, 1, &object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new");
+	}
+	if (jsval_object_set_utf8(&region, object, (const uint8_t *)"prop", 4,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(prop)");
+	}
+	if (jsval_object_get_utf8(&region, object, (const uint8_t *)"prop", 4,
+			&prop) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(prop)");
+	}
+
+	if ((!jsval_truthy(&region, jsval_bool(1))) != 0
+			|| (!(!jsval_truthy(&region, jsval_bool(1)))) != 1
+			|| (!jsval_truthy(&region, prop)) != 0
+			|| (!jsval_truthy(&region, jsval_bool(0))) != 1
+			|| (!jsval_truthy(&region, jsval_null())) != 1
+			|| (!jsval_truthy(&region, jsval_undefined())) != 1
+			|| (!jsval_truthy(&region, jsval_number(+0.0))) != 1
+			|| (!jsval_truthy(&region, jsval_number(-0.0))) != 1
+			|| (!jsval_truthy(&region, jsval_number(NAN))) != 1
+			|| (!jsval_truthy(&region, jsval_number(INFINITY))) != 0
+			|| (!jsval_truthy(&region, empty_string)) != 1
+			|| (!jsval_truthy(&region, one_string)) != 0) {
+		return generated_failf(detail, cap,
+				"unexpected logical-not truthiness result");
+	}
+
+	if (!jsval_truthy(&region, jsval_number(1.0))) {
+		return generated_failf(detail, cap, "expected 1 to be truthy");
+	} else {
+		c++;
+	}
+	if (!jsval_truthy(&region, jsval_bool(1))) {
+		return generated_failf(detail, cap, "expected true to be truthy");
+	} else {
+		c++;
+	}
+	if (!jsval_truthy(&region, one_string)) {
+		return generated_failf(detail, cap, "expected \"1\" to be truthy");
+	} else {
+		c++;
+	}
+	if (c != 3) {
+		return generated_failf(detail, cap,
+				"expected truthy if/else counter to reach 3, got %d", c);
+	}
+
+	return GENERATED_PASS;
 }
 
 static generated_status_t generated_smoke_jsval_json_value_parity(char *detail,
@@ -1224,6 +1361,8 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
+	{"smoke", "jsval_strict_equality", generated_smoke_jsval_strict_equality},
+	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
 	{"smoke", "jsval_json_value_parity", generated_smoke_jsval_json_value_parity},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
