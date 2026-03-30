@@ -813,16 +813,20 @@ static generated_status_t generated_smoke_jsval_relational(char *detail,
 			!= GENERATED_PASS) {
 		return GENERATED_WRONG_RESULT;
 	}
-
-	errno = 0;
-	if (jsval_less_than(&region, left_string, right_string, &result) == 0) {
-		return generated_failf(detail, cap,
-				"expected string/string relational path to stay unsupported");
+	if (jsval_less_than(&region, left_string, right_string, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_than(\"1\", \"2\")");
 	}
-	if (errno != ENOTSUP) {
-		return generated_failf(detail, cap,
-				"expected ENOTSUP for string/string relational path, got %d",
-				errno);
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_greater_than(&region, right_string, left_string, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_greater_than(\"2\", \"1\")");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
 	}
 
 	return GENERATED_PASS;

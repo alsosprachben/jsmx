@@ -826,6 +826,7 @@ static void test_relational_semantics(void)
 	jsval_t num;
 	jsval_t left_string;
 	jsval_t right_string;
+	jsval_t ten_string;
 	int result;
 
 	jsval_region_init(&region, storage, sizeof(storage));
@@ -843,6 +844,8 @@ static void test_relational_semantics(void)
 			&left_string) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
 			&right_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"10", 2,
+			&ten_string) == 0);
 
 	assert(jsval_less_than(&region, jsval_bool(1), one, &result) == 0);
 	assert(result == 0);
@@ -883,9 +886,23 @@ static void test_relational_semantics(void)
 			&result) == 0);
 	assert(result == 0);
 
-	errno = 0;
-	assert(jsval_less_than(&region, left_string, right_string, &result) < 0);
-	assert(errno == ENOTSUP);
+	assert(jsval_less_than(&region, left_string, right_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_equal(&region, left_string, right_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_than(&region, right_string, left_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_equal(&region, right_string, left_string, &result)
+			== 0);
+	assert(result == 1);
+	assert(jsval_less_than(&region, left_string, ten_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_than(&region, ten_string, left_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_equal(&region, left_string, one, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_equal(&region, left_string, one, &result) == 0);
+	assert(result == 1);
 
 	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
 			&root) == 0);
@@ -914,10 +931,14 @@ static void test_relational_semantics(void)
 	assert(result == 1);
 	assert(jsval_less_than(&region, bad, jsval_number(1.0), &result) == 0);
 	assert(result == 0);
-
-	errno = 0;
-	assert(jsval_less_than(&region, left_string, right_string, &result) < 0);
-	assert(errno == ENOTSUP);
+	assert(jsval_less_than(&region, left_string, right_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_equal(&region, one, left_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_than(&region, right_string, left_string, &result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_equal(&region, left_string, one, &result) == 0);
+	assert(result == 1);
 }
 
 static void test_json_backed_value_parity(void)

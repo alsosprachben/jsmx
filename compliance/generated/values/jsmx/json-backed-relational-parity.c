@@ -27,7 +27,7 @@ main(void)
 
 	/*
 	 * Repo-authored idiomatic lowering fixture for JSON-backed/native
-	 * relational parity and the current string/string ENOTSUP boundary.
+	 * relational parity across both numeric-coercion and string/string paths.
 	 */
 
 	GENERATED_TEST_ASSERT(jsval_json_parse(&region, input, sizeof(input) - 1, 24,
@@ -85,14 +85,19 @@ main(void)
 	GENERATED_TEST_ASSERT(generated_expect_boolean_result(result, 0, SUITE,
 			CASE_NAME, "parsed bad < 1") == GENERATED_TEST_PASS,
 			SUITE, CASE_NAME, "unexpected result for parsed bad < 1");
-
-	errno = 0;
-	if (jsval_less_than(&region, left, right, &result) == 0) {
-		return generated_test_fail(SUITE, CASE_NAME,
-				"expected parsed left < parsed right to remain unsupported while both operands are strings");
-	}
-	GENERATED_TEST_ASSERT(errno == ENOTSUP, SUITE, CASE_NAME,
-			"expected parsed string/string relational comparison to report ENOTSUP");
+	GENERATED_TEST_ASSERT(jsval_less_than(&region, left, right, &result) == 0,
+			SUITE, CASE_NAME, "failed to lower parsed left < parsed right");
+	GENERATED_TEST_ASSERT(generated_expect_boolean_result(result, 1, SUITE,
+			CASE_NAME, "parsed left < parsed right") == GENERATED_TEST_PASS,
+			SUITE, CASE_NAME,
+			"unexpected result for parsed left < parsed right");
+	GENERATED_TEST_ASSERT(jsval_greater_than(&region, right, left, &result)
+			== 0, SUITE, CASE_NAME,
+			"failed to lower parsed right > parsed left");
+	GENERATED_TEST_ASSERT(generated_expect_boolean_result(result, 1, SUITE,
+			CASE_NAME, "parsed right > parsed left") == GENERATED_TEST_PASS,
+			SUITE, CASE_NAME,
+			"unexpected result for parsed right > parsed left");
 
 	return generated_test_pass(SUITE, CASE_NAME);
 }

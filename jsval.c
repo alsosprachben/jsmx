@@ -2457,6 +2457,62 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	}
 }
 
+static int
+jsval_string_compare(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	size_t left_len;
+	size_t right_len;
+	size_t min_len;
+	int result = 0;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (left.kind != JSVAL_KIND_STRING || right.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, left, &left_len) < 0
+			|| jsval_value_utf16_len(region, right, &right_len) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t left_buf[left_len ? left_len : 1];
+		uint16_t right_buf[right_len ? right_len : 1];
+
+		if (jsval_value_copy_utf16(region, left, left_buf, left_len, NULL) < 0
+				|| jsval_value_copy_utf16(region, right, right_buf, right_len,
+					NULL) < 0) {
+			return -1;
+		}
+
+		min_len = left_len < right_len ? left_len : right_len;
+		for (size_t i = 0; i < min_len; i++) {
+			if (left_buf[i] < right_buf[i]) {
+				result = -1;
+				goto done;
+			}
+			if (left_buf[i] > right_buf[i]) {
+				result = 1;
+				goto done;
+			}
+		}
+	}
+
+	if (left_len < right_len) {
+		result = -1;
+	} else if (left_len > right_len) {
+		result = 1;
+	}
+
+done:
+	*result_ptr = result;
+	return 0;
+}
+
 typedef enum jsval_relop_e {
 	JSVAL_RELOP_LT,
 	JSVAL_RELOP_LE,
@@ -2476,8 +2532,28 @@ jsval_relop(jsval_region_t *region, jsval_t left, jsval_t right,
 		return -1;
 	}
 	if (left.kind == JSVAL_KIND_STRING && right.kind == JSVAL_KIND_STRING) {
-		errno = ENOTSUP;
-		return -1;
+		int cmp;
+
+		if (jsval_string_compare(region, left, right, &cmp) < 0) {
+			return -1;
+		}
+		switch (op) {
+		case JSVAL_RELOP_LT:
+			*result_ptr = cmp < 0;
+			return 0;
+		case JSVAL_RELOP_LE:
+			*result_ptr = cmp <= 0;
+			return 0;
+		case JSVAL_RELOP_GT:
+			*result_ptr = cmp > 0;
+			return 0;
+		case JSVAL_RELOP_GE:
+			*result_ptr = cmp >= 0;
+			return 0;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
 	}
 	if (jsval_to_number(region, left, &left_number) < 0
 			|| jsval_to_number(region, right, &right_number) < 0) {

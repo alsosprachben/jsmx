@@ -768,6 +768,46 @@
       "notes": "Translated directly against jsval_greater_equal for the NaN-false greater-than-or-equal edge cases."
     },
     {
+      "id": "test262-values-S11.8.1_A3.2_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.1_A3.2_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.1_A3.2_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_than for primitive string/string ordering; the String-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.2_A3.2_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.2_A3.2_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.2_A3.2_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_greater_than for primitive string/string ordering; the String-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.3_A3.2_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.3_A3.2_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.3_A3.2_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_equal for primitive string/string ordering; the String-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.4_A3.2_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.4_A3.2_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.4_A3.2_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_greater_equal for primitive string/string ordering; the String-object checks are intentionally omitted at the flattened layer."
+    },
+    {
       "id": "jsmx-values-json-backed-primitive-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/json-backed-primitive-parity.js",
@@ -785,7 +825,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic parity fixture for JSON-backed/native primitive relational results, plus the current ENOTSUP boundary for string/string relational comparisons."
+      "notes": "Repo-authored idiomatic parity fixture for JSON-backed/native primitive relational results across both numeric-coercion and string/string ordering paths."
     },
     {
       "id": "jsmx-values-container-identity-truthiness",

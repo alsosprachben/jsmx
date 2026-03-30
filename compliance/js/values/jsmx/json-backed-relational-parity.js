@@ -22,5 +22,10 @@ if ((parsed.bad < 1) !== false) {
   throw new Error('expected parsed invalid numeric text < 1 to stay false via NaN');
 }
 
-// The translator should not flatten `parsed.left < parsed.right` through the
-// current jsmx relational layer yet, because both operands are strings.
+if (!(parsed.left < parsed.right)) {
+  throw new Error('expected parsed "1" < parsed "2" to preserve string relational ordering');
+}
+
+if (!(parsed.right > parsed.left)) {
+  throw new Error('expected parsed "2" > parsed "1" to preserve string relational ordering');
+}
