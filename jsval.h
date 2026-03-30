@@ -151,6 +151,24 @@ int jsval_method_string_to_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_is_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_index_of(jsval_region_t *region, jsval_t this_value,
+		jsval_t search_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_last_index_of(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value, int have_position,
+		jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_includes(jsval_region_t *region, jsval_t this_value,
+		jsval_t search_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_starts_with(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value, int have_position,
+		jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_ends_with(jsval_region_t *region, jsval_t this_value,
+		jsval_t search_value, int have_end_position,
+		jsval_t end_position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_normalize_measure(jsval_region_t *region,
 		jsval_t this_value, int have_form, jsval_t form_value,
 		jsmethod_string_normalize_sizes_t *sizes,

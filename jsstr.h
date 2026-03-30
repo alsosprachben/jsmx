@@ -240,6 +240,8 @@ ssize_t jsstr16_u16_indexof(jsstr16_t *s, uint16_t search_c, size_t start_i);
 ssize_t jsstr16_u32_indexof(jsstr16_t *s, uint32_t search_c, size_t start_i);
 ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t search_c_len, size_t start_i);
 ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t search_c_len, size_t start_i);
+ssize_t jsstr16_u16_lastindextoken(jsstr16_t *s, uint16_t *search_c,
+        size_t search_c_len, size_t start_i);
 int jsstr16_concat(jsstr16_t *s, jsstr16_t *src);
 int jsstr16_normalize_form_workspace_len(jsstr16_t *s,
         unicode_normalization_form_t form, size_t *workspace_cap_ptr);

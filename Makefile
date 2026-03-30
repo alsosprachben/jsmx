@@ -15,7 +15,7 @@ jsnum.o: jsnum.c jsnum.h
 
 jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h utf8.h
 
-jsmethod.o: jsmethod.c jsmethod.h jsstr.h unicode.h
+jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h
 
 libjsmndom.a: jsmndom.o
 
@@ -51,8 +51,8 @@ test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h unicode_collation.h unic
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_jsmethod: test_jsmethod.c jsmethod.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
-	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+test_jsmethod: test_jsmethod.c jsnum.c jsmethod.c jsstr.c unicode.c jsnum.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
 test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h

@@ -52,7 +52,28 @@ def emit_proc_output(stdout, stderr):
         sys.stderr.write(stderr)
 
 
-def compile_case(repo_root, tmpdir, case):
+def compile_runtime_archive(repo_root, tmpdir):
+    cc = os.environ.get("CC", "cc")
+    ar = os.environ.get("AR", "ar")
+    cflags = shlex.split(os.environ.get("CFLAGS", ""))
+    objects = []
+
+    for source in RUNTIME_SOURCES:
+        source_path = repo_root / source
+        obj_path = Path(tmpdir) / (Path(source).stem + ".o")
+        cmd = [cc, "-g", "-I.", *cflags, "-c", str(source_path), "-o", str(obj_path)]
+        proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+        if proc.returncode != 0:
+            return None, proc
+        objects.append(obj_path)
+
+    archive = Path(tmpdir) / "libjsmx_compliance_runtime.a"
+    cmd = [ar, "rcs", str(archive), *(str(obj) for obj in objects)]
+    proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+    return archive, proc
+
+
+def compile_case(repo_root, tmpdir, case, runtime_archive):
     cc = os.environ.get("CC", "cc")
     cflags = shlex.split(os.environ.get("CFLAGS", ""))
     ldflags = shlex.split(os.environ.get("LDFLAGS", ""))
@@ -60,7 +81,7 @@ def compile_case(repo_root, tmpdir, case):
     fixture = repo_root / case["generated"]
     binary = Path(tmpdir) / case["id"]
     cmd = [cc, "-g", "-I.", *cflags, str(fixture)]
-    cmd.extend(str(repo_root / src) for src in RUNTIME_SOURCES)
+    cmd.append(str(runtime_archive))
     cmd.extend(ldflags)
     cmd.extend(ldlibs)
     cmd.extend(["-o", str(binary)])
@@ -72,8 +93,8 @@ def run_case(repo_root, binary):
     return subprocess.run([str(binary)], cwd=repo_root, capture_output=True, text=True)
 
 
-def execute_case(repo_root, tmpdir, case, contract):
-    binary, build_proc = compile_case(repo_root, tmpdir, case)
+def execute_case(repo_root, tmpdir, case, contract, runtime_archive):
+    binary, build_proc = compile_case(repo_root, tmpdir, case, runtime_archive)
     result = {
         "case": case,
         "build_stdout": build_proc.stdout,
@@ -160,9 +181,18 @@ def main():
                 return 1
             class_counts[case["lowering_class"]] += 1
             mode_counts[case["translation_mode"]] += 1
+
+        runtime_archive, runtime_proc = compile_runtime_archive(repo_root, tmpdir)
+        emit_proc_output(runtime_proc.stdout, runtime_proc.stderr)
+        if runtime_proc.returncode != 0:
+            print("RUNTIME BUILD FAIL")
+            return 1
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             futures = [
-                executor.submit(execute_case, repo_root, tmpdir, case, contract)
+                executor.submit(
+                    execute_case, repo_root, tmpdir, case, contract, runtime_archive
+                )
                 for case in cases
             ]
             for future in futures:

@@ -71,7 +71,7 @@ static void test_format(void)
 	assert_text(INFINITY, "Infinity");
 	assert_text(-INFINITY, "-Infinity");
 	assert_text(0.0, "0");
-	assert_text(-0.0, "-0");
+	assert_text(-0.0, "0");
 	assert_text(1.0, "1");
 	assert_text(-1.0, "-1");
 	assert_text(3.5, "3.5");

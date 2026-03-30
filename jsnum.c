@@ -283,21 +283,7 @@ static int jsnum_format_nonlibc(double number, char *buf, size_t cap, size_t *le
 		return 0;
 	}
 
-	negative = signbit(number) != 0;
 	if (number == 0.0) {
-		if (negative) {
-			if (cap < 3) {
-				errno = ENOBUFS;
-				return -1;
-			}
-			buf[0] = '-';
-			buf[1] = '0';
-			buf[2] = '\0';
-			if (len_ptr != NULL) {
-				*len_ptr = 2;
-			}
-			return 0;
-		}
 		if (cap < 2) {
 			errno = ENOBUFS;
 			return -1;
@@ -309,6 +295,7 @@ static int jsnum_format_nonlibc(double number, char *buf, size_t cap, size_t *le
 		}
 		return 0;
 	}
+	negative = signbit(number) != 0;
 
 	value = negative ? -(long double)number : (long double)number;
 	jsnum_normalize_decimal(&value, &exponent);
@@ -811,6 +798,18 @@ int jsnum_format(double number, char *buf, size_t cap, size_t *len_ptr)
 		buf[len] = '\0';
 		if (len_ptr != NULL) {
 			*len_ptr = len;
+		}
+		return 0;
+	}
+	if (number == 0.0) {
+		if (cap < 2) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		buf[0] = '0';
+		buf[1] = '\0';
+		if (len_ptr != NULL) {
+			*len_ptr = 1;
 		}
 		return 0;
 	}

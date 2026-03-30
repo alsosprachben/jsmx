@@ -21,6 +21,10 @@ typedef struct generated_case_s {
 	generated_case_fn run;
 } generated_case_t;
 
+typedef struct generated_callback_ctx_s {
+	int should_throw;
+} generated_callback_ctx_t;
+
 static generated_status_t generated_write_detail(generated_status_t status, char *detail, size_t cap, const char *fmt, ...)
 {
 	va_list ap;
@@ -137,6 +141,21 @@ static generated_status_t generated_expect_boolean_result(int actual,
 				expected ? "true" : "false");
 	}
 	return GENERATED_PASS;
+}
+
+static int
+generated_callback_to_string(void *opaque, jsstr16_t *out,
+		jsmethod_error_t *error)
+{
+	generated_callback_ctx_t *ctx = (generated_callback_ctx_t *)opaque;
+
+	(void)out;
+	if (ctx->should_throw) {
+		error->kind = JSMETHOD_ERROR_ABRUPT;
+		error->message = "generated callback threw";
+		return -1;
+	}
+	return 0;
 }
 
 static generated_status_t generated_expect_negative_zero(jsval_t value,
@@ -1878,8 +1897,12 @@ static generated_status_t generated_smoke_jsval_method_lower(char *detail,
 	if (status != GENERATED_PASS) {
 		return status;
 	}
-	if (jsval_region_promote_root(&region, &root) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_region_promote_root");
+	if (jsval_promote_object_shallow_in_place(&region, &root, 7) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
 	}
 	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"message", 7,
 			lower) < 0) {
@@ -1931,6 +1954,153 @@ static generated_status_t generated_smoke_jsval_method_is_well_formed(
 	}
 	return generated_expect_json(&region, root, expected_json,
 			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_method_search(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] = "{\"text\":\"bananas\",\"needle\":\"na\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"bananas\",\"needle\":\"na\",\"index\":2,\"last\":2,\"includes\":true,\"starts\":true,\"ends\":true}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t needle;
+	jsval_t pos_three;
+	jsval_t index_result;
+	jsval_t last_result;
+	jsval_t includes_result;
+	jsval_t starts_result;
+	jsval_t ends_result;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"needle", 6,
+			&needle) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(needle)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"3", 1, &pos_three) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(pos)");
+	}
+	if (jsval_method_string_index_of(&region, text, needle, 0,
+			jsval_undefined(), &index_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_index_of failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_last_index_of(&region, text, needle, 1, pos_three,
+			&last_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_last_index_of failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_includes(&region, text, needle, 1, pos_three,
+			&includes_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_includes failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_starts_with(&region, text, needle, 1,
+			jsval_number(2.0), &starts_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_starts_with failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_ends_with(&region, text, needle, 1,
+			jsval_number(4.0), &ends_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_ends_with failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	status = generated_expect_number(&region, index_result, 2.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	status = generated_expect_number(&region, last_result, 2.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (includes_result.kind != JSVAL_KIND_BOOL || !includes_result.as.boolean) {
+		return generated_failf(detail, cap, "expected includes result to be true");
+	}
+	if (starts_result.kind != JSVAL_KIND_BOOL || !starts_result.as.boolean) {
+		return generated_failf(detail, cap, "expected startsWith result to be true");
+	}
+	if (ends_result.kind != JSVAL_KIND_BOOL || !ends_result.as.boolean) {
+		return generated_failf(detail, cap, "expected endsWith result to be true");
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 7) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"index", 5,
+			index_result) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"last", 4,
+			last_result) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"includes", 8,
+			includes_result) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"starts", 6,
+			starts_result) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"ends", 4,
+			ends_result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(search)");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_search_abrupt(
+		char *detail, size_t cap)
+{
+	static const uint8_t bananas_utf8[] = "bananas";
+	static const uint8_t needle_utf8[] = "na";
+	generated_callback_ctx_t throw_ctx = {1};
+	jsmethod_error_t error;
+	int result;
+
+	if (jsmethod_string_includes(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			0, jsmethod_value_undefined(), &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt searchString coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT searchString coercion, got %d",
+				(int)error.kind);
+	}
+	if (jsmethod_string_starts_with(&result,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT receiver coercion, got %d",
+				(int)error.kind);
+	}
+
+	return GENERATED_PASS;
 }
 
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
@@ -2069,6 +2239,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
+	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
+	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

@@ -268,6 +268,216 @@
       "notes": "Translated against the thin jsmethod toLocaleLowerCase layer for the Lithuanian conditional mappings from the intl402 test262 suite."
     },
     {
+      "id": "test262-strings-indexOf-S15.5.4.7_A2_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/indexOf/S15.5.4.7_A2_T1.js",
+      "generated": "compliance/generated/strings/test262/indexOf/S15.5.4.7_A2_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod indexOf layer for primitive string search semantics."
+    },
+    {
+      "id": "test262-strings-indexOf-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/indexOf/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/indexOf/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod indexOf layer, which enforces RequireObjectCoercible(this) before string search."
+    },
+    {
+      "id": "test262-strings-indexOf-searchstring-tostring",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/indexOf/searchstring-tostring.js",
+      "generated": "compliance/generated/strings/test262/indexOf/searchstring-tostring.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: upstream object-literal searchString cases are lowered through translator-known primitive ToString results before dispatching into jsmethod indexOf."
+    },
+    {
+      "id": "test262-strings-indexOf-position-tointeger",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/indexOf/position-tointeger.js",
+      "generated": "compliance/generated/strings/test262/indexOf/position-tointeger.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: upstream object-literal position cases are lowered through translator-emitted primitive coercion results before reaching jsmethod indexOf."
+    },
+    {
+      "id": "test262-strings-lastIndexOf-not-a-substring",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/lastIndexOf/not-a-substring.js",
+      "generated": "compliance/generated/strings/test262/lastIndexOf/not-a-substring.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod lastIndexOf layer for primitive miss behavior."
+    },
+    {
+      "id": "test262-strings-lastIndexOf-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/lastIndexOf/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/lastIndexOf/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod lastIndexOf layer, which rejects null and undefined receivers before string search."
+    },
+    {
+      "id": "test262-strings-lastIndexOf-S15.5.4.8_A1_T6",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/lastIndexOf/S15.5.4.8_A1_T6.js",
+      "generated": "compliance/generated/strings/test262/lastIndexOf/S15.5.4.8_A1_T6.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed String receiver is lowered to its primitive string value before dispatching into jsmethod lastIndexOf."
+    },
+    {
+      "id": "test262-strings-lastIndexOf-S15.5.4.8_A1_T10",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/lastIndexOf/S15.5.4.8_A1_T10.js",
+      "generated": "compliance/generated/strings/test262/lastIndexOf/S15.5.4.8_A1_T10.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed Number receiver is lowered to its primitive string value before dispatching into jsmethod lastIndexOf."
+    },
+    {
+      "id": "test262-strings-includes-searchstring-found-without-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/includes/searchstring-found-without-position.js",
+      "generated": "compliance/generated/strings/test262/includes/searchstring-found-without-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod includes layer for primitive hit and miss semantics."
+    },
+    {
+      "id": "test262-strings-includes-coerced-values-of-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/includes/coerced-values-of-position.js",
+      "generated": "compliance/generated/strings/test262/includes/coerced-values-of-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod includes layer for primitive numeric position coercion and clamping."
+    },
+    {
+      "id": "test262-strings-includes-return-abrupt-from-searchstring",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/includes/return-abrupt-from-searchstring.js",
+      "generated": "compliance/generated/strings/test262/includes/return-abrupt-from-searchstring.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a searchString callback models abrupt ToString(searchString) completion before jsmethod includes surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-includes-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/includes/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/includes/return-abrupt-from-this.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models abrupt ToString(this) completion before jsmethod includes surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-startsWith-searchstring-found-without-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/startsWith/searchstring-found-without-position.js",
+      "generated": "compliance/generated/strings/test262/startsWith/searchstring-found-without-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod startsWith layer for primitive prefix checks."
+    },
+    {
+      "id": "test262-strings-startsWith-out-of-bounds-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/startsWith/out-of-bounds-position.js",
+      "generated": "compliance/generated/strings/test262/startsWith/out-of-bounds-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod startsWith layer for position clamping beyond the string length."
+    },
+    {
+      "id": "test262-strings-startsWith-return-abrupt-from-searchstring",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/startsWith/return-abrupt-from-searchstring.js",
+      "generated": "compliance/generated/strings/test262/startsWith/return-abrupt-from-searchstring.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a searchString callback models abrupt ToString(searchString) completion before jsmethod startsWith surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-startsWith-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/startsWith/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/startsWith/return-abrupt-from-this.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models abrupt ToString(this) completion before jsmethod startsWith surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-endsWith-searchstring-found-without-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/endsWith/searchstring-found-without-position.js",
+      "generated": "compliance/generated/strings/test262/endsWith/searchstring-found-without-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod endsWith layer for primitive suffix checks."
+    },
+    {
+      "id": "test262-strings-endsWith-coerced-values-of-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/endsWith/coerced-values-of-position.js",
+      "generated": "compliance/generated/strings/test262/endsWith/coerced-values-of-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod endsWith layer for primitive end-position coercion and clamping."
+    },
+    {
+      "id": "test262-strings-endsWith-return-false-if-search-start-is-less-than-zero",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/endsWith/return-false-if-search-start-is-less-than-zero.js",
+      "generated": "compliance/generated/strings/test262/endsWith/return-false-if-search-start-is-less-than-zero.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod endsWith layer for the case where the computed search start falls below zero."
+    },
+    {
+      "id": "test262-strings-endsWith-return-abrupt-from-searchstring",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/endsWith/return-abrupt-from-searchstring.js",
+      "generated": "compliance/generated/strings/test262/endsWith/return-abrupt-from-searchstring.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a searchString callback models abrupt ToString(searchString) completion before jsmethod endsWith surfaces the typed method error."
+    },
+    {
+      "id": "jsmx-strings-json-backed-search-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-search-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-search-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed string-search results across the new jsval/jsmethod search bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

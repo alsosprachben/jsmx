@@ -665,9 +665,12 @@ ssize_t jsstr32_u32_indextoken(jsstr32_t *s, uint32_t *c, size_t c_len, size_t s
         if (i >= start_i && i + c_len <= s->len) {
             int j;
             for (j = 0; j < c_len; j++) {
-                if (s->codepoints[i] == c[j]) {
-                    return i;
+                if (s->codepoints[i + j] != c[j]) {
+                    break;
                 }
+            }
+            if ((size_t)j == c_len) {
+                return i;
             }
         }
     }
@@ -1339,9 +1342,12 @@ ssize_t jsstr16_u16_indextoken(jsstr16_t *s, uint16_t *search_c, size_t c_len, s
         if (i >= start_i && i + c_len <= s->len) {
             int j;
             for (j = 0; j < c_len; j++) {
-                if (s->codeunits[i] == search_c[j]) {
-                    return i;
+                if (s->codeunits[i + j] != search_c[j]) {
+                    break;
                 }
+            }
+            if ((size_t)j == c_len) {
+                return i;
             }
         }
     }
@@ -1372,6 +1378,35 @@ ssize_t jsstr16_u32_indextoken(jsstr16_t *s, uint32_t *search_c, size_t c_len, s
         code16_i += l;
     }
     return -cp_i;
+}
+
+ssize_t jsstr16_u16_lastindextoken(jsstr16_t *s, uint16_t *search_c,
+        size_t c_len, size_t start_i) {
+    ssize_t i;
+
+    if (c_len == 0) {
+        return (ssize_t)((start_i <= s->len) ? start_i : s->len);
+    }
+    if (c_len > s->len) {
+        return -(ssize_t)s->len;
+    }
+    if (start_i > s->len - c_len) {
+        start_i = s->len - c_len;
+    }
+
+    for (i = (ssize_t)start_i; i >= 0; i--) {
+        int j;
+
+        for (j = 0; j < (int)c_len; j++) {
+            if (s->codeunits[i + j] != search_c[j]) {
+                break;
+            }
+        }
+        if ((size_t)j == c_len) {
+            return i;
+        }
+    }
+    return -(ssize_t)s->len;
 }
 
 size_t jsstr16_get_cap(jsstr16_t *s) {
@@ -2164,9 +2199,12 @@ ssize_t jsstr8_u8_indextoken(jsstr8_t *s, uint8_t *search_c, size_t c_len, size_
         if (i >= start_i && i + c_len <= s->len) {
             int j;
             for (j = 0; j < c_len; j++) {
-                if (s->bytes[i] == search_c[j]) {
-                    return i;
+                if (s->bytes[i + j] != search_c[j]) {
+                    break;
                 }
+            }
+            if ((size_t)j == c_len) {
+                return i;
             }
         }
     }

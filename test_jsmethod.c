@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -347,6 +348,158 @@ test_well_formed_methods(void)
 	assert(error.kind == JSMETHOD_ERROR_TYPE);
 }
 
+static void
+test_string_search_methods(void)
+{
+	static const uint8_t bananas_utf8[] = "bananas";
+	static const uint8_t needle_utf8[] = "na";
+	static const uint8_t missing_utf8[] = "zz";
+	uint16_t storage[16];
+	jsstr16_t probe;
+	jsmethod_error_t error;
+	ssize_t index;
+	int result;
+	callback_ctx_t throw_ctx = {1, NULL, 0};
+
+	jsstr16_init_from_buf(&probe, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == 0);
+	assert(index == 2);
+
+	assert(jsmethod_string_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			1, jsmethod_value_number(3.0), &error) == 0);
+	assert(index == 4);
+
+	assert(jsmethod_string_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(missing_utf8,
+				sizeof(missing_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == 0);
+	assert(index == -1);
+
+	assert(jsmethod_string_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			1, jsmethod_value_number(99.0), &error) == 0);
+	assert(index == 7);
+
+	assert(jsmethod_string_last_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == 0);
+	assert(index == 4);
+
+	assert(jsmethod_string_last_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			1, jsmethod_value_number(3.0), &error) == 0);
+	assert(index == 2);
+
+	assert(jsmethod_string_last_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			1, jsmethod_value_number(NAN), &error) == 0);
+	assert(index == 4);
+
+	assert(jsmethod_string_last_index_of(&index,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			1, jsmethod_value_number(99.0), &error) == 0);
+	assert(index == 7);
+
+	assert(jsmethod_string_includes(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			1, jsmethod_value_number(3.0), &error) == 0);
+	assert(result == 1);
+
+	assert(jsmethod_string_includes(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(missing_utf8,
+				sizeof(missing_utf8) - 1),
+			1, jsmethod_value_number(0.0), &error) == 0);
+	assert(result == 0);
+
+	assert(jsmethod_string_starts_with(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			1, jsmethod_value_number(2.0), &error) == 0);
+	assert(result == 1);
+
+	assert(jsmethod_string_starts_with(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			1, jsmethod_value_number(99.0), &error) == 0);
+	assert(result == 1);
+
+	assert(jsmethod_string_ends_with(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"na", 2),
+			1, jsmethod_value_number(4.0), &error) == 0);
+	assert(result == 1);
+
+	assert(jsmethod_string_ends_with(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"ba", 2),
+			1, jsmethod_value_number(NAN), &error) == 0);
+	assert(result == 0);
+
+	assert(jsmethod_string_includes(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_symbol(),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_index_of(&index, jsmethod_value_null(),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_includes(&result,
+			jsmethod_value_string_utf8(bananas_utf8,
+				sizeof(bananas_utf8) - 1),
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	assert(jsmethod_string_starts_with(&result,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			jsmethod_value_string_utf8(needle_utf8,
+				sizeof(needle_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	(void)probe;
+}
+
 int
 main(void)
 {
@@ -357,5 +510,6 @@ main(void)
 	test_string_normalize_errors();
 	test_string_case_methods();
 	test_well_formed_methods();
+	test_string_search_methods();
 	return 0;
 }

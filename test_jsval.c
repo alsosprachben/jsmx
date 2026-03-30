@@ -528,6 +528,57 @@ static void test_method_normalize_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_search_bridge(void)
+{
+	static const char json[] = "{\"text\":\"bananas\",\"needle\":\"na\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t needle;
+	jsval_t pos_three;
+	jsval_t result;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"needle", 6,
+			&needle) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"3", 1,
+			&pos_three) == 0);
+
+	assert(jsval_method_string_index_of(&region, text, needle, 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert_number_value(result, 2.0);
+
+	assert(jsval_method_string_last_index_of(&region, text, needle, 1,
+			pos_three, &result, &error) == 0);
+	assert_number_value(result, 2.0);
+
+	assert(jsval_method_string_includes(&region, text, needle, 1, pos_three,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_BOOL);
+	assert(result.as.boolean == 1);
+
+	assert(jsval_method_string_starts_with(&region, text, needle, 1,
+			jsval_number(2.0), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_BOOL);
+	assert(result.as.boolean == 1);
+
+	assert(jsval_method_string_ends_with(&region, text, needle, 1,
+			jsval_number(4.0), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_BOOL);
+	assert(result.as.boolean == 1);
+
+	errno = 0;
+	assert(jsval_method_string_index_of(&region, root, needle, 0,
+			jsval_undefined(), &result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_value_semantics(void)
 {
 	uint8_t storage[8192];
@@ -1557,6 +1608,7 @@ int main(void)
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();
+	test_method_search_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();
