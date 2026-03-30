@@ -941,6 +941,118 @@ static void test_relational_semantics(void)
 	assert(result == 1);
 }
 
+static void test_abstract_equality_semantics(void)
+{
+	static const char json[] =
+		"{\"num\":1,\"flag\":true,\"text\":\"1\",\"empty\":\"\",\"nothing\":null,\"obj\":{},\"arr\":[]}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t one;
+	jsval_t zero;
+	jsval_t bad;
+	jsval_t root;
+	jsval_t num;
+	jsval_t flag;
+	jsval_t text;
+	jsval_t empty;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t arr;
+	jsval_t native_obj;
+	jsval_t native_arr;
+	int result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"0", 1, &zero) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &bad) == 0);
+
+	assert(jsval_abstract_eq(&region, jsval_bool(1), jsval_number(1.0),
+			&result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, jsval_number(0.0), jsval_bool(0),
+			&result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, one, jsval_bool(1), &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, jsval_bool(0), zero, &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, one, jsval_number(1.0), &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, bad, jsval_number(1.0), &result) == 0);
+	assert(result == 0);
+	assert(jsval_abstract_eq(&region, jsval_null(), jsval_undefined(),
+			&result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, jsval_null(), jsval_number(0.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_abstract_eq(&region, jsval_number(NAN), jsval_bool(1),
+			&result) == 0);
+	assert(result == 0);
+
+	assert(jsval_abstract_ne(&region, jsval_bool(1), jsval_number(1.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_abstract_ne(&region, bad, jsval_number(1.0), &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_ne(&region, jsval_null(), jsval_undefined(),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_abstract_ne(&region, jsval_number(NAN), jsval_number(NAN),
+			&result) == 0);
+	assert(result == 1);
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"empty", 5,
+			&empty) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) == 0);
+
+	assert(jsval_abstract_eq(&region, num, one, &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, flag, one, &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, text, jsval_number(1.0), &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, empty, jsval_number(0.0), &result) == 0);
+	assert(result == 1);
+	assert(jsval_abstract_eq(&region, nothing, jsval_undefined(), &result)
+			== 0);
+	assert(result == 1);
+	assert(jsval_abstract_ne(&region, nothing, jsval_number(0.0), &result)
+			== 0);
+	assert(result == 1);
+
+	assert(jsval_object_new(&region, 1, &native_obj) == 0);
+	assert(jsval_array_new(&region, 1, &native_arr) == 0);
+
+	errno = 0;
+	assert(jsval_abstract_eq(&region, obj, obj, &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_abstract_ne(&region, arr, arr, &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_abstract_eq(&region, native_obj, native_obj, &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_abstract_ne(&region, native_arr, native_arr, &result) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_json_backed_value_parity(void)
 {
 	static const char json[] =
@@ -1272,6 +1384,7 @@ int main(void)
 	test_logical_and_or_semantics();
 	test_numeric_coercion_and_arithmetic();
 	test_relational_semantics();
+	test_abstract_equality_semantics();
 	test_json_backed_value_parity();
 	test_json_storage();
 	test_json_root_rebase();

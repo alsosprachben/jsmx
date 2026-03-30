@@ -105,6 +105,10 @@ int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len
 int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);
+int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr);
+int jsval_abstract_ne(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr);
 int jsval_less_than(jsval_region_t *region, jsval_t left, jsval_t right, int *result_ptr);
 int jsval_less_equal(jsval_region_t *region, jsval_t left, jsval_t right, int *result_ptr);
 int jsval_greater_than(jsval_region_t *region, jsval_t left, jsval_t right, int *result_ptr);

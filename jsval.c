@@ -2457,6 +2457,74 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	}
 }
 
+int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (left.kind == JSVAL_KIND_OBJECT || left.kind == JSVAL_KIND_ARRAY
+			|| right.kind == JSVAL_KIND_OBJECT
+			|| right.kind == JSVAL_KIND_ARRAY) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (left.kind == right.kind) {
+		*result_ptr = jsval_strict_eq(region, left, right);
+		return 0;
+	}
+	if ((left.kind == JSVAL_KIND_UNDEFINED && right.kind == JSVAL_KIND_NULL)
+			|| (left.kind == JSVAL_KIND_NULL
+				&& right.kind == JSVAL_KIND_UNDEFINED)) {
+		*result_ptr = 1;
+		return 0;
+	}
+	if (left.kind == JSVAL_KIND_UNDEFINED || left.kind == JSVAL_KIND_NULL
+			|| right.kind == JSVAL_KIND_UNDEFINED
+			|| right.kind == JSVAL_KIND_NULL) {
+		*result_ptr = 0;
+		return 0;
+	}
+	if ((left.kind == JSVAL_KIND_BOOL || left.kind == JSVAL_KIND_NUMBER
+				|| left.kind == JSVAL_KIND_STRING)
+			&& (right.kind == JSVAL_KIND_BOOL || right.kind == JSVAL_KIND_NUMBER
+				|| right.kind == JSVAL_KIND_STRING)) {
+		if (jsval_to_number(region, left, &left_number) < 0
+				|| jsval_to_number(region, right, &right_number) < 0) {
+			return -1;
+		}
+		if (left_number != left_number || right_number != right_number) {
+			*result_ptr = 0;
+			return 0;
+		}
+		*result_ptr = left_number == right_number;
+		return 0;
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
+int jsval_abstract_ne(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	int result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_abstract_eq(region, left, right, &result) < 0) {
+		return -1;
+	}
+	*result_ptr = !result;
+	return 0;
+}
+
 static int
 jsval_string_compare(jsval_region_t *region, jsval_t left, jsval_t right,
 		int *result_ptr)

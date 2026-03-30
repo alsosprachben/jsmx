@@ -832,6 +832,114 @@ static generated_status_t generated_smoke_jsval_relational(char *detail,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_abstract_equality(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"num\":1,\"flag\":true,\"text\":\"1\",\"empty\":\"\",\"nothing\":null,\"obj\":{}}";
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t num;
+	jsval_t flag;
+	jsval_t text;
+	jsval_t empty;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t one;
+	int result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3, &num)
+			< 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+				&flag) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+				&text) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"empty", 5,
+				&empty) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+				&nothing) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+				&obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8");
+	}
+
+	if (jsval_abstract_eq(&region, jsval_bool(1), jsval_number(1.0), &result)
+			< 0) {
+		return generated_fail_errno(detail, cap, "jsval_abstract_eq(true, 1)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_eq(&region, num, one, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_abstract_eq(num, \"1\")");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_eq(&region, flag, one, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(flag, \"1\")");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_eq(&region, text, jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(text, 1)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_eq(&region, empty, jsval_number(0.0), &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(empty, 0)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_eq(&region, nothing, jsval_undefined(), &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(null, undefined)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_abstract_ne(&region, jsval_number(NAN), jsval_number(NAN),
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_ne(NaN, NaN)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	errno = 0;
+	if (jsval_abstract_eq(&region, obj, obj, &result) == 0) {
+		return generated_failf(detail, cap,
+				"object abstract equality unexpectedly succeeded");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP for object abstract equality, got %d", errno);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_json_value_parity(char *detail,
 		size_t cap)
 {
@@ -1764,6 +1872,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
 	{"smoke", "jsval_numeric_coercion", generated_smoke_jsval_numeric_coercion},
 	{"smoke", "jsval_relational", generated_smoke_jsval_relational},
+	{"smoke", "jsval_abstract_equality",
+		generated_smoke_jsval_abstract_equality},
 	{"smoke", "jsval_json_value_parity", generated_smoke_jsval_json_value_parity},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},

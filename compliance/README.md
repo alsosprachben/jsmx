@@ -1,6 +1,6 @@
 # Compliance Corpus
 
-This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures. The current committed suites cover string built-ins, official and repo-authored `jsval` value semantics including test262 strict-equality, logical-operator slices (`!`, `&&`, `||`), primitive numeric coercion/arithmetic slices, and primitive relational-operator slices (`<`, `<=`, `>`, `>=`) across both numeric and string ordering paths, explicit object/array promotion flows, shallow capacity-planned promotion of selected parsed subtrees, and native object/array helpers such as own-property checks, delete, overwrite, push, and observable dense length writes.
+This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures. The current committed suites cover string built-ins, official and repo-authored `jsval` value semantics including test262 strict-equality and primitive abstract equality/inequality, logical-operator slices (`!`, `&&`, `||`), primitive numeric coercion/arithmetic slices, and primitive relational-operator slices (`<`, `<=`, `>`, `>=`) across both numeric and string ordering paths, explicit object/array promotion flows, shallow capacity-planned promotion of selected parsed subtrees, and native object/array helpers such as own-property checks, delete, overwrite, push, and observable dense length writes.
 
 Layout:
 

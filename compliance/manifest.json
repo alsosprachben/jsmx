@@ -368,6 +368,156 @@
       "notes": "Translated against direct negation of jsval_strict_eq for primitive null and undefined strict-inequality checks; the object comparisons from the upstream file are intentionally omitted."
     },
     {
+      "id": "test262-values-S11.9.1_A3.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A3.1.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A3.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for same-type primitive boolean abstract equality."
+    },
+    {
+      "id": "test262-values-S11.9.1_A3.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A3.2.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A3.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for primitive boolean-to-number and boolean-to-string coercion."
+    },
+    {
+      "id": "test262-values-S11.9.1_A3.3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A3.3.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A3.3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for primitive number/string-to-boolean coercion."
+    },
+    {
+      "id": "test262-values-S11.9.1_A4.1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A4.1_T1.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A4.1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for primitive NaN-false abstract equality; the object comparison is intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.1_A4.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A4.2.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A4.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for the +0 / -0 abstract-equality edge case."
+    },
+    {
+      "id": "test262-values-S11.9.1_A6.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A6.1.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A6.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for primitive undefined/null equality; `void 0` and the undefined eval result collapse to the same lowered value."
+    },
+    {
+      "id": "test262-values-S11.9.1_A6.2_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.1_A6.2_T1.js",
+      "generated": "compliance/generated/values/test262/S11.9.1_A6.2_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_eq for primitive undefined/null vs non-nullish false cases; the object comparisons are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.2_A3.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A3.1.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A3.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for same-type primitive boolean abstract inequality."
+    },
+    {
+      "id": "test262-values-S11.9.2_A3.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A3.2.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A3.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for primitive boolean-to-number and boolean-to-string coercion; the wrapper-object and valueOf cases are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.2_A3.3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A3.3.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A3.3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for primitive number/string-to-boolean coercion; the wrapper-object and valueOf cases are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.2_A4.1_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A4.1_T1.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A4.1_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for primitive NaN-true abstract inequality; the object comparison is intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.9.2_A4.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A4.2.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A4.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for the +0 / -0 abstract-inequality edge case."
+    },
+    {
+      "id": "test262-values-S11.9.2_A6.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A6.1.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A6.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for primitive undefined/null inequality; `void 0` and the undefined eval result collapse to the same lowered value."
+    },
+    {
+      "id": "test262-values-S11.9.2_A6.2_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.9.2_A6.2_T1.js",
+      "generated": "compliance/generated/values/test262/S11.9.2_A6.2_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_abstract_ne for primitive undefined/null vs non-nullish true cases; the object comparisons are intentionally omitted."
+    },
+    {
+      "id": "jsmx-values-json-backed-abstract-equality-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/json-backed-abstract-equality-parity.js",
+      "generated": "compliance/generated/values/jsmx/json-backed-abstract-equality-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic lowering fixture for JSON-backed/native abstract equality parity across primitive coercion and null/undefined behavior."
+    },
+    {
       "id": "test262-values-S11.4.9_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.4.9_A2.1_T1.js",

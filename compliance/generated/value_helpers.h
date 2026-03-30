@@ -108,4 +108,34 @@ generated_expect_boolean_result(int actual, int expected, const char *suite,
 	return GENERATED_TEST_PASS;
 }
 
+static inline int
+generated_expect_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
+		int expected, const char *suite, const char *case_name,
+		const char *label)
+{
+	int actual;
+
+	if (jsval_abstract_eq(region, left, right, &actual) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: jsval_abstract_eq failed", label);
+	}
+	return generated_expect_boolean_result(actual, expected, suite, case_name,
+			label);
+}
+
+static inline int
+generated_expect_abstract_ne(jsval_region_t *region, jsval_t left, jsval_t right,
+		int expected, const char *suite, const char *case_name,
+		const char *label)
+{
+	int actual;
+
+	if (jsval_abstract_ne(region, left, right, &actual) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: jsval_abstract_ne failed", label);
+	}
+	return generated_expect_boolean_result(actual, expected, suite, case_name,
+			label);
+}
+
 #endif
