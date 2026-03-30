@@ -349,6 +349,86 @@ test_well_formed_methods(void)
 }
 
 static void
+test_string_accessor_methods(void)
+{
+	static const uint8_t ascii_utf8[] = "abc";
+	static const uint16_t astral_u16[] = {0xD83D, 0xDE00};
+	uint16_t storage[16];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	callback_ctx_t throw_ctx = {1, NULL, 0};
+	double number;
+	int has_value;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_char_at(&out,
+			jsmethod_value_string_utf8(ascii_utf8, sizeof(ascii_utf8) - 1),
+			1, jsmethod_value_number(1.9), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'b'}, 1);
+
+	out.len = 0;
+	assert(jsmethod_string_char_at(&out,
+			jsmethod_value_string_utf8(ascii_utf8, sizeof(ascii_utf8) - 1),
+			1, jsmethod_value_number(-1.0), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){0}, 0);
+
+	assert(jsmethod_string_char_at(&out, jsmethod_value_null(),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	out.len = 0;
+	assert(jsmethod_string_at(&out, &has_value,
+			jsmethod_value_string_utf16(astral_u16,
+				sizeof(astral_u16) / sizeof(astral_u16[0])),
+			1, jsmethod_value_number(-1.0), &error) == 0);
+	assert(has_value == 1);
+	expect_utf16(&out, (const uint16_t[]){0xDE00}, 1);
+
+	out.len = 0;
+	assert(jsmethod_string_at(&out, &has_value,
+			jsmethod_value_string_utf16(astral_u16,
+				sizeof(astral_u16) / sizeof(astral_u16[0])),
+			1, jsmethod_value_number(99.0), &error) == 0);
+	assert(has_value == 0);
+	assert(out.len == 0);
+
+	assert(jsmethod_string_char_code_at(&number,
+			jsmethod_value_string_utf8(ascii_utf8, sizeof(ascii_utf8) - 1),
+			1, jsmethod_value_number(2.0), &error) == 0);
+	assert(number == 99.0);
+
+	assert(jsmethod_string_char_code_at(&number,
+			jsmethod_value_string_utf8(ascii_utf8, sizeof(ascii_utf8) - 1),
+			1, jsmethod_value_number(INFINITY), &error) == 0);
+	assert(isnan(number));
+
+	assert(jsmethod_string_code_point_at(&has_value, &number,
+			jsmethod_value_string_utf16(astral_u16,
+				sizeof(astral_u16) / sizeof(astral_u16[0])),
+			1, jsmethod_value_number(0.0), &error) == 0);
+	assert(has_value == 1);
+	assert(number == 0x1F600);
+
+	assert(jsmethod_string_code_point_at(&has_value, &number,
+			jsmethod_value_string_utf16(astral_u16,
+				sizeof(astral_u16) / sizeof(astral_u16[0])),
+			1, jsmethod_value_number(1.0), &error) == 0);
+	assert(has_value == 1);
+	assert(number == 0xDE00);
+
+	assert(jsmethod_string_code_point_at(&has_value, &number,
+			jsmethod_value_string_utf8(ascii_utf8, sizeof(ascii_utf8) - 1),
+			1, jsmethod_value_number(-1.0), &error) == 0);
+	assert(has_value == 0);
+
+	assert(jsmethod_string_code_point_at(&has_value, &number,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			1, jsmethod_value_number(0.0), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+}
+
+static void
 test_string_search_methods(void)
 {
 	static const uint8_t bananas_utf8[] = "bananas";
@@ -510,6 +590,7 @@ main(void)
 	test_string_normalize_errors();
 	test_string_case_methods();
 	test_well_formed_methods();
+	test_string_accessor_methods();
 	test_string_search_methods();
 	return 0;
 }

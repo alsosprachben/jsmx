@@ -223,6 +223,8 @@ void jsstr16_to_well_formed(jsstr16_t *s);
 
 uint16_t *jsstr16_u16s_at(jsstr16_t *s, size_t i);
 uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t i);
+size_t jsstr16_u16_codepoint_at(jsstr16_t *s, size_t index,
+		uint32_t *codepoint_ptr);
 
 /*
  * universal string methods

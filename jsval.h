@@ -151,6 +151,18 @@ int jsval_method_string_to_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_is_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_char_at(jsval_region_t *region, jsval_t this_value,
+		int have_position, jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_at(jsval_region_t *region, jsval_t this_value,
+		int have_position, jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_char_code_at(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_code_point_at(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_index_of(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, int have_position, jsval_t position_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);

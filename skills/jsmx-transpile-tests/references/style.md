@@ -43,6 +43,7 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
   - case conversion
   - search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`,
     `endsWith`)
+  - accessors (`charAt`, `at`, `charCodeAt`, `codePointAt`)
   - well-formedness methods
 - Use `jsval` when the test involves:
   - JS value tags

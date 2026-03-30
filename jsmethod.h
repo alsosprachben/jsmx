@@ -91,6 +91,18 @@ int jsmethod_string_to_well_formed(jsstr16_t *out,
 int jsmethod_string_is_well_formed(int *is_well_formed,
 		jsmethod_value_t this_value, uint16_t *storage, size_t storage_cap,
 		jsmethod_error_t *error);
+int jsmethod_string_char_at(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_position, jsmethod_value_t position_value,
+		jsmethod_error_t *error);
+int jsmethod_string_at(jsstr16_t *out, int *has_value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+int jsmethod_string_char_code_at(double *value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+int jsmethod_string_code_point_at(int *has_value_ptr, double *value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
 int jsmethod_string_index_of(ssize_t *index_ptr, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, int have_position,
 		jsmethod_value_t position_value, jsmethod_error_t *error);

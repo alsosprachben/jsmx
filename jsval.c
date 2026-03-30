@@ -1421,6 +1421,22 @@ typedef int (*jsval_method_locale_fn)(jsstr16_t *out, jsmethod_value_t this_valu
 		uint16_t *locale_storage, size_t locale_storage_cap,
 		jsmethod_error_t *error);
 
+typedef int (*jsval_method_string_pos_fn)(jsstr16_t *out,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+
+typedef int (*jsval_method_string_optional_fn)(jsstr16_t *out,
+		int *has_value_ptr, jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+
+typedef int (*jsval_method_string_double_fn)(double *value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+
+typedef int (*jsval_method_string_optional_double_fn)(int *has_value_ptr,
+		double *value_ptr, jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error);
+
 typedef int (*jsval_method_string_index_fn)(ssize_t *index_ptr,
 		jsmethod_value_t this_value, jsmethod_value_t search_value,
 		int have_position, jsmethod_value_t position_value,
@@ -1535,6 +1551,216 @@ static int jsval_method_string_locale_bridge(jsval_region_t *region,
 
 	result_string->len = out.len;
 	*value_ptr = result;
+	return 0;
+}
+
+static int
+jsval_method_string_position_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_method_string_pos_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap;
+	size_t position_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t position_method_value = jsmethod_value_undefined();
+	uint16_t out_storage[1];
+	jsstr16_t out;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_position &&
+			jsval_value_utf16_len(region, position_value,
+			&position_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t position_storage[position_storage_cap ? position_storage_cap : 1];
+
+		jsstr16_init_from_buf(&out, (const char *)out_storage,
+				sizeof(out_storage));
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_position &&
+				jsval_method_value_from_jsval(region, position_value,
+				position_storage, position_storage_cap,
+				&position_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&out, this_method_value, have_position, position_method_value,
+				error) < 0) {
+			return -1;
+		}
+	}
+
+	return jsval_string_new_utf16(region, out.codeunits, out.len, value_ptr);
+}
+
+static int
+jsval_method_string_optional_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_method_string_optional_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap;
+	size_t position_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t position_method_value = jsmethod_value_undefined();
+	uint16_t out_storage[1];
+	jsstr16_t out;
+	int has_value;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_position &&
+			jsval_value_utf16_len(region, position_value,
+			&position_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t position_storage[position_storage_cap ? position_storage_cap : 1];
+
+		jsstr16_init_from_buf(&out, (const char *)out_storage,
+				sizeof(out_storage));
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_position &&
+				jsval_method_value_from_jsval(region, position_value,
+				position_storage, position_storage_cap,
+				&position_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&out, &has_value, this_method_value, have_position,
+				position_method_value, error) < 0) {
+			return -1;
+		}
+	}
+
+	if (!has_value) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+	return jsval_string_new_utf16(region, out.codeunits, out.len, value_ptr);
+}
+
+static int
+jsval_method_string_double_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_method_string_double_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap;
+	size_t position_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t position_method_value = jsmethod_value_undefined();
+	double value;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_position &&
+			jsval_value_utf16_len(region, position_value,
+			&position_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t position_storage[position_storage_cap ? position_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_position &&
+				jsval_method_value_from_jsval(region, position_value,
+				position_storage, position_storage_cap,
+				&position_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&value, this_method_value, have_position, position_method_value,
+				error) < 0) {
+			return -1;
+		}
+	}
+
+	*value_ptr = jsval_number(value);
+	return 0;
+}
+
+static int
+jsval_method_string_optional_double_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_method_string_optional_double_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap;
+	size_t position_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t position_method_value = jsmethod_value_undefined();
+	int has_value;
+	double value;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_position &&
+			jsval_value_utf16_len(region, position_value,
+			&position_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t position_storage[position_storage_cap ? position_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_position &&
+				jsval_method_value_from_jsval(region, position_value,
+				position_storage, position_storage_cap,
+				&position_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&has_value, &value, this_method_value, have_position,
+				position_method_value, error) < 0) {
+			return -1;
+		}
+	}
+
+	if (!has_value) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+	*value_ptr = jsval_number(value);
 	return 0;
 }
 
@@ -3217,6 +3443,46 @@ int jsval_method_string_is_well_formed(jsval_region_t *region,
 
 	*value_ptr = jsval_bool(is_well_formed);
 	return 0;
+}
+
+int
+jsval_method_string_char_at(jsval_region_t *region, jsval_t this_value,
+		int have_position, jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_position_bridge(region, this_value,
+			have_position, position_value, jsmethod_string_char_at,
+			value_ptr, error);
+}
+
+int
+jsval_method_string_at(jsval_region_t *region, jsval_t this_value,
+		int have_position, jsval_t position_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_optional_bridge(region, this_value,
+			have_position, position_value, jsmethod_string_at,
+			value_ptr, error);
+}
+
+int
+jsval_method_string_char_code_at(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_double_bridge(region, this_value,
+			have_position, position_value, jsmethod_string_char_code_at,
+			value_ptr, error);
+}
+
+int
+jsval_method_string_code_point_at(jsval_region_t *region,
+		jsval_t this_value, int have_position, jsval_t position_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_optional_double_bridge(region, this_value,
+			have_position, position_value, jsmethod_string_code_point_at,
+			value_ptr, error);
 }
 
 int

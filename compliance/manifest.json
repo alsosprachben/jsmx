@@ -478,6 +478,266 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed string-search results across the new jsval/jsmethod search bridge."
     },
     {
+      "id": "test262-strings-charAt-S15.5.4.4_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/S15.5.4.4_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/charAt/S15.5.4.4_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed Number receiver is lowered to its primitive ToString result before dispatching into jsmethod charAt."
+    },
+    {
+      "id": "test262-strings-charAt-S15.5.4.4_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/S15.5.4.4_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/charAt/S15.5.4.4_A1_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed Boolean receiver is lowered to its primitive ToString result before dispatching into jsmethod charAt."
+    },
+    {
+      "id": "test262-strings-charAt-S15.5.4.4_A4_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/S15.5.4.4_A4_T2.js",
+      "generated": "compliance/generated/strings/test262/charAt/S15.5.4.4_A4_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charAt layer for negative integer positions yielding the empty string."
+    },
+    {
+      "id": "test262-strings-charAt-S15.5.4.4_A4_T3",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/S15.5.4.4_A4_T3.js",
+      "generated": "compliance/generated/strings/test262/charAt/S15.5.4.4_A4_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charAt layer for out-of-range integer positions yielding the empty string."
+    },
+    {
+      "id": "test262-strings-charAt-pos-rounding",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/pos-rounding.js",
+      "generated": "compliance/generated/strings/test262/charAt/pos-rounding.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charAt layer for ToInteger position rounding."
+    },
+    {
+      "id": "test262-strings-charAt-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charAt/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/charAt/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charAt layer, which enforces RequireObjectCoercible(this) before code-unit access."
+    },
+    {
+      "id": "test262-strings-at-returns-item",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/returns-item.js",
+      "generated": "compliance/generated/strings/test262/at/returns-item.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod at layer for direct positive-index access."
+    },
+    {
+      "id": "test262-strings-at-returns-item-relative-index",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/returns-item-relative-index.js",
+      "generated": "compliance/generated/strings/test262/at/returns-item-relative-index.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod at layer for negative relative indices."
+    },
+    {
+      "id": "test262-strings-at-returns-code-unit",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/returns-code-unit.js",
+      "generated": "compliance/generated/strings/test262/at/returns-code-unit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod at layer for UTF-16 code-unit access, including lone-surrogate preservation."
+    },
+    {
+      "id": "test262-strings-at-returns-undefined-for-out-of-range-index",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/returns-undefined-for-out-of-range-index.js",
+      "generated": "compliance/generated/strings/test262/at/returns-undefined-for-out-of-range-index.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod at layer for undefined on out-of-range indices."
+    },
+    {
+      "id": "test262-strings-at-index-argument-tointeger",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/index-argument-tointeger.js",
+      "generated": "compliance/generated/strings/test262/at/index-argument-tointeger.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream object-literal index is lowered through its known primitive valueOf result before reaching jsmethod at, while the prototype typeof assertion is intentionally omitted."
+    },
+    {
+      "id": "test262-strings-at-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/at/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/at/return-abrupt-from-this.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod at layer for null and undefined receiver rejection."
+    },
+    {
+      "id": "test262-strings-charCodeAt-S15.5.4.5_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/S15.5.4.5_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/S15.5.4.5_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed Number receiver is lowered to its primitive ToString result before dispatching into jsmethod charCodeAt."
+    },
+    {
+      "id": "test262-strings-charCodeAt-S15.5.4.5_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/S15.5.4.5_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/S15.5.4.5_A1_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed Boolean receiver is lowered to its primitive ToString result before dispatching into jsmethod charCodeAt."
+    },
+    {
+      "id": "test262-strings-charCodeAt-S15.5.4.5_A3",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/S15.5.4.5_A3.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/S15.5.4.5_A3.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream boxed String receiver is lowered to its primitive string value before dispatching into jsmethod charCodeAt."
+    },
+    {
+      "id": "test262-strings-charCodeAt-S15.5.4.5_A4",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/S15.5.4.5_A4.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/S15.5.4.5_A4.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models abrupt ToString(this) completion before jsmethod charCodeAt surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-charCodeAt-pos-rounding",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/pos-rounding.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/pos-rounding.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charCodeAt layer for ToInteger position rounding."
+    },
+    {
+      "id": "test262-strings-charCodeAt-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/charCodeAt/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/charCodeAt/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod charCodeAt layer, which enforces RequireObjectCoercible(this) before code-unit access."
+    },
+    {
+      "id": "test262-strings-codePointAt-return-utf16-decode",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/return-utf16-decode.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/return-utf16-decode.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod codePointAt layer for valid surrogate-pair decoding."
+    },
+    {
+      "id": "test262-strings-codePointAt-return-first-code-unit",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/return-first-code-unit.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/return-first-code-unit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod codePointAt layer for lone lead-surrogate handling."
+    },
+    {
+      "id": "test262-strings-codePointAt-return-single-code-unit",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/return-single-code-unit.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/return-single-code-unit.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod codePointAt layer for single-code-unit returns, including lone surrogates."
+    },
+    {
+      "id": "test262-strings-codePointAt-return-code-unit-coerced-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/return-code-unit-coerced-position.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/return-code-unit-coerced-position.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream array positions are lowered through known primitive ToString results before reaching jsmethod codePointAt."
+    },
+    {
+      "id": "test262-strings-codePointAt-returns-undefined-on-position-equal-or-more-than-size",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/returns-undefined-on-position-equal-or-more-than-size.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/returns-undefined-on-position-equal-or-more-than-size.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod codePointAt layer for undefined on positions at or past the string length."
+    },
+    {
+      "id": "test262-strings-codePointAt-returns-undefined-on-position-less-than-zero",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/returns-undefined-on-position-less-than-zero.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/returns-undefined-on-position-less-than-zero.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod codePointAt layer for undefined on negative positions."
+    },
+    {
+      "id": "test262-strings-codePointAt-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/codePointAt/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/codePointAt/return-abrupt-from-this.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models abrupt ToString(this) completion before jsmethod codePointAt surfaces the typed method error."
+    },
+    {
+      "id": "jsmx-strings-json-backed-accessor-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-accessor-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-accessor-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed string accessor results across the new jsval/jsmethod accessor bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

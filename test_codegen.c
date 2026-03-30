@@ -2103,6 +2103,116 @@ static generated_status_t generated_smoke_jsmethod_search_abrupt(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_method_accessor(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"ascii\":\"abc\",\"astral\":\"\\ud83d\\ude00\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t ascii;
+	jsval_t astral;
+	jsval_t value;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"ascii", 5,
+			&ascii) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(ascii)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"astral", 6,
+			&astral) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(astral)");
+	}
+
+	if (jsval_method_string_char_at(&region, ascii, 1, jsval_number(1.9),
+			&value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_char_at failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"b", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_at(&region, ascii, 1, jsval_number(-1.0), &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_at failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"c", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_char_code_at(&region, ascii, 1,
+			jsval_number(INFINITY), &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_char_code_at failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_nan_value(value, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_code_point_at(&region, astral, 1,
+			jsval_number(0.0), &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_code_point_at failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_number(&region, value, 0x1F600, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_code_point_at(&region, astral, 1,
+			jsval_number(99.0), &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_code_point_at(oob) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (value.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected out-of-range codePointAt to return undefined");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsmethod_accessor_abrupt(
+		char *detail, size_t cap)
+{
+	generated_callback_ctx_t throw_ctx = {1};
+	jsmethod_error_t error;
+	int has_value;
+	double value;
+
+	if (jsmethod_string_code_point_at(&has_value, &value,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			1, jsmethod_value_number(0.0), &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt accessor receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT accessor coercion, got %d",
+				(int)error.kind);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -2239,7 +2349,9 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
+	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
+	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
 	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},

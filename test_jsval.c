@@ -579,6 +579,59 @@ static void test_method_search_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_accessor_bridge(void)
+{
+	static const char json[] = "{\"ascii\":\"abc\",\"astral\":\"\\ud83d\\ude00\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t ascii;
+	jsval_t astral;
+	jsval_t result;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"ascii", 5,
+			&ascii) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"astral", 6,
+			&astral) == 0);
+
+	assert(jsval_method_string_char_at(&region, ascii, 1, jsval_number(1.9),
+			&result, &error) == 0);
+	assert_string(&region, result, "b");
+
+	assert(jsval_method_string_at(&region, ascii, 1, jsval_number(-1.0),
+			&result, &error) == 0);
+	assert_string(&region, result, "c");
+
+	assert(jsval_method_string_at(&region, ascii, 1, jsval_number(99.0),
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_char_code_at(&region, ascii, 1,
+			jsval_number(2.0), &result, &error) == 0);
+	assert_number_value(result, 99.0);
+
+	assert(jsval_method_string_char_code_at(&region, ascii, 1,
+			jsval_number(INFINITY), &result, &error) == 0);
+	assert_nan_value(result);
+
+	assert(jsval_method_string_code_point_at(&region, astral, 1,
+			jsval_number(0.0), &result, &error) == 0);
+	assert_number_value(result, 0x1F600);
+
+	assert(jsval_method_string_code_point_at(&region, astral, 1,
+			jsval_number(99.0), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	errno = 0;
+	assert(jsval_method_string_char_at(&region, root, 1, jsval_number(0.0),
+			&result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_value_semantics(void)
 {
 	uint8_t storage[8192];
@@ -1609,6 +1662,7 @@ int main(void)
 	test_method_bridge();
 	test_method_normalize_bridge();
 	test_method_search_bridge();
+	test_method_accessor_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();

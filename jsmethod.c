@@ -501,6 +501,63 @@ jsmethod_end_position(size_t len, int have_end_position,
 }
 
 static int
+jsmethod_code_unit_position(size_t len, int have_position,
+		jsmethod_value_t position_value, size_t *index_ptr,
+		int *has_index_ptr, jsmethod_error_t *error)
+{
+	double position;
+
+	if (index_ptr == NULL || has_index_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_position || position_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		position = 0.0;
+	} else if (jsmethod_value_to_integer_or_infinity(position_value, 0,
+			&position, error) < 0) {
+		return -1;
+	}
+	if (position < 0.0 || position >= (double)len) {
+		*has_index_ptr = 0;
+		*index_ptr = 0;
+		return 0;
+	}
+	*has_index_ptr = 1;
+	*index_ptr = (size_t)position;
+	return 0;
+}
+
+static int
+jsmethod_relative_code_unit_position(size_t len, int have_position,
+		jsmethod_value_t position_value, size_t *index_ptr,
+		int *has_index_ptr, jsmethod_error_t *error)
+{
+	double position;
+
+	if (index_ptr == NULL || has_index_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_position || position_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		position = 0.0;
+	} else if (jsmethod_value_to_integer_or_infinity(position_value, 0,
+			&position, error) < 0) {
+		return -1;
+	}
+	if (position < 0.0) {
+		position += (double)len;
+	}
+	if (position < 0.0 || position >= (double)len) {
+		*has_index_ptr = 0;
+		*index_ptr = 0;
+		return 0;
+	}
+	*has_index_ptr = 1;
+	*index_ptr = (size_t)position;
+	return 0;
+}
+
+static int
 jsmethod_utf16_region_equals(const jsstr16_t *value, size_t start,
 		const jsstr16_t *search)
 {
@@ -671,6 +728,185 @@ jsmethod_string_is_well_formed(int *is_well_formed,
 	}
 	*is_well_formed = jsstr16_is_well_formed(&value);
 	return 0;
+}
+
+int
+jsmethod_string_char_at(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_position, jsmethod_value_t position_value,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t index;
+	int has_index;
+	jsstr16_t this_str;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_code_unit_position(this_str.len, have_position,
+				position_value, &index, &has_index, error) < 0) {
+			return -1;
+		}
+		if (!has_index) {
+			out->len = 0;
+			return 0;
+		}
+		if (out->cap < 1) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		out->codeunits[0] = this_str.codeunits[index];
+		out->len = 1;
+		return 0;
+	}
+}
+
+int
+jsmethod_string_at(jsstr16_t *out, int *has_value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t index;
+	int has_index;
+	jsstr16_t this_str;
+
+	if (out == NULL || has_value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_relative_code_unit_position(this_str.len, have_position,
+				position_value, &index, &has_index, error) < 0) {
+			return -1;
+		}
+		if (!has_index) {
+			*has_value_ptr = 0;
+			out->len = 0;
+			return 0;
+		}
+		if (out->cap < 1) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		out->codeunits[0] = this_str.codeunits[index];
+		out->len = 1;
+		*has_value_ptr = 1;
+		return 0;
+	}
+}
+
+int
+jsmethod_string_char_code_at(double *value_ptr, jsmethod_value_t this_value,
+		int have_position, jsmethod_value_t position_value,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t index;
+	int has_index;
+	jsstr16_t this_str;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_code_unit_position(this_str.len, have_position,
+				position_value, &index, &has_index, error) < 0) {
+			return -1;
+		}
+		if (!has_index) {
+			*value_ptr = NAN;
+			return 0;
+		}
+		*value_ptr = (double)this_str.codeunits[index];
+		return 0;
+	}
+}
+
+int
+jsmethod_string_code_point_at(int *has_value_ptr, double *value_ptr,
+		jsmethod_value_t this_value, int have_position,
+		jsmethod_value_t position_value, jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t index;
+	int has_index;
+	jsstr16_t this_str;
+	uint32_t codepoint;
+
+	if (has_value_ptr == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_code_unit_position(this_str.len, have_position,
+				position_value, &index, &has_index, error) < 0) {
+			return -1;
+		}
+		if (!has_index) {
+			*has_value_ptr = 0;
+			*value_ptr = 0.0;
+			return 0;
+		}
+		if (jsstr16_u16_codepoint_at(&this_str, index, &codepoint) == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		*has_value_ptr = 1;
+		*value_ptr = (double)codepoint;
+		return 0;
+	}
 }
 
 int

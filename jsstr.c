@@ -1582,14 +1582,43 @@ uint16_t *jsstr16_u32s_at(jsstr16_t *s, size_t index) {
     } else {
         errno = ERANGE; /* out of bounds */
         return NULL; /* out of bounds */
-    }
+	}
+}
+
+size_t jsstr16_u16_codepoint_at(jsstr16_t *s, size_t index,
+		uint32_t *codepoint_ptr)
+{
+	uint16_t first;
+
+	if (s == NULL || index >= s->len) {
+		return 0;
+	}
+
+	first = s->codeunits[index];
+	if (first >= 0xD800 && first <= 0xDBFF && index + 1 < s->len) {
+		uint16_t second = s->codeunits[index + 1];
+
+		if (second >= 0xDC00 && second <= 0xDFFF) {
+			if (codepoint_ptr != NULL) {
+				*codepoint_ptr = 0x10000u
+						+ ((((uint32_t)first - 0xD800u) << 10)
+						| ((uint32_t)second - 0xDC00u));
+			}
+			return 2;
+		}
+	}
+
+	if (codepoint_ptr != NULL) {
+		*codepoint_ptr = first;
+	}
+	return 1;
 }
 
 void jsstr16_u16_truncate(jsstr16_t *s, size_t len) {
-    uint16_t *cu = jsstr16_u16s_at(s, len);
-    if (cu != NULL) {
-        s->len = cu - s->codeunits;
-    }
+	uint16_t *cu = jsstr16_u16s_at(s, len);
+	if (cu != NULL) {
+		s->len = cu - s->codeunits;
+	}
 }
 
 void jsstr16_u32_truncate(jsstr16_t *s, size_t len) {
