@@ -668,6 +668,106 @@
       "notes": "Translated against jsval_remainder for the primitive boolean remainder case; the wrapper-object checks are intentionally omitted."
     },
     {
+      "id": "test262-values-S11.8.1_A3.1_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.1_A3.1_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.1_A3.1_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_than for primitive boolean/number operands; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.1_A3.1_T2.5",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.1_A3.1_T2.5.js",
+      "generated": "compliance/generated/values/test262/S11.8.1_A3.1_T2.5.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_than for primitive boolean/string numeric coercion; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.1_A3.1_T2.9",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.1_A3.1_T2.9.js",
+      "generated": "compliance/generated/values/test262/S11.8.1_A3.1_T2.9.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_than for primitive boolean/null numeric coercion; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.1_A4.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.1_A4.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.1_A4.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_less_than for the NaN-false less-than edge cases."
+    },
+    {
+      "id": "test262-values-S11.8.2_A3.1_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.2_A3.1_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.2_A3.1_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_greater_than for primitive boolean/number operands; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.2_A4.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.2_A4.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.2_A4.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_greater_than for the NaN-false greater-than edge cases."
+    },
+    {
+      "id": "test262-values-S11.8.3_A3.1_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.3_A3.1_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.3_A3.1_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_less_equal for primitive boolean/number operands; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.3_A4.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.3_A4.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.3_A4.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_less_equal for the NaN-false less-than-or-equal edge cases."
+    },
+    {
+      "id": "test262-values-S11.8.4_A3.1_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.4_A3.1_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.4_A3.1_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_greater_equal for primitive boolean/number operands; the wrapper-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.8.4_A4.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.8.4_A4.1.js",
+      "generated": "compliance/generated/values/test262/S11.8.4_A4.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against jsval_greater_equal for the NaN-false greater-than-or-equal edge cases."
+    },
+    {
       "id": "jsmx-values-json-backed-primitive-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/json-backed-primitive-parity.js",
@@ -676,6 +776,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic parity fixture for truthiness, strict equality, and supported addition on parsed JSON-backed primitives versus equivalent native values."
+    },
+    {
+      "id": "jsmx-values-json-backed-relational-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/json-backed-relational-parity.js",
+      "generated": "compliance/generated/values/jsmx/json-backed-relational-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic parity fixture for JSON-backed/native primitive relational results, plus the current ENOTSUP boundary for string/string relational comparisons."
     },
     {
       "id": "jsmx-values-container-identity-truthiness",

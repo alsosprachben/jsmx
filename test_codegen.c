@@ -129,6 +129,16 @@ static generated_status_t generated_expect_positive_zero(jsval_t value,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_boolean_result(int actual,
+		int expected, char *detail, size_t cap)
+{
+	if (!!actual != !!expected) {
+		return generated_failf(detail, cap, "expected %s comparison result",
+				expected ? "true" : "false");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_expect_negative_zero(jsval_t value,
 		char *detail, size_t cap)
 {
@@ -710,6 +720,109 @@ static generated_status_t generated_smoke_jsval_numeric_coercion(char *detail,
 	status = generated_expect_positive_zero(result, detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_relational(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"truth\":true,\"nothing\":null,\"one\":\"1\",\"bad\":\"x\",\"num\":2,\"left\":\"1\",\"right\":\"2\"}";
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t nothing;
+	jsval_t one;
+	jsval_t bad;
+	jsval_t num;
+	jsval_t left_string;
+	jsval_t right_string;
+	int result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+				&nothing) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"one", 3,
+				&one) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"bad", 3,
+				&bad) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+				&num) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"left", 4,
+				&left_string) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"right", 5,
+				&right_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+
+	if (jsval_less_than(&region, jsval_bool(1), jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_than(true, 1)");
+	}
+	if (generated_expect_boolean_result(result, 0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_less_equal(&region, jsval_bool(1), jsval_number(1.0), &result)
+			< 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_equal(true, 1)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_greater_than(&region, num, truth, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_greater_than(num, truth)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_less_than(&region, nothing, truth, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_than(null, true)");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_less_than(&region, one, truth, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_than(\"1\", true)");
+	}
+	if (generated_expect_boolean_result(result, 0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_greater_equal(&region, truth, one, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_greater_equal(true, \"1\")");
+	}
+	if (generated_expect_boolean_result(result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_less_than(&region, bad, jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_less_than(\"x\", 1)");
+	}
+	if (generated_expect_boolean_result(result, 0, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	errno = 0;
+	if (jsval_less_than(&region, left_string, right_string, &result) == 0) {
+		return generated_failf(detail, cap,
+				"expected string/string relational path to stay unsupported");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP for string/string relational path, got %d",
+				errno);
 	}
 
 	return GENERATED_PASS;
@@ -1646,6 +1759,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
 	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
 	{"smoke", "jsval_numeric_coercion", generated_smoke_jsval_numeric_coercion},
+	{"smoke", "jsval_relational", generated_smoke_jsval_relational},
 	{"smoke", "jsval_json_value_parity", generated_smoke_jsval_json_value_parity},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},

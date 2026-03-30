@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import concurrent.futures
 import json
 import os
 import shlex
@@ -44,6 +45,13 @@ def status_from_exit(contract, code):
     return f"unexpected({code})"
 
 
+def emit_proc_output(stdout, stderr):
+    if stdout:
+        sys.stdout.write(stdout)
+    if stderr:
+        sys.stderr.write(stderr)
+
+
 def compile_case(repo_root, tmpdir, case):
     cc = os.environ.get("CC", "cc")
     cflags = shlex.split(os.environ.get("CFLAGS", ""))
@@ -57,23 +65,53 @@ def compile_case(repo_root, tmpdir, case):
     cmd.extend(ldlibs)
     cmd.extend(["-o", str(binary)])
     proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
-    if proc.stdout:
-        sys.stdout.write(proc.stdout)
-    if proc.stderr:
-        sys.stderr.write(proc.stderr)
-    if proc.returncode != 0:
+    return binary, proc
+
+
+def run_case(repo_root, binary):
+    return subprocess.run([str(binary)], cwd=repo_root, capture_output=True, text=True)
+
+
+def execute_case(repo_root, tmpdir, case, contract):
+    binary, build_proc = compile_case(repo_root, tmpdir, case)
+    result = {
+        "case": case,
+        "build_stdout": build_proc.stdout,
+        "build_stderr": build_proc.stderr,
+        "build_returncode": build_proc.returncode,
+        "run_stdout": "",
+        "run_stderr": "",
+        "actual": None,
+    }
+    if build_proc.returncode != 0:
+        return result
+
+    run_proc = run_case(repo_root, binary)
+    result["run_stdout"] = run_proc.stdout
+    result["run_stderr"] = run_proc.stderr
+    result["actual"] = status_from_exit(contract, run_proc.returncode)
+    return result
+
+
+def worker_count(case_count):
+    value = os.environ.get("COMPLIANCE_JOBS", os.environ.get("JOBS"))
+    if value:
+        try:
+            return max(1, min(case_count, int(value)))
+        except ValueError:
+            pass
+    return max(1, min(case_count, os.cpu_count() or 1))
+
+
+def report_case_result(result, contract):
+    case = result["case"]
+    emit_proc_output(result["build_stdout"], result["build_stderr"])
+    if result["build_returncode"] != 0:
         print(f"BUILD FAIL {case['suite']}/{case['id']}")
-        return None
-    return binary
+        return False
 
-
-def run_case(repo_root, binary, case, contract):
-    proc = subprocess.run([str(binary)], cwd=repo_root, capture_output=True, text=True)
-    if proc.stdout:
-        sys.stdout.write(proc.stdout)
-    if proc.stderr:
-        sys.stderr.write(proc.stderr)
-    actual = status_from_exit(contract, proc.returncode)
+    emit_proc_output(result["run_stdout"], result["run_stderr"])
+    actual = result["actual"]
     expected = case["expected_status"]
     if actual != expected:
         print(
@@ -114,6 +152,7 @@ def main():
     passed = 0
     class_counts = Counter()
     mode_counts = Counter()
+    jobs = worker_count(len(cases))
 
     with tempfile.TemporaryDirectory(prefix="jsmx-compliance-", dir="/tmp") as tmpdir:
         for case in cases:
@@ -121,13 +160,17 @@ def main():
                 return 1
             class_counts[case["lowering_class"]] += 1
             mode_counts[case["translation_mode"]] += 1
-            binary = compile_case(repo_root, tmpdir, case)
-            if binary is None:
-                return 1
-            built += 1
-            if not run_case(repo_root, binary, case, contract):
-                return 1
-            passed += 1
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
+            futures = [
+                executor.submit(execute_case, repo_root, tmpdir, case, contract)
+                for case in cases
+            ]
+            for future in futures:
+                result = future.result()
+                built += 1
+                if not report_case_result(result, contract):
+                    return 1
+                passed += 1
 
     print(f"compliance cases: {passed}/{built} matched expected status")
     print(

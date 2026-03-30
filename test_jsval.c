@@ -812,6 +812,114 @@ static void test_numeric_coercion_and_arithmetic(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_relational_semantics(void)
+{
+	static const char json[] =
+		"{\"truth\":true,\"nothing\":null,\"one\":\"1\",\"bad\":\"x\",\"num\":2,\"left\":\"1\",\"right\":\"2\"}";
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t nothing;
+	jsval_t one;
+	jsval_t bad;
+	jsval_t num;
+	jsval_t left_string;
+	jsval_t right_string;
+	int result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_less_than(&region, jsval_bool(1), jsval_number(1.0), &result)
+			== 0);
+	assert(result == 0);
+	assert(jsval_less_than(&region, jsval_number(1.0), jsval_bool(1), &result)
+			== 0);
+	assert(result == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &bad) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1,
+			&left_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&right_string) == 0);
+
+	assert(jsval_less_than(&region, jsval_bool(1), one, &result) == 0);
+	assert(result == 0);
+	assert(jsval_less_than(&region, one, jsval_bool(1), &result) == 0);
+	assert(result == 0);
+	assert(jsval_less_than(&region, jsval_null(), jsval_bool(1), &result) == 0);
+	assert(result == 1);
+
+	assert(jsval_less_equal(&region, jsval_bool(1), jsval_number(1.0), &result)
+			== 0);
+	assert(result == 1);
+	assert(jsval_less_equal(&region, jsval_number(1.0), jsval_bool(1), &result)
+			== 0);
+	assert(result == 1);
+	assert(jsval_greater_than(&region, jsval_bool(1), jsval_number(1.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_greater_than(&region, jsval_number(1.0), jsval_bool(1),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_greater_equal(&region, jsval_bool(1), jsval_number(1.0),
+			&result) == 0);
+	assert(result == 1);
+	assert(jsval_greater_equal(&region, jsval_number(1.0), jsval_bool(1),
+			&result) == 0);
+	assert(result == 1);
+
+	assert(jsval_less_than(&region, jsval_number(NAN), jsval_number(0.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_less_equal(&region, jsval_number(NAN), jsval_number(0.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_greater_than(&region, jsval_number(NAN), jsval_number(0.0),
+			&result) == 0);
+	assert(result == 0);
+	assert(jsval_greater_equal(&region, jsval_number(NAN), jsval_number(0.0),
+			&result) == 0);
+	assert(result == 0);
+
+	errno = 0;
+	assert(jsval_less_than(&region, left_string, right_string, &result) < 0);
+	assert(errno == ENOTSUP);
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"one", 3,
+			&one) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"bad", 3,
+			&bad) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"left", 4,
+			&left_string) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"right", 5,
+			&right_string) == 0);
+
+	assert(jsval_greater_than(&region, num, truth, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_than(&region, nothing, truth, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_than(&region, one, truth, &result) == 0);
+	assert(result == 0);
+	assert(jsval_greater_equal(&region, truth, one, &result) == 0);
+	assert(result == 1);
+	assert(jsval_less_than(&region, bad, jsval_number(1.0), &result) == 0);
+	assert(result == 0);
+
+	errno = 0;
+	assert(jsval_less_than(&region, left_string, right_string, &result) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_json_backed_value_parity(void)
 {
 	static const char json[] =
@@ -1142,6 +1250,7 @@ int main(void)
 	test_logical_not_semantics();
 	test_logical_and_or_semantics();
 	test_numeric_coercion_and_arithmetic();
+	test_relational_semantics();
 	test_json_backed_value_parity();
 	test_json_storage();
 	test_json_root_rebase();

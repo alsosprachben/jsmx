@@ -96,4 +96,16 @@ generated_expect_value_nan(jsval_t value, const char *suite,
 	return GENERATED_TEST_PASS;
 }
 
+static inline int
+generated_expect_boolean_result(int actual, int expected, const char *suite,
+		const char *case_name, const char *label)
+{
+	if (!!actual != !!expected) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected %s result", label,
+				expected ? "true" : "false");
+	}
+	return GENERATED_TEST_PASS;
+}
+
 #endif

@@ -2457,6 +2457,80 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	}
 }
 
+typedef enum jsval_relop_e {
+	JSVAL_RELOP_LT,
+	JSVAL_RELOP_LE,
+	JSVAL_RELOP_GT,
+	JSVAL_RELOP_GE
+} jsval_relop_t;
+
+static int
+jsval_relop(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_relop_t op, int *result_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (left.kind == JSVAL_KIND_STRING && right.kind == JSVAL_KIND_STRING) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (jsval_to_number(region, left, &left_number) < 0
+			|| jsval_to_number(region, right, &right_number) < 0) {
+		return -1;
+	}
+	if (left_number != left_number || right_number != right_number) {
+		*result_ptr = 0;
+		return 0;
+	}
+
+	switch (op) {
+	case JSVAL_RELOP_LT:
+		*result_ptr = left_number < right_number;
+		return 0;
+	case JSVAL_RELOP_LE:
+		*result_ptr = left_number <= right_number;
+		return 0;
+	case JSVAL_RELOP_GT:
+		*result_ptr = left_number > right_number;
+		return 0;
+	case JSVAL_RELOP_GE:
+		*result_ptr = left_number >= right_number;
+		return 0;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+int jsval_less_than(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	return jsval_relop(region, left, right, JSVAL_RELOP_LT, result_ptr);
+}
+
+int jsval_less_equal(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	return jsval_relop(region, left, right, JSVAL_RELOP_LE, result_ptr);
+}
+
+int jsval_greater_than(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	return jsval_relop(region, left, right, JSVAL_RELOP_GT, result_ptr);
+}
+
+int jsval_greater_equal(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	return jsval_relop(region, left, right, JSVAL_RELOP_GE, result_ptr);
+}
+
 int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr)
 {
 	if (left.kind == JSVAL_KIND_STRING || right.kind == JSVAL_KIND_STRING) {
