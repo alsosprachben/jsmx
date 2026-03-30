@@ -31,6 +31,42 @@ static void assert_json(jsval_region_t *region, jsval_t value, const char *expec
 	assert(memcmp(buf, expected, expected_len) == 0);
 }
 
+static void assert_positive_zero(jsval_t value)
+{
+	assert(value.kind == JSVAL_KIND_NUMBER);
+	assert(value.as.number == 0.0);
+	assert(signbit(value.as.number) == 0);
+}
+
+static void assert_negative_zero(jsval_t value)
+{
+	assert(value.kind == JSVAL_KIND_NUMBER);
+	assert(value.as.number == 0.0);
+	assert(signbit(value.as.number) != 0);
+}
+
+static void assert_nan_value(jsval_t value)
+{
+	assert(value.kind == JSVAL_KIND_NUMBER);
+	assert(isnan(value.as.number));
+}
+
+static void assert_number_value(jsval_t value, double expected)
+{
+	assert(value.kind == JSVAL_KIND_NUMBER);
+	assert(value.as.number == expected);
+}
+
+static jsval_t logical_and(jsval_region_t *region, jsval_t left, jsval_t right)
+{
+	return jsval_truthy(region, left) ? right : left;
+}
+
+static jsval_t logical_or(jsval_region_t *region, jsval_t left, jsval_t right)
+{
+	return jsval_truthy(region, left) ? left : right;
+}
+
 static void test_native_storage()
 {
 	uint8_t storage[16384];
@@ -596,6 +632,186 @@ static void test_logical_not_semantics(void)
 	assert(c == 3);
 }
 
+static void test_logical_and_or_semantics(void)
+{
+	uint8_t storage[2048];
+	jsval_region_t region;
+	jsval_t empty_string;
+	jsval_t one_string;
+	jsval_t minus_one_string;
+	jsval_t x_string;
+	jsval_t result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"-1", 2,
+			&minus_one_string) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &x_string) == 0);
+
+	result = logical_and(&region, jsval_bool(0), jsval_bool(1));
+	assert(jsval_strict_eq(&region, result, jsval_bool(0)) == 1);
+	result = logical_and(&region, jsval_bool(1), jsval_bool(0));
+	assert(jsval_strict_eq(&region, result, jsval_bool(0)) == 1);
+
+	result = logical_and(&region, jsval_number(-0.0), jsval_number(-1.0));
+	assert_negative_zero(result);
+	result = logical_and(&region, jsval_number(0.0), jsval_number(-1.0));
+	assert_positive_zero(result);
+	result = logical_and(&region, jsval_number(NAN), jsval_number(1.0));
+	assert_nan_value(result);
+
+	result = logical_and(&region, empty_string, one_string);
+	assert_string(&region, result, "");
+	result = logical_and(&region, one_string, x_string);
+	assert_string(&region, result, "x");
+	result = logical_and(&region, minus_one_string, x_string);
+	assert_string(&region, result, "x");
+
+	result = logical_or(&region, jsval_bool(0), jsval_bool(1));
+	assert(jsval_strict_eq(&region, result, jsval_bool(1)) == 1);
+	result = logical_or(&region, jsval_number(0.0), jsval_number(-0.0));
+	assert_negative_zero(result);
+	result = logical_or(&region, jsval_number(-0.0), jsval_number(0.0));
+	assert_positive_zero(result);
+	result = logical_or(&region, empty_string, one_string);
+	assert_string(&region, result, "1");
+
+	result = logical_or(&region, jsval_number(-1.0), jsval_number(1.0));
+	assert(jsval_strict_eq(&region, result, jsval_number(-1.0)) == 1);
+	result = logical_or(&region, jsval_number(-1.0), jsval_number(NAN));
+	assert(jsval_strict_eq(&region, result, jsval_number(-1.0)) == 1);
+	result = logical_or(&region, minus_one_string, one_string);
+	assert_string(&region, result, "-1");
+	result = logical_or(&region, minus_one_string, x_string);
+	assert_string(&region, result, "-1");
+}
+
+static void test_numeric_coercion_and_arithmetic(void)
+{
+	static const char json[] =
+		"{\"truth\":true,\"nothing\":null,\"one\":\"1\",\"spaces\":\"   \",\"bad\":\"x\",\"inf\":\"Infinity\",\"upper\":\"INFINITY\",\"num\":2}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t nothing;
+	jsval_t one;
+	jsval_t spaces;
+	jsval_t bad;
+	jsval_t inf;
+	jsval_t upper;
+	jsval_t num;
+	jsval_t result;
+	double number;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_to_number(&region, jsval_undefined(), &number) == 0);
+	assert(isnan(number));
+	assert(jsval_to_number(&region, jsval_null(), &number) == 0);
+	assert(number == 0.0);
+	assert(jsval_to_number(&region, jsval_bool(0), &number) == 0);
+	assert(number == 0.0);
+	assert(jsval_to_number(&region, jsval_bool(1), &number) == 0);
+	assert(number == 1.0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"   ", 3, &spaces) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &bad) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"Infinity", 8, &inf) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"INFINITY", 8, &upper) == 0);
+
+	assert(jsval_to_number(&region, one, &number) == 0);
+	assert(number == 1.0);
+	assert(jsval_to_number(&region, spaces, &number) == 0);
+	assert(number == 0.0);
+	assert(jsval_to_number(&region, bad, &number) == 0);
+	assert(isnan(number));
+	assert(jsval_to_number(&region, inf, &number) == 0);
+	assert(isinf(number) && number > 0);
+	assert(jsval_to_number(&region, upper, &number) == 0);
+	assert(isnan(number));
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"one", 3,
+			&one) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"spaces", 6,
+			&spaces) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"bad", 3,
+			&bad) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"inf", 3,
+			&inf) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"upper", 5,
+			&upper) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) == 0);
+
+	assert(jsval_to_number(&region, truth, &number) == 0);
+	assert(number == 1.0);
+	assert(jsval_to_number(&region, nothing, &number) == 0);
+	assert(number == 0.0);
+	assert(jsval_to_number(&region, one, &number) == 0);
+	assert(number == 1.0);
+	assert(jsval_to_number(&region, spaces, &number) == 0);
+	assert(number == 0.0);
+	assert(jsval_to_number(&region, bad, &number) == 0);
+	assert(isnan(number));
+	assert(jsval_to_number(&region, inf, &number) == 0);
+	assert(isinf(number) && number > 0);
+	assert(jsval_to_number(&region, upper, &number) == 0);
+	assert(isnan(number));
+
+	assert(jsval_unary_plus(&region, jsval_undefined(), &result) == 0);
+	assert_nan_value(result);
+	assert(jsval_unary_plus(&region, jsval_null(), &result) == 0);
+	assert_positive_zero(result);
+	assert(jsval_unary_plus(&region, truth, &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_unary_plus(&region, one, &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_unary_plus(&region, inf, &result) == 0);
+	assert(isinf(result.as.number) && result.as.number > 0);
+	assert(jsval_unary_plus(&region, upper, &result) == 0);
+	assert_nan_value(result);
+
+	assert(jsval_unary_minus(&region, jsval_bool(0), &result) == 0);
+	assert_negative_zero(result);
+	assert(jsval_unary_minus(&region, jsval_bool(1), &result) == 0);
+	assert_number_value(result, -1.0);
+	assert(jsval_unary_minus(&region, jsval_number(0.0), &result) == 0);
+	assert_negative_zero(result);
+	assert(jsval_unary_minus(&region, jsval_number(-0.0), &result) == 0);
+	assert_positive_zero(result);
+	assert(jsval_unary_minus(&region, one, &result) == 0);
+	assert_number_value(result, -1.0);
+	assert(jsval_unary_minus(&region, bad, &result) == 0);
+	assert_nan_value(result);
+
+	assert(jsval_subtract(&region, jsval_bool(1), jsval_bool(1), &result) == 0);
+	assert_positive_zero(result);
+	assert(jsval_subtract(&region, jsval_bool(1), jsval_number(1.0), &result) == 0);
+	assert_positive_zero(result);
+	assert(jsval_subtract(&region, jsval_number(1.0), jsval_bool(1), &result) == 0);
+	assert_positive_zero(result);
+
+	assert(jsval_multiply(&region, jsval_bool(1), jsval_bool(1), &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_divide(&region, jsval_bool(1), jsval_bool(1), &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_remainder(&region, jsval_bool(1), jsval_bool(1), &result) == 0);
+	assert_positive_zero(result);
+
+	errno = 0;
+	assert(jsval_to_number(&region, root, &number) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_json_backed_value_parity(void)
 {
 	static const char json[] =
@@ -924,6 +1140,8 @@ int main(void)
 	test_native_storage();
 	test_value_semantics();
 	test_logical_not_semantics();
+	test_logical_and_or_semantics();
+	test_numeric_coercion_and_arithmetic();
 	test_json_backed_value_parity();
 	test_json_storage();
 	test_json_root_rebase();

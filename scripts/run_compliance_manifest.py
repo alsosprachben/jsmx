@@ -12,6 +12,7 @@ from pathlib import Path
 
 RUNTIME_SOURCES = [
     "jsmn.c",
+    "jsnum.c",
     "jsval.c",
     "jsmethod.c",
     "jsstr.c",
@@ -47,11 +48,13 @@ def compile_case(repo_root, tmpdir, case):
     cc = os.environ.get("CC", "cc")
     cflags = shlex.split(os.environ.get("CFLAGS", ""))
     ldflags = shlex.split(os.environ.get("LDFLAGS", ""))
+    ldlibs = shlex.split(os.environ.get("LDLIBS", ""))
     fixture = repo_root / case["generated"]
     binary = Path(tmpdir) / case["id"]
     cmd = [cc, "-g", "-I.", *cflags, str(fixture)]
     cmd.extend(str(repo_root / src) for src in RUNTIME_SOURCES)
     cmd.extend(ldflags)
+    cmd.extend(ldlibs)
     cmd.extend(["-o", str(binary)])
     proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
     if proc.stdout:

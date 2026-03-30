@@ -1,6 +1,6 @@
 # Compliance Corpus
 
-This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures. The current committed suites cover string built-ins, official and repo-authored `jsval` value semantics including test262 strict-equality and logical-not slices, explicit object/array promotion flows, shallow capacity-planned promotion of selected parsed subtrees, and native object/array helpers such as own-property checks, delete, overwrite, push, and observable dense length writes.
+This directory is the stable landing zone for real JavaScript compliance tests and their generated `jsmx`-targeted C fixtures. The current committed suites cover string built-ins, official and repo-authored `jsval` value semantics including test262 strict-equality, logical-operator slices (`!`, `&&`, `||`), and primitive numeric coercion/arithmetic slices, explicit object/array promotion flows, shallow capacity-planned promotion of selected parsed subtrees, and native object/array helpers such as own-property checks, delete, overwrite, push, and observable dense length writes.
 
 Layout:
 
@@ -8,7 +8,7 @@ Layout:
 - `generated/`: committed C fixtures translated from those JS tests
 - `manifest.json`: source-to-generated mapping, expected outcome metadata, and runner contract
 
-The repository does not regenerate these fixtures in `make`. Translation is an authoring workflow; committed outputs are the build and review artifacts. The committed fixtures are compiled and executed by the manifest-driven `make test_compliance` path. Manifest entries may be expected to `pass` or remain `known_unsupported` when the upstream JS surface still exceeds the current `jsmx` API.
+The repository does not regenerate these fixtures in `make`. Translation is an authoring workflow; committed outputs are the build and review artifacts. The committed fixtures are compiled and executed by the manifest-driven `make test_compliance` path. Manifest entries may be expected to `pass` or remain `known_unsupported` when the upstream JS surface still exceeds the current `jsmx` API. The runner respects `CFLAGS`, `LDFLAGS`, and `LDLIBS`, so the same corpus can be checked against both the default numeric backend and the `USE_LIBC` matrix.
 
 For official coverage, prefer a real upstream source file plus one idiomatic generated translation. Repo-authored sources should be reserved for `jsmx`-specific contracts that the upstream suite does not express well, such as JSON-backed parity or planned-capacity behavior.
 

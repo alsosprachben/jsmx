@@ -102,9 +102,16 @@ int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t
 int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);
 int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len);
 
+int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);
+int jsval_unary_plus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
+int jsval_unary_minus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
 int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_multiply(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_divide(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
+int jsval_remainder(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr);
 int jsval_method_string_to_lower_case(jsval_region_t *region, jsval_t this_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_to_upper_case(jsval_region_t *region, jsval_t this_value,

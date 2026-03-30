@@ -118,6 +118,50 @@ static generated_status_t generated_expect_number(jsval_region_t *region, jsval_
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_positive_zero(jsval_t value,
+		char *detail, size_t cap)
+{
+	if (value.kind != JSVAL_KIND_NUMBER || value.as.number != 0.0
+			|| signbit(value.as.number)) {
+		return generated_failf(detail, cap,
+				"expected numeric +0 result");
+	}
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_expect_negative_zero(jsval_t value,
+		char *detail, size_t cap)
+{
+	if (value.kind != JSVAL_KIND_NUMBER || value.as.number != 0.0
+			|| !signbit(value.as.number)) {
+		return generated_failf(detail, cap,
+				"expected numeric -0 result");
+	}
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_expect_nan_value(jsval_t value,
+		char *detail, size_t cap)
+{
+	if (value.kind != JSVAL_KIND_NUMBER || !isnan(value.as.number)) {
+		return generated_failf(detail, cap,
+				"expected NaN numeric result");
+	}
+	return GENERATED_PASS;
+}
+
+static jsval_t generated_logical_and(jsval_region_t *region, jsval_t left,
+		jsval_t right)
+{
+	return jsval_truthy(region, left) ? right : left;
+}
+
+static jsval_t generated_logical_or(jsval_region_t *region, jsval_t left,
+		jsval_t right)
+{
+	return jsval_truthy(region, left) ? left : right;
+}
+
 static generated_status_t generated_smoke_json_promote_emit(char *detail, size_t cap)
 {
 	static const uint8_t input[] =
@@ -429,6 +473,243 @@ static generated_status_t generated_smoke_jsval_logical_not(char *detail,
 	if (c != 3) {
 		return generated_failf(detail, cap,
 				"expected truthy if/else counter to reach 3, got %d", c);
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_logical_and_or(char *detail,
+		size_t cap)
+{
+	uint8_t storage[1024];
+	jsval_region_t region;
+	jsval_t empty_string;
+	jsval_t one_string;
+	jsval_t minus_one_string;
+	jsval_t x_string;
+	jsval_t result;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &empty_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"1", 1, &one_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"1\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"-1", 2,
+			&minus_one_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"-1\")");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &x_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(\"x\")");
+	}
+
+	result = generated_logical_and(&region, jsval_bool(0), jsval_bool(1));
+	if (jsval_strict_eq(&region, result, jsval_bool(0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected false && true to return false");
+	}
+	result = generated_logical_and(&region, jsval_bool(1), jsval_bool(0));
+	if (jsval_strict_eq(&region, result, jsval_bool(0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected true && false to return false");
+	}
+	result = generated_logical_and(&region, jsval_number(-0.0), jsval_number(-1.0));
+	status = generated_expect_negative_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_and(&region, jsval_number(0.0), jsval_number(-1.0));
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_and(&region, jsval_number(NAN), jsval_number(1.0));
+	status = generated_expect_nan_value(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_and(&region, empty_string, one_string);
+	status = generated_expect_string(&region, result, (const uint8_t *)"", 0,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_and(&region, one_string, x_string);
+	status = generated_expect_string(&region, result, (const uint8_t *)"x", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	result = generated_logical_or(&region, jsval_bool(0), jsval_bool(1));
+	if (jsval_strict_eq(&region, result, jsval_bool(1)) != 1) {
+		return generated_failf(detail, cap,
+				"expected false || true to return true");
+	}
+	result = generated_logical_or(&region, jsval_number(0.0), jsval_number(-0.0));
+	status = generated_expect_negative_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_or(&region, jsval_number(-0.0), jsval_number(0.0));
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_or(&region, empty_string, one_string);
+	status = generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_or(&region, jsval_number(-1.0), jsval_number(1.0));
+	status = generated_expect_number(&region, result, -1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	result = generated_logical_or(&region, minus_one_string, x_string);
+	status = generated_expect_string(&region, result, (const uint8_t *)"-1", 2,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_numeric_coercion(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"truth\":true,\"nothing\":null,\"one\":\"1\",\"spaces\":\"   \",\"bad\":\"x\",\"inf\":\"Infinity\",\"upper\":\"INFINITY\"}";
+	uint8_t storage[4096];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t truth;
+	jsval_t nothing;
+	jsval_t one;
+	jsval_t spaces;
+	jsval_t bad;
+	jsval_t inf;
+	jsval_t upper;
+	jsval_t result;
+	double number;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"truth", 5,
+			&truth) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+				&nothing) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"one", 3,
+				&one) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"spaces", 6,
+				&spaces) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"bad", 3,
+				&bad) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"inf", 3,
+				&inf) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"upper", 5,
+				&upper) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+
+	if (jsval_to_number(&region, jsval_undefined(), &number) < 0 || !isnan(number)) {
+		return generated_failf(detail, cap,
+				"expected undefined ToNumber result to be NaN");
+	}
+	if (jsval_to_number(&region, jsval_null(), &number) < 0 || number != 0.0) {
+		return generated_failf(detail, cap,
+				"expected null ToNumber result to be +0");
+	}
+	if (jsval_to_number(&region, truth, &number) < 0 || number != 1.0
+			|| jsval_to_number(&region, nothing, &number) < 0 || number != 0.0
+			|| jsval_to_number(&region, one, &number) < 0 || number != 1.0
+			|| jsval_to_number(&region, spaces, &number) < 0 || number != 0.0) {
+		return generated_failf(detail, cap,
+				"unexpected primitive ToNumber result");
+	}
+	if (jsval_to_number(&region, bad, &number) < 0 || !isnan(number)) {
+		return generated_failf(detail, cap,
+				"expected invalid string ToNumber result to be NaN");
+	}
+	if (jsval_to_number(&region, inf, &number) < 0
+			|| !isinf(number) || number < 0) {
+		return generated_failf(detail, cap,
+				"expected exact Infinity ToNumber result");
+	}
+	if (jsval_to_number(&region, upper, &number) < 0 || !isnan(number)) {
+		return generated_failf(detail, cap,
+				"expected INFINITY ToNumber result to be NaN");
+	}
+
+	if (jsval_unary_plus(&region, truth, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_plus(true)");
+	}
+	status = generated_expect_number(&region, result, 1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_unary_plus(&region, jsval_null(), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_plus(null)");
+	}
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_unary_plus(&region, upper, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_plus(INFINITY)");
+	}
+	status = generated_expect_nan_value(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_unary_minus(&region, jsval_bool(0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_minus(false)");
+	}
+	status = generated_expect_negative_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_unary_minus(&region, jsval_number(-0.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_minus(-0)");
+	}
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_subtract(&region, jsval_bool(1), jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_subtract(true, 1)");
+	}
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_multiply(&region, jsval_bool(1), jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_multiply(true, true)");
+	}
+	status = generated_expect_number(&region, result, 1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_divide(&region, jsval_bool(1), jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_divide(true, true)");
+	}
+	status = generated_expect_number(&region, result, 1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_remainder(&region, jsval_bool(1), jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_remainder(true, true)");
+	}
+	status = generated_expect_positive_zero(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
 	}
 
 	return GENERATED_PASS;
@@ -1363,6 +1644,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_strict_equality", generated_smoke_jsval_strict_equality},
 	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
+	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
+	{"smoke", "jsval_numeric_coercion", generated_smoke_jsval_numeric_coercion},
 	{"smoke", "jsval_json_value_parity", generated_smoke_jsval_json_value_parity},
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},

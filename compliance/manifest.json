@@ -448,6 +448,226 @@
       "notes": "Translated against jsval_truthy for the primitive if/else truthiness checks from the real upstream test262 file."
     },
     {
+      "id": "test262-values-S11.11.1_A3_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.1_A3_T1.js",
+      "generated": "compliance/generated/values/test262/S11.11.1_A3_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-and over primitive boolean operands; the Boolean-object checks from the upstream file are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.11.1_A3_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.1_A3_T2.js",
+      "generated": "compliance/generated/values/test262/S11.11.1_A3_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-and over primitive numeric operands, preserving the signed-zero and NaN cases; the Number-object checks are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.11.1_A3_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.1_A3_T3.js",
+      "generated": "compliance/generated/values/test262/S11.11.1_A3_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-and over primitive string operands; the String-object check is intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.11.1_A4_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.1_A4_T1.js",
+      "generated": "compliance/generated/values/test262/S11.11.1_A4_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-and over primitive boolean operands for the truthy-left branch; the Boolean-object checks from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.11.1_A4_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.1_A4_T3.js",
+      "generated": "compliance/generated/values/test262/S11.11.1_A4_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-and over primitive string operands for the truthy-left branch; the String-object checks from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.11.2_A3_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.2_A3_T1.js",
+      "generated": "compliance/generated/values/test262/S11.11.2_A3_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-or over primitive boolean operands; the Boolean-object checks from the upstream file are intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.11.2_A3_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.2_A3_T2.js",
+      "generated": "compliance/generated/values/test262/S11.11.2_A3_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-or over primitive numeric operands, preserving the signed-zero cases; the Number-object checks from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.11.2_A3_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.2_A3_T3.js",
+      "generated": "compliance/generated/values/test262/S11.11.2_A3_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-or over primitive string operands; the String-object check is intentionally omitted at the flattened layer."
+    },
+    {
+      "id": "test262-values-S11.11.2_A4_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.2_A4_T2.js",
+      "generated": "compliance/generated/values/test262/S11.11.2_A4_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-or over primitive numeric operands for the truthy-left branch; the Number-object checks from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.11.2_A4_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.11.2_A4_T3.js",
+      "generated": "compliance/generated/values/test262/S11.11.2_A4_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against logical-or over primitive string operands for the truthy-left branch; the String-object checks from the upstream file are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S9.3_A1_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.3_A1_T2.js",
+      "generated": "compliance/generated/values/test262/S9.3_A1_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_to_number and unary plus for the primitive undefined-to-NaN coercion cases."
+    },
+    {
+      "id": "test262-values-S9.3_A2_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.3_A2_T2.js",
+      "generated": "compliance/generated/values/test262/S9.3_A2_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_to_number and unary plus for the primitive null-to-+0 coercion case."
+    },
+    {
+      "id": "test262-values-S9.3_A3_T2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S9.3_A3_T2.js",
+      "generated": "compliance/generated/values/test262/S9.3_A3_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_to_number and unary plus for primitive boolean-to-number coercion, including the +0 sign check for false."
+    },
+    {
+      "id": "test262-values-S11.4.6_A3_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.6_A3_T3.js",
+      "generated": "compliance/generated/values/test262/S11.4.6_A3_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_to_number and unary plus for primitive string coercion, preserving the numeric and invalid-string cases while omitting the wrapper-object check."
+    },
+    {
+      "id": "test262-values-S11.4.7_A3_T1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.7_A3_T1.js",
+      "generated": "compliance/generated/values/test262/S11.4.7_A3_T1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against unary minus over primitive booleans, preserving the primitive cases and omitting the Boolean-object case."
+    },
+    {
+      "id": "test262-values-S11.4.7_A3_T3",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.7_A3_T3.js",
+      "generated": "compliance/generated/values/test262/S11.4.7_A3_T3.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against unary minus over primitive strings, preserving the primitive numeric and invalid-string cases while omitting the wrapper-object check."
+    },
+    {
+      "id": "test262-values-S11.4.7_A4.2",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.4.7_A4.2.js",
+      "generated": "compliance/generated/values/test262/S11.4.7_A4.2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated directly against unary minus for the signed-zero negation edge cases."
+    },
+    {
+      "id": "test262-values-S11.6.2_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.6.2_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.6.2_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_subtract for the primitive boolean subtraction case; the wrapper-object checks are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.6.2_A3_T2.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.6.2_A3_T2.1.js",
+      "generated": "compliance/generated/values/test262/S11.6.2_A3_T2.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_subtract for primitive boolean/number subtraction; the wrapper-object checks are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.5.1_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.5.1_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.5.1_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_multiply for the primitive boolean multiplication case; the wrapper-object checks are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.5.2_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.5.2_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.5.2_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_divide for the primitive boolean division case; the wrapper-object checks are intentionally omitted."
+    },
+    {
+      "id": "test262-values-S11.5.3_A3_T1.1",
+      "suite": "values",
+      "source": "compliance/js/values/test262/S11.5.3_A3_T1.1.js",
+      "generated": "compliance/generated/values/test262/S11.5.3_A3_T1.1.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against jsval_remainder for the primitive boolean remainder case; the wrapper-object checks are intentionally omitted."
+    },
+    {
       "id": "jsmx-values-json-backed-primitive-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/json-backed-primitive-parity.js",

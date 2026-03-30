@@ -1,17 +1,19 @@
 # You can put your build options here
 -include config.mk
 
-all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod test_mnurl test_utf8 test_unicode test_collation test_jsval test_codegen test_compliance
+all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod test_mnurl test_utf8 test_unicode test_collation test_jsnum test_jsval test_codegen test_compliance
 
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
-libjsmx.a: jsmn.o jsval.o jsmethod.o
+libjsmx.a: jsmn.o jsnum.o jsval.o jsmethod.o
 	$(AR) rc $@ $^
 
 jsmn.o: jsmn.c jsmn.h
 
-jsval.o: jsval.c jsval.h jsmethod.h jsmn.h utf8.h
+jsnum.o: jsnum.c jsnum.h
+
+jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h utf8.h
 
 jsmethod.o: jsmethod.c jsmethod.h jsstr.h unicode.h
 
@@ -57,12 +59,16 @@ test_mnurl: test_mnurl.c mnurl.c jsstr.c unicode.c unicode_db.h unicode_collatio
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_jsval: test_jsval.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
-	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+test_jsnum: test_jsnum.c jsnum.c jsnum.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_codegen: test_codegen.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
-	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+test_jsval: test_jsval.c jsnum.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	./$@
+
+test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
 test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
@@ -114,11 +120,11 @@ test_collation: test_collation.c unicode_collation.h
 	./$@
 
 clean:
-	rm -f jsmn.o jsval.o jsmethod.o jsmndom.o jsmn_test.o example/simple.o example/jsondump.o
+	rm -f jsmn.o jsnum.o jsval.o jsmethod.o jsmndom.o jsmn_test.o example/simple.o example/jsondump.o
 	rm -f libjsmn.a libjsmx.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
-	rm -f test_jsstr test_jsmethod test_jsval test_codegen test_mnurl test_utf8 test_unicode test_collation
+	rm -f test_jsstr test_jsmethod test_jsnum test_jsval test_codegen test_mnurl test_utf8 test_unicode test_collation
 	rm -f test/test_default test/test_strict test/test_links test/test_strict_links test/test_emitter
 	rm -f test_compliance_*
 

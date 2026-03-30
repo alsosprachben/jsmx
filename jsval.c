@@ -2,10 +2,9 @@
 
 #include <errno.h>
 #include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
+#include "jsnum.h"
 #include "utf8.h"
 
 #define JSVAL_ALIGN sizeof(void *)
@@ -518,8 +517,6 @@ static int jsval_json_number_value(jsval_region_t *region, jsval_json_doc_t *doc
 	const uint8_t *start;
 	const uint8_t *stop;
 	size_t len;
-	char buf[128];
-	char *endptr;
 
 	if (jsval_json_token_kind(region, doc, index) != JSVAL_KIND_NUMBER) {
 		errno = EINVAL;
@@ -530,20 +527,7 @@ static int jsval_json_number_value(jsval_region_t *region, jsval_json_doc_t *doc
 	}
 
 	len = (size_t)(stop - start);
-	if (len >= sizeof(buf)) {
-		errno = ERANGE;
-		return -1;
-	}
-
-	memcpy(buf, start, len);
-	buf[len] = '\0';
-	*number_ptr = strtod(buf, &endptr);
-	if ((size_t)(endptr - buf) != len) {
-		errno = EINVAL;
-		return -1;
-	}
-
-	return 0;
+	return jsnum_parse_json(start, len, number_ptr);
 }
 
 static int jsval_json_string_copy_utf32(jsval_region_t *region, jsval_json_doc_t *doc, uint32_t index, uint32_t *buf, size_t cap, size_t *len_ptr)
@@ -924,16 +908,20 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 		return jsval_json_emit_ascii(state, "null");
 	case JSVAL_KIND_BOOL:
 		return jsval_json_emit_ascii(state, value.as.boolean ? "true" : "false");
-	case JSVAL_KIND_NUMBER:
-		if (!isfinite(value.as.number)) {
-			errno = ENOTSUP;
-			return -1;
-		}
-		{
-			char numbuf[64];
-			snprintf(numbuf, sizeof(numbuf), "%.17g", value.as.number);
-			return jsval_json_emit_ascii(state, numbuf);
-		}
+		case JSVAL_KIND_NUMBER:
+			if (!isfinite(value.as.number)) {
+				errno = ENOTSUP;
+				return -1;
+			}
+			{
+				char numbuf[64];
+				size_t len = 0;
+
+				if (jsnum_format(value.as.number, numbuf, sizeof(numbuf), &len) < 0) {
+					return -1;
+				}
+				return jsval_json_emit_append(state, (const uint8_t *)numbuf, len);
+			}
 	case JSVAL_KIND_STRING:
 		return jsval_json_emit_native_string(region, value, state);
 	case JSVAL_KIND_ARRAY:
@@ -1047,17 +1035,9 @@ static int jsval_ascii_copy_utf16(const char *text, uint16_t *buf, size_t cap, s
 
 static const char *jsval_number_text(double number, char buf[64])
 {
-	if (number != number) {
-		return "NaN";
+	if (jsnum_format(number, buf, 64, NULL) < 0) {
+		return NULL;
 	}
-	if (isinf(number)) {
-		if (number < 0) {
-			return "-Infinity";
-		}
-		return "Infinity";
-	}
-
-	snprintf(buf, 64, "%.17g", number);
 	return buf;
 }
 
@@ -1209,7 +1189,52 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	return -1;
 }
 
-static int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
+static int jsval_ascii_space(uint8_t ch)
+{
+	switch (ch) {
+	case 0x09:
+	case 0x0A:
+	case 0x0B:
+	case 0x0C:
+	case 0x0D:
+	case 0x20:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int jsval_is_ascii_alpha(uint8_t ch)
+{
+	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+}
+
+static int jsval_exact_ascii(const uint8_t *buf, size_t len, const char *text)
+{
+	size_t text_len = strlen(text);
+	return len == text_len && memcmp(buf, text, text_len) == 0;
+}
+
+static int jsval_string_to_number(jsval_region_t *region, jsval_t value,
+		double *number_ptr)
+{
+	size_t len = 0;
+
+	if (jsval_string_copy_utf8(region, value, NULL, 0, &len) < 0) {
+		return -1;
+	}
+
+	{
+		uint8_t bytes[len ? len : 1];
+
+		if (len > 0 && jsval_string_copy_utf8(region, value, bytes, len, NULL) < 0) {
+			return -1;
+		}
+		return jsnum_parse_string(bytes, len, number_ptr);
+	}
+}
+
+int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 {
 	jsval_json_doc_t *doc;
 	int boolean;
@@ -1239,6 +1264,8 @@ static int jsval_to_number(jsval_region_t *region, jsval_t value, double *number
 		}
 		*number_ptr = value.as.number;
 		return 0;
+	case JSVAL_KIND_STRING:
+		return jsval_string_to_number(region, value, number_ptr);
 	default:
 		errno = ENOTSUP;
 		return -1;
@@ -2477,6 +2504,114 @@ int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *valu
 		*value_ptr = jsval_number(left_number + right_number);
 		return 0;
 	}
+}
+
+int jsval_unary_plus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
+{
+	double number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, value, &number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(number);
+	return 0;
+}
+
+int jsval_unary_minus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
+{
+	double number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, value, &number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(-number);
+	return 0;
+}
+
+int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, left, &left_number) < 0
+			|| jsval_to_number(region, right, &right_number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(left_number - right_number);
+	return 0;
+}
+
+int jsval_multiply(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, left, &left_number) < 0
+			|| jsval_to_number(region, right, &right_number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(left_number * right_number);
+	return 0;
+}
+
+int jsval_divide(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, left, &left_number) < 0
+			|| jsval_to_number(region, right, &right_number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(left_number / right_number);
+	return 0;
+}
+
+int jsval_remainder(jsval_region_t *region, jsval_t left, jsval_t right,
+		jsval_t *value_ptr)
+{
+	double left_number;
+	double right_number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, left, &left_number) < 0
+			|| jsval_to_number(region, right, &right_number) < 0) {
+		return -1;
+	}
+
+	*value_ptr = jsval_number(jsnum_remainder(left_number, right_number));
+	return 0;
 }
 
 int jsval_method_string_to_lower_case(jsval_region_t *region, jsval_t this_value,
