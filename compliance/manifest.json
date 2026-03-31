@@ -1588,6 +1588,94 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed concat results across the new jsval/jsmethod concat bridge."
     },
     {
+      "id": "test262-strings-search-S15.5.4.12_A2_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A2_T1.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A2_T1.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the optional PCRE2-backed jsregex search boundary, lowering the string argument to an explicit pattern string with empty flags."
+    },
+    {
+      "id": "test262-strings-search-S15.5.4.12_A2_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A2_T2.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A2_T2.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the optional PCRE2-backed jsregex search boundary for a basic case-sensitive miss."
+    },
+    {
+      "id": "test262-strings-search-S15.5.4.12_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A1_T2.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed Boolean receiver is modeled through an explicit coercion callback before regex search."
+    },
+    {
+      "id": "test262-strings-search-S15.5.4.12_A1_T10",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A1_T10.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A1_T10.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the object argument's toString hook is modeled through an explicit callback before the regex backend runs."
+    },
+    {
+      "id": "test262-strings-search-S15.5.4.12_A1_T11",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A1_T11.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A1_T11.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the object argument's throwing toString hook is modeled through an explicit coercion callback."
+    },
+    {
+      "id": "test262-strings-search-S15.5.4.12_A1_T14",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/S15.5.4.12_A1_T14.js",
+      "generated": "compliance/generated/strings/test262/search/S15.5.4.12_A1_T14.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the explicit pattern/flags regex boundary instead of modeling RegExp object identity."
+    },
+    {
+      "id": "test262-strings-search-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/search/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/search/this-value-not-obj-coercible.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the optional regex-backed search method while preserving RequireObjectCoercible(this)."
+    },
+    {
+      "id": "jsmx-strings-json-backed-regex-search-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-regex-search-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-regex-search-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regex search results through the new jsval bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

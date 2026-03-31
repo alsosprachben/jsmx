@@ -4,13 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jsmx_config.h"
 #include "jsstr.h"
 
 typedef enum jsmethod_error_kind_e {
 	JSMETHOD_ERROR_NONE = 0,
 	JSMETHOD_ERROR_TYPE = 1,
 	JSMETHOD_ERROR_RANGE = 2,
-	JSMETHOD_ERROR_ABRUPT = 3
+	JSMETHOD_ERROR_ABRUPT = 3,
+	JSMETHOD_ERROR_SYNTAX = 4
 } jsmethod_error_kind_t;
 
 typedef struct jsmethod_error_s {
@@ -185,6 +187,12 @@ int jsmethod_string_starts_with(int *result_ptr, jsmethod_value_t this_value,
 int jsmethod_string_ends_with(int *result_ptr, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, int have_end_position,
 		jsmethod_value_t end_position_value, jsmethod_error_t *error);
+#if JSMX_WITH_REGEX
+int jsmethod_string_search_regex(ssize_t *index_ptr,
+		jsmethod_value_t this_value, jsmethod_value_t pattern_value,
+		int have_flags, jsmethod_value_t flags_value,
+		jsmethod_error_t *error);
+#endif
 int jsmethod_string_normalize_measure(jsmethod_value_t this_value,
 		int have_form, jsmethod_value_t form_value,
 		jsmethod_string_normalize_sizes_t *sizes,

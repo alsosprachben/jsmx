@@ -1099,6 +1099,76 @@ test_string_search_methods(void)
 	(void)probe;
 }
 
+#if JSMX_WITH_REGEX
+static void
+test_string_regex_search_methods(void)
+{
+	static const uint8_t subject_utf8[] = "fooBar";
+	static const uint8_t pattern_utf8[] = "bar";
+	static const uint8_t flags_i[] = "i";
+	uint16_t storage[16];
+	jsstr16_t probe;
+	jsmethod_error_t error;
+	ssize_t index;
+	int flag_calls = 0;
+	callback_ctx_t throw_ctx = {1, NULL, 0, NULL};
+	callback_ctx_t later_flags_ctx = {0, (const uint16_t[]){'i'}, 1, &flag_calls};
+
+	jsstr16_init_from_buf(&probe, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8(subject_utf8,
+				sizeof(subject_utf8) - 1),
+			jsmethod_value_string_utf8(pattern_utf8,
+				sizeof(pattern_utf8) - 1),
+			0, jsmethod_value_undefined(), &error) == 0);
+	assert(index == -1);
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8(subject_utf8,
+				sizeof(subject_utf8) - 1),
+			jsmethod_value_string_utf8(pattern_utf8,
+				sizeof(pattern_utf8) - 1),
+			1, jsmethod_value_string_utf8(flags_i, sizeof(flags_i) - 1),
+			&error) == 0);
+	assert(index == 3);
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8((const uint8_t *)"bananas", 7),
+			jsmethod_value_string_utf8((const uint8_t *)"na", 2),
+			1, jsmethod_value_string_utf8((const uint8_t *)"y", 1),
+			&error) == 0);
+	assert(index == -1);
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8(subject_utf8,
+				sizeof(subject_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"[", 1),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_SYNTAX);
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8(subject_utf8,
+				sizeof(subject_utf8) - 1),
+			jsmethod_value_string_utf8(pattern_utf8,
+				sizeof(pattern_utf8) - 1),
+			1, jsmethod_value_string_utf8((const uint8_t *)"z", 1),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_SYNTAX);
+
+	assert(jsmethod_string_search_regex(&index,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			jsmethod_value_string_utf8(pattern_utf8,
+				sizeof(pattern_utf8) - 1),
+			1, jsmethod_value_coercible(&later_flags_ctx, callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(flag_calls == 0);
+
+	(void)probe;
+}
+#endif
+
 int
 main(void)
 {
@@ -1116,5 +1186,8 @@ main(void)
 	test_string_substr_trim_alias_methods();
 	test_string_pad_methods();
 	test_string_search_methods();
+#if JSMX_WITH_REGEX
+	test_string_regex_search_methods();
+#endif
 	return 0;
 }

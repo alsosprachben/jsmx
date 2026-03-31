@@ -16,6 +16,7 @@ RUNTIME_SOURCES = [
     "jsnum.c",
     "jsval.c",
     "jsmethod.c",
+    "jsregex.c",
     "jsstr.c",
     "unicode.c",
     "utf8.c",
@@ -33,6 +34,38 @@ TRANSLATION_MODES = {
     "idiomatic_slow_path",
     "literal",
 }
+
+KNOWN_FEATURES = {
+    "regex",
+}
+
+
+def parse_preprocessor_defines():
+    defines = {}
+    for token in shlex.split(os.environ.get("CFLAGS", "")):
+        if not token.startswith("-D"):
+            continue
+        define = token[2:]
+        if "=" in define:
+            name, value = define.split("=", 1)
+        else:
+            name, value = define, "1"
+        defines[name] = value
+    return defines
+
+
+def enabled_features():
+    features = set()
+    env_features = os.environ.get("JSMX_FEATURES", "")
+    if env_features:
+        features.update(
+            feature.strip() for feature in env_features.split(",") if feature.strip()
+        )
+
+    defines = parse_preprocessor_defines()
+    if defines.get("JSMX_WITH_REGEX") == "1":
+        features.add("regex")
+    return features
 
 
 def status_from_exit(contract, code):
@@ -145,6 +178,7 @@ def report_case_result(result, contract):
 def validate_case(case):
     lowering_class = case.get("lowering_class")
     translation_mode = case.get("translation_mode")
+    required_features = case.get("required_features", [])
     if lowering_class not in LOWERING_CLASSES:
         print(
             f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
@@ -155,6 +189,14 @@ def validate_case(case):
         print(
             f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
             f"invalid translation_mode {translation_mode!r}"
+        )
+        return False
+    if not isinstance(required_features, list) or any(
+        feature not in KNOWN_FEATURES for feature in required_features
+    ):
+        print(
+            f"MANIFEST FAIL {case.get('suite', '?')}/{case.get('id', '?')}: "
+            f"invalid required_features {required_features!r}"
         )
         return False
     return True
@@ -171,8 +213,10 @@ def main():
     cases = manifest["cases"]
     built = 0
     passed = 0
+    skipped = 0
     class_counts = Counter()
     mode_counts = Counter()
+    active_features = enabled_features()
     jobs = worker_count(len(cases))
 
     with tempfile.TemporaryDirectory(prefix="jsmx-compliance-", dir="/tmp") as tmpdir:
@@ -194,7 +238,9 @@ def main():
                     execute_case, repo_root, tmpdir, case, contract, runtime_archive
                 )
                 for case in cases
+                if set(case.get("required_features", [])) <= active_features
             ]
+            skipped = len(cases) - len(futures)
             for future in futures:
                 result = future.result()
                 built += 1
@@ -203,6 +249,8 @@ def main():
                 passed += 1
 
     print(f"compliance cases: {passed}/{built} matched expected status")
+    if skipped:
+        print(f"skipped cases: {skipped}")
     print(
         "lowering classes: "
         + ", ".join(

@@ -1,0 +1,12 @@
+{
+  "name": "jsmx",
+  "version": "1.0.0",
+  "features": {
+    "regex": {
+      "description": "Enable the optional PCRE2-backed regex module.",
+      "dependencies": [
+        "pcre2"
+      ]
+    }
+  }
+}

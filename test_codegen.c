@@ -2228,6 +2228,109 @@ static generated_status_t generated_smoke_jsmethod_concat_abrupt(
 	return GENERATED_PASS;
 }
 
+#if JSMX_WITH_REGEX
+static generated_status_t generated_smoke_jsval_method_regex_search(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"text\":\"fooBar\",\"pattern\":\"bar\",\"flags\":\"i\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"fooBar\",\"pattern\":\"bar\",\"flags\":\"i\",\"search\":3}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t flags;
+	jsval_t result;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0 ||
+			jsval_object_get_utf8(&region, root, (const uint8_t *)"pattern", 7,
+			&pattern) < 0 ||
+			jsval_object_get_utf8(&region, root, (const uint8_t *)"flags", 5,
+			&flags) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(regex)");
+	}
+	if (jsval_method_string_search_regex(&region, text, pattern, 1, flags,
+			&result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_search_regex failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_number(&region, result, 3.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 4) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"search", 6,
+			result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(search)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_regex_search_abrupt(
+		char *detail, size_t cap)
+{
+	static const uint8_t subject_utf8[] = "fooBar";
+	static const uint16_t flags_i[] = {'i'};
+	generated_callback_ctx_t throw_ctx = {1};
+	int flag_calls = 0;
+	generated_callback_ctx_t flags_ctx = {0, flags_i, 1, &flag_calls};
+	jsmethod_error_t error;
+	ssize_t index;
+
+	if (jsmethod_string_search_regex(&index,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			jsmethod_value_string_utf8((const uint8_t *)"bar", 3),
+			1, jsmethod_value_coercible(&flags_ctx, generated_callback_to_string),
+			&error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt regex receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT regex receiver coercion, got %d",
+				(int)error.kind);
+	}
+	if (flag_calls != 0) {
+		return generated_failf(detail, cap,
+				"expected later regex flags coercion not to run");
+	}
+
+	if (jsmethod_string_search_regex(&index,
+			jsmethod_value_string_utf8(subject_utf8,
+				sizeof(subject_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"[", 1),
+			0, jsmethod_value_undefined(), &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected invalid regular expression to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_SYNTAX) {
+		return generated_failf(detail, cap,
+				"expected SYNTAX regex error, got %d",
+				(int)error.kind);
+	}
+
+	return GENERATED_PASS;
+}
+#endif
+
 static generated_status_t generated_smoke_jsval_method_accessor(char *detail,
 		size_t cap)
 {
@@ -2904,6 +3007,9 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_substr_trim_alias", generated_smoke_jsval_method_substr_trim_alias},
 	{"smoke", "jsval_method_pad", generated_smoke_jsval_method_pad},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
+#if JSMX_WITH_REGEX
+	{"smoke", "jsval_method_regex_search", generated_smoke_jsval_method_regex_search},
+#endif
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
 	{"smoke", "jsmethod_concat_abrupt", generated_smoke_jsmethod_concat_abrupt},
 	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
@@ -2911,6 +3017,9 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsmethod_repeat_abrupt", generated_smoke_jsmethod_repeat_abrupt},
 	{"smoke", "jsmethod_pad_abrupt", generated_smoke_jsmethod_pad_abrupt},
 	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
+#if JSMX_WITH_REGEX
+	{"smoke", "jsmethod_regex_search_abrupt", generated_smoke_jsmethod_regex_search_abrupt},
+#endif
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

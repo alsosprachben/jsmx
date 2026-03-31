@@ -47,6 +47,8 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
   - case conversion
   - search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`,
     `endsWith`)
+  - feature-gated regex search through the explicit `jsregex` / `jsmethod`
+    boundary
   - accessors (`charAt`, `at`, `charCodeAt`, `codePointAt`)
   - substring extraction (`slice`, `substring`, `substr`)
   - well-formedness methods
@@ -113,6 +115,11 @@ Every manifest entry should also declare one `translation_mode`:
   - the fixture intentionally mirrors the upstream test structure more directly
 
 Prefer `idiomatic_flattened` and `idiomatic_slow_path` over `literal` unless literal structure is itself what needs review.
+
+When a fixture depends on an optional backend, add `required_features` in the
+manifest and keep the generated code routed through `jsregex`, `jsmethod`, or
+`jsval` entrypoints. Do not emit backend-specific calls like `pcre2_*`
+directly in committed fixtures.
 
 ## Generated File Rules
 

@@ -1474,6 +1474,13 @@ typedef int (*jsval_method_string_bool_fn)(int *result_ptr,
 		int have_position, jsmethod_value_t position_value,
 		jsmethod_error_t *error);
 
+#if JSMX_WITH_REGEX
+typedef int (*jsval_method_string_regex_index_fn)(ssize_t *index_ptr,
+		jsmethod_value_t this_value, jsmethod_value_t pattern_value,
+		int have_flags, jsmethod_value_t flags_value,
+		jsmethod_error_t *error);
+#endif
+
 static int jsval_method_string_unary_bridge(jsval_region_t *region,
 		jsval_t this_value, size_t expansion_factor,
 		jsval_method_unary_fn fn, jsval_t *value_ptr,
@@ -2267,6 +2274,66 @@ jsval_method_string_bool_bridge(jsval_region_t *region, jsval_t this_value,
 	*value_ptr = jsval_bool(result);
 	return 0;
 }
+
+#if JSMX_WITH_REGEX
+static int
+jsval_method_string_regex_index_bridge(jsval_region_t *region,
+		jsval_t this_value, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value,
+		jsval_method_string_regex_index_fn fn, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap;
+	size_t pattern_storage_cap;
+	size_t flags_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t pattern_method_value;
+	jsmethod_value_t flags_method_value = jsmethod_value_undefined();
+	ssize_t index;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, pattern_value, &pattern_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_flags &&
+			jsval_value_utf16_len(region, flags_value, &flags_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t pattern_storage[pattern_storage_cap ? pattern_storage_cap : 1];
+		uint16_t flags_storage[flags_storage_cap ? flags_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (jsval_method_value_from_jsval(region, pattern_value, pattern_storage,
+				pattern_storage_cap, &pattern_method_value) < 0) {
+			return -1;
+		}
+		if (have_flags &&
+				jsval_method_value_from_jsval(region, flags_value, flags_storage,
+				flags_storage_cap, &flags_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&index, this_method_value, pattern_method_value, have_flags,
+				flags_method_value, error) < 0) {
+			return -1;
+		}
+	}
+
+	*value_ptr = jsval_number((double)index);
+	return 0;
+}
+#endif
 
 int jsval_method_string_normalize_measure(jsval_region_t *region,
 		jsval_t this_value, int have_form, jsval_t form_value,
@@ -4253,6 +4320,19 @@ jsval_method_string_ends_with(jsval_region_t *region, jsval_t this_value,
 			have_end_position, end_position_value,
 			jsmethod_string_ends_with, value_ptr, error);
 }
+
+#if JSMX_WITH_REGEX
+int
+jsval_method_string_search_regex(jsval_region_t *region,
+		jsval_t this_value, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_regex_index_bridge(region, this_value,
+			pattern_value, have_flags, flags_value,
+			jsmethod_string_search_regex, value_ptr, error);
+}
+#endif
 
 int jsval_promote_object_shallow_measure(jsval_region_t *region, jsval_t object,
 		size_t prop_cap, size_t *bytes_ptr)

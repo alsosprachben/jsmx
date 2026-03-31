@@ -1,5 +1,6 @@
 #include "jsmethod.h"
 #include "jsnum.h"
+#include "jsregex.h"
 
 #include <errno.h>
 #include <math.h>
@@ -1918,6 +1919,81 @@ jsmethod_string_ends_with(int *result_ptr, jsmethod_value_t this_value,
 		return 0;
 	}
 }
+
+#if JSMX_WITH_REGEX
+int
+jsmethod_string_search_regex(ssize_t *index_ptr,
+		jsmethod_value_t this_value, jsmethod_value_t pattern_value,
+		int have_flags, jsmethod_value_t flags_value,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t pattern_len;
+	size_t flags_len = 0;
+	jsstr16_t this_str;
+	jsstr16_t pattern_str;
+	jsstr16_t flags_str;
+	jsregex_search_result_t result;
+
+	if (index_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(pattern_value, 0, &pattern_len,
+			error) < 0) {
+		return -1;
+	}
+	if (have_flags && flags_value.kind != JSMETHOD_VALUE_UNDEFINED &&
+			jsmethod_measure_value_utf16_len(flags_value, 0, &flags_len,
+			error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+		uint16_t pattern_storage[pattern_len ? pattern_len : 1];
+		uint16_t flags_storage[flags_len ? flags_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		jsstr16_init_from_buf(&pattern_str, (const char *)pattern_storage,
+				sizeof(pattern_storage));
+		jsstr16_init_from_buf(&flags_str, (const char *)flags_storage,
+				sizeof(flags_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_value_to_string(&pattern_str, pattern_value, 0, error) < 0) {
+			return -1;
+		}
+		if (have_flags && flags_value.kind != JSMETHOD_VALUE_UNDEFINED) {
+			if (jsmethod_value_to_string(&flags_str, flags_value, 0, error) < 0) {
+				return -1;
+			}
+		} else {
+			flags_str.len = 0;
+		}
+		if (jsregex_search_utf16(this_str.codeunits, this_str.len,
+				pattern_str.codeunits, pattern_str.len,
+				flags_str.codeunits, flags_str.len, &result) < 0) {
+			if (errno == ENOTSUP) {
+				jsmethod_error_set(error, JSMETHOD_ERROR_SYNTAX,
+						"unsupported regular expression flags");
+			} else {
+				jsmethod_error_set(error, JSMETHOD_ERROR_SYNTAX,
+						"invalid regular expression");
+			}
+			return -1;
+		}
+		*index_ptr = result.matched ? (ssize_t)result.start : -1;
+		return 0;
+	}
+}
+#endif
 
 static int
 jsmethod_parse_form_utf16(const jsstr16_t *form_str,

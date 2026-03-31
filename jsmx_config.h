@@ -1,0 +1,16 @@
+#ifndef JSMX_CONFIG_H
+#define JSMX_CONFIG_H
+
+#ifndef JSMX_WITH_REGEX
+#define JSMX_WITH_REGEX 0
+#endif
+
+#ifndef JSMX_REGEX_BACKEND_PCRE2
+#define JSMX_REGEX_BACKEND_PCRE2 0
+#endif
+
+#if JSMX_REGEX_BACKEND_PCRE2 && !JSMX_WITH_REGEX
+#error "JSMX_REGEX_BACKEND_PCRE2 requires JSMX_WITH_REGEX=1"
+#endif
+
+#endif

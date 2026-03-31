@@ -6,16 +6,18 @@ all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod t
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
-libjsmx.a: jsmn.o jsnum.o jsval.o jsmethod.o
+libjsmx.a: jsmn.o jsnum.o jsval.o jsmethod.o jsregex.o
 	$(AR) rc $@ $^
 
 jsmn.o: jsmn.c jsmn.h
 
 jsnum.o: jsnum.c jsnum.h
 
-jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h utf8.h
+jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h utf8.h jsmx_config.h
 
-jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h
+jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h jsregex.h jsmx_config.h
+
+jsregex.o: jsregex.c jsregex.h jsmx_config.h
 
 libjsmndom.a: jsmndom.o
 
@@ -51,7 +53,7 @@ test_jsstr: test_jsstr.c jsstr.c unicode.c unicode_db.h unicode_collation.h unic
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
 
-test_jsmethod: test_jsmethod.c jsnum.c jsmethod.c jsstr.c unicode.c jsnum.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_jsmethod: test_jsmethod.c jsnum.c jsmethod.c jsregex.c jsstr.c unicode.c jsnum.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
@@ -63,11 +65,15 @@ test_jsnum: test_jsnum.c jsnum.c jsnum.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_jsval: test_jsval.c jsnum.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_jsregex: test_jsregex.c jsregex.c jsregex.h jsmx_config.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_jsval: test_jsval.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	./$@
+
+test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
@@ -124,7 +130,7 @@ clean:
 	rm -f libjsmn.a libjsmx.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump
-	rm -f test_jsstr test_jsmethod test_jsnum test_jsval test_codegen test_mnurl test_utf8 test_unicode test_collation
+	rm -f test_jsstr test_jsmethod test_jsnum test_jsregex test_jsval test_codegen test_mnurl test_utf8 test_unicode test_collation
 	rm -f test/test_default test/test_strict test/test_links test/test_strict_links test/test_emitter
 	rm -f test_compliance_*
 

@@ -579,6 +579,65 @@ static void test_method_search_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+#if JSMX_WITH_REGEX
+static void
+test_method_regex_search_bridge(void)
+{
+	static const char json[] = "{\"text\":\"fooBar\",\"pattern\":\"bar\",\"flags\":\"i\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t flags;
+	jsval_t native_foo;
+	jsval_t native_bar;
+	jsval_t native_y;
+	jsval_t native_bad_pattern;
+	jsval_t result;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"pattern", 7,
+			&pattern) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"flags", 5,
+			&flags) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"foo", 3,
+			&native_foo) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"bar", 3,
+			&native_bar) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"y", 1,
+			&native_y) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"[", 1,
+			&native_bad_pattern) == 0);
+
+	assert(jsval_method_string_search_regex(&region, text, pattern, 1, flags,
+			&result, &error) == 0);
+	assert_number_value(result, 3.0);
+
+	assert(jsval_method_string_search_regex(&region, text,
+			native_foo, 1, native_y, &result, &error) == 0);
+	assert_number_value(result, 0.0);
+
+	assert(jsval_method_string_search_regex(&region, text,
+			native_bar, 1, native_y, &result, &error) == 0);
+	assert_number_value(result, -1.0);
+
+	assert(jsval_method_string_search_regex(&region, text,
+			native_bad_pattern, 0, jsval_undefined(), &result, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_SYNTAX);
+
+	errno = 0;
+	assert(jsval_method_string_search_regex(&region, root, pattern, 0,
+			jsval_undefined(), &result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+#endif
+
 static void test_method_concat_bridge(void)
 {
 	static const char json[] = "{\"text\":\"lego\",\"suffix\":\"A\"}";
@@ -1926,6 +1985,9 @@ int main(void)
 	test_method_bridge();
 	test_method_normalize_bridge();
 	test_method_search_bridge();
+#if JSMX_WITH_REGEX
+	test_method_regex_search_bridge();
+#endif
 	test_method_concat_bridge();
 	test_method_accessor_bridge();
 	test_method_slice_substring_bridge();
