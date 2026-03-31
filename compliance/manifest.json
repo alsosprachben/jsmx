@@ -928,6 +928,256 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed slice/substring results across the new jsval/jsmethod substring bridge."
     },
     {
+      "id": "test262-strings-trim-15.5.4.20-4-10",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-10.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-10.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trim-15.5.4.20-4-27",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-27.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-27.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trim-15.5.4.20-4-41",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-41.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-41.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trim-15.5.4.20-4-47",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-47.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-47.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trim-15.5.4.20-4-57",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-57.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-57.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trim-15.5.4.20-4-59",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trim/15.5.4.20-4-59.js",
+      "generated": "compliance/generated/strings/test262/trim/15.5.4.20-4-59.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trim layer for ECMAScript trim-space handling."
+    },
+    {
+      "id": "test262-strings-trimStart-this-value-whitespace",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimStart/this-value-whitespace.js",
+      "generated": "compliance/generated/strings/test262/trimStart/this-value-whitespace.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimStart layer for the full ECMAScript WhiteSpace set."
+    },
+    {
+      "id": "test262-strings-trimStart-this-value-line-terminator",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimStart/this-value-line-terminator.js",
+      "generated": "compliance/generated/strings/test262/trimStart/this-value-line-terminator.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimStart layer for ECMAScript line-terminator trimming."
+    },
+    {
+      "id": "test262-strings-trimStart-this-value-boolean",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimStart/this-value-boolean.js",
+      "generated": "compliance/generated/strings/test262/trimStart/this-value-boolean.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimStart layer for Boolean receiver ToString coercion."
+    },
+    {
+      "id": "test262-strings-trimStart-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimStart/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/trimStart/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimStart layer, which enforces RequireObjectCoercible(this)."
+    },
+    {
+      "id": "test262-strings-trimEnd-this-value-whitespace",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimEnd/this-value-whitespace.js",
+      "generated": "compliance/generated/strings/test262/trimEnd/this-value-whitespace.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimEnd layer for the full ECMAScript WhiteSpace set."
+    },
+    {
+      "id": "test262-strings-trimEnd-this-value-line-terminator",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimEnd/this-value-line-terminator.js",
+      "generated": "compliance/generated/strings/test262/trimEnd/this-value-line-terminator.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimEnd layer for ECMAScript line-terminator trimming."
+    },
+    {
+      "id": "test262-strings-trimEnd-this-value-number",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimEnd/this-value-number.js",
+      "generated": "compliance/generated/strings/test262/trimEnd/this-value-number.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimEnd layer for Number receiver ToString coercion."
+    },
+    {
+      "id": "test262-strings-trimEnd-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/trimEnd/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/trimEnd/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod trimEnd layer, which enforces RequireObjectCoercible(this)."
+    },
+    {
+      "id": "test262-strings-repeat-count-coerced-to-zero-returns-empty-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/count-coerced-to-zero-returns-empty-string.js",
+      "generated": "compliance/generated/strings/test262/repeat/count-coerced-to-zero-returns-empty-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer for ToIntegerOrInfinity count coercion that collapses to zero."
+    },
+    {
+      "id": "test262-strings-repeat-count-is-zero-returns-empty-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/count-is-zero-returns-empty-string.js",
+      "generated": "compliance/generated/strings/test262/repeat/count-is-zero-returns-empty-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer for zero-count repetition."
+    },
+    {
+      "id": "test262-strings-repeat-count-less-than-zero-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/count-less-than-zero-throws.js",
+      "generated": "compliance/generated/strings/test262/repeat/count-less-than-zero-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer for RangeError count validation."
+    },
+    {
+      "id": "test262-strings-repeat-count-is-infinity-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/count-is-infinity-throws.js",
+      "generated": "compliance/generated/strings/test262/repeat/count-is-infinity-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer for RangeError count validation."
+    },
+    {
+      "id": "test262-strings-repeat-empty-string-returns-empty",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/empty-string-returns-empty.js",
+      "generated": "compliance/generated/strings/test262/repeat/empty-string-returns-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer for the empty-source fast path."
+    },
+    {
+      "id": "test262-strings-repeat-repeat-string-n-times",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/repeat-string-n-times.js",
+      "generated": "compliance/generated/strings/test262/repeat/repeat-string-n-times.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer with explicit output sizing before execution."
+    },
+    {
+      "id": "test262-strings-repeat-return-abrupt-from-count",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/return-abrupt-from-count.js",
+      "generated": "compliance/generated/strings/test262/repeat/return-abrupt-from-count.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a count callback models abrupt ToString/ToNumber coercion before jsmethod repeat surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-repeat-return-abrupt-from-this",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/return-abrupt-from-this.js",
+      "generated": "compliance/generated/strings/test262/repeat/return-abrupt-from-this.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models abrupt ToString(this) coercion before jsmethod repeat surfaces the typed method error."
+    },
+    {
+      "id": "test262-strings-repeat-this-is-null-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/this-is-null-throws.js",
+      "generated": "compliance/generated/strings/test262/repeat/this-is-null-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer, which enforces RequireObjectCoercible(this)."
+    },
+    {
+      "id": "test262-strings-repeat-this-is-undefined-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/repeat/this-is-undefined-throws.js",
+      "generated": "compliance/generated/strings/test262/repeat/this-is-undefined-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod repeat layer, which enforces RequireObjectCoercible(this)."
+    },
+    {
+      "id": "jsmx-strings-json-backed-trim-repeat-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-trim-repeat-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-trim-repeat-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed trim/repeat results across the new jsval/jsmethod bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

@@ -151,6 +151,19 @@ int jsval_method_string_to_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_is_well_formed(jsval_region_t *region,
 		jsval_t this_value, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_trim(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_trim_start(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_trim_end(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_repeat_measure(jsval_region_t *region,
+		jsval_t this_value, int have_count, jsval_t count_value,
+		jsmethod_string_repeat_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,
+		int have_count, jsval_t count_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_char_at(jsval_region_t *region, jsval_t this_value,
 		int have_position, jsval_t position_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);

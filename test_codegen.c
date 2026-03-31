@@ -2343,6 +2343,95 @@ static generated_status_t generated_smoke_jsmethod_slice_substring_abrupt(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_method_trim_repeat(
+		char *detail, size_t cap)
+{
+	static const uint8_t json[] = "{\"trim\":\"\\ufefffoo\\n\",\"repeat\":\"ha\"}";
+	static const uint8_t expected_json[] =
+			"{\"trim\":\"\\ufefffoo\\n\",\"repeat\":\"ha\",\"trimmed\":\"foo\",\"repeated\":\"hahaha\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t trim_text;
+	jsval_t repeat_text;
+	jsval_t result;
+	jsmethod_error_t error;
+	jsmethod_string_repeat_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, json, sizeof(json) - 1, 16, &root) != 0) {
+		return generated_failf(detail, cap, "failed to parse JSON input");
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 4) != 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_object_get_utf8(&region, root,
+			(const uint8_t *)"trim", 4, &trim_text) != 0) {
+		return generated_failf(detail, cap, "failed to fetch trim string");
+	}
+	if (jsval_object_get_utf8(&region, root,
+			(const uint8_t *)"repeat", 6, &repeat_text) != 0) {
+		return generated_failf(detail, cap, "failed to fetch repeat string");
+	}
+	if (jsval_method_string_trim(&region, trim_text, &result, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_trim failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_set_utf8(&region, root,
+			(const uint8_t *)"trimmed", 7, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(trimmed)");
+	}
+	if (jsval_method_string_repeat_measure(&region, repeat_text, 1,
+			jsval_number(3.0), &sizes, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_repeat_measure failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 6) {
+		return generated_failf(detail, cap,
+				"expected repeat result_len 6, got %zu", sizes.result_len);
+	}
+	if (jsval_method_string_repeat(&region, repeat_text, 1,
+			jsval_number(3.0), &result, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_repeat failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_set_utf8(&region, root,
+			(const uint8_t *)"repeated", 8, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(repeated)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_repeat_abrupt(
+		char *detail, size_t cap)
+{
+	generated_callback_ctx_t throw_ctx = {1};
+	uint16_t storage[8];
+	jsmethod_error_t error;
+	jsstr16_t out;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_repeat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"x", 1), 1,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			&error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt repeat count coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT repeat count, got %d", (int)error.kind);
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -2481,9 +2570,11 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
 	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
 	{"smoke", "jsval_method_slice_substring", generated_smoke_jsval_method_slice_substring},
+	{"smoke", "jsval_method_trim_repeat", generated_smoke_jsval_method_trim_repeat},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
 	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
+	{"smoke", "jsmethod_repeat_abrupt", generated_smoke_jsmethod_repeat_abrupt},
 	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},

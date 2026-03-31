@@ -673,6 +673,58 @@ static void test_method_slice_substring_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_trim_repeat_bridge(void)
+{
+	static const char json[] = "{\"trim\":\"\\ufefffoo\\n\",\"repeat\":\"ha\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t trim_text;
+	jsval_t repeat_text;
+	jsval_t result;
+	jsval_t expected;
+	jsmethod_error_t error;
+	jsmethod_string_repeat_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"trim", 4,
+			&trim_text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"repeat", 6,
+			&repeat_text) == 0);
+
+	assert(jsval_method_string_trim(&region, trim_text, &result, &error) == 0);
+	assert_string(&region, result, "foo");
+
+	assert(jsval_method_string_trim_start(&region, trim_text, &result,
+			&error) == 0);
+	assert(jsval_string_new_utf16(&region,
+			(const uint16_t[]){'f', 'o', 'o', '\n'}, 4, &expected) == 0);
+	assert(jsval_strict_eq(&region, result, expected) == 1);
+
+	assert(jsval_method_string_trim_end(&region, trim_text, &result,
+			&error) == 0);
+	assert(jsval_string_new_utf16(&region,
+			(const uint16_t[]){0xFEFF, 'f', 'o', 'o'}, 4, &expected) == 0);
+	assert(jsval_strict_eq(&region, result, expected) == 1);
+
+	assert(jsval_method_string_repeat_measure(&region, repeat_text, 1,
+			jsval_number(3.0), &sizes, &error) == 0);
+	assert(sizes.result_len == 6);
+	assert(jsval_method_string_repeat(&region, repeat_text, 1,
+			jsval_number(3.0), &result, &error) == 0);
+	assert_string(&region, result, "hahaha");
+
+	assert(jsval_method_string_repeat(&region, repeat_text, 1,
+			jsval_number(-1.0), &result, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_RANGE);
+
+	errno = 0;
+	assert(jsval_method_string_trim(&region, root, &result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_value_semantics(void)
 {
 	uint8_t storage[8192];
@@ -1705,6 +1757,7 @@ int main(void)
 	test_method_search_bridge();
 	test_method_accessor_bridge();
 	test_method_slice_substring_bridge();
+	test_method_trim_repeat_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();

@@ -431,6 +431,32 @@ jsmethod_clamp_position(size_t len, double position)
 }
 
 static int
+jsmethod_repeat_count(int have_count, jsmethod_value_t count_value,
+		size_t *count_ptr, jsmethod_error_t *error)
+{
+	double count;
+
+	if (count_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_count || count_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		*count_ptr = 0;
+		return 0;
+	}
+	if (jsmethod_value_to_integer_or_infinity(count_value, 0, &count, error) < 0) {
+		return -1;
+	}
+	if (count < 0.0 || count == INFINITY) {
+		jsmethod_error_set(error, JSMETHOD_ERROR_RANGE,
+				"invalid repeat count");
+		return -1;
+	}
+	*count_ptr = (size_t)count;
+	return 0;
+}
+
+static int
 jsmethod_start_position(size_t len, int have_position,
 		jsmethod_value_t position_value, size_t *start_ptr,
 		jsmethod_error_t *error)
@@ -761,6 +787,123 @@ jsmethod_string_is_well_formed(int *is_well_formed,
 	}
 	*is_well_formed = jsstr16_is_well_formed(&value);
 	return 0;
+}
+
+int
+jsmethod_string_trim(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error)
+{
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_this_to_string(out, this_value, error) < 0) {
+		return -1;
+	}
+	jsstr16_trim(out);
+	return 0;
+}
+
+int
+jsmethod_string_trim_start(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error)
+{
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_this_to_string(out, this_value, error) < 0) {
+		return -1;
+	}
+	jsstr16_trim_start(out);
+	return 0;
+}
+
+int
+jsmethod_string_trim_end(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error)
+{
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_this_to_string(out, this_value, error) < 0) {
+		return -1;
+	}
+	jsstr16_trim_end(out);
+	return 0;
+}
+
+int
+jsmethod_string_repeat_measure(jsmethod_value_t this_value,
+		int have_count, jsmethod_value_t count_value,
+		jsmethod_string_repeat_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	size_t input_len;
+	size_t count;
+
+	if (sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	sizes->result_len = 0;
+
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &input_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_repeat_count(have_count, count_value, &count, error) < 0) {
+		return -1;
+	}
+	if (input_len == 0 || count == 0) {
+		return 0;
+	}
+	if (count > SIZE_MAX / input_len) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	sizes->result_len = input_len * count;
+	return 0;
+}
+
+int
+jsmethod_string_repeat(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_count, jsmethod_value_t count_value,
+		jsmethod_error_t *error)
+{
+	jsmethod_string_repeat_sizes_t sizes;
+	size_t count;
+	jsstr16_t src;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_string_repeat_measure(this_value, have_count, count_value,
+			&sizes, error) < 0) {
+		return -1;
+	}
+	if (out->cap < sizes.result_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (sizes.result_len == 0) {
+		out->len = 0;
+		return 0;
+	}
+	if (jsmethod_this_to_string(out, this_value, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_repeat_count(have_count, count_value, &count, error) < 0) {
+		return -1;
+	}
+	if (count == 0 || out->len == 0) {
+		out->len = 0;
+		return 0;
+	}
+	src = *out;
+	return jsstr16_repeat(out, &src, count);
 }
 
 int

@@ -40,6 +40,8 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
 - Use `jsmethod` for JS string built-ins that need receiver or argument
   coercion:
   - normalize
+  - trimming (`trim`, `trimStart`, `trimEnd`)
+  - repetition (`repeat`)
   - case conversion
   - search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`,
     `endsWith`)

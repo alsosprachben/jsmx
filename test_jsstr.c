@@ -745,6 +745,33 @@ static void test_jsstr_normalize_sizing(void) {
             sizeof(src16_nfkd) / sizeof(src16_nfkd[0]));
 }
 
+static void test_jsstr_ecma_trim_space(void) {
+    uint32_t buf32[16];
+    uint16_t buf16[16];
+    uint8_t buf8[32];
+    jsstr32_t s32;
+    jsstr16_t s16;
+    jsstr8_t s8;
+
+    jsstr32_init_from_buf(&s32, (char *)buf32, sizeof(buf32));
+    jsstr32_set_from_utf32(&s32,
+            (const uint32_t[]){0xFEFF, 0x000A, 'a', 0x2028, 0x200B}, 5);
+    jsstr32_trim(&s32);
+    expect_jsstr32_eq(&s32, (const uint32_t[]){'a', 0x2028, 0x200B}, 3);
+
+    jsstr16_init_from_buf(&s16, (char *)buf16, sizeof(buf16));
+    jsstr16_set_from_utf16(&s16,
+            (const uint16_t[]){0x0009, 0x202F, 'a', 0x000D, 0xFEFF}, 5);
+    jsstr16_trim(&s16);
+    expect_jsstr16_eq(&s16, (const uint16_t[]){'a'}, 1);
+
+    jsstr8_init_from_buf(&s8, (char *)buf8, sizeof(buf8));
+    jsstr8_set_from_utf8(&s8,
+            (const uint8_t[]){'a', 0xE2, 0x80, 0x8B}, 4);
+    jsstr8_trim(&s8);
+    expect_jsstr8_eq(&s8, (const uint8_t[]){'a', 0xE2, 0x80, 0x8B}, 4);
+}
+
 void test_jsstr_locale_compare_ce() {
     struct pair { const uint32_t *a; const uint32_t *b; } pairs[] = {
         { L"o\u0308", L"\u00F6" },
@@ -811,5 +838,6 @@ int main() {
     test_jsstr_normalize_buffers();
     test_jsstr_normalize_forms();
     test_jsstr_normalize_sizing();
+    test_jsstr_ecma_trim_space();
     return 0;
 }

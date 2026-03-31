@@ -339,6 +339,30 @@ static inline int js_locale_stub_compare_u8(const uint8_t *a, int32_t la, const 
 #define JS_LOCALE_COMPARE_U8    js_locale_stub_compare_u8
 #endif
 
+static int
+js_ecma_is_trim_space(uint32_t cp)
+{
+	switch (cp) {
+	case 0x0009:
+	case 0x000A:
+	case 0x000B:
+	case 0x000C:
+	case 0x000D:
+	case 0x0020:
+	case 0x00A0:
+	case 0x1680:
+	case 0x2028:
+	case 0x2029:
+	case 0x202F:
+	case 0x205F:
+	case 0x3000:
+	case 0xFEFF:
+		return 1;
+	default:
+		return cp >= 0x2000 && cp <= 0x200A;
+	}
+}
+
 static int js_locale_is_lithuanian(const char *locale)
 {
     if (!locale || !locale[0]) {
@@ -1161,7 +1185,7 @@ void jsstr32_pad_end(jsstr32_t *s, size_t target_len) {
 
 void jsstr32_trim_start(jsstr32_t *s) {
     size_t i = 0;
-    while (i < s->len && JS_LOCALE_IS_SPACE(s->codepoints[i])) {
+    while (i < s->len && js_ecma_is_trim_space(s->codepoints[i])) {
         i++;
     }
     if (i > 0) {
@@ -1171,7 +1195,7 @@ void jsstr32_trim_start(jsstr32_t *s) {
 }
 
 void jsstr32_trim_end(jsstr32_t *s) {
-    while (s->len > 0 && JS_LOCALE_IS_SPACE(s->codepoints[s->len - 1])) {
+    while (s->len > 0 && js_ecma_is_trim_space(s->codepoints[s->len - 1])) {
         s->len--;
     }
 }
@@ -2096,7 +2120,7 @@ void jsstr16_pad_end(jsstr16_t *s, size_t target_len) {
 
 void jsstr16_trim_start(jsstr16_t *s) {
     size_t i = 0;
-    while (i < s->len && JS_LOCALE_IS_SPACE(s->codeunits[i])) {
+    while (i < s->len && js_ecma_is_trim_space(s->codeunits[i])) {
         i++;
     }
     if (i > 0) {
@@ -2106,7 +2130,7 @@ void jsstr16_trim_start(jsstr16_t *s) {
 }
 
 void jsstr16_trim_end(jsstr16_t *s) {
-    while (s->len > 0 && JS_LOCALE_IS_SPACE(s->codeunits[s->len - 1])) {
+    while (s->len > 0 && js_ecma_is_trim_space(s->codeunits[s->len - 1])) {
         s->len--;
     }
 }
@@ -2868,7 +2892,7 @@ void jsstr8_pad_end(jsstr8_t *s, size_t target_len) {
 
 void jsstr8_trim_start(jsstr8_t *s) {
     size_t i = 0;
-    while (i < s->len && JS_LOCALE_IS_SPACE((uint32_t)s->bytes[i])) {
+    while (i < s->len && js_ecma_is_trim_space((uint32_t)s->bytes[i])) {
         i++;
     }
     if (i > 0) {
@@ -2878,7 +2902,7 @@ void jsstr8_trim_start(jsstr8_t *s) {
 }
 
 void jsstr8_trim_end(jsstr8_t *s) {
-    while (s->len > 0 && JS_LOCALE_IS_SPACE((uint32_t)s->bytes[s->len - 1])) {
+    while (s->len > 0 && js_ecma_is_trim_space((uint32_t)s->bytes[s->len - 1])) {
         s->len--;
     }
 }

@@ -502,6 +502,88 @@ test_string_slice_substring_methods(void)
 }
 
 static void
+test_string_trim_repeat_methods(void)
+{
+	static const uint16_t trimmed[] = {'f', 'o', 'o'};
+	static const uint16_t trim_start_expected[] = {'f', 'o', 'o', ' ', '\n'};
+	static const uint16_t trim_end_expected[] = {0x00A0, 'f', 'o', 'o'};
+	static const uint16_t repeat_expected[] = {'h', 'a', 'h', 'a', 'h', 'a'};
+	uint16_t storage[64];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	jsmethod_string_repeat_sizes_t sizes;
+	callback_ctx_t throw_ctx = {1, NULL, 0};
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_trim(&out,
+			jsmethod_value_string_utf16(
+				(const uint16_t[]){0xFEFF, 'f', 'o', 'o', '\n'}, 5),
+			&error) == 0);
+	expect_utf16(&out, trimmed, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_trim_start(&out,
+			jsmethod_value_string_utf16(
+				(const uint16_t[]){'\t', '\n', 'f', 'o', 'o', ' ', '\n'}, 7),
+			&error) == 0);
+	expect_utf16(&out, trim_start_expected, 5);
+
+	out.len = 0;
+	assert(jsmethod_string_trim_end(&out,
+			jsmethod_value_string_utf16(
+				(const uint16_t[]){0x00A0, 'f', 'o', 'o', 0x2029}, 5),
+			&error) == 0);
+	expect_utf16(&out, trim_end_expected, 4);
+
+	assert(jsmethod_string_repeat_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"ha", 2), 1,
+			jsmethod_value_number(3.7), &sizes, &error) == 0);
+	assert(sizes.result_len == 6);
+
+	out.len = 0;
+	assert(jsmethod_string_repeat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"ha", 2), 1,
+			jsmethod_value_number(3.7), &error) == 0);
+	expect_utf16(&out, repeat_expected, 6);
+
+	out.len = 123;
+	assert(jsmethod_string_repeat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"ha", 2), 1,
+			jsmethod_value_number(NAN), &error) == 0);
+	assert(out.len == 0);
+	{
+		uint16_t tiny_buf[1];
+		jsstr16_t tiny_out;
+
+		jsstr16_init_from_buf(&tiny_out, (char *)tiny_buf, sizeof(tiny_buf));
+		assert(jsmethod_string_repeat(&tiny_out,
+				jsmethod_value_string_utf8((const uint8_t *)"ES2015", 6), 1,
+				jsmethod_value_number(NAN), &error) == 0);
+		assert(tiny_out.len == 0);
+	}
+
+	assert(jsmethod_string_repeat_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"x", 1), 1,
+			jsmethod_value_number(-1.0), &sizes, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_RANGE);
+
+	assert(jsmethod_string_repeat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"", 0), 1,
+			jsmethod_value_number(2147483647.0), &error) == 0);
+	assert(out.len == 0);
+
+	assert(jsmethod_string_repeat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"x", 1), 1,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	assert(jsmethod_string_trim(&out, jsmethod_value_null(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+}
+
+static void
 test_string_search_methods(void)
 {
 	static const uint8_t bananas_utf8[] = "bananas";
@@ -665,6 +747,7 @@ main(void)
 	test_well_formed_methods();
 	test_string_accessor_methods();
 	test_string_slice_substring_methods();
+	test_string_trim_repeat_methods();
 	test_string_search_methods();
 	return 0;
 }

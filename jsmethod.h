@@ -60,6 +60,10 @@ typedef struct jsmethod_string_normalize_sizes_s {
 	size_t result_len;
 } jsmethod_string_normalize_sizes_t;
 
+typedef struct jsmethod_string_repeat_sizes_s {
+	size_t result_len;
+} jsmethod_string_repeat_sizes_t;
+
 void jsmethod_error_clear(jsmethod_error_t *error);
 
 jsmethod_value_t jsmethod_value_undefined(void);
@@ -90,6 +94,19 @@ int jsmethod_string_to_well_formed(jsstr16_t *out,
 		jsmethod_value_t this_value, jsmethod_error_t *error);
 int jsmethod_string_is_well_formed(int *is_well_formed,
 		jsmethod_value_t this_value, uint16_t *storage, size_t storage_cap,
+		jsmethod_error_t *error);
+int jsmethod_string_trim(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+int jsmethod_string_trim_start(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+int jsmethod_string_trim_end(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+int jsmethod_string_repeat_measure(jsmethod_value_t this_value,
+		int have_count, jsmethod_value_t count_value,
+		jsmethod_string_repeat_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_repeat(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_count, jsmethod_value_t count_value,
 		jsmethod_error_t *error);
 int jsmethod_string_char_at(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_position, jsmethod_value_t position_value,
