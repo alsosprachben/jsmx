@@ -157,6 +157,10 @@ int jsval_method_string_trim_start(jsval_region_t *region, jsval_t this_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_trim_end(jsval_region_t *region, jsval_t this_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_trim_left(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_trim_right(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_repeat_measure(jsval_region_t *region,
 		jsval_t this_value, int have_count, jsval_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,
@@ -201,6 +205,10 @@ int jsval_method_string_slice(jsval_region_t *region, jsval_t this_value,
 int jsval_method_string_substring(jsval_region_t *region, jsval_t this_value,
 		int have_start, jsval_t start_value,
 		int have_end, jsval_t end_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_substr(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_length, jsval_t length_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 int jsval_method_string_index_of(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, int have_position, jsval_t position_value,

@@ -3892,6 +3892,20 @@ int jsval_method_string_trim_end(jsval_region_t *region, jsval_t this_value,
 			jsmethod_string_trim_end, value_ptr, error);
 }
 
+int jsval_method_string_trim_left(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_unary_bridge(region, this_value, 1,
+			jsmethod_string_trim_left, value_ptr, error);
+}
+
+int jsval_method_string_trim_right(jsval_region_t *region, jsval_t this_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_method_string_unary_bridge(region, this_value, 1,
+			jsmethod_string_trim_right, value_ptr, error);
+}
+
 int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,
 		int have_count, jsval_t count_value, jsval_t *value_ptr,
 		jsmethod_error_t *error)
@@ -3984,6 +3998,17 @@ jsval_method_string_substring(jsval_region_t *region, jsval_t this_value,
 	return jsval_method_string_range_bridge(region, this_value,
 			have_start, start_value, have_end, end_value,
 			jsmethod_string_substring, value_ptr, error);
+}
+
+int
+jsval_method_string_substr(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_length, jsval_t length_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_range_bridge(region, this_value,
+			have_start, start_value, have_length, length_value,
+			jsmethod_string_substr, value_ptr, error);
 }
 
 int

@@ -928,6 +928,106 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed slice/substring results across the new jsval/jsmethod substring bridge."
     },
     {
+      "id": "test262-strings-substr-start-negative",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/start-negative.js",
+      "generated": "compliance/generated/strings/test262/substr/start-negative.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer for negative start clamping and truncation toward zero."
+    },
+    {
+      "id": "test262-strings-substr-length-undef",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/length-undef.js",
+      "generated": "compliance/generated/strings/test262/substr/length-undef.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer for omitted and explicit undefined length handling."
+    },
+    {
+      "id": "test262-strings-substr-length-falsey",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/length-falsey.js",
+      "generated": "compliance/generated/strings/test262/substr/length-falsey.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer for falsey length coercions other than undefined."
+    },
+    {
+      "id": "test262-strings-substr-length-positive",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/length-positive.js",
+      "generated": "compliance/generated/strings/test262/substr/length-positive.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer for positive-length clamping within the receiver's code-unit length."
+    },
+    {
+      "id": "test262-strings-substr-surrogate-pairs",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/surrogate-pairs.js",
+      "generated": "compliance/generated/strings/test262/substr/surrogate-pairs.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer for UTF-16 code-unit extraction across surrogate-pair boundaries."
+    },
+    {
+      "id": "test262-strings-substr-this-non-obj-coerce",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/this-non-obj-coerce.js",
+      "generated": "compliance/generated/strings/test262/substr/this-non-obj-coerce.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substr layer, which enforces RequireObjectCoercible(this)."
+    },
+    {
+      "id": "test262-strings-substr-this-to-str-err",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/this-to-str-err.js",
+      "generated": "compliance/generated/strings/test262/substr/this-to-str-err.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream receiver object with a throwing toString hook is modeled as an explicit coercion callback before jsmethod substr runs."
+    },
+    {
+      "id": "test262-strings-substr-start-to-int-err",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/start-to-int-err.js",
+      "generated": "compliance/generated/strings/test262/substr/start-to-int-err.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: explicit start and length coercion callbacks preserve the abrupt-completion ordering and Symbol rejection outside the thin jsmethod substr layer."
+    },
+    {
+      "id": "test262-strings-substr-length-to-int-err",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substr/length-to-int-err.js",
+      "generated": "compliance/generated/strings/test262/substr/length-to-int-err.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream length object is modeled as an explicit coercion callback so abrupt completion and Symbol rejection stay outside the thin jsmethod substr layer."
+    },
+    {
+      "id": "jsmx-strings-json-backed-substr-trim-alias-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-substr-trim-alias-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-substr-trim-alias-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed substr/trimLeft/trimRight results across the jsval/jsmethod bridge. The official Annex B trimLeft/trimRight directories are metadata- and alias-identity-only, so their runtime behavior is covered here instead of through upstream fixtures."
+    },
+    {
       "id": "test262-strings-trim-15.5.4.20-4-10",
       "suite": "strings",
       "source": "compliance/js/strings/test262/trim/15.5.4.20-4-10.js",

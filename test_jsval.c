@@ -725,6 +725,55 @@ static void test_method_trim_repeat_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_substr_trim_alias_bridge(void)
+{
+	static const char json[] = "{\"text\":\"bananas\",\"trim\":\"\\ufefffoo\\n\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t trim_text;
+	jsval_t native_text;
+	jsval_t result;
+	jsval_t expected;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"trim", 4,
+			&trim_text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"bananas", 7,
+			&native_text) == 0);
+
+	assert(jsval_method_string_substr(&region, text, 1, jsval_number(1.0), 1,
+			jsval_number(3.0), &result, &error) == 0);
+	assert_string(&region, result, "ana");
+
+	assert(jsval_method_string_substr(&region, native_text, 1,
+			jsval_number(-3.0), 0, jsval_undefined(), &result, &error) == 0);
+	assert_string(&region, result, "nas");
+
+	assert(jsval_method_string_trim_left(&region, trim_text, &result,
+			&error) == 0);
+	assert(jsval_string_new_utf16(&region,
+			(const uint16_t[]){'f', 'o', 'o', '\n'}, 4, &expected) == 0);
+	assert(jsval_strict_eq(&region, result, expected) == 1);
+
+	assert(jsval_method_string_trim_right(&region, trim_text, &result,
+			&error) == 0);
+	assert(jsval_string_new_utf16(&region,
+			(const uint16_t[]){0xFEFF, 'f', 'o', 'o'}, 4, &expected) == 0);
+	assert(jsval_strict_eq(&region, result, expected) == 1);
+
+	errno = 0;
+	assert(jsval_method_string_substr(&region, root, 1, jsval_number(0.0), 0,
+			jsval_undefined(), &result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void
 test_method_pad_bridge(void)
 {
@@ -1816,6 +1865,7 @@ int main(void)
 	test_method_accessor_bridge();
 	test_method_slice_substring_bridge();
 	test_method_trim_repeat_bridge();
+	test_method_substr_trim_alias_bridge();
 	test_method_pad_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();

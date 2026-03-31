@@ -584,6 +584,69 @@ test_string_trim_repeat_methods(void)
 }
 
 static void
+test_string_substr_trim_alias_methods(void)
+{
+	static const uint8_t text_utf8[] = "bananas";
+	uint16_t storage[64];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	callback_ctx_t throw_ctx = {1, NULL, 0};
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_substr(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(1.0),
+			1, jsmethod_value_number(3.0), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'a', 'n', 'a'}, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_substr(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(-3.0),
+			0, jsmethod_value_undefined(), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'n', 'a', 's'}, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_substr(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(2.0),
+			1, jsmethod_value_number(NAN), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){0}, 0);
+
+	out.len = 0;
+	assert(jsmethod_string_substr(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(INFINITY),
+			1, jsmethod_value_number(INFINITY), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){0}, 0);
+
+	out.len = 0;
+	assert(jsmethod_string_trim_left(&out,
+			jsmethod_value_string_utf16(
+				(const uint16_t[]){0xFEFF, '\t', 'f', 'o', 'o', '\n'}, 6),
+			&error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'f', 'o', 'o', '\n'}, 4);
+
+	out.len = 0;
+	assert(jsmethod_string_trim_right(&out,
+			jsmethod_value_string_utf16(
+				(const uint16_t[]){0x00A0, 'f', 'o', 'o', '\n', 0x2029}, 6),
+			&error) == 0);
+	expect_utf16(&out, (const uint16_t[]){0x00A0, 'f', 'o', 'o'}, 4);
+
+	assert(jsmethod_string_trim_left(&out, jsmethod_value_null(),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_substr(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+}
+
+static void
 test_string_pad_methods(void)
 {
 	static const uint16_t pad_start_expected[] = {'d','e','f','d','a','b','c'};
@@ -905,6 +968,7 @@ main(void)
 	test_string_accessor_methods();
 	test_string_slice_substring_methods();
 	test_string_trim_repeat_methods();
+	test_string_substr_trim_alias_methods();
 	test_string_pad_methods();
 	test_string_search_methods();
 	return 0;

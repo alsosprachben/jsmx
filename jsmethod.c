@@ -658,6 +658,76 @@ jsmethod_slice_position(size_t len, int have_position,
 }
 
 static int
+jsmethod_substr_start_position(size_t len, int have_start,
+		jsmethod_value_t start_value, size_t *start_ptr,
+		jsmethod_error_t *error)
+{
+	double start;
+
+	if (start_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_start || start_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		*start_ptr = 0;
+		return 0;
+	}
+	if (jsmethod_value_to_integer_or_infinity(start_value, 0, &start,
+			error) < 0) {
+		return -1;
+	}
+	if (isinf(start)) {
+		*start_ptr = start < 0.0 ? 0 : len;
+		return 0;
+	}
+	if (start < 0.0) {
+		start += (double)len;
+		if (start < 0.0) {
+			start = 0.0;
+		}
+	}
+	*start_ptr = jsmethod_clamp_position(len, start);
+	return 0;
+}
+
+static int
+jsmethod_substr_length(size_t len, size_t start, int have_length,
+		jsmethod_value_t length_value, size_t *length_ptr,
+		jsmethod_error_t *error)
+{
+	double length;
+	size_t remaining;
+
+	if (length_ptr == NULL || start > len) {
+		errno = EINVAL;
+		return -1;
+	}
+	remaining = len - start;
+	if (!have_length || length_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		*length_ptr = remaining;
+		return 0;
+	}
+	if (jsmethod_value_to_integer_or_infinity(length_value, 0, &length,
+			error) < 0) {
+		return -1;
+	}
+	if (isinf(length)) {
+		*length_ptr = length < 0.0 ? 0 : remaining;
+		return 0;
+	}
+	if (length <= 0.0) {
+		*length_ptr = 0;
+		return 0;
+	}
+	if (length >= (double)remaining) {
+		*length_ptr = remaining;
+		return 0;
+	}
+	*length_ptr = (size_t)length;
+	return 0;
+}
+
+static int
 jsmethod_utf16_region_equals(const jsstr16_t *value, size_t start,
 		const jsstr16_t *search)
 {
@@ -873,6 +943,20 @@ jsmethod_string_trim_end(jsstr16_t *out, jsmethod_value_t this_value,
 	}
 	jsstr16_trim_end(out);
 	return 0;
+}
+
+int
+jsmethod_string_trim_left(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error)
+{
+	return jsmethod_string_trim_start(out, this_value, error);
+}
+
+int
+jsmethod_string_trim_right(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error)
+{
+	return jsmethod_string_trim_end(out, this_value, error);
 }
 
 int
@@ -1429,6 +1513,59 @@ jsmethod_string_substring(jsstr16_t *out, jsmethod_value_t this_value,
 			end = tmp;
 		}
 		result_len = end - start;
+		if (result_len == 0) {
+			out->len = 0;
+			return 0;
+		}
+		if (out->cap < result_len) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		if (jsstr16_set_from_utf16(out, this_str.codeunits + start,
+				result_len) != result_len) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		return 0;
+	}
+}
+
+int
+jsmethod_string_substr(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_start, jsmethod_value_t start_value,
+		int have_length, jsmethod_value_t length_value,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t start;
+	size_t result_len;
+	jsstr16_t this_str;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_substr_start_position(this_str.len, have_start,
+				start_value, &start, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_substr_length(this_str.len, start, have_length,
+				length_value, &result_len, error) < 0) {
+			return -1;
+		}
 		if (result_len == 0) {
 			out->len = 0;
 			return 0;

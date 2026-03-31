@@ -105,6 +105,10 @@ int jsmethod_string_trim_start(jsstr16_t *out, jsmethod_value_t this_value,
 		jsmethod_error_t *error);
 int jsmethod_string_trim_end(jsstr16_t *out, jsmethod_value_t this_value,
 		jsmethod_error_t *error);
+int jsmethod_string_trim_left(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+int jsmethod_string_trim_right(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
 int jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,
@@ -149,6 +153,10 @@ int jsmethod_string_slice(jsstr16_t *out, jsmethod_value_t this_value,
 int jsmethod_string_substring(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_start, jsmethod_value_t start_value,
 		int have_end, jsmethod_value_t end_value,
+		jsmethod_error_t *error);
+int jsmethod_string_substr(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_start, jsmethod_value_t start_value,
+		int have_length, jsmethod_value_t length_value,
 		jsmethod_error_t *error);
 int jsmethod_string_index_of(ssize_t *index_ptr, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, int have_position,
