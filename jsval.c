@@ -1420,6 +1420,14 @@ typedef int (*jsval_method_repeat_fn)(jsstr16_t *out,
 		jsmethod_value_t this_value, int have_count,
 		jsmethod_value_t count_value, jsmethod_error_t *error);
 
+typedef int (*jsval_method_concat_measure_fn)(jsmethod_value_t this_value,
+		size_t arg_count, const jsmethod_value_t *args,
+		jsmethod_string_concat_sizes_t *sizes, jsmethod_error_t *error);
+
+typedef int (*jsval_method_concat_fn)(jsstr16_t *out,
+		jsmethod_value_t this_value, size_t arg_count,
+		const jsmethod_value_t *args, jsmethod_error_t *error);
+
 typedef int (*jsval_method_pad_measure_fn)(jsmethod_value_t this_value,
 		int have_max_length, jsmethod_value_t max_length_value,
 		int have_fill_string, jsmethod_value_t fill_string_value,
@@ -1560,6 +1568,121 @@ jsval_method_string_repeat_bridge(jsval_region_t *region,
 		if (fn(&out, this_method_value, have_count, count_method_value,
 				error) < 0) {
 			return -1;
+		}
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
+	return 0;
+}
+
+static int
+jsval_method_string_concat_bridge(jsval_region_t *region,
+		jsval_t this_value, size_t arg_count, const jsval_t *args,
+		jsval_method_concat_measure_fn measure_fn, jsval_method_concat_fn fn,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsmethod_string_concat_sizes_t sizes;
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+	size_t this_storage_cap = 0;
+	size_t arg_storage_total = 0;
+	size_t i;
+
+	if (region == NULL || measure_fn == NULL || fn == NULL || value_ptr == NULL ||
+			(arg_count > 0 && args == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	{
+		size_t arg_storage_caps[arg_count ? arg_count : 1];
+		jsmethod_value_t this_method_value;
+		jsmethod_value_t arg_method_values[arg_count ? arg_count : 1];
+
+		for (i = 0; i < arg_count; i++) {
+			if (jsval_value_utf16_len(region, args[i], &arg_storage_caps[i]) < 0) {
+				return -1;
+			}
+			if (SIZE_MAX - arg_storage_total < arg_storage_caps[i]) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			arg_storage_total += arg_storage_caps[i];
+		}
+
+		{
+			uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+			uint16_t arg_storage[arg_storage_total ? arg_storage_total : 1];
+			uint16_t *cursor = arg_storage;
+
+			if (jsval_method_value_from_jsval(region, this_value, this_storage,
+					this_storage_cap, &this_method_value) < 0) {
+				return -1;
+			}
+			for (i = 0; i < arg_count; i++) {
+				if (jsval_method_value_from_jsval(region, args[i], cursor,
+						arg_storage_caps[i], &arg_method_values[i]) < 0) {
+					return -1;
+				}
+				cursor += arg_storage_caps[i];
+			}
+			if (measure_fn(this_method_value, arg_count, arg_method_values, &sizes,
+					error) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	if (jsval_string_reserve_utf16(region, sizes.result_len, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	{
+		size_t arg_storage_caps[arg_count ? arg_count : 1];
+		jsmethod_value_t this_method_value;
+		jsmethod_value_t arg_method_values[arg_count ? arg_count : 1];
+		uint16_t *cursor;
+
+		arg_storage_total = 0;
+		for (i = 0; i < arg_count; i++) {
+			if (jsval_value_utf16_len(region, args[i], &arg_storage_caps[i]) < 0) {
+				return -1;
+			}
+			if (SIZE_MAX - arg_storage_total < arg_storage_caps[i]) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			arg_storage_total += arg_storage_caps[i];
+		}
+
+		{
+			uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+			uint16_t arg_storage[arg_storage_total ? arg_storage_total : 1];
+
+			cursor = arg_storage;
+			if (jsval_method_value_from_jsval(region, this_value, this_storage,
+					this_storage_cap, &this_method_value) < 0) {
+				return -1;
+			}
+			for (i = 0; i < arg_count; i++) {
+				if (jsval_method_value_from_jsval(region, args[i], cursor,
+						arg_storage_caps[i], &arg_method_values[i]) < 0) {
+					return -1;
+				}
+				cursor += arg_storage_caps[i];
+			}
+			jsstr16_init_from_buf(&out,
+					(const char *)jsval_native_string_units(result_string),
+					result_string->cap * sizeof(uint16_t));
+			if (fn(&out, this_method_value, arg_count, arg_method_values, error)
+					< 0) {
+				return -1;
+			}
 		}
 	}
 
@@ -2223,6 +2346,63 @@ int jsval_method_string_repeat_measure(jsval_region_t *region,
 		}
 		return jsmethod_string_repeat_measure(this_method_value, have_count,
 				count_method_value, sizes, error);
+	}
+}
+
+int
+jsval_method_string_concat_measure(jsval_region_t *region, jsval_t this_value,
+		size_t arg_count, const jsval_t *args,
+		jsmethod_string_concat_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap = 0;
+	size_t arg_storage_total = 0;
+	size_t i;
+
+	if (region == NULL || sizes == NULL ||
+			(arg_count > 0 && args == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		size_t arg_storage_caps[arg_count ? arg_count : 1];
+		jsmethod_value_t this_method_value;
+		jsmethod_value_t arg_method_values[arg_count ? arg_count : 1];
+
+		for (i = 0; i < arg_count; i++) {
+			if (jsval_value_utf16_len(region, args[i], &arg_storage_caps[i]) < 0) {
+				return -1;
+			}
+			if (SIZE_MAX - arg_storage_total < arg_storage_caps[i]) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			arg_storage_total += arg_storage_caps[i];
+		}
+
+		{
+			uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+			uint16_t arg_storage[arg_storage_total ? arg_storage_total : 1];
+			uint16_t *cursor = arg_storage;
+
+			if (jsval_method_value_from_jsval(region, this_value, this_storage,
+					this_storage_cap, &this_method_value) < 0) {
+				return -1;
+			}
+			for (i = 0; i < arg_count; i++) {
+				if (jsval_method_value_from_jsval(region, args[i], cursor,
+						arg_storage_caps[i], &arg_method_values[i]) < 0) {
+					return -1;
+				}
+				cursor += arg_storage_caps[i];
+			}
+			return jsmethod_string_concat_measure(this_method_value, arg_count,
+					arg_method_values, sizes, error);
+		}
 	}
 }
 
@@ -3904,6 +4084,16 @@ int jsval_method_string_trim_right(jsval_region_t *region, jsval_t this_value,
 {
 	return jsval_method_string_unary_bridge(region, this_value, 1,
 			jsmethod_string_trim_right, value_ptr, error);
+}
+
+int
+jsval_method_string_concat(jsval_region_t *region, jsval_t this_value,
+		size_t arg_count, const jsval_t *args, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_concat_bridge(region, this_value, arg_count,
+			args, jsmethod_string_concat_measure, jsmethod_string_concat,
+			value_ptr, error);
 }
 
 int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,

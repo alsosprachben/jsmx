@@ -68,6 +68,10 @@ typedef struct jsmethod_string_pad_sizes_s {
 	size_t result_len;
 } jsmethod_string_pad_sizes_t;
 
+typedef struct jsmethod_string_concat_sizes_s {
+	size_t result_len;
+} jsmethod_string_concat_sizes_t;
+
 void jsmethod_error_clear(jsmethod_error_t *error);
 
 jsmethod_value_t jsmethod_value_undefined(void);
@@ -108,6 +112,13 @@ int jsmethod_string_trim_end(jsstr16_t *out, jsmethod_value_t this_value,
 int jsmethod_string_trim_left(jsstr16_t *out, jsmethod_value_t this_value,
 		jsmethod_error_t *error);
 int jsmethod_string_trim_right(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_error_t *error);
+int jsmethod_string_concat_measure(jsmethod_value_t this_value,
+		size_t arg_count, const jsmethod_value_t *args,
+		jsmethod_string_concat_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_concat(jsstr16_t *out, jsmethod_value_t this_value,
+		size_t arg_count, const jsmethod_value_t *args,
 		jsmethod_error_t *error);
 int jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,

@@ -12,6 +12,7 @@ typedef struct generated_string_callback_ctx_s {
 	int should_throw;
 	const uint16_t *text;
 	size_t len;
+	int *calls_ptr;
 } generated_string_callback_ctx_t;
 
 typedef struct generated_string_error_ctx_s {
@@ -26,6 +27,9 @@ generated_string_callback_to_string(void *opaque, jsstr16_t *out,
 	generated_string_callback_ctx_t *ctx =
 			(generated_string_callback_ctx_t *)opaque;
 
+	if (ctx->calls_ptr != NULL) {
+		(*ctx->calls_ptr)++;
+	}
 	if (ctx->should_throw) {
 		error->kind = JSMETHOD_ERROR_ABRUPT;
 		error->message = "Test262Error";

@@ -10,12 +10,17 @@ typedef struct callback_ctx_s {
 	int should_throw;
 	const uint16_t *text;
 	size_t len;
+	int *calls_ptr;
 } callback_ctx_t;
 
 static int
 callback_to_string(void *opaque, jsstr16_t *out, jsmethod_error_t *error)
 {
 	callback_ctx_t *ctx = (callback_ctx_t *)opaque;
+
+	if (ctx->calls_ptr != NULL) {
+		(*ctx->calls_ptr)++;
+	}
 
 	if (ctx->should_throw) {
 		error->kind = JSMETHOD_ERROR_ABRUPT;
@@ -47,6 +52,18 @@ expect_utf16(jsstr16_t *s, const uint16_t *expected, size_t expected_len)
 	assert(s->len == expected_len);
 	for (i = 0; i < expected_len; i++) {
 		assert(s->codeunits[i] == expected[i]);
+	}
+}
+
+static void
+expect_ascii(jsstr16_t *s, const char *expected)
+{
+	size_t expected_len = strlen(expected);
+	size_t i;
+
+	assert(s->len == expected_len);
+	for (i = 0; i < expected_len; i++) {
+		assert(s->codeunits[i] == (uint8_t)expected[i]);
 	}
 }
 
@@ -91,6 +108,133 @@ test_value_to_string_errors(void)
 			jsmethod_value_coercible(&throw_ctx, callback_to_string),
 			0, &error) == -1);
 	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+}
+
+static void
+test_string_concat_methods(void)
+{
+	static const uint16_t receiver_42[] = {'4', '2'};
+	static const uint16_t receiver_false[] = {'f','a','l','s','e'};
+	static const uint16_t receiver_one[] = {'o','n','e'};
+	static const uint16_t arg_a[] = {'A'};
+	uint16_t storage[512];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	jsmethod_string_concat_sizes_t sizes;
+	jsmethod_value_t args[128];
+	callback_ctx_t receiver_ctx = {0, receiver_42,
+			sizeof(receiver_42) / sizeof(receiver_42[0]), NULL};
+	callback_ctx_t boolean_ctx = {0, receiver_false,
+			sizeof(receiver_false) / sizeof(receiver_false[0]), NULL};
+	callback_ctx_t object_arg_ctx = {0, arg_a,
+			sizeof(arg_a) / sizeof(arg_a[0]), NULL};
+	callback_ctx_t receiver_one_ctx = {0, receiver_one,
+			sizeof(receiver_one) / sizeof(receiver_one[0]), NULL};
+	callback_ctx_t throw_ctx = {1, NULL, 0, NULL};
+	int arg_calls = 0;
+	callback_ctx_t later_arg_ctx = {0, arg_a,
+			sizeof(arg_a) / sizeof(arg_a[0]), &arg_calls};
+	size_t i;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_concat_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			0, NULL, &sizes, &error) == 0);
+	assert(sizes.result_len == 4);
+
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			0, NULL, &error) == 0);
+	expect_ascii(&out, "lego");
+
+	args[0] = jsmethod_value_null();
+	args[1] = jsmethod_value_undefined();
+	args[2] = jsmethod_value_bool(1);
+	args[3] = jsmethod_value_number(42.0);
+	assert(jsmethod_string_concat_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			4, args, &sizes, &error) == 0);
+	assert(sizes.result_len == strlen("legonullundefinedtrue42"));
+
+	out.len = 0;
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			4, args, &error) == 0);
+	expect_ascii(&out, "legonullundefinedtrue42");
+
+	out.len = 0;
+	args[0] = jsmethod_value_bool(0);
+	args[1] = jsmethod_value_bool(1);
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_coercible(&receiver_ctx, callback_to_string),
+			2, args, &error) == 0);
+	expect_ascii(&out, "42falsetrue");
+
+	out.len = 0;
+	args[0] = jsmethod_value_string_utf8((const uint8_t *)"A", 1);
+	args[1] = jsmethod_value_bool(1);
+	args[2] = jsmethod_value_number(2.0);
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_coercible(&boolean_ctx, callback_to_string),
+			3, args, &error) == 0);
+	expect_ascii(&out, "falseAtrue2");
+
+	out.len = 0;
+	args[0] = jsmethod_value_coercible(&object_arg_ctx, callback_to_string);
+	args[1] = jsmethod_value_bool(1);
+	args[2] = jsmethod_value_number(42.0);
+	args[3] = jsmethod_value_undefined();
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			4, args, &error) == 0);
+	expect_ascii(&out, "legoAtrue42undefined");
+
+	out.len = 0;
+	args[0] = jsmethod_value_string_utf8((const uint8_t *)"two", 3);
+	args[1] = jsmethod_value_undefined();
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_coercible(&receiver_one_ctx, callback_to_string),
+			2, args, &error) == 0);
+	expect_ascii(&out, "onetwoundefined");
+
+	args[0] = jsmethod_value_symbol();
+	assert(jsmethod_string_concat_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"lego", 4),
+			1, args, &sizes, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_concat(&out, jsmethod_value_null(), 0, NULL,
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	arg_calls = 0;
+	args[0] = jsmethod_value_coercible(&later_arg_ctx, callback_to_string);
+	args[1] = jsmethod_value_coercible(&throw_ctx, callback_to_string);
+	assert(jsmethod_string_concat(&out,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			2, args, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(arg_calls == 0);
+
+	for (i = 0; i < 128; i++) {
+		args[i] = jsmethod_value_number((double)(i & 0x0f));
+	}
+	assert(jsmethod_string_concat_measure(jsmethod_value_number(0.0),
+			128, args, &sizes, &error) == 0);
+	assert(sizes.result_len == strlen(
+			"001234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415"));
+	out.len = 0;
+	assert(jsmethod_string_concat(&out, jsmethod_value_number(0.0),
+			128, args, &error) == 0);
+	expect_ascii(&out,
+			"001234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415"
+			"01234567891011121314150123456789101112131415");
 }
 
 static void
@@ -960,6 +1104,7 @@ main(void)
 {
 	test_value_to_string_primitives();
 	test_value_to_string_errors();
+	test_string_concat_methods();
 	test_string_normalize_method();
 	test_string_normalize_measure();
 	test_string_normalize_errors();

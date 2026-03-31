@@ -579,6 +579,70 @@ static void test_method_search_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void test_method_concat_bridge(void)
+{
+	static const char json[] = "{\"text\":\"lego\",\"suffix\":\"A\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t suffix;
+	jsval_t native_text;
+	jsval_t native_suffix;
+	jsval_t args[4];
+	jsval_t result;
+	jsmethod_error_t error;
+	jsmethod_string_concat_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"suffix", 6,
+			&suffix) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"lego", 4,
+			&native_text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"A", 1,
+			&native_suffix) == 0);
+
+	args[0] = suffix;
+	args[1] = jsval_null();
+	args[2] = jsval_bool(1);
+	args[3] = jsval_number(42.0);
+	assert(jsval_method_string_concat_measure(&region, text, 4, args, &sizes,
+			&error) == 0);
+	assert(sizes.result_len == strlen("legoAnulltrue42"));
+	assert(jsval_method_string_concat(&region, text, 4, args, &result,
+			&error) == 0);
+	assert_string(&region, result, "legoAnulltrue42");
+
+	args[0] = native_suffix;
+	args[1] = jsval_undefined();
+	assert(jsval_method_string_concat_measure(&region, text, 2, args, &sizes,
+			&error) == 0);
+	assert(sizes.result_len == strlen("legoAundefined"));
+	assert(jsval_method_string_concat(&region, text, 2, args, &result,
+			&error) == 0);
+	assert_string(&region, result, "legoAundefined");
+
+	args[0] = suffix;
+	assert(jsval_method_string_concat(&region, native_text, 1, args, &result,
+			&error) == 0);
+	assert_string(&region, result, "legoA");
+
+	errno = 0;
+	args[0] = root;
+	assert(jsval_method_string_concat_measure(&region, text, 1, args, &sizes,
+			&error) < 0);
+	assert(errno == ENOTSUP);
+
+	errno = 0;
+	assert(jsval_method_string_concat(&region, root, 1, args, &result,
+			&error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_method_accessor_bridge(void)
 {
 	static const char json[] = "{\"ascii\":\"abc\",\"astral\":\"\\ud83d\\ude00\"}";
@@ -1862,6 +1926,7 @@ int main(void)
 	test_method_bridge();
 	test_method_normalize_bridge();
 	test_method_search_bridge();
+	test_method_concat_bridge();
 	test_method_accessor_bridge();
 	test_method_slice_substring_bridge();
 	test_method_trim_repeat_bridge();

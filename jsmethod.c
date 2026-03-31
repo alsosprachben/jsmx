@@ -960,6 +960,93 @@ jsmethod_string_trim_right(jsstr16_t *out, jsmethod_value_t this_value,
 }
 
 int
+jsmethod_string_concat_measure(jsmethod_value_t this_value,
+		size_t arg_count, const jsmethod_value_t *args,
+		jsmethod_string_concat_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	size_t part_len;
+	size_t i;
+
+	if (sizes == NULL || (arg_count > 0 && args == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	sizes->result_len = 0;
+
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &part_len, error) < 0) {
+		return -1;
+	}
+	sizes->result_len = part_len;
+	for (i = 0; i < arg_count; i++) {
+		if (jsmethod_measure_value_utf16_len(args[i], 0, &part_len, error) < 0) {
+			return -1;
+		}
+		if (SIZE_MAX - sizes->result_len < part_len) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		sizes->result_len += part_len;
+	}
+	return 0;
+}
+
+static int
+jsmethod_string_concat_append(jsstr16_t *out, size_t *offset_ptr,
+		jsmethod_value_t value, int require_object_coercible,
+		jsmethod_error_t *error)
+{
+	jsstr16_t part;
+	size_t offset;
+
+	if (out == NULL || offset_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	offset = *offset_ptr;
+	if (offset > out->cap) {
+		errno = EINVAL;
+		return -1;
+	}
+	part.codeunits = out->codeunits == NULL ? NULL : out->codeunits + offset;
+	part.len = 0;
+	part.cap = out->cap - offset;
+	if (jsmethod_value_to_string(&part, value, require_object_coercible, error) < 0) {
+		return -1;
+	}
+	*offset_ptr = offset + part.len;
+	out->len = *offset_ptr;
+	return 0;
+}
+
+int
+jsmethod_string_concat(jsstr16_t *out, jsmethod_value_t this_value,
+		size_t arg_count, const jsmethod_value_t *args,
+		jsmethod_error_t *error)
+{
+	size_t i;
+	size_t offset = 0;
+
+	if (out == NULL || (arg_count > 0 && args == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	out->len = 0;
+
+	if (jsmethod_string_concat_append(out, &offset, this_value, 1, error) < 0) {
+		return -1;
+	}
+	for (i = 0; i < arg_count; i++) {
+		if (jsmethod_string_concat_append(out, &offset, args[i], 0, error) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+int
 jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,

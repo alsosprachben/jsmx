@@ -23,6 +23,9 @@ typedef struct generated_case_s {
 
 typedef struct generated_callback_ctx_s {
 	int should_throw;
+	const uint16_t *text;
+	size_t len;
+	int *calls_ptr;
 } generated_callback_ctx_t;
 
 static generated_status_t generated_write_detail(generated_status_t status, char *detail, size_t cap, const char *fmt, ...)
@@ -149,10 +152,17 @@ generated_callback_to_string(void *opaque, jsstr16_t *out,
 {
 	generated_callback_ctx_t *ctx = (generated_callback_ctx_t *)opaque;
 
-	(void)out;
+	if (ctx->calls_ptr != NULL) {
+		(*ctx->calls_ptr)++;
+	}
 	if (ctx->should_throw) {
 		error->kind = JSMETHOD_ERROR_ABRUPT;
 		error->message = "generated callback threw";
+		return -1;
+	}
+	if (ctx->text != NULL &&
+			jsstr16_set_from_utf16(out, ctx->text, ctx->len) != ctx->len) {
+		errno = ENOBUFS;
 		return -1;
 	}
 	return 0;
@@ -2114,6 +2124,110 @@ static generated_status_t generated_smoke_jsmethod_search_abrupt(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_method_concat(char *detail,
+		size_t cap)
+{
+	static const uint8_t input[] = "{\"text\":\"lego\",\"suffix\":\"A\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"lego\",\"suffix\":\"A\",\"concat\":\"legoAnulltrue42\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t suffix;
+	jsval_t args[4];
+	jsval_t result;
+	jsmethod_error_t error;
+	jsmethod_string_concat_sizes_t sizes;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"suffix", 6,
+			&suffix) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(suffix)");
+	}
+
+	args[0] = suffix;
+	args[1] = jsval_null();
+	args[2] = jsval_bool(1);
+	args[3] = jsval_number(42.0);
+	if (jsval_method_string_concat_measure(&region, text, 4, args, &sizes,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_concat_measure failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 15) {
+		return generated_failf(detail, cap,
+				"expected concat result_len 15, got %zu", sizes.result_len);
+	}
+	if (jsval_method_string_concat(&region, text, 4, args, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_concat failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"legoAnulltrue42", 15, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 3) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"concat", 6,
+			result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(concat)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_concat_abrupt(
+		char *detail, size_t cap)
+{
+	static const uint16_t arg_text[] = {'A'};
+	generated_callback_ctx_t throw_ctx = {1, NULL, 0, NULL};
+	int arg_calls = 0;
+	generated_callback_ctx_t later_arg_ctx = {0, arg_text,
+			sizeof(arg_text) / sizeof(arg_text[0]), &arg_calls};
+	jsmethod_value_t args[2];
+	uint16_t storage[16];
+	jsmethod_error_t error;
+	jsstr16_t out;
+
+	args[0] = jsmethod_value_coercible(&later_arg_ctx,
+			generated_callback_to_string);
+	args[1] = jsmethod_value_undefined();
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_concat(&out,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			2, args, &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT receiver coercion, got %d",
+				(int)error.kind);
+	}
+	if (arg_calls != 0) {
+		return generated_failf(detail, cap,
+				"expected later concat args to remain unevaluated, got %d calls",
+				arg_calls);
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_method_accessor(char *detail,
 		size_t cap)
 {
@@ -2783,6 +2897,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
+	{"smoke", "jsval_method_concat", generated_smoke_jsval_method_concat},
 	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
 	{"smoke", "jsval_method_slice_substring", generated_smoke_jsval_method_slice_substring},
 	{"smoke", "jsval_method_trim_repeat", generated_smoke_jsval_method_trim_repeat},
@@ -2790,6 +2905,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_pad", generated_smoke_jsval_method_pad},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
+	{"smoke", "jsmethod_concat_abrupt", generated_smoke_jsmethod_concat_abrupt},
 	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
 	{"smoke", "jsmethod_substr_abrupt", generated_smoke_jsmethod_substr_abrupt},
 	{"smoke", "jsmethod_repeat_abrupt", generated_smoke_jsmethod_repeat_abrupt},

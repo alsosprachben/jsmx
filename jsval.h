@@ -161,6 +161,13 @@ int jsval_method_string_trim_left(jsval_region_t *region, jsval_t this_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_trim_right(jsval_region_t *region, jsval_t this_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_concat_measure(jsval_region_t *region,
+		jsval_t this_value, size_t arg_count, const jsval_t *args,
+		jsmethod_string_concat_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_concat(jsval_region_t *region, jsval_t this_value,
+		size_t arg_count, const jsval_t *args, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_repeat_measure(jsval_region_t *region,
 		jsval_t this_value, int have_count, jsval_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,

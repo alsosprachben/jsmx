@@ -1468,6 +1468,126 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed padStart/padEnd results across the jsval/jsmethod bridge."
     },
     {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T4",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T4.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer for zero-argument receiver passthrough and exact result sizing."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T5",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T5.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T5.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer for primitive null argument stringification."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T7",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T7.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T7.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer for primitive undefined argument stringification."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T8",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T8.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T8.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer for numeric receiver stringification plus undefined argument handling."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A2.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer for the variadic 128-argument primitive path with exact result sizing."
+    },
+    {
+      "id": "test262-strings-concat-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/concat/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod concat layer, which enforces RequireObjectCoercible(this). The upstream typeof metadata assertion is intentionally omitted."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Object(42) receiver is lowered through an explicit coercion callback before jsmethod concat dispatch."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed Boolean receiver is lowered through an explicit coercion callback before jsmethod concat dispatch."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A1_T10",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A1_T10.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A1_T10.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream object arguments are lowered through explicit coercion callbacks that model translator-known ToString results outside jsmx."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A4_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A4_T1.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A4_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream receiver object with an overridden toString hook is modeled through an explicit coercion callback before concat dispatch."
+    },
+    {
+      "id": "test262-strings-concat-S15.5.4.6_A4_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/concat/S15.5.4.6_A4_T2.js",
+      "generated": "compliance/generated/strings/test262/concat/S15.5.4.6_A4_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the receiver's throwing toString hook is modeled through an explicit coercion callback, and later argument callbacks prove that concat argument evaluation stops once receiver coercion fails."
+    },
+    {
+      "id": "jsmx-strings-json-backed-concat-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-concat-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-concat-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed concat results across the new jsval/jsmethod concat bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",
