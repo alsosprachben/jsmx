@@ -2229,6 +2229,118 @@ static generated_status_t generated_smoke_jsmethod_concat_abrupt(
 }
 
 #if JSMX_WITH_REGEX
+static generated_status_t generated_smoke_jsval_regexp_exec_match(
+		char *detail, size_t cap)
+{
+	static const uint8_t input_json[] = "{\"text\":\"343443444\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"343443444\",\"exec0\":\"12b\",\"matchCount\":3}";
+	static const uint8_t exec_pattern_utf8[] = "([0-9][0-9])([a-z])?";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t exec_pattern;
+	jsval_t match_pattern;
+	jsval_t match_flags;
+	jsval_t exec_regex;
+	jsval_t match_regex;
+	jsval_t exec_subject;
+	jsval_t exec_result;
+	jsval_t match_result;
+	jsval_t capture0;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input_json, sizeof(input_json) - 1, 8,
+			&root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(regex root)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_string_new_utf8(&region, exec_pattern_utf8,
+			sizeof(exec_pattern_utf8) - 1, &exec_pattern) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(exec_pattern)");
+	}
+	if (jsval_regexp_new(&region, exec_pattern, 0, jsval_undefined(),
+			&exec_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(exec) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"a12b", 4,
+			&exec_subject) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(exec_subject)");
+	}
+	if (jsval_regexp_exec(&region, exec_regex, exec_subject, &exec_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (exec_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap, "expected object-like exec result");
+	}
+	if (jsval_object_get_utf8(&region, exec_result, (const uint8_t *)"0", 1,
+			&capture0) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec capture)");
+	}
+	status = generated_expect_string(&region, capture0,
+			(const uint8_t *)"12b", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"3", 1,
+			&match_pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&match_flags) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(match args)");
+	}
+	if (jsval_regexp_new(&region, match_pattern, 1, match_flags, &match_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(match) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_match(&region, text, 1, match_regex, &match_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (match_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, match_result) != 3) {
+		return generated_failf(detail, cap,
+				"expected 3-entry global match result");
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 3) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(regex)");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root(regex)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"exec0", 5,
+			capture0) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"matchCount", 10,
+				jsval_number((double)jsval_array_length(&region, match_result))) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(regex result)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_regex_search(
 		char *detail, size_t cap)
 {
@@ -3008,6 +3120,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_pad", generated_smoke_jsval_method_pad},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 #if JSMX_WITH_REGEX
+	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
 	{"smoke", "jsval_method_regex_search", generated_smoke_jsval_method_regex_search},
 #endif
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},

@@ -58,10 +58,71 @@ test_regex_search(void)
 	assert(errno == EINVAL);
 }
 
+static void
+test_regex_compile_exec(void)
+{
+	static const uint16_t subject[] = {'a','1','2','b'};
+	static const uint16_t pattern[] = {'(','[','0','-','9',']','[','0','-','9',']',')','(','[','a','-','z',']',')','?'};
+	static const uint16_t sticky_pattern[] = {'b'};
+	static const uint16_t flags_g[] = {'g'};
+	static const uint16_t flags_y[] = {'y'};
+	jsregex_compiled_t compiled;
+	jsregex_exec_result_t result;
+	size_t offsets[6];
+	size_t next_index;
+
+	assert(jsregex_compile_utf16(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(jsregex_exec_utf16(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, sizeof(offsets) / sizeof(offsets[0]), &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 1);
+	assert(result.end == 4);
+	assert(result.slot_count == 3);
+	assert(offsets[0] == 1 && offsets[1] == 4);
+	assert(offsets[2] == 1 && offsets[3] == 3);
+	assert(offsets[4] == 3 && offsets[5] == 4);
+	jsregex_release(&compiled);
+
+	assert(jsregex_compile_utf16(sticky_pattern,
+			sizeof(sticky_pattern) / sizeof(sticky_pattern[0]),
+			flags_y, sizeof(flags_y) / sizeof(flags_y[0]), &compiled) == 0);
+	assert(jsregex_exec_utf16(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 0);
+	assert(jsregex_exec_utf16(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 3,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 3);
+	assert(result.end == 4);
+	jsregex_release(&compiled);
+
+	assert(jsregex_compile_utf16(sticky_pattern,
+			sizeof(sticky_pattern) / sizeof(sticky_pattern[0]),
+			flags_g, sizeof(flags_g) / sizeof(flags_g[0]), &compiled) == 0);
+	assert(jsregex_exec_utf16(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 1);
+	jsregex_release(&compiled);
+
+	assert(jsregex_advance_string_index_utf16(
+			(const uint16_t[]){0xD834, 0xDF06}, 2, 0, 1, &next_index) == 0);
+	assert(next_index == 2);
+	assert(jsregex_advance_string_index_utf16(subject,
+			sizeof(subject) / sizeof(subject[0]), 1, 0, &next_index) == 0);
+	assert(next_index == 2);
+}
+
 int
 main(void)
 {
 	test_regex_search();
+	test_regex_compile_exec();
 	return 0;
 }
 

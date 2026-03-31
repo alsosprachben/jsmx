@@ -26,7 +26,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_NUMBER = 3,
 	JSVAL_KIND_STRING = 4,
 	JSVAL_KIND_OBJECT = 5,
-	JSVAL_KIND_ARRAY = 6
+	JSVAL_KIND_ARRAY = 6,
+	JSVAL_KIND_REGEXP = 7
 } jsval_kind_t;
 
 typedef struct jsval_s {
@@ -237,6 +238,19 @@ int jsval_method_string_ends_with(jsval_region_t *region, jsval_t this_value,
 		jsval_t end_position_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 #if JSMX_WITH_REGEX
+int jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_regexp_get_last_index(jsval_region_t *region, jsval_t regexp_value,
+		size_t *last_index_ptr);
+int jsval_regexp_set_last_index(jsval_region_t *region, jsval_t regexp_value,
+		size_t last_index);
+int jsval_regexp_exec(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_match(jsval_region_t *region, jsval_t this_value,
+		int have_regexp, jsval_t regexp_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_search_regex(jsval_region_t *region,
 		jsval_t this_value, jsval_t pattern_value,
 		int have_flags, jsval_t flags_value, jsval_t *value_ptr,

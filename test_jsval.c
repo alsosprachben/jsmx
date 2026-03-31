@@ -6,6 +6,8 @@
 
 #include "jsval.h"
 
+static void assert_number_value(jsval_t value, double expected);
+
 static void assert_string(jsval_region_t *region, jsval_t value, const char *expected)
 {
 	size_t expected_len = strlen(expected);
@@ -29,6 +31,39 @@ static void assert_json(jsval_region_t *region, jsval_t value, const char *expec
 	assert(actual_len == expected_len);
 	assert(jsval_copy_json(region, value, buf, actual_len, NULL) == 0);
 	assert(memcmp(buf, expected, expected_len) == 0);
+}
+
+static void assert_object_string_prop(jsval_region_t *region, jsval_t object,
+		const char *key, const char *expected)
+{
+	jsval_t value;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)key,
+			strlen(key), &value) == 0);
+	assert_string(region, value, expected);
+}
+
+static void assert_object_number_prop(jsval_region_t *region, jsval_t object,
+		const char *key, double expected)
+{
+	jsval_t value;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)key,
+			strlen(key), &value) == 0);
+	assert_number_value(value, expected);
+}
+
+static void assert_object_undefined_prop(jsval_region_t *region, jsval_t object,
+		const char *key)
+{
+	jsval_t value;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)key,
+			strlen(key), &value) == 0);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
 static void assert_positive_zero(jsval_t value)
@@ -580,6 +615,112 @@ static void test_method_search_bridge(void)
 }
 
 #if JSMX_WITH_REGEX
+static void
+test_regexp_exec_and_match(void)
+{
+	static const uint8_t pattern_utf8[] = "([0-9][0-9])([a-z])?";
+	static const uint8_t json_text[] = "{\"text\":\"343443444\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t sticky_flags;
+	jsval_t regex;
+	jsval_t global_regex;
+	jsval_t sticky_regex;
+	jsval_t input;
+	jsval_t subject;
+	jsval_t result;
+	jsval_t native_string;
+	jsval_t parsed_root;
+	jsval_t parsed_text;
+	jsmethod_error_t error;
+	size_t last_index;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, pattern_utf8,
+			sizeof(pattern_utf8) - 1, &pattern) == 0);
+	assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&regex, &error) == 0);
+	assert(regex.kind == JSVAL_KIND_REGEXP);
+	assert(jsval_truthy(&region, regex) == 1);
+	assert(jsval_regexp_get_last_index(&region, regex, &last_index) == 0);
+	assert(last_index == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a12b", 4,
+			&subject) == 0);
+	assert(jsval_regexp_exec(&region, regex, subject, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "12b");
+	assert_object_string_prop(&region, result, "1", "12");
+	assert_object_string_prop(&region, result, "2", "b");
+	assert_object_number_prop(&region, result, "length", 3.0);
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert_object_string_prop(&region, result, "input", "a12b");
+	assert_object_undefined_prop(&region, result, "groups");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) == 0);
+	assert(jsval_regexp_new(&region,
+			jsval_number(3.0), 1, global_flags, &global_regex, &error) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"343443444", 9,
+			&native_string) == 0);
+	assert(jsval_method_string_match(&region, native_string, 1, global_regex,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &input) == 0);
+	assert_string(&region, input, "3");
+	assert(jsval_array_get(&region, result, 1, &input) == 0);
+	assert_string(&region, input, "3");
+	assert(jsval_array_get(&region, result, 2, &input) == 0);
+	assert_string(&region, input, "3");
+	assert(jsval_regexp_get_last_index(&region, global_regex, &last_index) == 0);
+	assert(last_index == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"y", 1,
+			&sticky_flags) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, sticky_flags, &sticky_regex,
+			&error) == 0);
+	assert(jsval_regexp_set_last_index(&region, sticky_regex, 1) == 0);
+	assert(jsval_regexp_exec(&region, sticky_regex, subject, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "12b");
+	assert(jsval_regexp_get_last_index(&region, sticky_regex, &last_index) == 0);
+	assert(last_index == 4);
+	assert(jsval_regexp_set_last_index(&region, sticky_regex, 0) == 0);
+	assert(jsval_regexp_exec(&region, sticky_regex, subject, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_NULL);
+	assert(jsval_regexp_get_last_index(&region, sticky_regex, &last_index) == 0);
+	assert(last_index == 0);
+
+	assert(jsval_json_parse(&region, json_text, sizeof(json_text) - 1, 8,
+			&parsed_root) == 0);
+	assert(jsval_object_get_utf8(&region, parsed_root,
+			(const uint8_t *)"text", 4, &parsed_text) == 0);
+	assert(jsval_method_string_match(&region, parsed_text, 1, global_regex,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &input) == 0);
+	assert_string(&region, input, "3");
+	assert(jsval_array_get(&region, result, 1, &input) == 0);
+	assert_string(&region, input, "3");
+	assert(jsval_array_get(&region, result, 2, &input) == 0);
+	assert_string(&region, input, "3");
+
+	assert(jsval_method_string_match(&region, native_string, 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "");
+	assert_object_number_prop(&region, result, "index", 0.0);
+
+	errno = 0;
+	assert(jsval_regexp_exec(&region, native_string, subject, &result, &error) < 0);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+	assert(errno == EINVAL);
+}
+
 static void
 test_method_regex_search_bridge(void)
 {
@@ -1986,6 +2127,7 @@ int main(void)
 	test_method_normalize_bridge();
 	test_method_search_bridge();
 #if JSMX_WITH_REGEX
+	test_regexp_exec_and_match();
 	test_method_regex_search_bridge();
 #endif
 	test_method_concat_bridge();
