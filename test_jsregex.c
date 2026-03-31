@@ -13,6 +13,7 @@ test_regex_search(void)
 	static const uint16_t subject[] = {'f','o','o','B','a','r'};
 	static const uint16_t pattern_bar[] = {'b','a','r'};
 	static const uint16_t flags_i[] = {'i'};
+	static const uint16_t flags_all[] = {'g','i','m','s','u','y'};
 	static const uint16_t pattern_foo[] = {'f','o','o'};
 	static const uint16_t flags_y[] = {'y'};
 	static const uint16_t bad_flags[] = {'z'};
@@ -56,6 +57,23 @@ test_regex_search(void)
 			pattern_bar, sizeof(pattern_bar) / sizeof(pattern_bar[0]),
 			dup_flags, sizeof(dup_flags) / sizeof(dup_flags[0]), &result) == -1);
 	assert(errno == EINVAL);
+
+	{
+		jsregex_compiled_t compiled;
+
+		assert(jsregex_compile_utf16(pattern_bar,
+				sizeof(pattern_bar) / sizeof(pattern_bar[0]),
+				flags_all, sizeof(flags_all) / sizeof(flags_all[0]),
+				&compiled) == 0);
+		assert(compiled.flags
+				== (JSREGEX_FLAG_GLOBAL
+				| JSREGEX_FLAG_IGNORE_CASE
+				| JSREGEX_FLAG_MULTILINE
+				| JSREGEX_FLAG_DOT_ALL
+				| JSREGEX_FLAG_UNICODE
+				| JSREGEX_FLAG_STICKY));
+		jsregex_release(&compiled);
+	}
 }
 
 static void

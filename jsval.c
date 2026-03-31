@@ -3117,6 +3117,47 @@ jsval_regexp_source_value(jsval_region_t *region, jsval_t regexp_value,
 	return 0;
 }
 
+int
+jsval_regexp_flags(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+	size_t flags_len = 0;
+
+	if (regexp == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_regexp_flags_copy_utf16(regexp->flags, NULL, 0, &flags_len) < 0) {
+		return -1;
+	}
+	{
+		uint16_t flags_buf[flags_len ? flags_len : 1];
+
+		if (jsval_regexp_flags_copy_utf16(regexp->flags, flags_buf,
+				flags_len ? flags_len : 1, &flags_len) < 0) {
+			return -1;
+		}
+		return jsval_string_new_utf16(region, flags_buf, flags_len, value_ptr);
+	}
+}
+
+int
+jsval_regexp_info(jsval_region_t *region, jsval_t regexp_value,
+		jsval_regexp_info_t *info_ptr)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+
+	if (regexp == NULL || info_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	info_ptr->flags = regexp->flags;
+	info_ptr->capture_count = regexp->capture_count;
+	info_ptr->last_index = regexp->last_index;
+	return 0;
+}
+
 static int
 jsval_regexp_exec_raw(jsval_region_t *region, jsval_t regexp_value,
 		const uint16_t *subject, size_t subject_len, size_t *offsets,
@@ -3342,6 +3383,51 @@ jsval_regexp_set_last_index(jsval_region_t *region, jsval_t regexp_value,
 	}
 	regexp->last_index = last_index;
 	return 0;
+}
+
+int
+jsval_regexp_test(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, int *result_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_native_string_t *input_native;
+	jsval_native_regexp_t *regexp;
+	size_t offsets_cap;
+
+	if (region == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, input_value, 0, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	regexp = jsval_native_regexp(region, regexp_value);
+	input_native = jsval_native_string(region, input_string);
+	if (regexp == NULL || input_native == NULL) {
+		if (regexp == NULL && error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "RegExp receiver required";
+		}
+		errno = EINVAL;
+		return -1;
+	}
+
+	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+	{
+		size_t offsets[offsets_cap ? offsets_cap : 2];
+		jsregex_exec_result_t exec_result;
+
+		if (jsval_regexp_exec_raw(region, regexp_value,
+				jsval_native_string_units(input_native), input_native->len,
+				offsets, offsets_cap, &exec_result, error) < 0) {
+			return -1;
+		}
+		*result_ptr = exec_result.matched ? 1 : 0;
+		return 0;
+	}
 }
 
 int

@@ -2341,6 +2341,142 @@ static generated_status_t generated_smoke_jsval_regexp_exec_match(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_regexp_core(
+		char *detail, size_t cap)
+{
+	static const uint8_t input_json[] = "{\"text\":\"abc\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"abc\",\"test\":true,\"copyFlags\":\"gim\",\"overrideFlags\":\"y\",\"lastIndex\":3}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t gim_flags;
+	jsval_t y_flag;
+	jsval_t base_regex;
+	jsval_t copy_regex;
+	jsval_t override_regex;
+	jsval_t flags_value;
+	jsval_regexp_info_t info;
+	jsmethod_error_t error;
+	int test_result;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input_json, sizeof(input_json) - 1, 8,
+			&root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(regex core)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(regex core text)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"abc", 3, &pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"gim", 3,
+				&gim_flags) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"y", 1,
+				&y_flag) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(regex core args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 1, gim_flags, &base_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(base) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_set_last_index(&region, base_regex, 9) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_set_last_index(base)");
+	}
+	if (jsval_regexp_new(&region, base_regex, 0, jsval_undefined(),
+			&copy_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(copy) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_flags(&region, copy_regex, &flags_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_regexp_flags(copy)");
+	}
+	status = generated_expect_string(&region, flags_value,
+			(const uint8_t *)"gim", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_regexp_new(&region, base_regex, 1, y_flag, &override_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(override) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_flags(&region, override_regex, &flags_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_regexp_flags(override)");
+	}
+	status = generated_expect_string(&region, flags_value,
+			(const uint8_t *)"y", 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_regexp_set_last_index(&region, override_regex, 0) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_set_last_index(override)");
+	}
+	if (jsval_regexp_test(&region, override_regex, text, &test_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_test failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (generated_expect_boolean_result(test_result, 1, detail, cap)
+			!= GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_regexp_info(&region, override_regex, &info) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_regexp_info");
+	}
+	if (info.last_index != 3) {
+		return generated_failf(detail, cap,
+				"expected lastIndex 3 after sticky test, got %zu",
+				info.last_index);
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 5) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(regex core)");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_region_set_root(regex core)");
+	}
+	if (jsval_regexp_flags(&region, copy_regex, &flags_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_flags(copy write)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"test", 4,
+			jsval_bool(test_result)) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"copyFlags", 9, flags_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(regex core copy)");
+	}
+	if (jsval_regexp_flags(&region, override_regex, &flags_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_flags(override write)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"overrideFlags", 13,
+			flags_value) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"lastIndex", 9,
+				jsval_number((double)info.last_index)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(regex core write)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_regex_search(
 		char *detail, size_t cap)
 {
@@ -3120,6 +3256,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_pad", generated_smoke_jsval_method_pad},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 #if JSMX_WITH_REGEX
+	{"smoke", "jsval_regexp_core", generated_smoke_jsval_regexp_core},
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
 	{"smoke", "jsval_method_regex_search", generated_smoke_jsval_method_regex_search},
 #endif

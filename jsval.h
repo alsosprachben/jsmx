@@ -58,6 +58,14 @@ typedef struct jsval_region_s {
 	jsval_pages_t *pages;
 } jsval_region_t;
 
+#if JSMX_WITH_REGEX
+typedef struct jsval_regexp_info_s {
+	uint32_t flags;
+	uint32_t capture_count;
+	size_t last_index;
+} jsval_regexp_info_t;
+#endif
+
 void jsval_region_init(jsval_region_t *region, void *buf, size_t len);
 void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len);
 size_t jsval_region_remaining(jsval_region_t *region);
@@ -241,10 +249,16 @@ int jsval_method_string_ends_with(jsval_region_t *region, jsval_t this_value,
 int jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
 		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_regexp_flags(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t *value_ptr);
+int jsval_regexp_info(jsval_region_t *region, jsval_t regexp_value,
+		jsval_regexp_info_t *info_ptr);
 int jsval_regexp_get_last_index(jsval_region_t *region, jsval_t regexp_value,
 		size_t *last_index_ptr);
 int jsval_regexp_set_last_index(jsval_region_t *region, jsval_t regexp_value,
 		size_t last_index);
+int jsval_regexp_test(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, int *result_ptr, jsmethod_error_t *error);
 int jsval_regexp_exec(jsval_region_t *region, jsval_t regexp_value,
 		jsval_t input_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
