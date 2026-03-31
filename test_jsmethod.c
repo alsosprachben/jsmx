@@ -584,6 +584,163 @@ test_string_trim_repeat_methods(void)
 }
 
 static void
+test_string_pad_methods(void)
+{
+	static const uint16_t pad_start_expected[] = {'d','e','f','d','a','b','c'};
+	static const uint16_t pad_end_expected[] = {'a','b','c','d','e','f','d'};
+	static const uint16_t space_start_expected[] = {' ',' ','a','b','c'};
+	static const uint16_t space_end_expected[] = {'a','b','c',' ',' '};
+	static const uint16_t surrogate_start_expected[] = {
+		0xD83D, 0xDCA9, 0xD83D, 'a', 'b', 'c'
+	};
+	static const uint16_t surrogate_end_expected[] = {
+		'a', 'b', 'c', 0xD83D, 0xDCA9, 0xD83D
+	};
+	uint16_t storage[64];
+	jsstr16_t out;
+	jsmethod_error_t error;
+	jsmethod_string_pad_sizes_t sizes;
+	callback_ctx_t throw_ctx = {1, NULL, 0};
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_pad_start_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(7.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&sizes, &error) == 0);
+	assert(sizes.result_len == 7);
+	{
+		uint16_t exact_storage[7];
+		jsstr16_t exact_out;
+
+		jsstr16_init_from_buf(&exact_out, (const char *)exact_storage,
+				sizeof(exact_storage));
+		assert(jsmethod_string_pad_start(&exact_out,
+				jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+				jsmethod_value_number(7.0), 1,
+				jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+				&error) == 0);
+		expect_utf16(&exact_out, pad_start_expected, 7);
+	}
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(7.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == 0);
+	expect_utf16(&out, pad_start_expected, 7);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_end(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(7.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == 0);
+	expect_utf16(&out, pad_end_expected, 7);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(5.0), 0, jsmethod_value_undefined(),
+			&error) == 0);
+	expect_utf16(&out, space_start_expected, 5);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_end(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(5.0), 1, jsmethod_value_undefined(),
+			&error) == 0);
+	expect_utf16(&out, space_end_expected, 5);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(5.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"", 0), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'a','b','c'}, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(10.0), 1, jsmethod_value_bool(0),
+			&error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'f','a','l','s','e','f','a','a','b','c'}, 10);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_end(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(10.0), 1, jsmethod_value_number(-0.0),
+			&error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'a','b','c','0','0','0','0','0','0','0'}, 10);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(6.0), 1,
+			jsmethod_value_string_utf16((const uint16_t[]){0xD83D, 0xDCA9}, 2),
+			&error) == 0);
+	expect_utf16(&out, surrogate_start_expected, 6);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_end(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(6.0), 1,
+			jsmethod_value_string_utf16((const uint16_t[]){0xD83D, 0xDCA9}, 2),
+			&error) == 0);
+	expect_utf16(&out, surrogate_end_expected, 6);
+
+	out.len = 0;
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(3.9999), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'a','b','c'}, 3);
+
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(10.0), 1, jsmethod_value_symbol(),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_pad_end(&out, jsmethod_value_symbol(), 1,
+			jsmethod_value_number(10.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_pad_start(&out, jsmethod_value_null(), 1,
+			jsmethod_value_number(10.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_pad_end(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(5.0), 1,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	assert(jsmethod_string_pad_start(&out,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string), 1,
+			jsmethod_value_number(5.0), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	errno = 0;
+	assert(jsmethod_string_pad_start_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(INFINITY), 1,
+			jsmethod_value_string_utf8((const uint8_t *)"def", 3),
+			&sizes, &error) == -1);
+	assert(errno == EOVERFLOW);
+}
+
+static void
 test_string_search_methods(void)
 {
 	static const uint8_t bananas_utf8[] = "bananas";
@@ -748,6 +905,7 @@ main(void)
 	test_string_accessor_methods();
 	test_string_slice_substring_methods();
 	test_string_trim_repeat_methods();
+	test_string_pad_methods();
 	test_string_search_methods();
 	return 0;
 }

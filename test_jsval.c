@@ -725,6 +725,64 @@ static void test_method_trim_repeat_bridge(void)
 	assert(errno == ENOTSUP);
 }
 
+static void
+test_method_pad_bridge(void)
+{
+	static const char json[] = "{\"text\":\"abc\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t native_text;
+	jsval_t filler;
+	jsval_t result;
+	jsmethod_error_t error;
+	jsmethod_string_pad_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"abc", 3,
+			&native_text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"def", 3,
+			&filler) == 0);
+
+	assert(jsval_method_string_pad_start_measure(&region, text, 1,
+			jsval_number(7.0), 1, filler, &sizes, &error) == 0);
+	assert(sizes.result_len == 7);
+
+	assert(jsval_method_string_pad_start(&region, text, 1,
+			jsval_number(7.0), 1, filler, &result, &error) == 0);
+	assert_string(&region, result, "defdabc");
+
+	assert(jsval_method_string_pad_start(&region, native_text, 1,
+			jsval_number(7.0), 1, filler, &result, &error) == 0);
+	assert_string(&region, result, "defdabc");
+
+	assert(jsval_method_string_pad_end_measure(&region, text, 1,
+			jsval_number(5.0), 1, jsval_undefined(), &sizes, &error) == 0);
+	assert(sizes.result_len == 5);
+
+	assert(jsval_method_string_pad_end(&region, text, 1,
+			jsval_number(5.0), 1, jsval_undefined(), &result, &error) == 0);
+	assert_string(&region, result, "abc  ");
+
+	assert(jsval_method_string_pad_end(&region, native_text, 1,
+			jsval_number(7.0), 1, filler, &result, &error) == 0);
+	assert_string(&region, result, "abcdefd");
+
+	assert(jsval_method_string_pad_start(&region, native_text, 1,
+			jsval_number(INFINITY), 1, filler, &result, &error) < 0);
+	assert(errno == EOVERFLOW);
+
+	errno = 0;
+	assert(jsval_method_string_pad_start(&region, root, 1,
+			jsval_number(7.0), 1, filler, &result, &error) < 0);
+	assert(errno == ENOTSUP);
+}
+
 static void test_value_semantics(void)
 {
 	uint8_t storage[8192];
@@ -1758,6 +1816,7 @@ int main(void)
 	test_method_accessor_bridge();
 	test_method_slice_substring_bridge();
 	test_method_trim_repeat_bridge();
+	test_method_pad_bridge();
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();

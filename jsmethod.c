@@ -457,6 +457,47 @@ jsmethod_repeat_count(int have_count, jsmethod_value_t count_value,
 }
 
 static int
+jsmethod_value_to_length(jsmethod_value_t value, size_t *length_ptr,
+		jsmethod_error_t *error)
+{
+	double length;
+
+	if (length_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_value_to_integer_or_infinity(value, 0, &length, error) < 0) {
+		return -1;
+	}
+	if (length <= 0.0) {
+		*length_ptr = 0;
+		return 0;
+	}
+	if (isinf(length) || length > (double)SIZE_MAX) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	*length_ptr = (size_t)length;
+	return 0;
+}
+
+static int
+jsmethod_pad_target_length(int have_max_length,
+		jsmethod_value_t max_length_value, size_t *length_ptr,
+		jsmethod_error_t *error)
+{
+	if (length_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_max_length || max_length_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		*length_ptr = 0;
+		return 0;
+	}
+	return jsmethod_value_to_length(max_length_value, length_ptr, error);
+}
+
+static int
 jsmethod_start_position(size_t len, int have_position,
 		jsmethod_value_t position_value, size_t *start_ptr,
 		jsmethod_error_t *error)
@@ -904,6 +945,207 @@ jsmethod_string_repeat(jsstr16_t *out, jsmethod_value_t this_value,
 	}
 	src = *out;
 	return jsstr16_repeat(out, &src, count);
+}
+
+static int
+jsmethod_string_pad_measure_common(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t max_length;
+	size_t filler_len;
+
+	if (sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	sizes->result_len = 0;
+
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_pad_target_length(have_max_length, max_length_value,
+			&max_length, error) < 0) {
+		return -1;
+	}
+	if (max_length <= this_len) {
+		sizes->result_len = this_len;
+		return 0;
+	}
+	if (!have_fill_string || fill_string_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+		sizes->result_len = max_length;
+		return 0;
+	}
+	if (jsmethod_measure_value_utf16_len(fill_string_value, 0, &filler_len,
+			error) < 0) {
+		return -1;
+	}
+	if (filler_len == 0) {
+		sizes->result_len = this_len;
+		return 0;
+	}
+	sizes->result_len = max_length;
+	return 0;
+}
+
+static void
+jsmethod_utf16_fill_truncated(uint16_t *dest, size_t fill_len,
+		const jsstr16_t *fill_str)
+{
+	size_t offset = 0;
+	size_t chunk;
+
+	while (offset < fill_len) {
+		chunk = fill_str->len;
+		if (chunk > fill_len - offset) {
+			chunk = fill_len - offset;
+		}
+		memcpy(dest + offset, fill_str->codeunits,
+				chunk * sizeof(fill_str->codeunits[0]));
+		offset += chunk;
+	}
+}
+
+static int
+jsmethod_string_pad_common(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		int at_start, jsmethod_error_t *error)
+{
+	jsmethod_string_pad_sizes_t sizes;
+	size_t this_len;
+	size_t max_length;
+	size_t fill_storage_len = 0;
+	size_t fill_len;
+	jsstr16_t this_str;
+	jsstr16_t fill_str;
+	uint16_t space = 0x0020;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsmethod_string_pad_measure_common(this_value, have_max_length,
+			max_length_value, have_fill_string, fill_string_value, &sizes,
+			error) < 0) {
+		return -1;
+	}
+	if (out->cap < sizes.result_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_pad_target_length(have_max_length, max_length_value,
+			&max_length, error) < 0) {
+		return -1;
+	}
+	if (have_fill_string && fill_string_value.kind != JSMETHOD_VALUE_UNDEFINED &&
+			max_length > this_len &&
+			jsmethod_measure_value_utf16_len(fill_string_value, 0,
+			&fill_storage_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+		uint16_t fill_storage[fill_storage_len ? fill_storage_len : 1];
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (max_length <= this_str.len) {
+			if (jsstr16_set_from_utf16(out, this_str.codeunits,
+					this_str.len) != this_str.len) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			return 0;
+		}
+
+		if (!have_fill_string || fill_string_value.kind == JSMETHOD_VALUE_UNDEFINED) {
+			jsstr16_init_from_buf(&fill_str, (const char *)&space,
+					sizeof(space));
+			fill_str.len = 1;
+		} else {
+			jsstr16_init_from_buf(&fill_str, (const char *)fill_storage,
+					sizeof(fill_storage));
+			if (jsmethod_value_to_string(&fill_str, fill_string_value, 0,
+					error) < 0) {
+				return -1;
+			}
+		}
+		if (fill_str.len == 0) {
+			if (jsstr16_set_from_utf16(out, this_str.codeunits,
+					this_str.len) != this_str.len) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			return 0;
+		}
+
+		fill_len = max_length - this_str.len;
+		if (at_start) {
+			jsmethod_utf16_fill_truncated(out->codeunits, fill_len, &fill_str);
+			memcpy(out->codeunits + fill_len, this_str.codeunits,
+					this_str.len * sizeof(this_str.codeunits[0]));
+		} else {
+			memcpy(out->codeunits, this_str.codeunits,
+					this_str.len * sizeof(this_str.codeunits[0]));
+			jsmethod_utf16_fill_truncated(out->codeunits + this_str.len,
+					fill_len, &fill_str);
+		}
+		out->len = max_length;
+		return 0;
+	}
+}
+
+int
+jsmethod_string_pad_start_measure(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error)
+{
+	return jsmethod_string_pad_measure_common(this_value, have_max_length,
+			max_length_value, have_fill_string, fill_string_value,
+			sizes, error);
+}
+
+int
+jsmethod_string_pad_start(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_error_t *error)
+{
+	return jsmethod_string_pad_common(out, this_value, have_max_length,
+			max_length_value, have_fill_string, fill_string_value, 1, error);
+}
+
+int
+jsmethod_string_pad_end_measure(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error)
+{
+	return jsmethod_string_pad_measure_common(this_value, have_max_length,
+			max_length_value, have_fill_string, fill_string_value,
+			sizes, error);
+}
+
+int
+jsmethod_string_pad_end(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_error_t *error)
+{
+	return jsmethod_string_pad_common(out, this_value, have_max_length,
+			max_length_value, have_fill_string, fill_string_value, 0, error);
 }
 
 int

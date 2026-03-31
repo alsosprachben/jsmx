@@ -1420,6 +1420,16 @@ typedef int (*jsval_method_repeat_fn)(jsstr16_t *out,
 		jsmethod_value_t this_value, int have_count,
 		jsmethod_value_t count_value, jsmethod_error_t *error);
 
+typedef int (*jsval_method_pad_measure_fn)(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error);
+
+typedef int (*jsval_method_pad_fn)(jsstr16_t *out,
+		jsmethod_value_t this_value, int have_max_length,
+		jsmethod_value_t max_length_value, int have_fill_string,
+		jsmethod_value_t fill_string_value, jsmethod_error_t *error);
+
 typedef int (*jsval_method_locale_fn)(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_locale, jsmethod_value_t locale_value,
 		uint16_t *locale_storage, size_t locale_storage_cap,
@@ -1549,6 +1559,120 @@ jsval_method_string_repeat_bridge(jsval_region_t *region,
 		}
 		if (fn(&out, this_method_value, have_count, count_method_value,
 				error) < 0) {
+			return -1;
+		}
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
+	return 0;
+}
+
+static int
+jsval_method_string_pad_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value,
+		jsval_method_pad_measure_fn measure_fn, jsval_method_pad_fn fn,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsmethod_string_pad_sizes_t sizes;
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+	size_t max_length_storage_cap = 0;
+	size_t fill_string_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t max_length_method_value = jsmethod_value_undefined();
+	jsmethod_value_t fill_string_method_value = jsmethod_value_undefined();
+	size_t this_storage_cap = 0;
+
+	if (region == NULL || measure_fn == NULL || fn == NULL ||
+			value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_max_length &&
+			jsval_value_utf16_len(region, max_length_value,
+			&max_length_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_fill_string &&
+			fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, fill_string_value,
+			&fill_string_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t max_length_storage[max_length_storage_cap ?
+				max_length_storage_cap : 1];
+		uint16_t fill_string_storage[fill_string_storage_cap ?
+				fill_string_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_max_length &&
+				jsval_method_value_from_jsval(region, max_length_value,
+				max_length_storage, max_length_storage_cap,
+				&max_length_method_value) < 0) {
+			return -1;
+		}
+		if (have_fill_string &&
+				fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, fill_string_value,
+				fill_string_storage, fill_string_storage_cap,
+				&fill_string_method_value) < 0) {
+			return -1;
+		}
+		if (measure_fn(this_method_value, have_max_length,
+				max_length_method_value, have_fill_string,
+				fill_string_method_value, &sizes, error) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_string_reserve_utf16(region, sizes.result_len, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	jsstr16_init_from_buf(&out,
+			(const char *)jsval_native_string_units(result_string),
+			result_string->cap * sizeof(uint16_t));
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t max_length_storage[max_length_storage_cap ?
+				max_length_storage_cap : 1];
+		uint16_t fill_string_storage[fill_string_storage_cap ?
+				fill_string_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_max_length &&
+				jsval_method_value_from_jsval(region, max_length_value,
+				max_length_storage, max_length_storage_cap,
+				&max_length_method_value) < 0) {
+			return -1;
+		}
+		if (have_fill_string &&
+				fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, fill_string_value,
+				fill_string_storage, fill_string_storage_cap,
+				&fill_string_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&out, this_method_value, have_max_length,
+				max_length_method_value, have_fill_string,
+				fill_string_method_value, error) < 0) {
 			return -1;
 		}
 	}
@@ -2099,6 +2223,128 @@ int jsval_method_string_repeat_measure(jsval_region_t *region,
 		}
 		return jsmethod_string_repeat_measure(this_method_value, have_count,
 				count_method_value, sizes, error);
+	}
+}
+
+int
+jsval_method_string_pad_start_measure(jsval_region_t *region,
+		jsval_t this_value, int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error)
+{
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t max_length_method_value = jsmethod_value_undefined();
+	jsmethod_value_t fill_string_method_value = jsmethod_value_undefined();
+	size_t this_storage_cap = 0;
+	size_t max_length_storage_cap = 0;
+	size_t fill_string_storage_cap = 0;
+
+	if (region == NULL || sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_max_length &&
+			jsval_value_utf16_len(region, max_length_value,
+			&max_length_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_fill_string && fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, fill_string_value,
+			&fill_string_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t max_length_storage[max_length_storage_cap ?
+				max_length_storage_cap : 1];
+		uint16_t fill_string_storage[fill_string_storage_cap ?
+				fill_string_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_max_length &&
+				jsval_method_value_from_jsval(region, max_length_value,
+				max_length_storage, max_length_storage_cap,
+				&max_length_method_value) < 0) {
+			return -1;
+		}
+		if (have_fill_string &&
+				fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, fill_string_value,
+				fill_string_storage, fill_string_storage_cap,
+				&fill_string_method_value) < 0) {
+			return -1;
+		}
+		return jsmethod_string_pad_start_measure(this_method_value,
+				have_max_length, max_length_method_value,
+				have_fill_string, fill_string_method_value, sizes, error);
+	}
+}
+
+int
+jsval_method_string_pad_end_measure(jsval_region_t *region,
+		jsval_t this_value, int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes, jsmethod_error_t *error)
+{
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t max_length_method_value = jsmethod_value_undefined();
+	jsmethod_value_t fill_string_method_value = jsmethod_value_undefined();
+	size_t this_storage_cap = 0;
+	size_t max_length_storage_cap = 0;
+	size_t fill_string_storage_cap = 0;
+
+	if (region == NULL || sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_max_length &&
+			jsval_value_utf16_len(region, max_length_value,
+			&max_length_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_fill_string && fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, fill_string_value,
+			&fill_string_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t max_length_storage[max_length_storage_cap ?
+				max_length_storage_cap : 1];
+		uint16_t fill_string_storage[fill_string_storage_cap ?
+				fill_string_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_max_length &&
+				jsval_method_value_from_jsval(region, max_length_value,
+				max_length_storage, max_length_storage_cap,
+				&max_length_method_value) < 0) {
+			return -1;
+		}
+		if (have_fill_string &&
+				fill_string_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, fill_string_value,
+				fill_string_storage, fill_string_storage_cap,
+				&fill_string_method_value) < 0) {
+			return -1;
+		}
+		return jsmethod_string_pad_end_measure(this_method_value,
+				have_max_length, max_length_method_value,
+				have_fill_string, fill_string_method_value, sizes, error);
 	}
 }
 
@@ -3652,6 +3898,30 @@ int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,
 {
 	return jsval_method_string_repeat_bridge(region, this_value, have_count,
 			count_value, jsmethod_string_repeat, value_ptr, error);
+}
+
+int
+jsval_method_string_pad_start(jsval_region_t *region, jsval_t this_value,
+		int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_pad_bridge(region, this_value,
+			have_max_length, max_length_value, have_fill_string,
+			fill_string_value, jsmethod_string_pad_start_measure,
+			jsmethod_string_pad_start, value_ptr, error);
+}
+
+int
+jsval_method_string_pad_end(jsval_region_t *region, jsval_t this_value,
+		int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_pad_bridge(region, this_value,
+			have_max_length, max_length_value, have_fill_string,
+			fill_string_value, jsmethod_string_pad_end_measure,
+			jsmethod_string_pad_end, value_ptr, error);
 }
 
 int

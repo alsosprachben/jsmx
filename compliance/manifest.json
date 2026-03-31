@@ -1178,6 +1178,196 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed trim/repeat results across the new jsval/jsmethod bridge."
     },
     {
+      "id": "test262-strings-padStart-normal-operation",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/normal-operation.js",
+      "generated": "compliance/generated/strings/test262/padStart/normal-operation.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padStart-fill-string-empty",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/fill-string-empty.js",
+      "generated": "compliance/generated/strings/test262/padStart/fill-string-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padStart-fill-string-omitted",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/fill-string-omitted.js",
+      "generated": "compliance/generated/strings/test262/padStart/fill-string-omitted.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padStart-fill-string-non-strings",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/fill-string-non-strings.js",
+      "generated": "compliance/generated/strings/test262/padStart/fill-string-non-strings.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padStart-max-length-not-greater-than-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/max-length-not-greater-than-string.js",
+      "generated": "compliance/generated/strings/test262/padStart/max-length-not-greater-than-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padStart-exception-fill-string-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/exception-fill-string-symbol.js",
+      "generated": "compliance/generated/strings/test262/padStart/exception-fill-string-symbol.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer, which rejects Symbol fillString values with a typed TypeError."
+    },
+    {
+      "id": "test262-strings-padStart-exception-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/exception-symbol.js",
+      "generated": "compliance/generated/strings/test262/padStart/exception-symbol.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padStart layer, which rejects Symbol receivers with RequireObjectCoercible/ToString semantics."
+    },
+    {
+      "id": "test262-strings-padStart-exception-not-object-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/exception-not-object-coercible.js",
+      "generated": "compliance/generated/strings/test262/padStart/exception-not-object-coercible.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the null/undefined receiver checks stay in jsmethod, and the throwing receiver branch is modeled through an explicit coercion callback before padStart dispatch."
+    },
+    {
+      "id": "test262-strings-padStart-observable-operations",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padStart/observable-operations.js",
+      "generated": "compliance/generated/strings/test262/padStart/observable-operations.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the fixture preserves the whole upstream observable-coercion file by logging receiver/maxLength/fillString ToPrimitive order outside jsmethod, then dispatching into padStart with the lowered primitives."
+    },
+    {
+      "id": "test262-strings-padEnd-normal-operation",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/normal-operation.js",
+      "generated": "compliance/generated/strings/test262/padEnd/normal-operation.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padEnd-fill-string-empty",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/fill-string-empty.js",
+      "generated": "compliance/generated/strings/test262/padEnd/fill-string-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padEnd-fill-string-omitted",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/fill-string-omitted.js",
+      "generated": "compliance/generated/strings/test262/padEnd/fill-string-omitted.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padEnd-fill-string-non-strings",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/fill-string-non-strings.js",
+      "generated": "compliance/generated/strings/test262/padEnd/fill-string-non-strings.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padEnd-max-length-not-greater-than-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/max-length-not-greater-than-string.js",
+      "generated": "compliance/generated/strings/test262/padEnd/max-length-not-greater-than-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer for filler repetition/truncation and ToLength maxLength coercion."
+    },
+    {
+      "id": "test262-strings-padEnd-exception-fill-string-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/exception-fill-string-symbol.js",
+      "generated": "compliance/generated/strings/test262/padEnd/exception-fill-string-symbol.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer, which rejects Symbol fillString values with a typed TypeError."
+    },
+    {
+      "id": "test262-strings-padEnd-exception-symbol",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/exception-symbol.js",
+      "generated": "compliance/generated/strings/test262/padEnd/exception-symbol.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod padEnd layer, which rejects Symbol receivers with RequireObjectCoercible/ToString semantics."
+    },
+    {
+      "id": "test262-strings-padEnd-exception-not-object-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/exception-not-object-coercible.js",
+      "generated": "compliance/generated/strings/test262/padEnd/exception-not-object-coercible.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the null/undefined receiver checks stay in jsmethod, and the throwing receiver branch is modeled through an explicit coercion callback before padEnd dispatch."
+    },
+    {
+      "id": "test262-strings-padEnd-observable-operations",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/padEnd/observable-operations.js",
+      "generated": "compliance/generated/strings/test262/padEnd/observable-operations.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the fixture preserves the whole upstream observable-coercion file by logging receiver/maxLength/fillString ToPrimitive order outside jsmethod, then dispatching into padEnd with the lowered primitives."
+    },
+    {
+      "id": "jsmx-strings-json-backed-pad-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-pad-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-pad-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed padStart/padEnd results across the jsval/jsmethod bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

@@ -64,6 +64,10 @@ typedef struct jsmethod_string_repeat_sizes_s {
 	size_t result_len;
 } jsmethod_string_repeat_sizes_t;
 
+typedef struct jsmethod_string_pad_sizes_s {
+	size_t result_len;
+} jsmethod_string_pad_sizes_t;
+
 void jsmethod_error_clear(jsmethod_error_t *error);
 
 jsmethod_value_t jsmethod_value_undefined(void);
@@ -107,6 +111,24 @@ int jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		jsmethod_error_t *error);
 int jsmethod_string_repeat(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,
+		jsmethod_error_t *error);
+int jsmethod_string_pad_start_measure(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_pad_start(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_error_t *error);
+int jsmethod_string_pad_end_measure(jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_pad_end(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_max_length, jsmethod_value_t max_length_value,
+		int have_fill_string, jsmethod_value_t fill_string_value,
 		jsmethod_error_t *error);
 int jsmethod_string_char_at(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_position, jsmethod_value_t position_value,

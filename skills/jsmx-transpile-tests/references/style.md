@@ -42,6 +42,7 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
   - normalize
   - trimming (`trim`, `trimStart`, `trimEnd`)
   - repetition (`repeat`)
+  - padding (`padStart`, `padEnd`)
   - case conversion
   - search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`,
     `endsWith`)

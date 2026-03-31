@@ -2432,6 +2432,96 @@ static generated_status_t generated_smoke_jsmethod_repeat_abrupt(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_method_pad(
+		char *detail, size_t cap)
+{
+	static const uint8_t json[] = "{\"text\":\"abc\"}";
+	static const uint8_t expected_json[] =
+			"{\"text\":\"abc\",\"left\":\"defdabc\",\"right\":\"abc  \"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t filler;
+	jsval_t result;
+	jsmethod_error_t error;
+	jsmethod_string_pad_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, json, sizeof(json) - 1, 16, &root) != 0) {
+		return generated_failf(detail, cap, "failed to parse JSON input");
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 3) != 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_object_get_utf8(&region, root,
+			(const uint8_t *)"text", 4, &text) != 0) {
+		return generated_failf(detail, cap, "failed to fetch text string");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"def", 3, &filler) != 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(filler)");
+	}
+	if (jsval_method_string_pad_start_measure(&region, text, 1,
+			jsval_number(7.0), 1, filler, &sizes, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_pad_start_measure failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 7) {
+		return generated_failf(detail, cap,
+				"expected padStart result_len 7, got %zu", sizes.result_len);
+	}
+	if (jsval_method_string_pad_start(&region, text, 1,
+			jsval_number(7.0), 1, filler, &result, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_pad_start failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_set_utf8(&region, root,
+			(const uint8_t *)"left", 4, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(left)");
+	}
+	if (jsval_method_string_pad_end(&region, text, 1,
+			jsval_number(5.0), 0, jsval_undefined(), &result, &error) != 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_pad_end failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_set_utf8(&region, root,
+			(const uint8_t *)"right", 5, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(right)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_pad_abrupt(
+		char *detail, size_t cap)
+{
+	generated_callback_ctx_t throw_ctx = {1};
+	uint16_t storage[16];
+	jsmethod_error_t error;
+	jsstr16_t out;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_pad_start(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3), 1,
+			jsmethod_value_number(5.0), 1,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			&error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt padStart fill coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT fill coercion, got %d", (int)error.kind);
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -2571,10 +2661,12 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
 	{"smoke", "jsval_method_slice_substring", generated_smoke_jsval_method_slice_substring},
 	{"smoke", "jsval_method_trim_repeat", generated_smoke_jsval_method_trim_repeat},
+	{"smoke", "jsval_method_pad", generated_smoke_jsval_method_pad},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
 	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
 	{"smoke", "jsmethod_repeat_abrupt", generated_smoke_jsmethod_repeat_abrupt},
+	{"smoke", "jsmethod_pad_abrupt", generated_smoke_jsmethod_pad_abrupt},
 	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},

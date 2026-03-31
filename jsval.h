@@ -164,6 +164,24 @@ int jsval_method_string_repeat_measure(jsval_region_t *region,
 int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,
 		int have_count, jsval_t count_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_pad_start_measure(jsval_region_t *region,
+		jsval_t this_value, int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_pad_start(jsval_region_t *region, jsval_t this_value,
+		int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_pad_end_measure(jsval_region_t *region,
+		jsval_t this_value, int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value,
+		jsmethod_string_pad_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_pad_end(jsval_region_t *region, jsval_t this_value,
+		int have_max_length, jsval_t max_length_value,
+		int have_fill_string, jsval_t fill_string_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_char_at(jsval_region_t *region, jsval_t this_value,
 		int have_position, jsval_t position_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
