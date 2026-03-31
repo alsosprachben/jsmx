@@ -14,6 +14,11 @@ typedef struct generated_string_callback_ctx_s {
 	size_t len;
 } generated_string_callback_ctx_t;
 
+typedef struct generated_string_error_ctx_s {
+	jsmethod_error_kind_t kind;
+	const char *message;
+} generated_string_error_ctx_t;
+
 static inline int
 generated_string_callback_to_string(void *opaque, jsstr16_t *out,
 		jsmethod_error_t *error)
@@ -31,6 +36,19 @@ generated_string_callback_to_string(void *opaque, jsstr16_t *out,
 		return -1;
 	}
 	return 0;
+}
+
+static inline int
+generated_string_error_to_string(void *opaque, jsstr16_t *out,
+		jsmethod_error_t *error)
+{
+	generated_string_error_ctx_t *ctx =
+			(generated_string_error_ctx_t *)opaque;
+
+	(void)out;
+	error->kind = ctx->kind;
+	error->message = ctx->message;
+	return -1;
 }
 
 static inline int

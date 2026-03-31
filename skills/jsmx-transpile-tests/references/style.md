@@ -44,6 +44,7 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
   - search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`,
     `endsWith`)
   - accessors (`charAt`, `at`, `charCodeAt`, `codePointAt`)
+  - substring extraction (`slice`, `substring`)
   - well-formedness methods
 - Use `jsval` when the test involves:
   - JS value tags

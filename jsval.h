@@ -163,6 +163,14 @@ int jsval_method_string_char_code_at(jsval_region_t *region,
 int jsval_method_string_code_point_at(jsval_region_t *region,
 		jsval_t this_value, int have_position, jsval_t position_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_slice(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_end, jsval_t end_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_substring(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_end, jsval_t end_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_index_of(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, int have_position, jsval_t position_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);

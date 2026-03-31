@@ -738,6 +738,196 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed string accessor results across the new jsval/jsmethod accessor bridge."
     },
     {
+      "id": "test262-strings-slice-S15.5.4.13_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Object(true) receiver is lowered to its known primitive ToString result before dispatching into jsmethod slice."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A2_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A2_T2.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A2_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod slice layer for NaN and Infinity index coercion."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A2_T5",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A2_T5.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A2_T5.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod slice layer for Infinity-clamped empty results."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A2_T7",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A2_T7.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A2_T7.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod slice layer for exact end-of-string bounds."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A2_T9",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A2_T9.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A2_T9.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod slice layer for negative-Infinity clamping."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A3_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A3_T1.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A3_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Object receiver is lowered to its known primitive ToString result before dispatching into jsmethod slice."
+    },
+    {
+      "id": "test262-strings-slice-S15.5.4.13_A3_T3",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/S15.5.4.13_A3_T3.js",
+      "generated": "compliance/generated/strings/test262/slice/S15.5.4.13_A3_T3.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream custom object receiver is lowered to its known primitive ToString result before nested jsmethod slice calls."
+    },
+    {
+      "id": "test262-strings-slice-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/slice/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod slice layer, which enforces RequireObjectCoercible(this) before substring extraction."
+    },
+    {
+      "id": "test262-strings-slice-this-value-tostring-throws-toprimitive",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/slice/this-value-tostring-throws-toprimitive.js",
+      "generated": "compliance/generated/strings/test262/slice/this-value-tostring-throws-toprimitive.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models the TypeError surfaced by ToPrimitive(this) before jsmethod slice runs."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Object(true) receiver is lowered to its known primitive ToString result before dispatching into jsmethod substring."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A1_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Boolean receiver is lowered to its known primitive ToString result before dispatching into jsmethod substring."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A2_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A2_T2.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A2_T2.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substring layer for NaN and Infinity index coercion."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A2_T5",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A2_T5.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A2_T5.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substring layer for Infinity-clamped empty results."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A2_T8",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A2_T8.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A2_T8.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substring layer for clamped indices and start/end swapping."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A2_T10",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A2_T10.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A2_T10.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substring layer for in-range extraction."
+    },
+    {
+      "id": "test262-strings-substring-S15.5.4.15_A3_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/S15.5.4.15_A3_T2.js",
+      "generated": "compliance/generated/strings/test262/substring/S15.5.4.15_A3_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Array receiver is lowered to its known primitive ToString result before dispatching into jsmethod substring."
+    },
+    {
+      "id": "test262-strings-substring-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/substring/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod substring layer, which enforces RequireObjectCoercible(this) before substring extraction."
+    },
+    {
+      "id": "test262-strings-substring-this-value-tostring-throws-toprimitive",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/substring/this-value-tostring-throws-toprimitive.js",
+      "generated": "compliance/generated/strings/test262/substring/this-value-tostring-throws-toprimitive.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: a receiver callback models the TypeError surfaced by ToPrimitive(this) before jsmethod substring runs."
+    },
+    {
+      "id": "jsmx-strings-json-backed-slice-substring-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-slice-substring-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-slice-substring-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for native and JSON-backed slice/substring results across the new jsval/jsmethod substring bridge."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

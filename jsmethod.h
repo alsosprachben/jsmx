@@ -103,6 +103,14 @@ int jsmethod_string_char_code_at(double *value_ptr,
 int jsmethod_string_code_point_at(int *has_value_ptr, double *value_ptr,
 		jsmethod_value_t this_value, int have_position,
 		jsmethod_value_t position_value, jsmethod_error_t *error);
+int jsmethod_string_slice(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_start, jsmethod_value_t start_value,
+		int have_end, jsmethod_value_t end_value,
+		jsmethod_error_t *error);
+int jsmethod_string_substring(jsstr16_t *out, jsmethod_value_t this_value,
+		int have_start, jsmethod_value_t start_value,
+		int have_end, jsmethod_value_t end_value,
+		jsmethod_error_t *error);
 int jsmethod_string_index_of(ssize_t *index_ptr, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, int have_position,
 		jsmethod_value_t position_value, jsmethod_error_t *error);

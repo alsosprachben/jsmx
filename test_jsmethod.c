@@ -29,6 +29,16 @@ callback_to_string(void *opaque, jsstr16_t *out, jsmethod_error_t *error)
 	return 0;
 }
 
+static int
+callback_to_type_error(void *opaque, jsstr16_t *out, jsmethod_error_t *error)
+{
+	(void)opaque;
+	(void)out;
+	error->kind = JSMETHOD_ERROR_TYPE;
+	error->message = "TypeError";
+	return -1;
+}
+
 static void
 expect_utf16(jsstr16_t *s, const uint16_t *expected, size_t expected_len)
 {
@@ -429,6 +439,69 @@ test_string_accessor_methods(void)
 }
 
 static void
+test_string_slice_substring_methods(void)
+{
+	static const uint8_t text_utf8[] = "bananas";
+	uint16_t storage[32];
+	jsstr16_t out;
+	jsmethod_error_t error;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+
+	assert(jsmethod_string_slice(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(1.0),
+			1, jsmethod_value_number(-1.0), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'a','n','a','n','a'}, 5);
+
+	out.len = 0;
+	assert(jsmethod_string_slice(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(-3.0),
+			0, jsmethod_value_undefined(), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'n','a','s'}, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_slice(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(INFINITY),
+			1, jsmethod_value_number(INFINITY), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){0}, 0);
+
+	out.len = 0;
+	assert(jsmethod_string_substring(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(5.0),
+			1, jsmethod_value_number(2.0), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'n','a','n'}, 3);
+
+	out.len = 0;
+	assert(jsmethod_string_substring(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(NAN),
+			1, jsmethod_value_number(INFINITY), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'b','a','n','a','n','a','s'}, 7);
+
+	out.len = 0;
+	assert(jsmethod_string_substring(&out,
+			jsmethod_value_string_utf8(text_utf8, sizeof(text_utf8) - 1),
+			1, jsmethod_value_number(2.0),
+			0, jsmethod_value_undefined(), &error) == 0);
+	expect_utf16(&out, (const uint16_t[]){'n','a','n','a','s'}, 5);
+
+	assert(jsmethod_string_slice(&out, jsmethod_value_null(),
+			1, jsmethod_value_number(0.0),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsmethod_string_substring(&out,
+			jsmethod_value_coercible(NULL, callback_to_type_error),
+			0, jsmethod_value_undefined(),
+			0, jsmethod_value_undefined(), &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+}
+
+static void
 test_string_search_methods(void)
 {
 	static const uint8_t bananas_utf8[] = "bananas";
@@ -591,6 +664,7 @@ main(void)
 	test_string_case_methods();
 	test_well_formed_methods();
 	test_string_accessor_methods();
+	test_string_slice_substring_methods();
 	test_string_search_methods();
 	return 0;
 }

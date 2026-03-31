@@ -1437,6 +1437,11 @@ typedef int (*jsval_method_string_optional_double_fn)(int *has_value_ptr,
 		double *value_ptr, jsmethod_value_t this_value, int have_position,
 		jsmethod_value_t position_value, jsmethod_error_t *error);
 
+typedef int (*jsval_method_string_range_fn)(jsstr16_t *out,
+		jsmethod_value_t this_value, int have_start,
+		jsmethod_value_t start_value, int have_end,
+		jsmethod_value_t end_value, jsmethod_error_t *error);
+
 typedef int (*jsval_method_string_index_fn)(ssize_t *index_ptr,
 		jsmethod_value_t this_value, jsmethod_value_t search_value,
 		int have_position, jsmethod_value_t position_value,
@@ -1761,6 +1766,77 @@ jsval_method_string_optional_double_bridge(jsval_region_t *region,
 		return 0;
 	}
 	*value_ptr = jsval_number(value);
+	return 0;
+}
+
+static int
+jsval_method_string_range_bridge(jsval_region_t *region,
+		jsval_t this_value, int have_start, jsval_t start_value,
+		int have_end, jsval_t end_value, jsval_method_string_range_fn fn,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_native_string_t *result_string;
+	jsval_t result;
+	jsstr16_t out;
+	size_t this_storage_cap;
+	size_t start_storage_cap = 0;
+	size_t end_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t start_method_value = jsmethod_value_undefined();
+	jsmethod_value_t end_method_value = jsmethod_value_undefined();
+	size_t output_cap;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	output_cap = this_storage_cap;
+	if (have_start &&
+			jsval_value_utf16_len(region, start_value, &start_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_end &&
+			jsval_value_utf16_len(region, end_value, &end_storage_cap) < 0) {
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, output_cap, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t start_storage[start_storage_cap ? start_storage_cap : 1];
+		uint16_t end_storage[end_storage_cap ? end_storage_cap : 1];
+
+		jsstr16_init_from_buf(&out,
+				(const char *)jsval_native_string_units(result_string),
+				result_string->cap * sizeof(uint16_t));
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_start &&
+				jsval_method_value_from_jsval(region, start_value, start_storage,
+				start_storage_cap, &start_method_value) < 0) {
+			return -1;
+		}
+		if (have_end &&
+				jsval_method_value_from_jsval(region, end_value, end_storage,
+				end_storage_cap, &end_method_value) < 0) {
+			return -1;
+		}
+		if (fn(&out, this_method_value, have_start, start_method_value,
+				have_end, end_method_value, error) < 0) {
+			return -1;
+		}
+	}
+
+	result_string->len = out.len;
+	*value_ptr = result;
 	return 0;
 }
 
@@ -3483,6 +3559,28 @@ jsval_method_string_code_point_at(jsval_region_t *region,
 	return jsval_method_string_optional_double_bridge(region, this_value,
 			have_position, position_value, jsmethod_string_code_point_at,
 			value_ptr, error);
+}
+
+int
+jsval_method_string_slice(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_end, jsval_t end_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_range_bridge(region, this_value,
+			have_start, start_value, have_end, end_value,
+			jsmethod_string_slice, value_ptr, error);
+}
+
+int
+jsval_method_string_substring(jsval_region_t *region, jsval_t this_value,
+		int have_start, jsval_t start_value,
+		int have_end, jsval_t end_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_method_string_range_bridge(region, this_value,
+			have_start, start_value, have_end, end_value,
+			jsmethod_string_substring, value_ptr, error);
 }
 
 int

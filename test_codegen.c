@@ -158,6 +158,17 @@ generated_callback_to_string(void *opaque, jsstr16_t *out,
 	return 0;
 }
 
+static int
+generated_type_error_to_string(void *opaque, jsstr16_t *out,
+		jsmethod_error_t *error)
+{
+	(void)opaque;
+	(void)out;
+	error->kind = JSMETHOD_ERROR_TYPE;
+	error->message = "TypeError";
+	return -1;
+}
+
 static generated_status_t generated_expect_negative_zero(jsval_t value,
 		char *detail, size_t cap)
 {
@@ -2213,6 +2224,125 @@ static generated_status_t generated_smoke_jsmethod_accessor_abrupt(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_method_slice_substring(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] = "{\"text\":\"bananas\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"bananas\",\"slice\":\"anana\",\"tail\":\"nas\",\"substring\":\"nan\",\"rest\":\"nanas\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t slice_value;
+	jsval_t tail_value;
+	jsval_t substring_value;
+	jsval_t rest_value;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+
+	if (jsval_method_string_slice(&region, text, 1, jsval_number(1.0), 1,
+			jsval_number(-1.0), &slice_value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_slice failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_slice(&region, text, 1, jsval_number(-3.0), 0,
+			jsval_undefined(), &tail_value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_slice tail failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_substring(&region, text, 1, jsval_number(5.0), 1,
+			jsval_number(2.0), &substring_value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_substring failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_method_string_substring(&region, text, 1, jsval_number(2.0), 0,
+			jsval_undefined(), &rest_value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_substring rest failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	status = generated_expect_string(&region, slice_value,
+			(const uint8_t *)"anana", 5, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	status = generated_expect_string(&region, tail_value,
+			(const uint8_t *)"nas", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	status = generated_expect_string(&region, substring_value,
+			(const uint8_t *)"nan", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	status = generated_expect_string(&region, rest_value,
+			(const uint8_t *)"nanas", 5, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 5) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_region_set_root");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"slice", 5,
+			slice_value) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"tail", 4,
+			tail_value) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"substring", 9,
+			substring_value) < 0 ||
+			jsval_object_set_utf8(&region, root, (const uint8_t *)"rest", 4,
+			rest_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(slice/substring)");
+	}
+
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsmethod_slice_substring_abrupt(
+		char *detail, size_t cap)
+{
+	jsmethod_error_t error;
+	uint16_t storage[8];
+	jsstr16_t out;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_substring(&out,
+			jsmethod_value_coercible(NULL, generated_type_error_to_string),
+			0, jsmethod_value_undefined(),
+			0, jsmethod_value_undefined(), &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected substring receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected TYPE receiver coercion, got %d",
+				(int)error.kind);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_string_normalize_nfc_combining_ring(char *detail, size_t cap)
 {
 	static const uint8_t input[] = {'A', 0xCC, 0x8A};
@@ -2350,8 +2480,10 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_lower", generated_smoke_jsval_method_lower},
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
 	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
+	{"smoke", "jsval_method_slice_substring", generated_smoke_jsval_method_slice_substring},
 	{"smoke", "jsval_method_search", generated_smoke_jsval_method_search},
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
+	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
 	{"smoke", "jsmethod_search_abrupt", generated_smoke_jsmethod_search_abrupt},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
