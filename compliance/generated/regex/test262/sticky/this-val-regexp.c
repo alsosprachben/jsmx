@@ -7,8 +7,8 @@
 	do { \
 		GENERATED_TEST_ASSERT(generated_regexp_new_utf8(&region, ".", flag_text, \
 				&regex, &error) == 0, SUITE, CASE_NAME, label " build failed"); \
-		GENERATED_TEST_ASSERT(generated_expect_regexp_has_flag(&region, regex, \
-				JSREGEX_FLAG_STICKY, expected_value, SUITE, CASE_NAME, label) \
+		GENERATED_TEST_ASSERT(generated_expect_regexp_boolean(&region, regex, \
+				jsval_regexp_sticky, expected_value, SUITE, CASE_NAME, label) \
 				== GENERATED_TEST_PASS, SUITE, CASE_NAME, label " mismatch"); \
 	} while (0)
 

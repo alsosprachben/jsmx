@@ -744,17 +744,21 @@ test_regexp_exec_and_match(void)
 	jsval_t override_regex;
 	jsval_t global_regex;
 	jsval_t sticky_regex;
+	jsval_t all_flags;
+	jsval_t all_regex;
 	jsval_t input;
 	jsval_t subject;
 	jsval_t result;
 	jsval_t native_string;
 	jsval_t flags_value;
+	jsval_t source_value;
 	jsval_t parsed_root;
 	jsval_t parsed_text;
 	jsval_regexp_info_t info;
 	jsmethod_error_t error;
 	size_t last_index;
 	int test_result;
+	int flag_value;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	assert(jsval_string_new_utf8(&region, pattern_utf8,
@@ -763,8 +767,22 @@ test_regexp_exec_and_match(void)
 			&regex, &error) == 0);
 	assert(regex.kind == JSVAL_KIND_REGEXP);
 	assert(jsval_truthy(&region, regex) == 1);
+	assert(jsval_regexp_source(&region, regex, &source_value) == 0);
+	assert_string(&region, source_value, "([0-9][0-9])([a-z])?");
 	assert(jsval_regexp_flags(&region, regex, &flags_value) == 0);
 	assert_string(&region, flags_value, "");
+	assert(jsval_regexp_global(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
+	assert(jsval_regexp_ignore_case(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
+	assert(jsval_regexp_multiline(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
+	assert(jsval_regexp_dot_all(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
+	assert(jsval_regexp_unicode(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
+	assert(jsval_regexp_sticky(&region, regex, &flag_value) == 0);
+	assert(flag_value == 0);
 	assert(jsval_regexp_info(&region, regex, &info) == 0);
 	assert(info.flags == 0);
 	assert(info.capture_count == 2);
@@ -790,6 +808,8 @@ test_regexp_exec_and_match(void)
 
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
 			&global_flags) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"gimsuy", 6,
+			&all_flags) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"gim", 3,
 			&gim_flags) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"y", 1,
@@ -800,19 +820,41 @@ test_regexp_exec_and_match(void)
 			&abc_pattern) == 0);
 	assert(jsval_regexp_new(&region,
 			jsval_number(3.0), 1, global_flags, &global_regex, &error) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, all_flags, &all_regex,
+			&error) == 0);
+	assert(jsval_regexp_flags(&region, all_regex, &flags_value) == 0);
+	assert_string(&region, flags_value, "gimsuy");
+	assert(jsval_regexp_global(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
+	assert(jsval_regexp_ignore_case(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
+	assert(jsval_regexp_multiline(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
+	assert(jsval_regexp_dot_all(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
+	assert(jsval_regexp_unicode(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
+	assert(jsval_regexp_sticky(&region, all_regex, &flag_value) == 0);
+	assert(flag_value == 1);
 	assert(jsval_regexp_new(&region, abc_pattern, 1, gim_flags, &copy_regex,
 			&error) == 0);
 	assert(jsval_regexp_set_last_index(&region, copy_regex, 5) == 0);
 	assert(jsval_regexp_new(&region, copy_regex, 0, jsval_undefined(),
 			&override_regex, &error) == 0);
+	assert(jsval_regexp_source(&region, override_regex, &source_value) == 0);
+	assert_string(&region, source_value, "abc");
 	assert(jsval_regexp_flags(&region, override_regex, &flags_value) == 0);
 	assert_string(&region, flags_value, "gim");
 	assert(jsval_regexp_get_last_index(&region, override_regex, &last_index) == 0);
 	assert(last_index == 0);
 	assert(jsval_regexp_new(&region, copy_regex, 1, y_flag,
 			&override_regex, &error) == 0);
+	assert(jsval_regexp_source(&region, override_regex, &source_value) == 0);
+	assert_string(&region, source_value, "abc");
 	assert(jsval_regexp_flags(&region, override_regex, &flags_value) == 0);
 	assert_string(&region, flags_value, "y");
+	assert(jsval_regexp_sticky(&region, override_regex, &flag_value) == 0);
+	assert(flag_value == 1);
 	assert(jsval_regexp_get_last_index(&region, override_regex, &last_index) == 0);
 	assert(last_index == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"343443444", 9,
@@ -882,6 +924,14 @@ test_regexp_exec_and_match(void)
 	assert(jsval_regexp_new(&region, abc_pattern, 1, bad_flags,
 			&override_regex, &error) < 0);
 	assert(error.kind == JSMETHOD_ERROR_SYNTAX);
+
+	errno = 0;
+	assert(jsval_regexp_source(&region, native_string, &source_value) < 0);
+	assert(errno == EINVAL);
+
+	errno = 0;
+	assert(jsval_regexp_global(&region, native_string, &flag_value) < 0);
+	assert(errno == EINVAL);
 
 	errno = 0;
 	assert(jsval_regexp_test(&region, native_string, subject, &test_result,

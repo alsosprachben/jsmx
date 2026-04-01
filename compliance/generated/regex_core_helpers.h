@@ -10,6 +10,9 @@
 #include "jsregex.h"
 #include "jsval.h"
 
+typedef int (*generated_regexp_bool_accessor_t)(jsval_region_t *region,
+		jsval_t regexp, int *result_ptr);
+
 static inline int
 generated_regexp_new_utf8(jsval_region_t *region, const char *pattern,
 		const char *flags, jsval_t *value_ptr, jsmethod_error_t *error)
@@ -29,6 +32,44 @@ generated_regexp_new_utf8(jsval_region_t *region, const char *pattern,
 	}
 	return jsval_regexp_new(region, pattern_value, flags != NULL, flags_value,
 			value_ptr, error);
+}
+
+static inline int
+generated_expect_regexp_source(jsval_region_t *region, jsval_t regexp,
+		const char *expected, const char *suite, const char *case_name,
+		const char *label)
+{
+	jsval_t source_value;
+	size_t expected_len = strlen(expected);
+	size_t actual_len = 0;
+	uint8_t buf[expected_len ? expected_len : 1];
+
+	if (jsval_regexp_source(region, regexp, &source_value) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: jsval_regexp_source failed: %s", label, strerror(errno));
+	}
+	if (source_value.kind != JSVAL_KIND_STRING) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected source string value", label);
+	}
+	if (jsval_string_copy_utf8(region, source_value, NULL, 0, &actual_len) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: source length failed: %s", label, strerror(errno));
+	}
+	if (actual_len != expected_len) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected %zu bytes, got %zu", label,
+				expected_len, actual_len);
+	}
+	if (jsval_string_copy_utf8(region, source_value, buf, actual_len, NULL) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: source copy failed: %s", label, strerror(errno));
+	}
+	if (memcmp(buf, expected, expected_len) != 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: source bytes did not match expected output", label);
+	}
+	return GENERATED_TEST_PASS;
 }
 
 static inline int
@@ -65,6 +106,24 @@ generated_expect_regexp_flags(jsval_region_t *region, jsval_t regexp,
 	if (memcmp(buf, expected, expected_len) != 0) {
 		return generated_test_fail(suite, case_name,
 				"%s: string bytes did not match expected output", label);
+	}
+	return GENERATED_TEST_PASS;
+}
+
+static inline int
+generated_expect_regexp_boolean(jsval_region_t *region, jsval_t regexp,
+		generated_regexp_bool_accessor_t accessor, int expected,
+		const char *suite, const char *case_name, const char *label)
+{
+	int actual = 0;
+
+	if (accessor(region, regexp, &actual) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: boolean accessor failed: %s", label, strerror(errno));
+	}
+	if (actual != expected) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected %d, got %d", label, expected, actual);
 	}
 	return GENERATED_TEST_PASS;
 }

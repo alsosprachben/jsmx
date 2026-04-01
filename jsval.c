@@ -3229,8 +3229,8 @@ jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 	return 0;
 }
 
-static int
-jsval_regexp_source_value(jsval_region_t *region, jsval_t regexp_value,
+int
+jsval_regexp_source(jsval_region_t *region, jsval_t regexp_value,
 		jsval_t *value_ptr)
 {
 	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
@@ -3244,6 +3244,68 @@ jsval_regexp_source_value(jsval_region_t *region, jsval_t regexp_value,
 	value_ptr->repr = JSVAL_REPR_NATIVE;
 	value_ptr->off = regexp->source_off;
 	return 0;
+}
+
+static int
+jsval_regexp_flag_bool(jsval_region_t *region, jsval_t regexp_value,
+		uint32_t flag, int *result_ptr)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+
+	if (regexp == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*result_ptr = (regexp->flags & flag) != 0;
+	return 0;
+}
+
+int
+jsval_regexp_global(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_GLOBAL, result_ptr);
+}
+
+int
+jsval_regexp_ignore_case(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_IGNORE_CASE, result_ptr);
+}
+
+int
+jsval_regexp_multiline(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_MULTILINE, result_ptr);
+}
+
+int
+jsval_regexp_dot_all(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_DOT_ALL, result_ptr);
+}
+
+int
+jsval_regexp_unicode(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_UNICODE, result_ptr);
+}
+
+int
+jsval_regexp_sticky(jsval_region_t *region, jsval_t regexp_value,
+		int *result_ptr)
+{
+	return jsval_regexp_flag_bool(region, regexp_value,
+			JSREGEX_FLAG_STICKY, result_ptr);
 }
 
 int
@@ -3428,7 +3490,7 @@ jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
 			errno = EINVAL;
 			return -1;
 		}
-		if (jsval_regexp_source_value(region, pattern_value, &source_value) < 0) {
+		if (jsval_regexp_source(region, pattern_value, &source_value) < 0) {
 			return -1;
 		}
 		pattern_string = source_value;
@@ -3758,7 +3820,7 @@ jsval_regexp_clone_for_split(jsval_region_t *region, jsval_t regexp_value,
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsval_regexp_source_value(region, regexp_value, &source_value) < 0) {
+	if (jsval_regexp_source(region, regexp_value, &source_value) < 0) {
 		return -1;
 	}
 	source_string = jsval_native_string(region, source_value);

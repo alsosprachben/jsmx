@@ -2601,7 +2601,7 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 {
 	static const uint8_t input_json[] = "{\"text\":\"abc\"}";
 	static const uint8_t expected_json[] =
-		"{\"text\":\"abc\",\"test\":true,\"copyFlags\":\"gim\",\"overrideFlags\":\"y\",\"lastIndex\":3}";
+		"{\"text\":\"abc\",\"source\":\"abc\",\"copyFlags\":\"gim\",\"overrideFlags\":\"y\",\"global\":true,\"ignoreCase\":true,\"multiline\":true,\"dotAll\":false,\"unicode\":false,\"sticky\":true,\"test\":true,\"lastIndex\":3}";
 	uint8_t storage[65536];
 	jsval_region_t region;
 	jsval_t root;
@@ -2613,9 +2613,16 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 	jsval_t copy_regex;
 	jsval_t override_regex;
 	jsval_t flags_value;
+	jsval_t source_value;
 	jsval_regexp_info_t info;
 	jsmethod_error_t error;
 	int test_result;
+	int global_value;
+	int ignore_case_value;
+	int multiline_value;
+	int dot_all_value;
+	int unicode_value;
+	int sticky_value;
 	generated_status_t status;
 
 	jsval_region_init(&region, storage, sizeof(storage));
@@ -2651,6 +2658,14 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 		return generated_failf(detail, cap,
 				"jsval_regexp_new(copy) failed: errno=%d kind=%d",
 				errno, (int)error.kind);
+	}
+	if (jsval_regexp_source(&region, copy_regex, &source_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_regexp_source(copy)");
+	}
+	status = generated_expect_string(&region, source_value,
+			(const uint8_t *)"abc", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
 	}
 	if (jsval_regexp_flags(&region, copy_regex, &flags_value) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_regexp_flags(copy)");
@@ -2696,8 +2711,17 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 				"expected lastIndex 3 after sticky test, got %zu",
 				info.last_index);
 	}
+	if (jsval_regexp_global(&region, copy_regex, &global_value) < 0
+			|| jsval_regexp_ignore_case(&region, copy_regex, &ignore_case_value) < 0
+			|| jsval_regexp_multiline(&region, copy_regex, &multiline_value) < 0
+			|| jsval_regexp_dot_all(&region, copy_regex, &dot_all_value) < 0
+			|| jsval_regexp_unicode(&region, copy_regex, &unicode_value) < 0
+			|| jsval_regexp_sticky(&region, override_regex, &sticky_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_* accessor");
+	}
 
-	if (jsval_promote_object_shallow_in_place(&region, &root, 5) < 0) {
+	if (jsval_promote_object_shallow_in_place(&region, &root, 12) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_promote_object_shallow_in_place(regex core)");
 	}
@@ -2709,8 +2733,8 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 		return generated_fail_errno(detail, cap,
 				"jsval_regexp_flags(copy write)");
 	}
-	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"test", 4,
-			jsval_bool(test_result)) < 0
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"source", 6,
+			source_value) < 0
 			|| jsval_object_set_utf8(&region, root,
 				(const uint8_t *)"copyFlags", 9, flags_value) < 0) {
 		return generated_fail_errno(detail, cap,
@@ -2722,6 +2746,22 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 	}
 	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"overrideFlags", 13,
 			flags_value) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"global", 6,
+				jsval_bool(global_value)) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"ignoreCase", 10,
+				jsval_bool(ignore_case_value)) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"multiline", 9,
+				jsval_bool(multiline_value)) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"dotAll", 6,
+				jsval_bool(dot_all_value)) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"unicode", 7,
+				jsval_bool(unicode_value)) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"sticky", 6,
+				jsval_bool(sticky_value)) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"test", 4,
+				jsval_bool(test_result)) < 0
 			|| jsval_object_set_utf8(&region, root,
 				(const uint8_t *)"lastIndex", 9,
 				jsval_number((double)info.last_index)) < 0) {
