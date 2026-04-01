@@ -1588,6 +1588,133 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed concat results across the new jsval/jsmethod concat bridge."
     },
     {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T7",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T7.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T7.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replace layer for primitive string-search replacement and undefined replacement stringification."
+    },
+    {
+      "id": "test262-strings-replace-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/replace/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replace layer while preserving RequireObjectCoercible(this). The upstream typeof metadata assertion is intentionally omitted."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T1.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T1.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the upstream Object(true) receiver is lowered outside jsmx to its primitive string value before jsmethod replace dispatch."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T2.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T2.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed Boolean receiver is lowered outside jsmx to its primitive string value before jsmethod replace dispatch."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T11",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T11.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T11.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the throwing searchValue object is modeled entirely outside the flattened layer, and the translation proves replaceValue coercion never runs once searchValue coercion fails."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T14",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T14.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T14.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for a basic first-match regular-expression replacement."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A2_T2",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A2_T2.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A2_T2.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for $$ substitution in a global replacement string."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A2_T3",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A2_T3.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A2_T3.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for $& matched-substring substitution in a global replacement string."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A2_T4",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A2_T4.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A2_T4.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for $` left-context substitution in a global replacement string."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A2_T5",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A2_T5.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A2_T5.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for $' right-context substitution in a global replacement string."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A3_T1",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A3_T1.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A3_T1.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled jsval replace bridge for numeric capture substitution, preserving the upstream $11 parsing behavior."
+    },
+    {
+      "id": "jsmx-strings-json-backed-replace-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-replace-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-replace-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replace results across both plain-string and regex search values through the jsval bridge."
+    },
+    {
       "id": "test262-strings-split-separator-undef",
       "suite": "strings",
       "source": "compliance/js/strings/test262/split/separator-undef.js",

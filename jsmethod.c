@@ -1086,6 +1086,391 @@ jsmethod_string_concat(jsstr16_t *out, jsmethod_value_t this_value,
 	return 0;
 }
 
+static int
+jsmethod_string_replace_find_match(const jsstr16_t *this_str,
+		const jsstr16_t *search_str, int *matched_ptr, size_t *start_ptr,
+		size_t *end_ptr)
+{
+	size_t i;
+
+	if (this_str == NULL || search_str == NULL || matched_ptr == NULL
+			|| start_ptr == NULL || end_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (search_str->len == 0) {
+		*matched_ptr = 1;
+		*start_ptr = 0;
+		*end_ptr = 0;
+		return 0;
+	}
+	if (search_str->len > this_str->len) {
+		*matched_ptr = 0;
+		*start_ptr = 0;
+		*end_ptr = 0;
+		return 0;
+	}
+	for (i = 0; i + search_str->len <= this_str->len; i++) {
+		if (jsmethod_utf16_region_equals(this_str, i, search_str)) {
+			*matched_ptr = 1;
+			*start_ptr = i;
+			*end_ptr = i + search_str->len;
+			return 0;
+		}
+	}
+	*matched_ptr = 0;
+	*start_ptr = 0;
+	*end_ptr = 0;
+	return 0;
+}
+
+static int
+jsmethod_string_replace_measure_substitution(const jsstr16_t *replacement,
+		const jsstr16_t *subject, size_t match_start, size_t match_end,
+		size_t *len_ptr)
+{
+	size_t total = 0;
+	size_t i = 0;
+
+	if (replacement == NULL || subject == NULL || len_ptr == NULL
+			|| match_start > match_end || match_end > subject->len) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (i < replacement->len) {
+		uint16_t cu = replacement->codeunits[i];
+
+		if (cu != '$' || i + 1 >= replacement->len) {
+			if (total == SIZE_MAX) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total++;
+			i++;
+			continue;
+		}
+
+		switch (replacement->codeunits[i + 1]) {
+		case '$':
+			if (total == SIZE_MAX) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total++;
+			i += 2;
+			break;
+		case '&':
+			if (SIZE_MAX - total < match_end - match_start) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total += match_end - match_start;
+			i += 2;
+			break;
+		case '`':
+			if (SIZE_MAX - total < match_start) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total += match_start;
+			i += 2;
+			break;
+		case '\'':
+			if (SIZE_MAX - total < subject->len - match_end) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total += subject->len - match_end;
+			i += 2;
+			break;
+		default:
+			if (total == SIZE_MAX) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			total++;
+			i++;
+			break;
+		}
+	}
+
+	*len_ptr = total;
+	return 0;
+}
+
+static int
+jsmethod_string_replace_append(jsstr16_t *out, size_t *offset_ptr,
+		const uint16_t *segment, size_t segment_len)
+{
+	if (out == NULL || offset_ptr == NULL
+			|| (segment_len > 0 && segment == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (*offset_ptr > out->cap || out->cap - *offset_ptr < segment_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (segment_len > 0) {
+		memcpy(out->codeunits + *offset_ptr, segment,
+				segment_len * sizeof(out->codeunits[0]));
+	}
+	*offset_ptr += segment_len;
+	out->len = *offset_ptr;
+	return 0;
+}
+
+static int
+jsmethod_string_replace_write_substitution(jsstr16_t *out, size_t *offset_ptr,
+		const jsstr16_t *replacement, const jsstr16_t *subject,
+		size_t match_start, size_t match_end)
+{
+	size_t i = 0;
+
+	if (out == NULL || offset_ptr == NULL || replacement == NULL
+			|| subject == NULL || match_start > match_end
+			|| match_end > subject->len) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (i < replacement->len) {
+		uint16_t cu = replacement->codeunits[i];
+
+		if (cu != '$' || i + 1 >= replacement->len) {
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					replacement->codeunits + i, 1) < 0) {
+				return -1;
+			}
+			i++;
+			continue;
+		}
+
+		switch (replacement->codeunits[i + 1]) {
+		case '$':
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					replacement->codeunits + i, 1) < 0) {
+				return -1;
+			}
+			i += 2;
+			break;
+		case '&':
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					subject->codeunits + match_start,
+					match_end - match_start) < 0) {
+				return -1;
+			}
+			i += 2;
+			break;
+		case '`':
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					subject->codeunits, match_start) < 0) {
+				return -1;
+			}
+			i += 2;
+			break;
+		case '\'':
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					subject->codeunits + match_end,
+					subject->len - match_end) < 0) {
+				return -1;
+			}
+			i += 2;
+			break;
+		default:
+			if (jsmethod_string_replace_append(out, offset_ptr,
+					replacement->codeunits + i, 1) < 0) {
+				return -1;
+			}
+			i++;
+			break;
+		}
+	}
+	return 0;
+}
+
+int
+jsmethod_string_replace_measure(jsmethod_value_t this_value,
+		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
+		jsmethod_string_replace_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t search_len;
+	size_t replacement_len;
+
+	if (sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	sizes->result_len = 0;
+
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(search_value, 0, &search_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(replacement_value, 0,
+			&replacement_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+		uint16_t search_storage[search_len ? search_len : 1];
+		uint16_t replacement_storage[replacement_len ? replacement_len : 1];
+		jsstr16_t this_str;
+		jsstr16_t search_str;
+		jsstr16_t replacement_str;
+		int matched;
+		size_t match_start;
+		size_t match_end;
+		size_t substitution_len;
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		jsstr16_init_from_buf(&search_str, (const char *)search_storage,
+				sizeof(search_storage));
+		jsstr16_init_from_buf(&replacement_str,
+				(const char *)replacement_storage,
+				sizeof(replacement_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_value_to_string(&search_str, search_value, 0, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_value_to_string(&replacement_str, replacement_value, 0,
+				error) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_replace_find_match(&this_str, &search_str, &matched,
+				&match_start, &match_end) < 0) {
+			return -1;
+		}
+		if (!matched) {
+			sizes->result_len = this_str.len;
+			return 0;
+		}
+		if (jsmethod_string_replace_measure_substitution(&replacement_str,
+				&this_str, match_start, match_end, &substitution_len) < 0) {
+			return -1;
+		}
+		if (SIZE_MAX - match_start < substitution_len
+				|| SIZE_MAX - (match_start + substitution_len)
+					< this_str.len - match_end) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		sizes->result_len = match_start + substitution_len
+				+ (this_str.len - match_end);
+		return 0;
+	}
+}
+
+int
+jsmethod_string_replace(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
+		jsmethod_error_t *error)
+{
+	size_t this_len;
+	size_t search_len;
+	size_t replacement_len;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	out->len = 0;
+
+	if (jsmethod_measure_value_utf16_len(this_value, 1, &this_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(search_value, 0, &search_len, error) < 0) {
+		return -1;
+	}
+	if (jsmethod_measure_value_utf16_len(replacement_value, 0,
+			&replacement_len, error) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_len ? this_len : 1];
+		uint16_t search_storage[search_len ? search_len : 1];
+		uint16_t replacement_storage[replacement_len ? replacement_len : 1];
+		jsstr16_t this_str;
+		jsstr16_t search_str;
+		jsstr16_t replacement_str;
+		int matched;
+		size_t match_start;
+		size_t match_end;
+		size_t substitution_len;
+		size_t result_len;
+		size_t offset = 0;
+
+		jsstr16_init_from_buf(&this_str, (const char *)this_storage,
+				sizeof(this_storage));
+		jsstr16_init_from_buf(&search_str, (const char *)search_storage,
+				sizeof(search_storage));
+		jsstr16_init_from_buf(&replacement_str,
+				(const char *)replacement_storage,
+				sizeof(replacement_storage));
+		if (jsmethod_this_to_string(&this_str, this_value, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_value_to_string(&search_str, search_value, 0, error) < 0) {
+			return -1;
+		}
+		if (jsmethod_value_to_string(&replacement_str, replacement_value, 0,
+				error) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_replace_find_match(&this_str, &search_str, &matched,
+				&match_start, &match_end) < 0) {
+			return -1;
+		}
+		if (!matched) {
+			if (jsstr16_set_from_utf16(out, this_str.codeunits,
+					this_str.len) != this_str.len) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			return 0;
+		}
+		if (jsmethod_string_replace_measure_substitution(&replacement_str,
+				&this_str, match_start, match_end, &substitution_len) < 0) {
+			return -1;
+		}
+		if (SIZE_MAX - match_start < substitution_len
+				|| SIZE_MAX - (match_start + substitution_len)
+					< this_str.len - match_end) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		result_len = match_start + substitution_len + (this_str.len - match_end);
+		if (out->cap < result_len) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		if (jsmethod_string_replace_append(out, &offset,
+				this_str.codeunits, match_start) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_replace_write_substitution(out, &offset,
+				&replacement_str, &this_str, match_start, match_end) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_replace_append(out, &offset,
+				this_str.codeunits + match_end,
+				this_str.len - match_end) < 0) {
+			return -1;
+		}
+		return 0;
+	}
+}
+
 int
 jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,
