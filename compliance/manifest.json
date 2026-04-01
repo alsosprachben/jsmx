@@ -1588,6 +1588,120 @@
       "notes": "Repo-authored parity fixture for native and JSON-backed concat results across the new jsval/jsmethod concat bridge."
     },
     {
+      "id": "test262-strings-split-separator-undef",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-undef.js",
+      "generated": "compliance/generated/strings/test262/split/separator-undef.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the jsval split bridge for omitted and explicit undefined separators."
+    },
+    {
+      "id": "test262-strings-split-separator-undef-limit-zero",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-undef-limit-zero.js",
+      "generated": "compliance/generated/strings/test262/split/separator-undef-limit-zero.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the jsval split bridge for the primitive ToUint32(limit) zero cases. The upstream object valueOf callback cases are intentionally omitted because they cross the current flattened boundary."
+    },
+    {
+      "id": "test262-strings-split-separator-empty-string-instance-is-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-empty-string-instance-is-string.js",
+      "generated": "compliance/generated/strings/test262/split/separator-empty-string-instance-is-string.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed String receiver is modeled through an explicit coercion callback before split dispatch."
+    },
+    {
+      "id": "test262-strings-split-separator-comma-instance-is-string-one-two-three-four-five",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-comma-instance-is-string-one-two-three-four-five.js",
+      "generated": "compliance/generated/strings/test262/split/separator-comma-instance-is-string-one-two-three-four-five.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed String receiver is modeled through an explicit coercion callback before split dispatch."
+    },
+    {
+      "id": "test262-strings-split-call-split-l-2-instance-is-string-hello",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/call-split-l-2-instance-is-string-hello.js",
+      "generated": "compliance/generated/strings/test262/split/call-split-l-2-instance-is-string-hello.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the boxed String receiver is modeled through an explicit coercion callback before split dispatch with a finite limit."
+    },
+    {
+      "id": "test262-strings-split-this-value-not-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/this-value-not-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/split/this-value-not-obj-coercible.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the jsmethod split layer while preserving RequireObjectCoercible(this)."
+    },
+    {
+      "id": "test262-strings-split-separator-tostring-error",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-tostring-error.js",
+      "generated": "compliance/generated/strings/test262/split/separator-tostring-error.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: the separator's throwing toString hook is modeled through an explicit coercion callback, proving that separator coercion happens before the limit==0 short-circuit."
+    },
+    {
+      "id": "test262-strings-split-argument-is-regexp-s-and-instance-is-string-a-b-c-de-f",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/argument-is-regexp-s-and-instance-is-string-a-b-c-de-f.js",
+      "generated": "compliance/generated/strings/test262/split/argument-is-regexp-s-and-instance-is-string-a-b-c-de-f.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled split bridge; the upstream boxed String receiver is intentionally collapsed to its flattenable primitive string value."
+    },
+    {
+      "id": "test262-strings-split-arguments-are-regexp-s-and-3-and-instance-is-string-a-b-c-de-f",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/arguments-are-regexp-s-and-3-and-instance-is-string-a-b-c-de-f.js",
+      "generated": "compliance/generated/strings/test262/split/arguments-are-regexp-s-and-3-and-instance-is-string-a-b-c-de-f.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the regex-enabled split bridge while preserving the regex separator limit behavior."
+    },
+    {
+      "id": "test262-strings-split-separator-regexp",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/split/separator-regexp.js",
+      "generated": "compliance/generated/strings/test262/split/separator-regexp.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic flattened subset of the upstream regex-separator file, preserving representative zero-width begin/end, consuming, and zero-width-progress split cases."
+    },
+    {
+      "id": "jsmx-strings-json-backed-split-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-split-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-split-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native split results across both string and regex separators through the jsval bridge."
+    },
+    {
       "id": "test262-strings-search-S15.5.4.12_A2_T1",
       "suite": "strings",
       "source": "compliance/js/strings/test262/search/S15.5.4.12_A2_T1.js",

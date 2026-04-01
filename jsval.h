@@ -227,6 +227,10 @@ int jsval_method_string_substr(jsval_region_t *region, jsval_t this_value,
 		int have_start, jsval_t start_value,
 		int have_length, jsval_t length_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_split(jsval_region_t *region, jsval_t this_value,
+		int have_separator, jsval_t separator_value,
+		int have_limit, jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_index_of(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, int have_position, jsval_t position_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);

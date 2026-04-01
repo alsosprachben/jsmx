@@ -74,6 +74,9 @@ typedef struct jsmethod_string_concat_sizes_s {
 	size_t result_len;
 } jsmethod_string_concat_sizes_t;
 
+typedef int (*jsmethod_string_split_emit_fn)(void *ctx,
+		const uint16_t *segment, size_t segment_len);
+
 void jsmethod_error_clear(jsmethod_error_t *error);
 
 jsmethod_value_t jsmethod_value_undefined(void);
@@ -171,6 +174,11 @@ int jsmethod_string_substr(jsstr16_t *out, jsmethod_value_t this_value,
 		int have_start, jsmethod_value_t start_value,
 		int have_length, jsmethod_value_t length_value,
 		jsmethod_error_t *error);
+int jsmethod_string_split(jsmethod_value_t this_value,
+		int have_separator, jsmethod_value_t separator_value,
+		int have_limit, jsmethod_value_t limit_value,
+		void *emit_ctx, jsmethod_string_split_emit_fn emit,
+		size_t *count_ptr, jsmethod_error_t *error);
 int jsmethod_string_index_of(ssize_t *index_ptr, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, int have_position,
 		jsmethod_value_t position_value, jsmethod_error_t *error);

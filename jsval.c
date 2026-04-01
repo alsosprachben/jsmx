@@ -2300,6 +2300,135 @@ jsval_method_string_bool_bridge(jsval_region_t *region, jsval_t this_value,
 	return 0;
 }
 
+typedef struct jsval_split_array_emit_ctx_s {
+	jsval_region_t *region;
+	jsval_t array;
+	size_t write_index;
+} jsval_split_array_emit_ctx_t;
+
+static int
+jsval_split_limit(jsval_region_t *region, int have_limit, jsval_t limit_value,
+		size_t *limit_ptr)
+{
+	uint32_t limit32;
+
+	if (limit_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!have_limit || limit_value.kind == JSVAL_KIND_UNDEFINED) {
+		*limit_ptr = (size_t)UINT32_MAX;
+		return 0;
+	}
+	if (jsval_to_uint32(region, limit_value, &limit32) < 0) {
+		return -1;
+	}
+	*limit_ptr = (size_t)limit32;
+	return 0;
+}
+
+static int
+jsval_split_emit_array(void *opaque, const uint16_t *segment,
+		size_t segment_len)
+{
+	static const uint16_t empty_unit = 0;
+	jsval_split_array_emit_ctx_t *ctx =
+		(jsval_split_array_emit_ctx_t *)opaque;
+	jsval_t value;
+
+	if (ctx == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf16(ctx->region,
+			segment_len > 0 ? segment : &empty_unit,
+			segment_len, &value) < 0) {
+		return -1;
+	}
+	if (jsval_array_set(ctx->region, ctx->array, ctx->write_index++, value) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+static int
+jsval_method_string_split_string(jsval_region_t *region, jsval_t this_value,
+		int have_separator, jsval_t separator_value,
+		int have_limit, jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	size_t this_storage_cap = 0;
+	size_t separator_storage_cap = 0;
+	size_t limit_storage_cap = 0;
+	jsmethod_value_t this_method_value;
+	jsmethod_value_t separator_method_value = jsmethod_value_undefined();
+	jsmethod_value_t limit_method_value = jsmethod_value_undefined();
+	size_t part_count = 0;
+	jsval_t array;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, this_value, &this_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_separator && separator_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, separator_value,
+				&separator_storage_cap) < 0) {
+		return -1;
+	}
+	if (have_limit && limit_value.kind != JSVAL_KIND_UNDEFINED &&
+			jsval_value_utf16_len(region, limit_value,
+				&limit_storage_cap) < 0) {
+		return -1;
+	}
+
+	{
+		uint16_t this_storage[this_storage_cap ? this_storage_cap : 1];
+		uint16_t separator_storage[separator_storage_cap ? separator_storage_cap : 1];
+		uint16_t limit_storage[limit_storage_cap ? limit_storage_cap : 1];
+
+		if (jsval_method_value_from_jsval(region, this_value, this_storage,
+				this_storage_cap, &this_method_value) < 0) {
+			return -1;
+		}
+		if (have_separator && separator_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, separator_value,
+				separator_storage, separator_storage_cap,
+				&separator_method_value) < 0) {
+			return -1;
+		}
+		if (have_limit && limit_value.kind != JSVAL_KIND_UNDEFINED &&
+				jsval_method_value_from_jsval(region, limit_value,
+				limit_storage, limit_storage_cap,
+				&limit_method_value) < 0) {
+			return -1;
+		}
+		if (jsmethod_string_split(this_method_value, have_separator,
+				separator_method_value, have_limit, limit_method_value,
+				NULL, NULL, &part_count, error) < 0) {
+			return -1;
+		}
+		if (jsval_array_new(region, part_count, &array) < 0) {
+			return -1;
+		}
+		{
+			jsval_split_array_emit_ctx_t emit_ctx = {region, array, 0};
+
+			if (jsmethod_string_split(this_method_value, have_separator,
+					separator_method_value, have_limit, limit_method_value,
+					&emit_ctx, jsval_split_emit_array, &part_count,
+					error) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	*value_ptr = array;
+	return 0;
+}
+
 #if JSMX_WITH_REGEX
 static int
 jsval_method_string_regex_index_bridge(jsval_region_t *region,
@@ -3613,6 +3742,243 @@ jsval_method_string_match(jsval_region_t *region, jsval_t this_value,
 	}
 
 	return jsval_regexp_exec(region, regex_value, input_string, value_ptr, error);
+}
+
+static int
+jsval_regexp_clone_for_split(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+	jsval_t source_value;
+	jsval_native_string_t *source_string;
+	uint32_t split_flags;
+	size_t flags_len = 0;
+
+	if (regexp == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_regexp_source_value(region, regexp_value, &source_value) < 0) {
+		return -1;
+	}
+	source_string = jsval_native_string(region, source_value);
+	if (source_string == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	split_flags = regexp->flags | JSREGEX_FLAG_STICKY;
+	if (jsval_regexp_flags_copy_utf16(split_flags, NULL, 0, &flags_len) < 0) {
+		return -1;
+	}
+	{
+		uint16_t flags_buf[flags_len ? flags_len : 1];
+
+		if (jsval_regexp_flags_copy_utf16(split_flags, flags_buf,
+				flags_len ? flags_len : 1, &flags_len) < 0) {
+			return -1;
+		}
+		return jsval_regexp_new_from_utf16(region,
+				jsval_native_string_units(source_string), source_string->len,
+				flags_len > 0 ? flags_buf : NULL, flags_len, value_ptr, error);
+	}
+}
+
+static int
+jsval_regexp_split_walk(jsval_region_t *region, jsval_t regexp_value,
+		const uint16_t *subject, size_t subject_len, size_t limit,
+		int build_array, jsval_t array, size_t *count_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+	size_t offsets_cap;
+	size_t emitted = 0;
+
+	if (regexp == NULL || count_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (limit == 0) {
+		*count_ptr = 0;
+		return 0;
+	}
+
+	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+	{
+		size_t offsets[offsets_cap ? offsets_cap : 2];
+		jsregex_exec_result_t exec_result;
+
+		if (subject_len == 0) {
+			regexp->last_index = 0;
+			if (jsval_regexp_exec_raw(region, regexp_value, subject, subject_len,
+					offsets, offsets_cap, &exec_result, error) < 0) {
+				return -1;
+			}
+			if (!exec_result.matched) {
+				if (build_array) {
+					static const uint16_t empty_unit = 0;
+					jsval_t piece;
+
+					if (jsval_string_new_utf16(region, &empty_unit, 0, &piece) < 0) {
+						return -1;
+					}
+					if (jsval_array_set(region, array, 0, piece) < 0) {
+						return -1;
+					}
+				}
+				*count_ptr = 1;
+				return 0;
+			}
+			*count_ptr = 0;
+			return 0;
+		}
+
+		{
+			size_t p = 0;
+			size_t q = 0;
+
+			while (q < subject_len) {
+				size_t e;
+				size_t i;
+
+				regexp->last_index = q;
+				if (jsval_regexp_exec_raw(region, regexp_value, subject,
+						subject_len, offsets, offsets_cap, &exec_result,
+						error) < 0) {
+					return -1;
+				}
+				if (!exec_result.matched) {
+					q++;
+					continue;
+				}
+
+				e = exec_result.end;
+				if (e == p) {
+					if (jsregex_advance_string_index_utf16(subject, subject_len,
+							q, (regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
+							&q) < 0) {
+						return -1;
+					}
+					continue;
+				}
+
+				if (emitted >= limit) {
+					*count_ptr = emitted;
+					return 0;
+				}
+				if (build_array) {
+					jsval_t piece;
+					static const uint16_t empty_unit = 0;
+
+					if (jsval_string_new_utf16(region,
+							exec_result.start > p ? subject + p : &empty_unit,
+							exec_result.start - p, &piece) < 0) {
+						return -1;
+					}
+					if (jsval_array_set(region, array, emitted, piece) < 0) {
+						return -1;
+					}
+				}
+				emitted++;
+
+				for (i = 1; i < exec_result.slot_count && emitted < limit; i++) {
+					if (build_array) {
+						jsval_t capture = jsval_undefined();
+
+						if (offsets[i * 2] != SIZE_MAX) {
+							if (jsval_string_new_utf16(region,
+									subject + offsets[i * 2],
+									offsets[i * 2 + 1] - offsets[i * 2],
+									&capture) < 0) {
+								return -1;
+							}
+						}
+						if (jsval_array_set(region, array, emitted, capture) < 0) {
+							return -1;
+						}
+					}
+					emitted++;
+				}
+				if (emitted >= limit) {
+					*count_ptr = emitted;
+					return 0;
+				}
+
+				p = e;
+				q = p;
+			}
+
+			if (emitted < limit) {
+				if (build_array) {
+					jsval_t piece;
+					static const uint16_t empty_unit = 0;
+
+					if (jsval_string_new_utf16(region,
+							subject_len > p ? subject + p : &empty_unit,
+							subject_len - p, &piece) < 0) {
+						return -1;
+					}
+					if (jsval_array_set(region, array, emitted, piece) < 0) {
+						return -1;
+					}
+				}
+				emitted++;
+			}
+		}
+	}
+
+	*count_ptr = emitted;
+	return 0;
+}
+
+static int
+jsval_method_string_split_regex(jsval_region_t *region, jsval_t this_value,
+		jsval_t regexp_value, int have_limit, jsval_t limit_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_native_string_t *input_native;
+	jsval_t split_regex;
+	jsval_t array;
+	size_t limit;
+	size_t part_count;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, this_value, 1, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	input_native = jsval_native_string(region, input_string);
+	if (input_native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_split_limit(region, have_limit, limit_value, &limit) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_clone_for_split(region, regexp_value, &split_regex,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_split_walk(region, split_regex,
+			jsval_native_string_units(input_native), input_native->len,
+			limit, 0, jsval_undefined(), &part_count, error) < 0) {
+		return -1;
+	}
+	if (jsval_array_new(region, part_count, &array) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_split_walk(region, split_regex,
+			jsval_native_string_units(input_native), input_native->len,
+			limit, 1, array, &part_count, error) < 0) {
+		return -1;
+	}
+	*value_ptr = array;
+	return 0;
 }
 #endif
 
@@ -4975,6 +5341,28 @@ jsval_method_string_substr(jsval_region_t *region, jsval_t this_value,
 	return jsval_method_string_range_bridge(region, this_value,
 			have_start, start_value, have_length, length_value,
 			jsmethod_string_substr, value_ptr, error);
+}
+
+int
+jsval_method_string_split(jsval_region_t *region, jsval_t this_value,
+		int have_separator, jsval_t separator_value,
+		int have_limit, jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+#if JSMX_WITH_REGEX
+	if (have_separator && separator_value.kind == JSVAL_KIND_REGEXP) {
+		return jsval_method_string_split_regex(region, this_value,
+				separator_value, have_limit, limit_value, value_ptr, error);
+	}
+#else
+	if (have_separator && separator_value.kind == JSVAL_KIND_REGEXP) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return jsval_method_string_split_string(region, this_value,
+			have_separator, separator_value, have_limit, limit_value,
+			value_ptr, error);
 }
 
 int

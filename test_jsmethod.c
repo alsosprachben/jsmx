@@ -13,6 +13,14 @@ typedef struct callback_ctx_s {
 	int *calls_ptr;
 } callback_ctx_t;
 
+typedef struct split_collect_ctx_s {
+	uint16_t storage[256];
+	size_t offsets[32];
+	size_t lengths[32];
+	size_t count;
+	size_t used;
+} split_collect_ctx_t;
+
 static int
 callback_to_string(void *opaque, jsstr16_t *out, jsmethod_error_t *error)
 {
@@ -44,6 +52,30 @@ callback_to_type_error(void *opaque, jsstr16_t *out, jsmethod_error_t *error)
 	return -1;
 }
 
+static int
+split_collect_emit(void *opaque, const uint16_t *segment, size_t segment_len)
+{
+	split_collect_ctx_t *ctx = (split_collect_ctx_t *)opaque;
+
+	if (ctx->count >= sizeof(ctx->offsets) / sizeof(ctx->offsets[0])) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (ctx->used + segment_len > sizeof(ctx->storage) / sizeof(ctx->storage[0])) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	ctx->offsets[ctx->count] = ctx->used;
+	ctx->lengths[ctx->count] = segment_len;
+	if (segment_len > 0) {
+		memcpy(ctx->storage + ctx->used, segment,
+				segment_len * sizeof(ctx->storage[0]));
+		ctx->used += segment_len;
+	}
+	ctx->count++;
+	return 0;
+}
+
 static void
 expect_utf16(jsstr16_t *s, const uint16_t *expected, size_t expected_len)
 {
@@ -64,6 +96,20 @@ expect_ascii(jsstr16_t *s, const char *expected)
 	assert(s->len == expected_len);
 	for (i = 0; i < expected_len; i++) {
 		assert(s->codeunits[i] == (uint8_t)expected[i]);
+	}
+}
+
+static void
+expect_split_ascii(const split_collect_ctx_t *ctx, size_t index,
+		const char *expected)
+{
+	size_t expected_len = strlen(expected);
+	size_t i;
+
+	assert(index < ctx->count);
+	assert(ctx->lengths[index] == expected_len);
+	for (i = 0; i < expected_len; i++) {
+		assert(ctx->storage[ctx->offsets[index] + i] == (uint8_t)expected[i]);
 	}
 }
 
@@ -791,6 +837,100 @@ test_string_substr_trim_alias_methods(void)
 }
 
 static void
+test_string_split_methods(void)
+{
+	jsmethod_error_t error;
+	split_collect_ctx_t collect = {0};
+	size_t count = 0;
+	callback_ctx_t throw_ctx = {1, NULL, 0, NULL};
+	int separator_calls = 0;
+	callback_ctx_t later_separator_ctx = {0, (const uint16_t[]){','}, 1,
+			&separator_calls};
+
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			0, jsmethod_value_undefined(),
+			0, jsmethod_value_undefined(),
+			&collect, split_collect_emit, &count, &error) == 0);
+	assert(count == 1);
+	assert(collect.count == 1);
+	expect_split_ascii(&collect, 0, "abc");
+
+	collect = (split_collect_ctx_t){0};
+	count = 0;
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			1, jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			0, jsmethod_value_undefined(),
+			&collect, split_collect_emit, &count, &error) == 0);
+	assert(count == 0);
+	assert(collect.count == 0);
+
+	collect = (split_collect_ctx_t){0};
+	count = 0;
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"a,b,,c", 6),
+			1, jsmethod_value_string_utf8((const uint8_t *)",", 1),
+			0, jsmethod_value_undefined(),
+			&collect, split_collect_emit, &count, &error) == 0);
+	assert(count == 4);
+	assert(collect.count == 4);
+	expect_split_ascii(&collect, 0, "a");
+	expect_split_ascii(&collect, 1, "b");
+	expect_split_ascii(&collect, 2, "");
+	expect_split_ascii(&collect, 3, "c");
+
+	collect = (split_collect_ctx_t){0};
+	count = 0;
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			1, jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			0, jsmethod_value_undefined(),
+			&collect, split_collect_emit, &count, &error) == 0);
+	assert(count == 3);
+	assert(collect.count == 3);
+	expect_split_ascii(&collect, 0, "a");
+	expect_split_ascii(&collect, 1, "b");
+	expect_split_ascii(&collect, 2, "c");
+
+	collect = (split_collect_ctx_t){0};
+	count = 0;
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"a,b,c", 5),
+			1, jsmethod_value_string_utf8((const uint8_t *)",", 1),
+			1, jsmethod_value_string_utf8((const uint8_t *)"2", 1),
+			&collect, split_collect_emit, &count, &error) == 0);
+	assert(count == 2);
+	assert(collect.count == 2);
+	expect_split_ascii(&collect, 0, "a");
+	expect_split_ascii(&collect, 1, "b");
+
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			1, jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			1, jsmethod_value_number(0.0),
+			NULL, NULL, &count, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	assert(jsmethod_string_split(
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			1, jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			0, jsmethod_value_undefined(),
+			NULL, NULL, &count, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	separator_calls = 0;
+	assert(jsmethod_string_split(
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			1, jsmethod_value_coercible(&later_separator_ctx,
+					callback_to_string),
+			0, jsmethod_value_undefined(),
+			NULL, NULL, &count, &error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(separator_calls == 0);
+}
+
+static void
 test_string_pad_methods(void)
 {
 	static const uint16_t pad_start_expected[] = {'d','e','f','d','a','b','c'};
@@ -1184,6 +1324,7 @@ main(void)
 	test_string_slice_substring_methods();
 	test_string_trim_repeat_methods();
 	test_string_substr_trim_alias_methods();
+	test_string_split_methods();
 	test_string_pad_methods();
 	test_string_search_methods();
 #if JSMX_WITH_REGEX

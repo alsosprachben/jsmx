@@ -66,6 +66,25 @@ static void assert_object_undefined_prop(jsval_region_t *region, jsval_t object,
 	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
+static void assert_array_strings(jsval_region_t *region, jsval_t array,
+		const char *const *expected, size_t expected_len)
+{
+	size_t i;
+
+	assert(array.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(region, array) == expected_len);
+	for (i = 0; i < expected_len; i++) {
+		jsval_t value;
+
+		assert(jsval_array_get(region, array, i, &value) == 0);
+		if (expected[i] == NULL) {
+			assert(value.kind == JSVAL_KIND_UNDEFINED);
+		} else {
+			assert_string(region, value, expected[i]);
+		}
+	}
+}
+
 static void assert_positive_zero(jsval_t value)
 {
 	assert(value.kind == JSVAL_KIND_NUMBER);
@@ -612,6 +631,96 @@ static void test_method_search_bridge(void)
 	assert(jsval_method_string_index_of(&region, root, needle, 0,
 			jsval_undefined(), &result, &error) < 0);
 	assert(errno == ENOTSUP);
+}
+
+static void
+test_method_split_bridge(void)
+{
+	static const char json[] = "{\"text\":\"a,b,,c\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t comma;
+	jsval_t limit_two;
+	jsval_t empty;
+	jsval_t native_ab;
+	jsval_t result;
+	jsmethod_error_t error;
+	static const char *expected_split[] = {"a", "b", "", "c"};
+	static const char *expected_limit[] = {"a", "b"};
+	static const char *expected_whole[] = {"a,b,,c"};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)",", 1,
+			&comma) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&limit_two) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0,
+			&empty) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"ab", 2,
+			&native_ab) == 0);
+
+	assert(jsval_method_string_split(&region, text, 1, comma, 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert_array_strings(&region, result, expected_split,
+			sizeof(expected_split) / sizeof(expected_split[0]));
+
+	assert(jsval_method_string_split(&region, text, 0, jsval_undefined(), 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert_array_strings(&region, result, expected_whole,
+			sizeof(expected_whole) / sizeof(expected_whole[0]));
+
+	assert(jsval_method_string_split(&region, text, 1, comma, 1, limit_two,
+			&result, &error) == 0);
+	assert_array_strings(&region, result, expected_limit,
+			sizeof(expected_limit) / sizeof(expected_limit[0]));
+
+	assert(jsval_method_string_split(&region, empty, 1, empty, 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 0);
+
+	errno = 0;
+	assert(jsval_method_string_split(&region, root, 1, comma, 0,
+			jsval_undefined(), &result, &error) < 0);
+	assert(errno == ENOTSUP);
+
+#if JSMX_WITH_REGEX
+		{
+			jsval_t pattern;
+			jsval_t regex;
+			static const char *expected_capture_split[] = {
+				"a", ",", "b", ",", "", ",", "c"
+			};
+			static const char *expected_zero_width_split[] = {"a", "b"};
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"(,)", 3,
+				&pattern) == 0);
+		assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+				&regex, &error) == 0);
+		assert(jsval_method_string_split(&region, text, 1, regex, 0,
+				jsval_undefined(),
+				&result, &error) == 0);
+		assert_array_strings(&region, result, expected_capture_split,
+				sizeof(expected_capture_split) /
+				sizeof(expected_capture_split[0]));
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"(?:)", 4,
+				&pattern) == 0);
+		assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+				&regex, &error) == 0);
+		assert(jsval_method_string_split(&region, native_ab, 1, regex, 0,
+				jsval_undefined(), &result, &error) == 0);
+		assert_array_strings(&region, result, expected_zero_width_split,
+				sizeof(expected_zero_width_split) /
+				sizeof(expected_zero_width_split[0]));
+	}
+#endif
 }
 
 #if JSMX_WITH_REGEX
@@ -2191,6 +2300,7 @@ int main(void)
 	test_method_bridge();
 	test_method_normalize_bridge();
 	test_method_search_bridge();
+	test_method_split_bridge();
 #if JSMX_WITH_REGEX
 	test_regexp_exec_and_match();
 	test_method_regex_search_bridge();
