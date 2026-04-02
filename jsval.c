@@ -1514,6 +1514,9 @@ typedef int (*jsval_method_string_regex_index_fn)(ssize_t *index_ptr,
 		int have_flags, jsmethod_value_t flags_value,
 		jsmethod_error_t *error);
 
+static int jsval_method_string_replace_all_regex_check(
+		jsval_region_t *region, jsval_t regexp_value,
+		jsmethod_error_t *error);
 static int jsval_method_string_replace_regex_measure_bridge(
 		jsval_region_t *region, jsval_t this_value, jsval_t regexp_value,
 		jsval_t replacement_value, jsmethod_string_replace_sizes_t *sizes,
@@ -2799,6 +2802,36 @@ jsval_method_string_replace_measure(jsval_region_t *region,
 }
 
 int
+jsval_method_string_replace_all_measure(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value, jsval_t replacement_value,
+		jsmethod_string_replace_sizes_t *sizes,
+		jsmethod_error_t *error)
+{
+	if (region == NULL || sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if JSMX_WITH_REGEX
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		if (jsval_method_string_replace_all_regex_check(region, search_value,
+				error) < 0) {
+			return -1;
+		}
+		return jsval_method_string_replace_regex_measure_bridge(region,
+				this_value, search_value, replacement_value, sizes, error);
+	}
+#else
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return jsval_method_string_replace_string_measure_bridge(region,
+			this_value, search_value, replacement_value,
+			jsmethod_string_replace_all_measure, sizes, error);
+}
+
+int
 jsval_method_string_pad_start_measure(jsval_region_t *region,
 		jsval_t this_value, int have_max_length, jsval_t max_length_value,
 		int have_fill_string, jsval_t fill_string_value,
@@ -4049,6 +4082,32 @@ jsval_regexp_clone_for_replace(jsval_region_t *region, jsval_t regexp_value,
 	}
 	return jsval_regexp_clone_with_flags(region, regexp_value, regexp->flags,
 			1, value_ptr, error);
+}
+
+static int
+jsval_method_string_replace_all_regex_check(jsval_region_t *region,
+		jsval_t regexp_value, jsmethod_error_t *error)
+{
+	jsval_native_regexp_t *regexp;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	regexp = jsval_native_regexp(region, regexp_value);
+	if (regexp == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((regexp->flags & JSREGEX_FLAG_GLOBAL) == 0) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "replaceAll requires a global RegExp";
+		}
+		return -1;
+	}
+	return 0;
 }
 
 static int
@@ -5867,6 +5926,36 @@ jsval_method_string_replace(jsval_region_t *region, jsval_t this_value,
 			search_value, replacement_value,
 			jsmethod_string_replace_measure, jsmethod_string_replace,
 			value_ptr, error);
+}
+
+int
+jsval_method_string_replace_all(jsval_region_t *region, jsval_t this_value,
+		jsval_t search_value, jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if JSMX_WITH_REGEX
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		if (jsval_method_string_replace_all_regex_check(region, search_value,
+				error) < 0) {
+			return -1;
+		}
+		return jsval_method_string_replace_regex(region, this_value,
+				search_value, replacement_value, value_ptr, error);
+	}
+#else
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return jsval_method_string_replace_string_bridge(region, this_value,
+			search_value, replacement_value,
+			jsmethod_string_replace_all_measure,
+			jsmethod_string_replace_all, value_ptr, error);
 }
 
 int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,

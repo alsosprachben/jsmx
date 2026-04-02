@@ -1715,6 +1715,108 @@
       "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replace results across both plain-string and regex search values through the jsval bridge."
     },
     {
+      "id": "test262-strings-replaceAll-searchValue-empty-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/searchValue-empty-string.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/searchValue-empty-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer for empty-search boundary insertion behavior."
+    },
+    {
+      "id": "test262-strings-replaceAll-searchValue-empty-string-this-empty-string",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/searchValue-empty-string-this-empty-string.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/searchValue-empty-string-this-empty-string.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer for the empty receiver plus empty search case."
+    },
+    {
+      "id": "test262-strings-replaceAll-this-is-null-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/this-is-null-throws.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/this-is-null-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer while preserving RequireObjectCoercible(this). The upstream typeof metadata assertion is intentionally omitted."
+    },
+    {
+      "id": "test262-strings-replaceAll-this-is-undefined-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/this-is-undefined-throws.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/this-is-undefined-throws.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer while preserving RequireObjectCoercible(this). The upstream typeof metadata assertion is intentionally omitted."
+    },
+    {
+      "id": "test262-strings-replaceAll-this-tostring-abrupt",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/this-tostring-abrupt.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/this-tostring-abrupt.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: abrupt and Symbol-producing receiver coercion are modeled directly outside the flattened layer so later search/replacement coercions remain unevaluated."
+    },
+    {
+      "id": "test262-strings-replaceAll-getSubstitution-0x0024-0x0024",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/getSubstitution-0x0024-0x0024.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/getSubstitution-0x0024-0x0024.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer for repeated $$ substitution on plain string search values."
+    },
+    {
+      "id": "test262-strings-replaceAll-getSubstitution-0x0024-0x0060",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/getSubstitution-0x0024-0x0060.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/getSubstitution-0x0024-0x0060.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer for repeated $` left-context substitution on plain string search values."
+    },
+    {
+      "id": "test262-strings-replaceAll-getSubstitution-0x0024N",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/getSubstitution-0x0024N.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/getSubstitution-0x0024N.c",
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated against the thin jsmethod replaceAll layer for literal $N handling on string search values. The upstream custom Symbol.replace override sample is intentionally omitted because it crosses the current flattened boundary."
+    },
+    {
+      "id": "test262-strings-replaceAll-searchValue-flags-no-g-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/searchValue-flags-no-g-throws.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/searchValue-flags-no-g-throws.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path around the semantic regex value model: the core non-global RegExp rejection is preserved, while the upstream reflective flags-property override samples are intentionally omitted."
+    },
+    {
+      "id": "jsmx-strings-json-backed-replaceAll-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-replaceAll-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-replaceAll-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replaceAll results across both plain-string and regex search values through the jsval bridge."
+    },
+    {
       "id": "test262-strings-split-separator-undef",
       "suite": "strings",
       "source": "compliance/js/strings/test262/split/separator-undef.js",

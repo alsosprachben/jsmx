@@ -811,6 +811,106 @@ test_method_replace_bridge(void)
 #endif
 }
 
+static void
+test_method_replace_all_bridge(void)
+{
+	static const char json[] =
+		"{\"text\":\"a1b1\",\"search\":\"1\",\"replacement\":\"X\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t search;
+	jsval_t replacement;
+	jsval_t result;
+	jsval_t empty_search;
+	jsval_t special_replacement;
+	jsmethod_error_t error;
+	jsmethod_string_replace_sizes_t sizes;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 16,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"search", 6,
+			&search) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"replacement", 11,
+			&replacement) == 0);
+
+	assert(jsval_method_string_replace_all_measure(&region, text, search,
+			replacement, &sizes, &error) == 0);
+	assert(sizes.result_len == strlen("aXbX"));
+	assert(jsval_method_string_replace_all(&region, text, search, replacement,
+			&result, &error) == 0);
+	assert_string(&region, result, "aXbX");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0,
+			&empty_search) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"[$$][$&][$`][$']",
+			16, &special_replacement) == 0);
+	assert(jsval_method_string_replace_all_measure(&region, text, empty_search,
+			special_replacement, &sizes, &error) == 0);
+	assert(jsval_method_string_replace_all(&region, text, empty_search,
+			special_replacement, &result, &error) == 0);
+	assert_string(&region, result,
+			"[$][][][a1b1]a[$][][a][1b1]1[$][][a1][b1]b[$][][a1b][1]1[$][][a1b1][]");
+
+	errno = 0;
+	assert(jsval_method_string_replace_all_measure(&region, text, root,
+			replacement, &sizes, &error) < 0);
+	assert(errno == ENOTSUP);
+
+	errno = 0;
+	assert(jsval_method_string_replace_all(&region, root, search, replacement,
+			&result, &error) < 0);
+	assert(errno == ENOTSUP);
+
+#if JSMX_WITH_REGEX
+	{
+		jsval_t pattern;
+		jsval_t global_flags;
+		jsval_t regex;
+		jsval_t non_global_regex;
+		jsval_t capture_replacement;
+		size_t last_index;
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"([0-9])", 7,
+				&pattern) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"<$1>", 4,
+				&capture_replacement) == 0);
+		assert(jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+				&error) == 0);
+		assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+				&non_global_regex, &error) == 0);
+		assert(jsval_regexp_set_last_index(&region, regex, 1) == 0);
+
+		assert(jsval_method_string_replace_all_measure(&region, text, regex,
+				capture_replacement, &sizes, &error) == 0);
+		assert(sizes.result_len == strlen("a<1>b<1>"));
+		assert(jsval_method_string_replace_all(&region, text, regex,
+				capture_replacement, &result, &error) == 0);
+		assert_string(&region, result, "a<1>b<1>");
+		assert(jsval_regexp_get_last_index(&region, regex, &last_index) == 0);
+		assert(last_index == 1);
+
+		errno = 0;
+		assert(jsval_method_string_replace_all_measure(&region, text,
+				non_global_regex, capture_replacement, &sizes, &error) < 0);
+		assert(errno == EINVAL);
+		assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+		errno = 0;
+		assert(jsval_method_string_replace_all(&region, text, non_global_regex,
+				capture_replacement, &result, &error) < 0);
+		assert(errno == EINVAL);
+		assert(error.kind == JSMETHOD_ERROR_TYPE);
+	}
+#endif
+}
+
 #if JSMX_WITH_REGEX
 static void
 test_regexp_exec_and_match(void)
@@ -2440,6 +2540,7 @@ int main(void)
 	test_method_search_bridge();
 	test_method_split_bridge();
 	test_method_replace_bridge();
+	test_method_replace_all_bridge();
 #if JSMX_WITH_REGEX
 	test_regexp_exec_and_match();
 	test_method_regex_search_bridge();

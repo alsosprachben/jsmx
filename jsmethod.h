@@ -136,6 +136,13 @@ int jsmethod_string_replace_measure(jsmethod_value_t this_value,
 int jsmethod_string_replace(jsstr16_t *out, jsmethod_value_t this_value,
 		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
 		jsmethod_error_t *error);
+int jsmethod_string_replace_all_measure(jsmethod_value_t this_value,
+		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
+		jsmethod_string_replace_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsmethod_string_replace_all(jsstr16_t *out, jsmethod_value_t this_value,
+		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
+		jsmethod_error_t *error);
 int jsmethod_string_repeat_measure(jsmethod_value_t this_value,
 		int have_count, jsmethod_value_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,

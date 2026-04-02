@@ -34,6 +34,28 @@ generated_measure_and_replace(jsstr16_t *out, uint16_t *storage,
 }
 
 static inline int
+generated_measure_and_replace_all(jsstr16_t *out, uint16_t *storage,
+		size_t storage_cap, jsmethod_value_t this_value,
+		jsmethod_value_t search_value, jsmethod_value_t replacement_value,
+		jsmethod_error_t *error)
+{
+	jsmethod_string_replace_sizes_t sizes;
+
+	if (jsmethod_string_replace_all_measure(this_value, search_value,
+			replacement_value, &sizes, error) < 0) {
+		return -1;
+	}
+	if (sizes.result_len > storage_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	jsstr16_init_from_buf(out, (char *)storage,
+			storage_cap * sizeof(storage[0]));
+	return jsmethod_string_replace_all(out, this_value, search_value,
+			replacement_value, error);
+}
+
+static inline int
 generated_expect_jsval_utf8_string(jsval_region_t *region, jsval_t value,
 		const char *expected, const char *suite, const char *case_name,
 		const char *label)

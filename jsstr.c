@@ -1474,13 +1474,13 @@ size_t jsstr16_set_from_utf16(jsstr16_t *s, const uint16_t *str, size_t len) {
 }
 
 size_t jsstr16_set_from_utf8(jsstr16_t *s, const uint8_t *str, size_t len) {
-    /* decode each utf-8 sequence into a code point elements, assigning into codeunits array */
-    size_t i = 0;
-    size_t j = 0;
-    while (i < len && i < s->cap) {
-        uint32_t c;
-        int l;
-        UTF8_CHAR((const char *) str + i, (const char *) str + len, &c, &l);
+	/* decode each utf-8 sequence into a code point elements, assigning into codeunits array */
+	size_t i = 0;
+	size_t j = 0;
+	while (i < len && j < s->cap) {
+		uint32_t c;
+		int l;
+		UTF8_CHAR((const char *) str + i, (const char *) str + len, &c, &l);
         if (l > 0) {
             if (c >= 0x10000) {
                 if (j + 1 < s->cap) {
@@ -2418,41 +2418,51 @@ size_t jsstr8_set_from_jsstr32(jsstr8_t *s, jsstr32_t *src) {
 }
 
 size_t jsstr8_get_utf32len(jsstr8_t *s) {
-    /* determine how many bytes are in the string to calculate the character length */
-    /* use UTF8_BLEN(bc, l) from utf8.h to determine byte length from character, and advance the cursor that amount */
-    size_t charlen = 0;
-    for (size_t i = 0; i < s->len; i++) {
-        int l;
-        UTF8_BLEN((const char *) s->bytes + i, &l);
-        i += l;
-        charlen += 1;
-    }
-    return charlen;
+	/* determine how many bytes are in the string to calculate the character length */
+	size_t charlen = 0;
+	size_t i = 0;
+	while (i < s->len) {
+		uint8_t *cc;
+		uint8_t *cs;
+		uint32_t c;
+		int l;
+		cc = s->bytes + i;
+		cs = s->bytes + s->len;
+		UTF8_CHAR((const char *)cc, (const char *)cs, &c, &l);
+		if (l <= 0) {
+			break;
+		}
+		i += (size_t)l;
+		charlen += 1;
+	}
+	return charlen;
 }
 
 size_t jsstr8_get_utf16len(jsstr8_t *s) {
     /* determine how many bytes are in the string to calculate the UTF-16 length */
     /* use UTF8_CHAR(cc, cs, c, l) from utf8.h to determine the character from the byte cursor */
     size_t utf16len = 0;
-    uint8_t *cc; /* character cursor */
-    uint8_t *cs; /* character stop */
-    uint32_t c; /* character */
-    int l; /* byte length */
-    for (size_t i = 0; i < s->len; i++) {
-        cc = s->bytes + i;
-        cs = s->bytes + s->len;
-        UTF8_CHAR((const char *) cc, (const char *) cs, &c, &l);
-        if (l > 0) {
-            if (c >= 0x10000) {
-                utf16len += 2;
-            } else {
-                utf16len += 1;
-            }
-        } else {
-            /* stop at invalid byte sequence */
-            break;
-        }
-    }
+	uint8_t *cc; /* character cursor */
+	uint8_t *cs; /* character stop */
+	uint32_t c; /* character */
+	int l; /* byte length */
+	size_t i = 0;
+	while (i < s->len) {
+		cc = s->bytes + i;
+		cs = s->bytes + s->len;
+		UTF8_CHAR((const char *) cc, (const char *) cs, &c, &l);
+		if (l > 0) {
+			if (c >= 0x10000) {
+				utf16len += 2;
+			} else {
+				utf16len += 1;
+			}
+			i += (size_t)l;
+		} else {
+			/* stop at invalid byte sequence */
+			break;
+		}
+	}
     return utf16len;
 }
 

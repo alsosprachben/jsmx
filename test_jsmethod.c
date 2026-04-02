@@ -100,6 +100,20 @@ expect_ascii(jsstr16_t *s, const char *expected)
 }
 
 static void
+expect_utf8(jsstr16_t *s, const char *expected)
+{
+	size_t expected_len = strlen(expected);
+	uint16_t storage[expected_len ? expected_len : 1];
+	jsstr16_t expected_utf16;
+
+	jsstr16_init_from_buf(&expected_utf16, (const char *)storage,
+			sizeof(storage));
+	assert(jsstr16_set_from_utf8(&expected_utf16,
+			(const uint8_t *)expected, expected_len) == expected_len);
+	expect_utf16(s, expected_utf16.codeunits, expected_utf16.len);
+}
+
+static void
 expect_split_ascii(const split_collect_ctx_t *ctx, size_t index,
 		const char *expected)
 {
@@ -1020,6 +1034,119 @@ test_string_replace_methods(void)
 }
 
 static void
+test_string_replace_all_methods(void)
+{
+	static const uint16_t x_text[] = {'X'};
+	static const uint8_t ninguem_subject_utf8[] =
+		"Ninguém é igual a ninguém.";
+	static const uint8_t ninguem_search_utf8[] = "ninguém";
+	uint16_t storage[256];
+	jsstr16_t out;
+	jsstr8_t utf8;
+	jsmethod_error_t error;
+	jsmethod_string_replace_sizes_t sizes;
+	callback_ctx_t throw_ctx = {1, NULL, 0, NULL};
+	int replacement_calls = 0;
+	callback_ctx_t later_replacement_ctx = {0, x_text,
+			sizeof(x_text) / sizeof(x_text[0]), &replacement_calls};
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	jsstr8_init_from_buf(&utf8, (const char *)ninguem_subject_utf8,
+			sizeof(ninguem_subject_utf8) - 1);
+	utf8.len = sizeof(ninguem_subject_utf8) - 1;
+	assert(jsstr8_get_utf32len(&utf8) == 26);
+	assert(jsstr8_get_utf16len(&utf8) == 26);
+
+	assert(jsmethod_string_replace_all_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"abcabc", 6),
+			jsmethod_value_string_utf8((const uint8_t *)"bc", 2),
+			jsmethod_value_string_utf8((const uint8_t *)"X", 1),
+			&sizes, &error) == 0);
+	assert(sizes.result_len == strlen("aXaX"));
+
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abcabc", 6),
+			jsmethod_value_string_utf8((const uint8_t *)"bc", 2),
+			jsmethod_value_string_utf8((const uint8_t *)"X", 1),
+			&error) == 0);
+	expect_ascii(&out, "aXaX");
+
+	out.len = 0;
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"ab", 2),
+			jsmethod_value_string_utf8((const uint8_t *)"", 0),
+			jsmethod_value_string_utf8((const uint8_t *)"_", 1),
+			&error) == 0);
+	expect_ascii(&out, "_a_b_");
+
+	out.len = 0;
+	assert(jsmethod_string_replace_all_measure(
+			jsmethod_value_string_utf8((const uint8_t *)"aba", 3),
+			jsmethod_value_string_utf8((const uint8_t *)"a", 1),
+			jsmethod_value_string_utf8((const uint8_t *)"[$$][$&][$`][$']", 16),
+			&sizes, &error) == 0);
+	assert(sizes.result_len == strlen("[$][a][][ba]b[$][a][ab][]"));
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"aba", 3),
+			jsmethod_value_string_utf8((const uint8_t *)"a", 1),
+			jsmethod_value_string_utf8((const uint8_t *)"[$$][$&][$`][$']", 16),
+			&error) == 0);
+	expect_ascii(&out, "[$][a][][ba]b[$][a][ab][]");
+
+	out.len = 0;
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			jsmethod_value_string_utf8((const uint8_t *)"b", 1),
+			jsmethod_value_string_utf8((const uint8_t *)"$11", 3),
+			&error) == 0);
+	expect_ascii(&out, "a$11c");
+
+	out.len = 0;
+	assert(jsmethod_string_replace_all_measure(
+			jsmethod_value_string_utf8(ninguem_subject_utf8,
+					sizeof(ninguem_subject_utf8) - 1),
+			jsmethod_value_string_utf8(ninguem_search_utf8,
+					sizeof(ninguem_search_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"$$", 2),
+			&sizes, &error) == 0);
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8(ninguem_subject_utf8,
+					sizeof(ninguem_subject_utf8) - 1),
+			jsmethod_value_string_utf8(ninguem_search_utf8,
+					sizeof(ninguem_search_utf8) - 1),
+			jsmethod_value_string_utf8((const uint8_t *)"$$", 2),
+			&error) == 0);
+	expect_utf8(&out, "Ninguém é igual a $.");
+
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			jsmethod_value_string_utf8((const uint8_t *)"z", 1),
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+
+	replacement_calls = 0;
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			jsmethod_value_string_utf8((const uint8_t *)"b", 1),
+			jsmethod_value_coercible(&later_replacement_ctx,
+					callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(replacement_calls == 0);
+
+	replacement_calls = 0;
+	assert(jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			jsmethod_value_coercible(&throw_ctx, callback_to_string),
+			jsmethod_value_coercible(&later_replacement_ctx,
+					callback_to_string),
+			&error) == -1);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(replacement_calls == 0);
+}
+
+static void
 test_string_pad_methods(void)
 {
 	static const uint16_t pad_start_expected[] = {'d','e','f','d','a','b','c'};
@@ -1405,6 +1532,7 @@ main(void)
 	test_value_to_string_errors();
 	test_string_concat_methods();
 	test_string_replace_methods();
+	test_string_replace_all_methods();
 	test_string_normalize_method();
 	test_string_normalize_measure();
 	test_string_normalize_errors();

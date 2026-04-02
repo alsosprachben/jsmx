@@ -2542,6 +2542,103 @@ static generated_status_t generated_smoke_jsval_method_replace(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_method_replace_all(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] =
+		"{\"text\":\"a1b1\",\"search\":\"1\",\"replacement\":\"X\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"a1b1\",\"search\":\"1\",\"replacement\":\"X\",\"plain\":\"aXbX\",\"special\":\"a[$][1]b[$][1]\"}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t search;
+	jsval_t replacement;
+	jsval_t special_replacement;
+	jsval_t plain_result;
+	jsval_t special_result;
+	jsmethod_error_t error;
+	jsmethod_string_replace_sizes_t sizes;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 16, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"search", 6,
+			&search) < 0
+			|| jsval_object_get_utf8(&region, root,
+				(const uint8_t *)"replacement", 11, &replacement) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(replaceAll)");
+	}
+	if (jsval_method_string_replace_all_measure(&region, text, search,
+			replacement, &sizes, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_measure failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 4) {
+		return generated_failf(detail, cap,
+				"expected replaceAll result_len 4, got %zu",
+				sizes.result_len);
+	}
+	if (jsval_method_string_replace_all(&region, text, search, replacement,
+			&plain_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, plain_result,
+			(const uint8_t *)"aXbX", 4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"[$$][$&]", 8,
+			&special_replacement) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(replaceAll special replacement)");
+	}
+	if (jsval_method_string_replace_all_measure(&region, text, search,
+			special_replacement, &sizes, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_measure(special) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 14) {
+		return generated_failf(detail, cap,
+				"expected special replaceAll result_len 14, got %zu",
+				sizes.result_len);
+	}
+	if (jsval_method_string_replace_all(&region, text, search,
+			special_replacement, &special_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all(special) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, special_result,
+			(const uint8_t *)"a[$][1]b[$][1]", 14, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 5) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(replaceAll)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"plain", 5,
+			plain_result) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"special", 7, special_result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(replaceAll)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsmethod_concat_abrupt(
 		char *detail, size_t cap)
 {
@@ -2621,6 +2718,54 @@ static generated_status_t generated_smoke_jsmethod_replace_abrupt(
 	if (replacement_calls != 0) {
 		return generated_failf(detail, cap,
 				"expected later replacement coercion not to run, got %d calls",
+				replacement_calls);
+	}
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsmethod_replace_all_abrupt(
+		char *detail, size_t cap)
+{
+	static const uint16_t x_units[] = {'X'};
+	generated_callback_ctx_t throw_ctx = {1};
+	int replacement_calls = 0;
+	generated_callback_ctx_t later_replacement_ctx = {0, x_units,
+			sizeof(x_units) / sizeof(x_units[0]), &replacement_calls};
+	uint16_t storage[32];
+	jsstr16_t out;
+	jsmethod_error_t error;
+
+	jsstr16_init_from_buf(&out, (const char *)storage, sizeof(storage));
+	if (jsmethod_string_replace_all(&out,
+			jsmethod_value_string_utf8((const uint8_t *)"abc", 3),
+			jsmethod_value_string_utf8((const uint8_t *)"z", 1),
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			&error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt replaceAll coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT replaceAll coercion, got %d",
+				(int)error.kind);
+	}
+	if (jsmethod_string_replace_all(&out,
+			jsmethod_value_coercible(&throw_ctx, generated_callback_to_string),
+			jsmethod_value_string_utf8((const uint8_t *)"b", 1),
+			jsmethod_value_coercible(&later_replacement_ctx,
+					generated_callback_to_string),
+			&error) == 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt replaceAll receiver coercion to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_ABRUPT) {
+		return generated_failf(detail, cap,
+				"expected ABRUPT replaceAll receiver coercion, got %d",
+				(int)error.kind);
+	}
+	if (replacement_calls != 0) {
+		return generated_failf(detail, cap,
+				"expected later replaceAll coercion not to run, got %d calls",
 				replacement_calls);
 	}
 	return GENERATED_PASS;
@@ -2738,6 +2883,125 @@ static generated_status_t generated_smoke_jsval_method_regex_replace(
 				(const uint8_t *)"first", 5, first_result) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_object_set_utf8(regex replace)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_method_regex_replace_all(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] = "{\"text\":\"a1b2\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"a1b2\",\"regex\":\"a<1>b<2>\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t global_regex;
+	jsval_t single_regex;
+	jsval_t replacement;
+	jsval_t regex_result;
+	jsmethod_error_t error;
+	jsmethod_string_replace_sizes_t sizes;
+	size_t last_index;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 8, &root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_json_parse(regex replaceAll)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(regex replaceAll text)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"([0-9])", 7,
+			&pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"<$1>", 4,
+			&replacement) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(regex replaceAll args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 1, global_flags, &global_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(global replaceAll) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&single_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(single replaceAll) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_set_last_index(&region, global_regex, 1) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_set_last_index(global replaceAll)");
+	}
+	if (jsval_method_string_replace_all_measure(&region, text, global_regex,
+			replacement, &sizes, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_measure(regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (sizes.result_len != 8) {
+		return generated_failf(detail, cap,
+				"expected regex replaceAll result_len 8, got %zu",
+				sizes.result_len);
+	}
+	if (jsval_method_string_replace_all(&region, text, global_regex,
+			replacement, &regex_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all(regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, regex_result,
+			(const uint8_t *)"a<1>b<2>", 8, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_regexp_get_last_index(&region, global_regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(global replaceAll)");
+	}
+	if (last_index != 1) {
+		return generated_failf(detail, cap,
+				"expected preserved lastIndex 1, got %zu", last_index);
+	}
+	if (jsval_method_string_replace_all_measure(&region, text, single_regex,
+			replacement, &sizes, &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected non-global replaceAll measure to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected TYPE for non-global replaceAll measure, got %d",
+				(int)error.kind);
+	}
+	if (jsval_method_string_replace_all(&region, text, single_regex,
+			replacement, &regex_result, &error) == 0) {
+		return generated_failf(detail, cap,
+				"expected non-global replaceAll to fail");
+	}
+	if (error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected TYPE for non-global replaceAll, got %d",
+				(int)error.kind);
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 2) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(regex replaceAll)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"regex", 5,
+			regex_result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(regex replaceAll)");
 	}
 	return generated_expect_json(&region, root, expected_json,
 			sizeof(expected_json) - 1, detail, cap);
@@ -3804,6 +4068,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_method_is_well_formed", generated_smoke_jsval_method_is_well_formed},
 	{"smoke", "jsval_method_concat", generated_smoke_jsval_method_concat},
 	{"smoke", "jsval_method_replace", generated_smoke_jsval_method_replace},
+	{"smoke", "jsval_method_replace_all",
+		generated_smoke_jsval_method_replace_all},
 	{"smoke", "jsval_method_accessor", generated_smoke_jsval_method_accessor},
 	{"smoke", "jsval_method_slice_substring", generated_smoke_jsval_method_slice_substring},
 	{"smoke", "jsval_method_trim_repeat", generated_smoke_jsval_method_trim_repeat},
@@ -3815,12 +4081,16 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_core", generated_smoke_jsval_regexp_core},
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
+	{"smoke", "jsval_method_regex_replace_all",
+		generated_smoke_jsval_method_regex_replace_all},
 	{"smoke", "jsval_method_regex_search", generated_smoke_jsval_method_regex_search},
 	{"smoke", "jsval_method_regex_split", generated_smoke_jsval_method_regex_split},
 #endif
 	{"smoke", "jsmethod_accessor_abrupt", generated_smoke_jsmethod_accessor_abrupt},
 	{"smoke", "jsmethod_concat_abrupt", generated_smoke_jsmethod_concat_abrupt},
 	{"smoke", "jsmethod_replace_abrupt", generated_smoke_jsmethod_replace_abrupt},
+	{"smoke", "jsmethod_replace_all_abrupt",
+		generated_smoke_jsmethod_replace_all_abrupt},
 	{"smoke", "jsmethod_slice_substring_abrupt", generated_smoke_jsmethod_slice_substring_abrupt},
 	{"smoke", "jsmethod_substr_abrupt", generated_smoke_jsmethod_substr_abrupt},
 	{"smoke", "jsmethod_repeat_abrupt", generated_smoke_jsmethod_repeat_abrupt},

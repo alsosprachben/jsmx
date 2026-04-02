@@ -185,6 +185,13 @@ int jsval_method_string_replace_measure(jsval_region_t *region,
 int jsval_method_string_replace(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, jsval_t replacement_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_replace_all_measure(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value, jsval_t replacement_value,
+		jsmethod_string_replace_sizes_t *sizes,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_all(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value, jsval_t replacement_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_repeat_measure(jsval_region_t *region,
 		jsval_t this_value, int have_count, jsval_t count_value,
 		jsmethod_string_repeat_sizes_t *sizes,
