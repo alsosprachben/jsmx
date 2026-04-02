@@ -1649,6 +1649,26 @@
       "notes": "Translated against the regex-enabled jsval replace bridge for a basic first-match regular-expression replacement."
     },
     {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T4",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T4.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T4.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI, preserving the callback arguments and stringified numeric callback return."
+    },
+    {
+      "id": "test262-strings-replace-S15.5.4.11_A1_T5",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replace/S15.5.4.11_A1_T5.js",
+      "generated": "compliance/generated/strings/test262/replace/S15.5.4.11_A1_T5.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI, lowering Function() to the observable undefined callback result that replace then stringifies."
+    },
+    {
       "id": "test262-strings-replace-S15.5.4.11_A2_T2",
       "suite": "strings",
       "source": "compliance/js/strings/test262/replace/S15.5.4.11_A2_T2.js",
@@ -1715,6 +1735,27 @@
       "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replace results across both plain-string and regex search values through the jsval bridge."
     },
     {
+      "id": "jsmx-strings-json-backed-replace-callback-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-replace-callback-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-replace-callback-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replace and replaceAll callback-replacer behavior on the jsval bridge."
+    },
+    {
+      "id": "jsmx-strings-json-backed-regex-replace-callback-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-regex-replace-callback-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-regex-replace-callback-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regex callback-replacer behavior on the jsval bridge, including capture arguments."
+    },
+    {
       "id": "test262-strings-replaceAll-searchValue-empty-string",
       "suite": "strings",
       "source": "compliance/js/strings/test262/replaceAll/searchValue-empty-string.js",
@@ -1733,6 +1774,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Translated against the thin jsmethod replaceAll layer for the empty receiver plus empty search case."
+    },
+    {
+      "id": "test262-strings-replaceAll-replaceValue-call-each-match-position",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/replaceValue-call-each-match-position.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/replaceValue-call-each-match-position.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI, preserving callback match/offset/input arguments for each match. The upstream sloppy callback this observation is intentionally omitted because the ABI does not model callback this."
+    },
+    {
+      "id": "test262-strings-replaceAll-replaceValue-call-skip-no-match",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/replaceValue-call-skip-no-match.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/replaceValue-call-skip-no-match.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI, preserving the no-match behavior where the callback is never invoked."
+    },
+    {
+      "id": "test262-strings-replaceAll-replaceValue-call-matching-empty",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/replaceValue-call-matching-empty.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/replaceValue-call-matching-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI for the empty-search callback case. The upstream sloppy callback this observation is intentionally omitted because the ABI does not model callback this."
+    },
+    {
+      "id": "test262-strings-replaceAll-replaceValue-call-abrupt",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/replaceAll/replaceValue-call-abrupt.js",
+      "generated": "compliance/generated/strings/test262/replaceAll/replaceValue-call-abrupt.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the translator-facing jsval callback-replacer ABI, preserving abrupt callback failure propagation."
     },
     {
       "id": "test262-strings-replaceAll-this-is-null-throws",

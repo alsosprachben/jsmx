@@ -1460,6 +1460,42 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	return -1;
 }
 
+static int
+jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
+		int require_object_coercible, jsval_t *string_value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t out;
+	jsval_native_string_t *string;
+	jsstr16_t str;
+	jsmethod_value_t method_value;
+	size_t storage_cap;
+
+	if (region == NULL || string_value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, value, &storage_cap) < 0) {
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, storage_cap, &out, &string) < 0) {
+		return -1;
+	}
+	jsstr16_init_from_buf(&str, (const char *)jsval_native_string_units(string),
+			string->cap * sizeof(uint16_t));
+	if (jsval_method_value_from_jsval(region, value, str.codeunits, str.cap,
+			&method_value) < 0) {
+		return -1;
+	}
+	if (jsmethod_value_to_string(&str, method_value, require_object_coercible,
+			error) < 0) {
+		return -1;
+	}
+	string->len = str.len;
+	*string_value_ptr = out;
+	return 0;
+}
+
 typedef int (*jsval_method_unary_fn)(jsstr16_t *out, jsmethod_value_t this_value,
 		jsmethod_error_t *error);
 
@@ -1530,6 +1566,16 @@ typedef int (*jsval_method_string_bool_fn)(int *result_ptr,
 		int have_position, jsmethod_value_t position_value,
 		jsmethod_error_t *error);
 
+typedef struct jsval_replace_part_s {
+	size_t match_start;
+	size_t match_end;
+	jsval_t replacement;
+} jsval_replace_part_t;
+
+static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
+		int require_object_coercible, jsval_t *string_value_ptr,
+		jsmethod_error_t *error);
+
 #if JSMX_WITH_REGEX
 typedef int (*jsval_method_string_regex_index_fn)(ssize_t *index_ptr,
 		jsmethod_value_t this_value, jsmethod_value_t pattern_value,
@@ -1546,6 +1592,10 @@ static int jsval_method_string_replace_regex_measure_bridge(
 static int jsval_method_string_replace_regex(jsval_region_t *region,
 		jsval_t this_value, jsval_t regexp_value, jsval_t replacement_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+static int jsval_method_string_replace_regex_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t regexp_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		int replace_all, jsval_t *value_ptr, jsmethod_error_t *error);
 #endif
 
 static int jsval_method_string_unary_bridge(jsval_region_t *region,
@@ -1776,6 +1826,420 @@ jsval_method_string_replace_string_bridge(jsval_region_t *region,
 	result_string->len = out.len;
 	*value_ptr = result;
 	return 0;
+}
+
+static int
+jsval_append_segment(jsstr16_t *out, size_t *offset_ptr,
+		const uint16_t *segment, size_t segment_len, int build)
+{
+	if (offset_ptr == NULL || (segment_len > 0 && segment == NULL)
+			|| (build && out == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (SIZE_MAX - *offset_ptr < segment_len) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	if (build) {
+		if (*offset_ptr > out->cap || out->cap - *offset_ptr < segment_len) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		if (segment_len > 0) {
+			memcpy(out->codeunits + *offset_ptr, segment,
+					segment_len * sizeof(out->codeunits[0]));
+		}
+		out->len = *offset_ptr + segment_len;
+	}
+	*offset_ptr += segment_len;
+	return 0;
+}
+
+static int
+jsval_string_replace_find_match_from(const uint16_t *subject,
+		size_t subject_len, const uint16_t *search, size_t search_len,
+		size_t from_index, int *matched_ptr, size_t *start_ptr,
+		size_t *end_ptr)
+{
+	size_t i;
+
+	if (matched_ptr == NULL || start_ptr == NULL || end_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)
+			|| (search_len > 0 && search == NULL)
+			|| from_index > subject_len) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (search_len == 0) {
+		*matched_ptr = 1;
+		*start_ptr = from_index;
+		*end_ptr = from_index;
+		return 0;
+	}
+	if (search_len > subject_len || from_index > subject_len - search_len) {
+		*matched_ptr = 0;
+		*start_ptr = 0;
+		*end_ptr = 0;
+		return 0;
+	}
+	for (i = from_index; i + search_len <= subject_len; i++) {
+		if (memcmp(subject + i, search,
+				search_len * sizeof(subject[0])) == 0) {
+			*matched_ptr = 1;
+			*start_ptr = i;
+			*end_ptr = i + search_len;
+			return 0;
+		}
+	}
+	*matched_ptr = 0;
+	*start_ptr = 0;
+	*end_ptr = 0;
+	return 0;
+}
+
+static int
+jsval_replace_callback_stringify(jsval_region_t *region,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		const jsval_replace_call_t *call, jsval_t *replacement_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t callback_result;
+
+	if (region == NULL || callback == NULL || call == NULL
+			|| replacement_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (callback(region, callback_ctx, call, &callback_result, error) < 0) {
+		return -1;
+	}
+	return jsval_stringify_value_to_native(region, callback_result, 0,
+			replacement_ptr, error);
+}
+
+static int
+jsval_string_replace_count_parts(const uint16_t *subject, size_t subject_len,
+		const uint16_t *search, size_t search_len, int replace_all,
+		size_t *count_ptr)
+{
+	size_t count = 0;
+
+	if (count_ptr == NULL || (subject_len > 0 && subject == NULL)
+			|| (search_len > 0 && search == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!replace_all) {
+		int matched;
+		size_t match_start;
+		size_t match_end;
+
+		if (jsval_string_replace_find_match_from(subject, subject_len, search,
+				search_len, 0, &matched, &match_start, &match_end) < 0) {
+			return -1;
+		}
+		*count_ptr = matched ? 1 : 0;
+		return 0;
+	}
+	if (search_len == 0) {
+		if (subject_len == SIZE_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		*count_ptr = subject_len + 1;
+		return 0;
+	}
+
+	{
+		size_t cursor = 0;
+
+		for (;;) {
+			int matched;
+			size_t match_start;
+			size_t match_end;
+
+			if (jsval_string_replace_find_match_from(subject, subject_len, search,
+					search_len, cursor, &matched, &match_start,
+					&match_end) < 0) {
+				return -1;
+			}
+			if (!matched) {
+				break;
+			}
+			if (count == SIZE_MAX) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			count++;
+			cursor = match_end;
+		}
+	}
+
+	*count_ptr = count;
+	return 0;
+}
+
+static int
+jsval_string_replace_fill_parts(jsval_region_t *region, jsval_t input_value,
+		const uint16_t *subject, size_t subject_len, const uint16_t *search,
+		size_t search_len, int replace_all, jsval_replace_callback_fn callback,
+		void *callback_ctx, jsval_replace_part_t *parts, size_t part_count,
+		size_t *total_len_ptr, jsmethod_error_t *error)
+{
+	size_t write_index = 0;
+	size_t total_len = 0;
+	size_t cursor = 0;
+
+	if (region == NULL || callback == NULL || total_len_ptr == NULL
+			|| (part_count > 0 && parts == NULL)
+			|| (subject_len > 0 && subject == NULL)
+			|| (search_len > 0 && search == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (search_len == 0) {
+		size_t limit = replace_all ? subject_len + 1 : 1;
+		size_t pos;
+
+		for (pos = 0; pos < limit; pos++) {
+			jsval_replace_call_t call;
+			jsval_t match_value;
+			jsval_t replacement_string;
+			jsval_native_string_t *replacement_native;
+
+			call.capture_count = 0;
+			call.captures = NULL;
+			call.offset = pos;
+			call.input = input_value;
+			if (jsval_string_new_utf16(region, NULL, 0, &match_value) < 0) {
+				return -1;
+			}
+			call.match = match_value;
+			if (jsval_replace_callback_stringify(region, callback, callback_ctx,
+					&call, &replacement_string, error) < 0) {
+				return -1;
+			}
+			replacement_native = jsval_native_string(region, replacement_string);
+			if (replacement_native == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			parts[write_index].match_start = pos;
+			parts[write_index].match_end = pos;
+			parts[write_index].replacement = replacement_string;
+			write_index++;
+			if (jsval_append_segment(NULL, &total_len,
+					replacement_native->len > 0
+						? jsval_native_string_units(replacement_native) : NULL,
+					replacement_native->len,
+					0) < 0) {
+				return -1;
+			}
+			if (pos < subject_len && jsval_append_segment(NULL, &total_len,
+					subject + pos,
+					1, 0) < 0) {
+				return -1;
+			}
+		}
+		if (write_index != part_count) {
+			errno = EINVAL;
+			return -1;
+		}
+		*total_len_ptr = total_len;
+		return 0;
+	}
+
+	for (;;) {
+		int matched;
+		size_t match_start;
+		size_t match_end;
+		jsval_replace_call_t call;
+		jsval_t match_value;
+		jsval_t replacement_string;
+		jsval_native_string_t *replacement_native;
+
+		if (jsval_string_replace_find_match_from(subject, subject_len, search,
+				search_len, cursor, &matched, &match_start, &match_end) < 0) {
+			return -1;
+		}
+		if (!matched) {
+			break;
+		}
+		if (write_index >= part_count) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_append_segment(NULL, &total_len,
+				match_start > cursor ? subject + cursor : NULL,
+				match_start - cursor, 0) < 0) {
+			return -1;
+		}
+
+		call.capture_count = 0;
+		call.captures = NULL;
+		call.offset = match_start;
+		call.input = input_value;
+		if (jsval_string_new_utf16(region, subject + match_start,
+				match_end - match_start, &match_value) < 0) {
+			return -1;
+		}
+		call.match = match_value;
+		if (jsval_replace_callback_stringify(region, callback, callback_ctx,
+				&call, &replacement_string, error) < 0) {
+			return -1;
+		}
+		replacement_native = jsval_native_string(region, replacement_string);
+		if (replacement_native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		parts[write_index].match_start = match_start;
+		parts[write_index].match_end = match_end;
+		parts[write_index].replacement = replacement_string;
+		write_index++;
+		if (jsval_append_segment(NULL, &total_len,
+				replacement_native->len > 0
+					? jsval_native_string_units(replacement_native) : NULL,
+				replacement_native->len,
+				0) < 0) {
+			return -1;
+		}
+		cursor = match_end;
+		if (!replace_all) {
+			break;
+		}
+	}
+
+	if (write_index != part_count) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_append_segment(NULL, &total_len,
+			subject_len > cursor ? subject + cursor : NULL,
+			subject_len - cursor, 0) < 0) {
+		return -1;
+	}
+	*total_len_ptr = total_len;
+	return 0;
+}
+
+static int
+jsval_replace_build_parts(jsval_region_t *region, const uint16_t *subject,
+		size_t subject_len, const jsval_replace_part_t *parts,
+		size_t part_count, size_t total_len, jsval_t *value_ptr)
+{
+	jsval_t result;
+	jsval_native_string_t *result_string;
+	jsstr16_t out;
+	size_t cursor = 0;
+	size_t offset = 0;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL
+			|| (part_count > 0 && parts == NULL)
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, total_len, &result,
+			&result_string) < 0) {
+		return -1;
+	}
+	jsstr16_init_from_buf(&out,
+			(const char *)jsval_native_string_units(result_string),
+			result_string->cap * sizeof(uint16_t));
+	for (i = 0; i < part_count; i++) {
+		jsval_native_string_t *replacement_native;
+
+		if (parts[i].match_start > parts[i].match_end
+				|| parts[i].match_start < cursor
+				|| parts[i].match_end > subject_len) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_append_segment(&out, &offset,
+				parts[i].match_start > cursor ? subject + cursor : NULL,
+				parts[i].match_start - cursor, 1) < 0) {
+			return -1;
+		}
+		replacement_native = jsval_native_string(region, parts[i].replacement);
+		if (replacement_native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_append_segment(&out, &offset,
+				jsval_native_string_units(replacement_native),
+				replacement_native->len, 1) < 0) {
+			return -1;
+		}
+		cursor = parts[i].match_end;
+	}
+	if (jsval_append_segment(&out, &offset,
+			subject_len > cursor ? subject + cursor : NULL,
+			subject_len - cursor, 1) < 0) {
+		return -1;
+	}
+	result_string->len = total_len;
+	*value_ptr = result;
+	return 0;
+}
+
+static int
+jsval_method_string_replace_string_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		int replace_all, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_t search_string;
+	jsval_native_string_t *input_native;
+	jsval_native_string_t *search_native;
+	jsval_replace_part_t *parts = NULL;
+	size_t part_count = 0;
+	size_t total_len = 0;
+
+	if (region == NULL || callback == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, this_value, 1, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_stringify_value_to_native(region, search_value, 0, &search_string,
+			error) < 0) {
+		return -1;
+	}
+	input_native = jsval_native_string(region, input_string);
+	search_native = jsval_native_string(region, search_string);
+	if (input_native == NULL || search_native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_replace_count_parts(jsval_native_string_units(input_native),
+			input_native->len, jsval_native_string_units(search_native),
+			search_native->len, replace_all, &part_count) < 0) {
+		return -1;
+	}
+	if (part_count > 0) {
+		if (jsval_region_reserve(region, part_count * sizeof(*parts),
+				JSVAL_ALIGN, NULL, (void **)&parts) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_string_replace_fill_parts(region, input_string,
+			jsval_native_string_units(input_native), input_native->len,
+			jsval_native_string_units(search_native), search_native->len,
+			replace_all, callback, callback_ctx, parts, part_count,
+			&total_len, error) < 0) {
+		return -1;
+	}
+	return jsval_replace_build_parts(region,
+			jsval_native_string_units(input_native), input_native->len,
+			parts, part_count, total_len, value_ptr);
 }
 
 static int
@@ -3371,42 +3835,6 @@ jsval_regexp_slot_key(size_t index, uint8_t *buf, size_t cap, size_t *len_ptr)
 }
 
 static int
-jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
-		int require_object_coercible, jsval_t *string_value_ptr,
-		jsmethod_error_t *error)
-{
-	jsval_t out;
-	jsval_native_string_t *string;
-	jsstr16_t str;
-	jsmethod_value_t method_value;
-	size_t storage_cap;
-
-	if (region == NULL || string_value_ptr == NULL) {
-		errno = EINVAL;
-		return -1;
-	}
-	if (jsval_value_utf16_len(region, value, &storage_cap) < 0) {
-		return -1;
-	}
-	if (jsval_string_reserve_utf16(region, storage_cap, &out, &string) < 0) {
-		return -1;
-	}
-	jsstr16_init_from_buf(&str, (const char *)jsval_native_string_units(string),
-			string->cap * sizeof(uint16_t));
-	if (jsval_method_value_from_jsval(region, value, str.codeunits, str.cap,
-			&method_value) < 0) {
-		return -1;
-	}
-	if (jsmethod_value_to_string(&str, method_value, require_object_coercible,
-			error) < 0) {
-		return -1;
-	}
-	string->len = str.len;
-	*string_value_ptr = out;
-	return 0;
-}
-
-static int
 jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 		size_t pattern_len, const uint16_t *flags, size_t flags_len,
 		jsval_t *value_ptr, jsmethod_error_t *error)
@@ -4558,6 +4986,207 @@ jsval_regexp_replace_walk(jsval_region_t *region, jsval_t regexp_value,
 }
 
 static int
+jsval_regexp_replace_count_parts(jsval_region_t *region, jsval_t regexp_value,
+		const uint16_t *subject, size_t subject_len, size_t *count_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+	size_t offsets_cap;
+	size_t count = 0;
+	int global;
+
+	if (regexp == NULL || count_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	global = (regexp->flags & JSREGEX_FLAG_GLOBAL) != 0;
+	if (global) {
+		regexp->last_index = 0;
+	}
+
+	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+	{
+		size_t offsets[offsets_cap ? offsets_cap : 2];
+		jsregex_exec_result_t exec_result;
+
+		for (;;) {
+			if (jsval_regexp_exec_raw(region, regexp_value, subject, subject_len,
+					offsets, offsets_cap, &exec_result, error) < 0) {
+				return -1;
+			}
+			if (!exec_result.matched) {
+				break;
+			}
+			if (count == SIZE_MAX) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			count++;
+			if (!global) {
+				break;
+			}
+			if (exec_result.start == exec_result.end) {
+				size_t next_index;
+
+				if (jsregex_advance_string_index_utf16(subject, subject_len,
+						regexp->last_index,
+						(regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
+						&next_index) < 0) {
+					return -1;
+				}
+				regexp->last_index = next_index;
+			}
+		}
+	}
+
+	*count_ptr = count;
+	return 0;
+}
+
+static int
+jsval_regexp_replace_fill_parts(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, const uint16_t *subject, size_t subject_len,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_replace_part_t *parts, size_t part_count,
+		size_t *total_len_ptr, jsmethod_error_t *error)
+{
+	jsval_native_regexp_t *regexp = jsval_native_regexp(region, regexp_value);
+	size_t offsets_cap;
+	size_t total_len = 0;
+	size_t cursor = 0;
+	size_t write_index = 0;
+	int global;
+
+	if (regexp == NULL || callback == NULL || total_len_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)
+			|| (part_count > 0 && parts == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	global = (regexp->flags & JSREGEX_FLAG_GLOBAL) != 0;
+	if (global) {
+		regexp->last_index = 0;
+	}
+
+	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+	{
+		size_t offsets[offsets_cap ? offsets_cap : 2];
+		jsregex_exec_result_t exec_result;
+
+		for (;;) {
+			jsval_replace_call_t call;
+			jsval_t match_value;
+			jsval_t replacement_string;
+			jsval_native_string_t *replacement_native;
+			size_t capture_count;
+			size_t i;
+
+			if (jsval_regexp_exec_raw(region, regexp_value, subject, subject_len,
+					offsets, offsets_cap, &exec_result, error) < 0) {
+				return -1;
+			}
+			if (!exec_result.matched) {
+				break;
+			}
+			if (write_index >= part_count) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_replace_append(NULL, &total_len,
+					exec_result.start > cursor ? subject + cursor : NULL,
+					exec_result.start - cursor, 0) < 0) {
+				return -1;
+			}
+			if (jsval_string_new_utf16(region, subject + exec_result.start,
+					exec_result.end - exec_result.start, &match_value) < 0) {
+				return -1;
+			}
+			capture_count = exec_result.slot_count > 0
+					? exec_result.slot_count - 1 : 0;
+			call.match = match_value;
+			call.capture_count = capture_count;
+			call.offset = exec_result.start;
+			call.input = input_value;
+			if (capture_count == 0) {
+				call.captures = NULL;
+			} else {
+				jsval_t captures[capture_count];
+
+				for (i = 0; i < capture_count; i++) {
+					captures[i] = jsval_undefined();
+					if (offsets[(i + 1) * 2] != SIZE_MAX) {
+						if (jsval_string_new_utf16(region,
+								subject + offsets[(i + 1) * 2],
+								offsets[(i + 1) * 2 + 1]
+										- offsets[(i + 1) * 2],
+								&captures[i]) < 0) {
+							return -1;
+						}
+					}
+				}
+				call.captures = captures;
+				if (jsval_replace_callback_stringify(region, callback,
+						callback_ctx, &call, &replacement_string,
+						error) < 0) {
+					return -1;
+				}
+			}
+			if (capture_count == 0
+					&& jsval_replace_callback_stringify(region, callback,
+					callback_ctx, &call, &replacement_string, error) < 0) {
+				return -1;
+			}
+			replacement_native = jsval_native_string(region, replacement_string);
+			if (replacement_native == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			parts[write_index].match_start = exec_result.start;
+			parts[write_index].match_end = exec_result.end;
+			parts[write_index].replacement = replacement_string;
+			write_index++;
+			if (jsval_replace_append(NULL, &total_len,
+					replacement_native->len > 0
+						? jsval_native_string_units(replacement_native) : NULL,
+					replacement_native->len,
+					0) < 0) {
+				return -1;
+			}
+			cursor = exec_result.end;
+			if (!global) {
+				break;
+			}
+			if (exec_result.start == exec_result.end) {
+				size_t next_index;
+
+				if (jsregex_advance_string_index_utf16(subject, subject_len,
+						regexp->last_index,
+						(regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
+						&next_index) < 0) {
+					return -1;
+				}
+				regexp->last_index = next_index;
+			}
+		}
+	}
+
+	if (write_index != part_count) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_replace_append(NULL, &total_len,
+			subject_len > cursor ? subject + cursor : NULL,
+			subject_len - cursor, 0) < 0) {
+		return -1;
+	}
+	*total_len_ptr = total_len;
+	return 0;
+}
+
+static int
 jsval_regexp_split_walk(jsval_region_t *region, jsval_t regexp_value,
 		const uint16_t *subject, size_t subject_len, size_t limit,
 		int build_array, jsval_t array, size_t *count_ptr,
@@ -4860,6 +5489,69 @@ jsval_method_string_replace_regex(jsval_region_t *region, jsval_t this_value,
 	result_string->len = result_len;
 	*value_ptr = result;
 	return 0;
+}
+
+static int
+jsval_method_string_replace_regex_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t regexp_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		int replace_all, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_native_string_t *input_native;
+	jsval_t count_regex;
+	jsval_t fill_regex;
+	jsval_replace_part_t *parts = NULL;
+	size_t part_count = 0;
+	size_t total_len = 0;
+
+	if (region == NULL || callback == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (replace_all
+			&& jsval_method_string_replace_all_regex_check(region, regexp_value,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_stringify_value_to_native(region, this_value, 1, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	input_native = jsval_native_string(region, input_string);
+	if (input_native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_regexp_clone_for_replace(region, regexp_value, &count_regex,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_replace_count_parts(region, count_regex,
+			jsval_native_string_units(input_native), input_native->len,
+			&part_count, error) < 0) {
+		return -1;
+	}
+	if (part_count > 0) {
+		if (jsval_region_reserve(region, part_count * sizeof(*parts),
+				JSVAL_ALIGN, NULL, (void **)&parts) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_regexp_clone_for_replace(region, regexp_value, &fill_regex,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_replace_fill_parts(region, fill_regex, input_string,
+			jsval_native_string_units(input_native), input_native->len,
+			callback, callback_ctx, parts, part_count, &total_len,
+			error) < 0) {
+		return -1;
+	}
+	return jsval_replace_build_parts(region,
+			jsval_native_string_units(input_native), input_native->len,
+			parts, part_count, total_len, value_ptr);
 }
 #endif
 
@@ -6150,6 +6842,30 @@ jsval_method_string_replace(jsval_region_t *region, jsval_t this_value,
 }
 
 int
+jsval_method_string_replace_fn(jsval_region_t *region, jsval_t this_value,
+		jsval_t search_value, jsval_replace_callback_fn callback,
+		void *callback_ctx, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	if (region == NULL || callback == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if JSMX_WITH_REGEX
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		return jsval_method_string_replace_regex_fn(region, this_value,
+				search_value, callback, callback_ctx, 0, value_ptr, error);
+	}
+#else
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return jsval_method_string_replace_string_fn(region, this_value,
+			search_value, callback, callback_ctx, 0, value_ptr, error);
+}
+
+int
 jsval_method_string_replace_all(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, jsval_t replacement_value, jsval_t *value_ptr,
 		jsmethod_error_t *error)
@@ -6177,6 +6893,31 @@ jsval_method_string_replace_all(jsval_region_t *region, jsval_t this_value,
 			search_value, replacement_value,
 			jsmethod_string_replace_all_measure,
 			jsmethod_string_replace_all, value_ptr, error);
+}
+
+int
+jsval_method_string_replace_all_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	if (region == NULL || callback == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if JSMX_WITH_REGEX
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		return jsval_method_string_replace_regex_fn(region, this_value,
+				search_value, callback, callback_ctx, 1, value_ptr, error);
+	}
+#else
+	if (search_value.kind == JSVAL_KIND_REGEXP) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#endif
+	return jsval_method_string_replace_string_fn(region, this_value,
+			search_value, callback, callback_ctx, 1, value_ptr, error);
 }
 
 int jsval_method_string_repeat(jsval_region_t *region, jsval_t this_value,

@@ -67,6 +67,18 @@ typedef struct jsval_regexp_info_s {
 } jsval_regexp_info_t;
 #endif
 
+typedef struct jsval_replace_call_s {
+	jsval_t match;
+	size_t capture_count;
+	const jsval_t *captures;
+	size_t offset;
+	jsval_t input;
+} jsval_replace_call_t;
+
+typedef int (*jsval_replace_callback_fn)(jsval_region_t *region, void *ctx,
+		const jsval_replace_call_t *call, jsval_t *result_ptr,
+		jsmethod_error_t *error);
+
 void jsval_region_init(jsval_region_t *region, void *buf, size_t len);
 void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len);
 size_t jsval_region_remaining(jsval_region_t *region);
@@ -186,12 +198,20 @@ int jsval_method_string_replace_measure(jsval_region_t *region,
 int jsval_method_string_replace(jsval_region_t *region, jsval_t this_value,
 		jsval_t search_value, jsval_t replacement_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_replace_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_replace_all_measure(jsval_region_t *region,
 		jsval_t this_value, jsval_t search_value, jsval_t replacement_value,
 		jsmethod_string_replace_sizes_t *sizes,
 		jsmethod_error_t *error);
 int jsval_method_string_replace_all(jsval_region_t *region,
 		jsval_t this_value, jsval_t search_value, jsval_t replacement_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_all_fn(jsval_region_t *region,
+		jsval_t this_value, jsval_t search_value,
+		jsval_replace_callback_fn callback, void *callback_ctx,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_repeat_measure(jsval_region_t *region,
 		jsval_t this_value, int have_count, jsval_t count_value,
