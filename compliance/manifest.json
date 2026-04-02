@@ -2529,6 +2529,17 @@
       "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regexp-core behavior, including semantic source access, per-flag accessors, flags/info access, and constructor copy/override reset semantics."
     },
     {
+      "id": "jsmx-regex-json-backed-regexp-exec-parity",
+      "suite": "regex",
+      "source": "compliance/js/regex/jsmx/json-backed-regexp-exec-parity.js",
+      "generated": "compliance/generated/regex/jsmx/json-backed-regexp-exec-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

@@ -1143,11 +1143,13 @@ static void
 test_regexp_exec_and_match(void)
 {
 	static const uint8_t pattern_utf8[] = "([0-9][0-9])([a-z])?";
+	static const uint8_t digit_pattern_utf8[] = "([0-9])";
 	static const uint8_t abc_utf8[] = "abc";
 	static const uint8_t json_text[] = "{\"text\":\"343443444\"}";
 	uint8_t storage[65536];
 	jsval_region_t region;
 	jsval_t pattern;
+	jsval_t digit_pattern;
 	jsval_t abc_pattern;
 	jsval_t gim_flags;
 	jsval_t y_flag;
@@ -1158,11 +1160,14 @@ test_regexp_exec_and_match(void)
 	jsval_t copy_regex;
 	jsval_t override_regex;
 	jsval_t global_regex;
+	jsval_t state_global_regex;
+	jsval_t non_global_digit_regex;
 	jsval_t sticky_regex;
 	jsval_t all_flags;
 	jsval_t all_regex;
 	jsval_t input;
 	jsval_t subject;
+	jsval_t state_subject;
 	jsval_t result;
 	jsval_t native_string;
 	jsval_t flags_value;
@@ -1178,6 +1183,8 @@ test_regexp_exec_and_match(void)
 	jsval_region_init(&region, storage, sizeof(storage));
 	assert(jsval_string_new_utf8(&region, pattern_utf8,
 			sizeof(pattern_utf8) - 1, &pattern) == 0);
+	assert(jsval_string_new_utf8(&region, digit_pattern_utf8,
+			sizeof(digit_pattern_utf8) - 1, &digit_pattern) == 0);
 	assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
 			&regex, &error) == 0);
 	assert(regex.kind == JSVAL_KIND_REGEXP);
@@ -1235,6 +1242,8 @@ test_regexp_exec_and_match(void)
 			&abc_pattern) == 0);
 	assert(jsval_regexp_new(&region,
 			jsval_number(3.0), 1, global_flags, &global_regex, &error) == 0);
+	assert(jsval_regexp_new(&region, digit_pattern, 0, jsval_undefined(),
+			&non_global_digit_regex, &error) == 0);
 	assert(jsval_regexp_new(&region, pattern, 1, all_flags, &all_regex,
 			&error) == 0);
 	assert(jsval_regexp_flags(&region, all_regex, &flags_value) == 0);
@@ -1286,6 +1295,70 @@ test_regexp_exec_and_match(void)
 	assert_string(&region, input, "3");
 	assert(jsval_regexp_get_last_index(&region, global_regex, &last_index) == 0);
 	assert(last_index == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+			&state_subject) == 0);
+	assert(jsval_regexp_new(&region, digit_pattern, 1, global_flags,
+			&state_global_regex, &error) == 0);
+	assert(jsval_regexp_exec(&region, state_global_regex, state_subject, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_string_prop(&region, result, "1", "1");
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 2);
+	assert(jsval_regexp_exec(&region, state_global_regex, state_subject, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "2");
+	assert_object_string_prop(&region, result, "1", "2");
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 4);
+	assert(jsval_regexp_exec(&region, state_global_regex, state_subject, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_NULL);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 0);
+	assert(jsval_regexp_set_last_index(&region, state_global_regex, 1) == 0);
+	assert(jsval_regexp_test(&region, state_global_regex, state_subject, &test_result,
+			&error) == 0);
+	assert(test_result == 1);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 2);
+	assert(jsval_regexp_test(&region, state_global_regex, state_subject, &test_result,
+			&error) == 0);
+	assert(test_result == 1);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 4);
+	assert(jsval_regexp_test(&region, state_global_regex, state_subject, &test_result,
+			&error) == 0);
+	assert(test_result == 0);
+	assert(jsval_regexp_get_last_index(&region, state_global_regex, &last_index) == 0);
+	assert(last_index == 0);
+	assert(jsval_regexp_set_last_index(&region, non_global_digit_regex, 7) == 0);
+	assert(jsval_regexp_exec(&region, non_global_digit_regex, state_subject, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert(jsval_regexp_get_last_index(&region, non_global_digit_regex,
+			&last_index) == 0);
+	assert(last_index == 7);
+	assert(jsval_regexp_test(&region, non_global_digit_regex, state_subject,
+			&test_result, &error) == 0);
+	assert(test_result == 1);
+	assert(jsval_regexp_get_last_index(&region, non_global_digit_regex,
+			&last_index) == 0);
+	assert(last_index == 7);
+	assert(jsval_method_string_match(&region, state_subject, 1, non_global_digit_regex,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert(jsval_regexp_get_last_index(&region, non_global_digit_regex,
+			&last_index) == 0);
+	assert(last_index == 7);
 
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"y", 1,
 			&sticky_flags) == 0);

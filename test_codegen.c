@@ -3397,6 +3397,153 @@ static generated_status_t generated_smoke_jsval_regexp_exec_match(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_regexp_exec_state(
+		char *detail, size_t cap)
+{
+	static const uint8_t input_json[] = "{\"text\":\"a1b2\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"a1b2\",\"first\":\"1\",\"second\":\"2\",\"miss\":true,\"lastIndex\":0,\"nonGlobalLastIndex\":7}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t global_regex;
+	jsval_t non_global_regex;
+	jsval_t first_result;
+	jsval_t second_result;
+	jsval_t miss_result;
+	jsval_t nonglobal_result;
+	jsval_t first_match;
+	jsval_t second_match;
+	size_t last_index = 0;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input_json, sizeof(input_json) - 1, 8,
+			&root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_json_parse(regex exec state)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(regex exec state)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"([0-9])", 7,
+			&pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(regex exec state args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 1, global_flags, &global_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(global exec state) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&non_global_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(non-global exec state) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_exec(&region, global_regex, text, &first_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"first jsval_regexp_exec failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, first_result, (const uint8_t *)"0", 1,
+			&first_match) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(first exec match)");
+	}
+	status = generated_expect_string(&region, first_match,
+			(const uint8_t *)"1", 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_regexp_exec(&region, global_regex, text, &second_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"second jsval_regexp_exec failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, second_result, (const uint8_t *)"0", 1,
+			&second_match) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(second exec match)");
+	}
+	status = generated_expect_string(&region, second_match,
+			(const uint8_t *)"2", 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_regexp_exec(&region, global_regex, text, &miss_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"third jsval_regexp_exec failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (miss_result.kind != JSVAL_KIND_NULL) {
+		return generated_failf(detail, cap,
+				"expected null after global miss");
+	}
+	if (jsval_regexp_get_last_index(&region, global_regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(global exec state)");
+	}
+	if (last_index != 0) {
+		return generated_failf(detail, cap,
+				"expected reset lastIndex 0, got %zu", last_index);
+	}
+	if (jsval_regexp_set_last_index(&region, non_global_regex, 7) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_set_last_index(non-global exec state)");
+	}
+	if (jsval_regexp_exec(&region, non_global_regex, text, &nonglobal_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"non-global jsval_regexp_exec failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_get_last_index(&region, non_global_regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(non-global exec state)");
+	}
+	if (last_index != 7) {
+		return generated_failf(detail, cap,
+				"expected preserved non-global lastIndex 7, got %zu",
+				last_index);
+	}
+	if (jsval_promote_object_shallow_in_place(&region, &root, 6) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(exec state)");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_region_set_root(exec state)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"first", 5,
+			first_match) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"second", 6,
+				second_match) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"miss", 4,
+				jsval_bool(1)) < 0
+			|| jsval_object_set_utf8(&region, root, (const uint8_t *)"lastIndex", 9,
+				jsval_number(0.0)) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"nonGlobalLastIndex", 18,
+				jsval_number((double)last_index)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(exec state result)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_regexp_core(
 		char *detail, size_t cap)
 {
@@ -4505,6 +4652,7 @@ static const generated_case_t generated_cases[] = {
 #if JSMX_WITH_REGEX
 	{"smoke", "jsval_regexp_core", generated_smoke_jsval_regexp_core},
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
+	{"smoke", "jsval_regexp_exec_state", generated_smoke_jsval_regexp_exec_state},
 	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
