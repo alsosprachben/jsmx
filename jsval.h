@@ -27,7 +27,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_STRING = 4,
 	JSVAL_KIND_OBJECT = 5,
 	JSVAL_KIND_ARRAY = 6,
-	JSVAL_KIND_REGEXP = 7
+	JSVAL_KIND_REGEXP = 7,
+	JSVAL_KIND_MATCH_ITERATOR = 8
 } jsval_kind_t;
 
 typedef struct jsval_s {
@@ -294,7 +295,15 @@ int jsval_regexp_test(jsval_region_t *region, jsval_t regexp_value,
 int jsval_regexp_exec(jsval_region_t *region, jsval_t regexp_value,
 		jsval_t input_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_regexp_match_all(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_match_iterator_next(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_match(jsval_region_t *region, jsval_t this_value,
+		int have_regexp, jsval_t regexp_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_match_all(jsval_region_t *region, jsval_t this_value,
 		int have_regexp, jsval_t regexp_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 int jsval_method_string_search_regex(jsval_region_t *region,

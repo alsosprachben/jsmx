@@ -3295,6 +3295,149 @@ static generated_status_t generated_smoke_jsval_regexp_core(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_regexp_match_all(
+		char *detail, size_t cap)
+{
+	static const uint8_t input_json[] = "{\"text\":\"a1b2\"}";
+	static const uint8_t expected_json[] =
+		"{\"text\":\"a1b2\",\"first\":\"1\",\"second\":\"2\",\"count\":2,\"lastIndex\":1}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t regex;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t first;
+	jsval_t second;
+	jsmethod_error_t error;
+	size_t last_index = 0;
+	int done = 0;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input_json, sizeof(input_json) - 1, 8,
+			&root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_json_parse(regex matchAll)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(regex matchAll text)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"([0-9])", 7,
+			&pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(regex matchAll args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(matchAll) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_set_last_index(&region, regex, 1) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_set_last_index(matchAll)");
+	}
+	if (jsval_method_string_match_all(&region, text, 1, regex, &iterator,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (iterator.kind != JSVAL_KIND_MATCH_ITERATOR) {
+		return generated_failf(detail, cap,
+				"expected matchAll iterator result");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected first matchAll result object");
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"1", 1,
+			&first) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(matchAll first capture)");
+	}
+	status = generated_expect_string(&region, first, (const uint8_t *)"1", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(second) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected second matchAll result object");
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"1", 1,
+			&second) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(matchAll second capture)");
+	}
+	status = generated_expect_string(&region, second, (const uint8_t *)"2", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(done) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (!done || result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected matchAll iterator exhaustion");
+	}
+	if (jsval_regexp_get_last_index(&region, regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(matchAll)");
+	}
+	if (last_index != 1) {
+		return generated_failf(detail, cap,
+				"expected original regex lastIndex 1, got %zu", last_index);
+	}
+
+	if (jsval_promote_object_shallow_in_place(&region, &root, 5) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promote_object_shallow_in_place(matchAll)");
+	}
+	if (jsval_region_set_root(&region, root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_region_set_root(matchAll)");
+	}
+	if (jsval_object_set_utf8(&region, root, (const uint8_t *)"first", 5,
+			first) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"second", 6, second) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"count", 5, jsval_number(2.0)) < 0
+			|| jsval_object_set_utf8(&region, root,
+				(const uint8_t *)"lastIndex", 9,
+				jsval_number((double)last_index)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(matchAll result)");
+	}
+	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_regex_search(
 		char *detail, size_t cap)
 {
@@ -4080,6 +4223,7 @@ static const generated_case_t generated_cases[] = {
 #if JSMX_WITH_REGEX
 	{"smoke", "jsval_regexp_core", generated_smoke_jsval_regexp_core},
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
+	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
 		generated_smoke_jsval_method_regex_replace_all},

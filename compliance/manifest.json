@@ -2173,6 +2173,105 @@
       "notes": "Repo-authored parity fixture for parsed JSON-backed versus native String.prototype.match results through the new RegExp object model."
     },
     {
+      "id": "test262-strings-matchAll-flags-nonglobal-throws",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/matchAll/flags-nonglobal-throws.js",
+      "generated": "compliance/generated/strings/test262/matchAll/flags-nonglobal-throws.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against String.prototype.matchAll with the core non-global RegExp rejection preserved; the upstream reflective flags-property override sample is intentionally omitted because the current regex object model is semantic rather than reflective."
+    },
+    {
+      "id": "test262-strings-matchAll-regexp-is-null",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/matchAll/regexp-is-null.js",
+      "generated": "compliance/generated/strings/test262/matchAll/regexp-is-null.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against String.prototype.matchAll with a null argument lowered to RegExpCreate(\"null\", \"g\")."
+    },
+    {
+      "id": "test262-strings-matchAll-regexp-is-undefined",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/matchAll/regexp-is-undefined.js",
+      "generated": "compliance/generated/strings/test262/matchAll/regexp-is-undefined.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against String.prototype.matchAll with an undefined argument lowered to the empty global regex and zero-width iterator progress preserved."
+    },
+    {
+      "id": "test262-strings-matchAll-this-val-non-obj-coercible",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/matchAll/this-val-non-obj-coercible.js",
+      "generated": "compliance/generated/strings/test262/matchAll/this-val-non-obj-coercible.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against String.prototype.matchAll while preserving RequireObjectCoercible(this)."
+    },
+    {
+      "id": "jsmx-strings-json-backed-matchAll-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/json-backed-matchAll-parity.js",
+      "generated": "compliance/generated/strings/jsmx/json-backed-matchAll-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll iterator results through the jsval bridge."
+    },
+    {
+      "id": "test262-regex-matchAll-string-tostring",
+      "suite": "regex",
+      "source": "compliance/js/regex/test262/matchAll/string-tostring.js",
+      "generated": "compliance/generated/regex/test262/matchAll/string-tostring.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: ToString(string) is materialized explicitly before calling the semantic RegExp matchAll iterator entrypoint."
+    },
+    {
+      "id": "test262-regex-matchAll-string-tostring-throws",
+      "suite": "regex",
+      "source": "compliance/js/regex/test262/matchAll/string-tostring-throws.js",
+      "generated": "compliance/generated/regex/test262/matchAll/string-tostring-throws.c",
+      "required_features": ["regex"],
+      "lowering_class": "slow_path_needed",
+      "translation_mode": "idiomatic_slow_path",
+      "expected_status": "pass",
+      "notes": "Translated as an idiomatic slow path: abrupt ToString(string) is preserved before entering the semantic RegExp matchAll iterator runtime."
+    },
+    {
+      "id": "test262-regex-matchAll-this-lastindex-cached",
+      "suite": "regex",
+      "source": "compliance/js/regex/test262/matchAll/this-lastindex-cached.js",
+      "generated": "compliance/generated/regex/test262/matchAll/this-lastindex-cached.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the semantic RegExp matchAll iterator clone, preserving cached lastIndex while isolating subsequent iterator progress from the original regex."
+    },
+    {
+      "id": "test262-regex-matchAll-this-not-object-throws",
+      "suite": "regex",
+      "source": "compliance/js/regex/test262/matchAll/this-not-object-throws.js",
+      "generated": "compliance/generated/regex/test262/matchAll/this-not-object-throws.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Translated against the explicit RegExp receiver type check in jsval_regexp_match_all."
+    },
+    {
       "id": "test262-regex-test-S15.10.6.3_A1_T1",
       "suite": "regex",
       "source": "compliance/js/regex/test262/test/S15.10.6.3_A1_T1.js",

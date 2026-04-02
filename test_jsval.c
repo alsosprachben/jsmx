@@ -1134,6 +1134,124 @@ test_regexp_exec_and_match(void)
 }
 
 static void
+test_regexp_match_all(void)
+{
+	static const uint8_t json_text[] = "{\"text\":\"a1b2\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t regex;
+	jsval_t subject;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t json_root;
+	jsval_t json_subject;
+	jsmethod_error_t error;
+	size_t last_index;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"([0-9])", 7,
+			&pattern) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+			&error) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+			&subject) == 0);
+	assert(jsval_regexp_set_last_index(&region, regex, 1) == 0);
+	assert(jsval_regexp_match_all(&region, regex, subject, &iterator,
+			&error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_truthy(&region, iterator) == 1);
+	assert(jsval_strict_eq(&region, iterator, iterator) == 1);
+	assert(jsval_regexp_get_last_index(&region, regex, &last_index) == 0);
+	assert(last_index == 1);
+
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_string_prop(&region, result, "1", "1");
+	assert_object_number_prop(&region, result, "length", 2.0);
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert_object_string_prop(&region, result, "input", "a1b2");
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_regexp_get_last_index(&region, regex, &last_index) == 0);
+	assert(last_index == 1);
+
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "2");
+	assert_object_string_prop(&region, result, "1", "2");
+	assert_object_number_prop(&region, result, "length", 2.0);
+	assert_object_number_prop(&region, result, "index", 3.0);
+
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(), &regex,
+			&error) == 0);
+	assert(jsval_regexp_match_all(&region, regex, subject, &iterator,
+			&error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_match_all(&region, subject, 1, regex,
+			&iterator, &error) < 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsval_method_string_match_all(&region, subject, 0,
+			jsval_undefined(), &iterator, &error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "");
+	assert_object_number_prop(&region, result, "index", 0.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "");
+	assert_object_number_prop(&region, result, "index", 1.0);
+
+	assert(jsval_method_string_match_all(&region, subject, 1, jsval_null(),
+			&iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_json_parse(&region, json_text, sizeof(json_text) - 1, 8,
+			&json_root) == 0);
+	assert(jsval_object_get_utf8(&region, json_root,
+			(const uint8_t *)"text", 4, &json_subject) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+			&error) == 0);
+	assert(jsval_method_string_match_all(&region, json_subject, 1, regex,
+			&iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "1");
+	assert_object_number_prop(&region, result, "index", 1.0);
+}
+
+static void
 test_method_regex_search_bridge(void)
 {
 	static const char json[] = "{\"text\":\"fooBar\",\"pattern\":\"bar\",\"flags\":\"i\"}";
@@ -2543,6 +2661,7 @@ int main(void)
 	test_method_replace_all_bridge();
 #if JSMX_WITH_REGEX
 	test_regexp_exec_and_match();
+	test_regexp_match_all();
 	test_method_regex_search_bridge();
 #endif
 	test_method_concat_bridge();

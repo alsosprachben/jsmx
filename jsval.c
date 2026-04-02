@@ -35,6 +35,13 @@ typedef struct jsval_native_regexp_s {
 	uintptr_t backend_code;
 } jsval_native_regexp_t;
 
+typedef struct jsval_native_match_iterator_s {
+	jsval_t regexp_value;
+	jsval_t input_value;
+	uint8_t done;
+	uint8_t reserved[7];
+} jsval_native_match_iterator_t;
+
 typedef struct jsval_native_prop_s {
 	jsval_off_t name_off;
 	jsval_t value;
@@ -190,6 +197,16 @@ static jsval_native_regexp_t *jsval_native_regexp(jsval_region_t *region,
 		return NULL;
 	}
 	return (jsval_native_regexp_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_match_iterator_t *jsval_native_match_iterator(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_MATCH_ITERATOR) {
+		return NULL;
+	}
+	return (jsval_native_match_iterator_t *)jsval_region_ptr(region, value.off);
 }
 
 static jsval_json_doc_t *jsval_json_doc(jsval_region_t *region, jsval_t value)
@@ -1020,6 +1037,8 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 		jsval_json_emit_pop(state, value);
 		return jsval_json_emit_byte(state, '}');
 	}
+	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1148,6 +1167,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, NULL, 0, len_ptr);
 	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1202,6 +1222,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, buf, cap, len_ptr);
 	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1428,6 +1449,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_OBJECT:
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -4085,6 +4107,201 @@ jsval_regexp_clone_for_replace(jsval_region_t *region, jsval_t regexp_value,
 }
 
 static int
+jsval_match_iterator_new(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, jsval_t *value_ptr)
+{
+	jsval_native_match_iterator_t *iterator;
+	jsval_off_t off;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*iterator), JSVAL_ALIGN, &off,
+			(void **)&iterator) < 0) {
+		return -1;
+	}
+	iterator->regexp_value = regexp_value;
+	iterator->input_value = input_value;
+	iterator->done = 0;
+	memset(iterator->reserved, 0, sizeof(iterator->reserved));
+
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_MATCH_ITERATOR;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int
+jsval_regexp_match_all(jsval_region_t *region, jsval_t regexp_value,
+		jsval_t input_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_t iterator_regex;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_native_regexp(region, regexp_value) == NULL) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "RegExp receiver required";
+		}
+		return -1;
+	}
+	if (jsval_stringify_value_to_native(region, input_value, 0, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	if (jsval_regexp_clone_with_flags(region, regexp_value,
+			jsval_native_regexp(region, regexp_value)->flags, 1,
+			&iterator_regex, error) < 0) {
+		return -1;
+	}
+	return jsval_match_iterator_new(region, iterator_regex, input_string,
+			value_ptr);
+}
+
+int
+jsval_match_iterator_next(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_native_match_iterator_t *iterator;
+	jsval_native_regexp_t *regexp;
+	jsval_native_string_t *input_native;
+	size_t offsets_cap;
+
+	if (region == NULL || done_ptr == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	iterator = jsval_native_match_iterator(region, iterator_value);
+	if (iterator == NULL) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "matchAll iterator required";
+		}
+		return -1;
+	}
+	if (iterator->done) {
+		*done_ptr = 1;
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+
+	regexp = jsval_native_regexp(region, iterator->regexp_value);
+	input_native = jsval_native_string(region, iterator->input_value);
+	if (regexp == NULL || input_native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+	{
+		size_t offsets[offsets_cap ? offsets_cap : 2];
+		jsregex_exec_result_t exec_result;
+
+		if (jsval_regexp_exec_raw(region, iterator->regexp_value,
+				jsval_native_string_units(input_native), input_native->len,
+				offsets, offsets_cap, &exec_result, error) < 0) {
+			return -1;
+		}
+		if (!exec_result.matched) {
+			iterator->done = 1;
+			*done_ptr = 1;
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		if (jsval_regexp_exec_result_object(region, iterator->input_value,
+				jsval_native_string_units(input_native), input_native->len,
+				offsets, exec_result.slot_count, exec_result.start,
+				value_ptr) < 0) {
+			return -1;
+		}
+		if ((regexp->flags & JSREGEX_FLAG_GLOBAL) == 0) {
+			iterator->done = 1;
+		} else if (exec_result.start == exec_result.end) {
+			size_t next_index;
+
+			if (jsregex_advance_string_index_utf16(
+					jsval_native_string_units(input_native), input_native->len,
+					regexp->last_index,
+					(regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
+					&next_index) < 0) {
+				return -1;
+			}
+			regexp->last_index = next_index;
+		}
+		*done_ptr = 0;
+		return 0;
+	}
+}
+
+int
+jsval_method_string_match_all(jsval_region_t *region, jsval_t this_value,
+		int have_regexp, jsval_t regexp_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t input_string;
+	jsval_t regex_value;
+	jsval_t flags_value;
+	jsval_native_regexp_t *regexp;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, this_value, 1, &input_string,
+			error) < 0) {
+		return -1;
+	}
+
+	if (!have_regexp || regexp_value.kind == JSVAL_KIND_UNDEFINED) {
+		static const uint16_t global_flag[] = {'g'};
+
+		if (jsval_regexp_new_from_utf16(region, NULL, 0, global_flag, 1,
+				&regex_value, error) < 0) {
+			return -1;
+		}
+	} else if (regexp_value.kind == JSVAL_KIND_REGEXP) {
+		regexp = jsval_native_regexp(region, regexp_value);
+		if (regexp == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if ((regexp->flags & JSREGEX_FLAG_GLOBAL) == 0) {
+			errno = EINVAL;
+			if (error != NULL) {
+				error->kind = JSMETHOD_ERROR_TYPE;
+				error->message = "matchAll requires a global RegExp";
+			}
+			return -1;
+		}
+		regex_value = regexp_value;
+	} else {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"g", 1,
+				&flags_value) < 0) {
+			return -1;
+		}
+		if (jsval_regexp_new(region, regexp_value, 1, flags_value,
+				&regex_value, error) < 0) {
+			return -1;
+		}
+	}
+
+	return jsval_regexp_match_all(region, regex_value, input_string, value_ptr,
+			error);
+}
+
+static int
 jsval_method_string_replace_all_regex_check(jsval_region_t *region,
 		jsval_t regexp_value, jsmethod_error_t *error)
 {
@@ -5182,6 +5399,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_OBJECT:
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 		return 1;
 	default:
 		return 0;
@@ -5239,6 +5457,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_OBJECT:
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -5263,9 +5482,11 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 	}
 	if (left.kind == JSVAL_KIND_OBJECT || left.kind == JSVAL_KIND_ARRAY
 			|| left.kind == JSVAL_KIND_REGEXP
+			|| left.kind == JSVAL_KIND_MATCH_ITERATOR
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
-			|| right.kind == JSVAL_KIND_REGEXP) {
+			|| right.kind == JSVAL_KIND_REGEXP
+			|| right.kind == JSVAL_KIND_MATCH_ITERATOR) {
 		errno = ENOTSUP;
 		return -1;
 	}
