@@ -1884,7 +1884,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path around the semantic regex value model: the core non-global RegExp rejection is preserved, while the upstream reflective flags-property override samples are intentionally omitted."
+      "notes": "Idiomatic slow path: the core non-global RegExp rejection is preserved around the semantic regex value model, while the upstream reflective flags-property override samples stay outside the current flattened runtime boundary."
     },
     {
       "id": "jsmx-strings-json-backed-replaceAll-parity",
@@ -1998,7 +1998,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic flattened subset of the upstream regex-separator file, preserving representative zero-width begin/end, consuming, and zero-width-progress split cases."
+      "notes": "Direct-lowered: translated as an idiomatic flattened subset of the upstream regex-separator file, preserving representative zero-width begin/end, consuming, and zero-width-progress split cases."
     },
     {
       "id": "jsmx-strings-json-backed-split-parity",
@@ -2152,7 +2152,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the native RegExp lastIndex model for repeated global exec calls."
+      "notes": "Direct-lowered: translated against the native RegExp lastIndex model for repeated global exec calls."
     },
     {
       "id": "test262-strings-exec-y-init-lastindex",
@@ -2175,6 +2175,17 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Translated against sticky lastIndex reset-on-failure semantics."
+    },
+    {
+      "id": "test262-strings-exec-u-lastindex-adv",
+      "suite": "strings",
+      "source": "compliance/js/strings/test262/exec/u-lastindex-adv.js",
+      "generated": "compliance/generated/strings/test262/exec/u-lastindex-adv.c",
+      "required_features": ["regex"],
+      "lowering_class": "unsupported",
+      "translation_mode": "literal",
+      "expected_status": "known_unsupported",
+      "notes": "Unsupported: JS-valid unicode/surrogate-sensitive /u exec case from test262 `u-lastindex-adv`; the current PCRE2-backed runtime is not an honest direct lowering and no reviewed rewrite-backed recipe is committed yet."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A1_T19",
@@ -2449,7 +2460,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_source plus jsval_regexp_new/jsval_regexp_test for a source string that does not require broader EscapeRegExpPattern edge handling."
+      "notes": "Direct-lowered: translated against jsval_regexp_source plus jsval_regexp_new/jsval_regexp_test for a source string that does not require broader EscapeRegExpPattern edge handling."
     },
     {
       "id": "test262-regex-dotAll-this-val-regexp",
@@ -2537,7 +2548,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
     },
     {
       "id": "test262-values-S11.6.1_A2.1_T1",

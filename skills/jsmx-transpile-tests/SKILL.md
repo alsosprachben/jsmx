@@ -11,6 +11,7 @@ Read these references before generating or editing fixtures:
 
 - `references/style.md`: translation rules, API preferences, unsupported-policy
 - `references/corpus-layout.md`: target directories, manifest fields, naming, and test contract
+- `references/regex-compatibility.md`: translator-owned regex lowering choices for direct, rewrite, slow-path, and unsupported cases
 
 ## Workflow
 
@@ -18,6 +19,7 @@ Read these references before generating or editing fixtures:
 2. Choose the narrowest `jsmx` surface that matches the test:
    - `jsstr` for pure string semantics
    - `jsval` for values, JSON-backed/native transitions, and object/array behavior
+   - for regex-bearing cases, decide direct vs rewrite vs slow path vs unsupported before choosing the exact runtime calls
 3. Generate one self-contained C file under `compliance/generated/<suite>/`.
 4. Make the generated file include `compliance/generated/test_contract.h` and report one of:
    - `PASS`

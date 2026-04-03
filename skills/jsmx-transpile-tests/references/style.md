@@ -28,6 +28,10 @@ The output is not a generic C translation. It is a `jsmx`-targeted fixture.
 - Only preserve a flattenable subset and document omissions when the missing
   behavior does not yet have a clear slow-path contract.
 
+For regex-bearing cases, also read `references/regex-compatibility.md` before
+choosing between direct lowering, rewrite, slow path, or unsupported
+classification.
+
 ## API Selection
 
 - Use `jsstr` for pure string semantics:
@@ -120,6 +124,17 @@ When a fixture depends on an optional backend, add `required_features` in the
 manifest and keep the generated code routed through `jsregex`, `jsmethod`, or
 `jsval` entrypoints. Do not emit backend-specific calls like `pcre2_*`
 directly in committed fixtures.
+
+For new or updated regex-bearing entries, make the manifest `notes` start with
+one of:
+
+- `Direct-lowered:`
+- `Rewrite-backed:`
+- `Idiomatic slow path:`
+- `Unsupported:`
+
+That note should name the runtime entrypoint or compatibility reason so the
+translator decision is reviewable from the corpus alone.
 
 ## Generated File Rules
 
