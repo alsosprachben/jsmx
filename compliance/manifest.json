@@ -1646,7 +1646,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for a basic first-match regular-expression replacement."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for a basic first-match regular-expression replacement."
     },
     {
       "id": "test262-strings-replace-S15.5.4.11_A1_T4",
@@ -1677,7 +1677,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for $$ substitution in a global replacement string."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for $$ substitution in a global replacement string."
     },
     {
       "id": "test262-strings-replace-S15.5.4.11_A2_T3",
@@ -1688,7 +1688,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for $& matched-substring substitution in a global replacement string."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for $& matched-substring substitution in a global replacement string."
     },
     {
       "id": "test262-strings-replace-S15.5.4.11_A2_T4",
@@ -1699,7 +1699,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for $` left-context substitution in a global replacement string."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for $` left-context substitution in a global replacement string."
     },
     {
       "id": "test262-strings-replace-S15.5.4.11_A2_T5",
@@ -1710,7 +1710,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for $' right-context substitution in a global replacement string."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for $' right-context substitution in a global replacement string."
     },
     {
       "id": "test262-strings-replace-S15.5.4.11_A3_T1",
@@ -1721,7 +1721,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled jsval replace bridge for numeric capture substitution, preserving the upstream $11 parsing behavior."
+      "notes": "Direct-lowered: translated against the regex-enabled jsval replace bridge for numeric capture substitution, preserving the upstream $11 parsing behavior."
     },
     {
       "id": "jsmx-strings-json-backed-replace-parity",
@@ -1732,7 +1732,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replace results across both plain-string and regex search values through the jsval bridge."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native replace results across both plain-string and regex search values through the jsval bridge."
     },
     {
       "id": "jsmx-strings-json-backed-replace-callback-parity",
@@ -1753,7 +1753,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regex callback-replacer behavior on the jsval bridge, including capture arguments."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native regex callback-replacer behavior on the jsval bridge, including capture arguments."
     },
     {
       "id": "test262-strings-replaceAll-searchValue-empty-string",
@@ -1895,7 +1895,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native replaceAll results across both plain-string and regex search values through the jsval bridge."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native replaceAll results across both plain-string and regex search values through the jsval bridge."
     },
     {
       "id": "test262-strings-split-separator-undef",
@@ -1976,7 +1976,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled split bridge; the upstream boxed String receiver is intentionally collapsed to its flattenable primitive string value."
+      "notes": "Direct-lowered: translated against the regex-enabled split bridge; the upstream boxed String receiver is intentionally collapsed to its flattenable primitive string value."
     },
     {
       "id": "test262-strings-split-arguments-are-regexp-s-and-3-and-instance-is-string-a-b-c-de-f",
@@ -1987,7 +1987,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the regex-enabled split bridge while preserving the regex separator limit behavior."
+      "notes": "Direct-lowered: translated against the regex-enabled split bridge while preserving the regex separator limit behavior."
     },
     {
       "id": "test262-strings-split-separator-regexp",
@@ -2009,7 +2009,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native split results across both string and regex separators through the jsval bridge."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native split results across both string and regex separators through the jsval bridge."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A2_T1",
@@ -2020,7 +2020,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the optional PCRE2-backed jsregex search boundary, lowering the string argument to an explicit pattern string with empty flags."
+      "notes": "Direct-lowered: translated against the optional PCRE2-backed jsregex search boundary, lowering the string argument to an explicit pattern string with empty flags."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A2_T2",
@@ -2031,7 +2031,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the optional PCRE2-backed jsregex search boundary for a basic case-sensitive miss."
+      "notes": "Direct-lowered: translated against the optional PCRE2-backed jsregex search boundary for a basic case-sensitive miss."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A1_T2",
@@ -2042,7 +2042,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: the boxed Boolean receiver is modeled through an explicit coercion callback before regex search."
+      "notes": "Idiomatic slow path: the boxed Boolean receiver is modeled through an explicit coercion callback before regex search."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A1_T10",
@@ -2053,7 +2053,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: the object argument's toString hook is modeled through an explicit callback before the regex backend runs."
+      "notes": "Idiomatic slow path: the object argument's toString hook is modeled through an explicit callback before the regex backend runs."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A1_T11",
@@ -2064,7 +2064,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: the object argument's throwing toString hook is modeled through an explicit coercion callback."
+      "notes": "Idiomatic slow path: the object argument's throwing toString hook is modeled through an explicit coercion callback."
     },
     {
       "id": "test262-strings-search-S15.5.4.12_A1_T14",
@@ -2075,7 +2075,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the explicit pattern/flags regex boundary instead of modeling RegExp object identity."
+      "notes": "Direct-lowered: translated against the explicit pattern/flags regex boundary instead of modeling RegExp object identity."
     },
     {
       "id": "test262-strings-search-this-value-not-obj-coercible",
@@ -2086,7 +2086,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the optional regex-backed search method while preserving RequireObjectCoercible(this)."
+      "notes": "Direct-lowered: translated against the optional regex-backed search method while preserving RequireObjectCoercible(this)."
     },
     {
       "id": "jsmx-strings-json-backed-regex-search-parity",
@@ -2097,7 +2097,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regex search results through the new jsval bridge."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native regex search results through the new jsval bridge."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A1_T1",
@@ -2108,7 +2108,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated through the new RegExp value model; the upstream instanceof Array assertion is intentionally omitted while the flattenable result content is preserved."
+      "notes": "Direct-lowered: translated through the new RegExp value model; the upstream instanceof Array assertion is intentionally omitted while the flattenable result content is preserved."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A1_T10",
@@ -2119,7 +2119,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against RegExp.prototype.exec with numeric ToString(input) preserved through the regex runtime."
+      "notes": "Direct-lowered: translated against RegExp.prototype.exec with numeric ToString(input) preserved through the regex runtime."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A1_T15",
@@ -2130,7 +2130,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: the input object's toString hook is materialized explicitly before dispatch into the regex runtime."
+      "notes": "Idiomatic slow path: the input object's toString hook is materialized explicitly before dispatch into the regex runtime."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A2_T1",
@@ -2141,7 +2141,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the new jsval RegExp receiver check while preserving the TypeError boundary for non-RegExp receivers."
+      "notes": "Direct-lowered: translated against the new jsval RegExp receiver check while preserving the TypeError boundary for non-RegExp receivers."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A4_T1",
@@ -2163,7 +2163,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against sticky lastIndex initialization in the native RegExp model."
+      "notes": "Direct-lowered: translated against sticky lastIndex initialization in the native RegExp model."
     },
     {
       "id": "test262-strings-exec-y-fail-lastindex",
@@ -2174,7 +2174,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against sticky lastIndex reset-on-failure semantics."
+      "notes": "Direct-lowered: translated against sticky lastIndex reset-on-failure semantics."
     },
     {
       "id": "test262-strings-exec-u-lastindex-adv",
@@ -2196,7 +2196,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against RegExp.prototype.exec with undefined ToString(input) preserved through the regex runtime."
+      "notes": "Direct-lowered: translated against RegExp.prototype.exec with undefined ToString(input) preserved through the regex runtime."
     },
     {
       "id": "test262-strings-match-S15.5.4.10_A2_T1",
@@ -2207,7 +2207,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.match with a non-RegExp primitive argument lowered to RegExpCreate(ToString(arg), '')."
+      "notes": "Direct-lowered: translated against String.prototype.match with a non-RegExp primitive argument lowered to RegExpCreate(ToString(arg), '')."
     },
     {
       "id": "test262-strings-match-S15.5.4.10_A2_T2",
@@ -2218,7 +2218,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the global-match array result path."
+      "notes": "Direct-lowered: translated against the global-match array result path."
     },
     {
       "id": "test262-strings-match-S15.5.4.10_A2_T10",
@@ -2229,7 +2229,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the non-global match result object with captures, undefined trailing capture, and ignored lastIndex."
+      "notes": "Direct-lowered: translated against the non-global match result object with captures, undefined trailing capture, and ignored lastIndex."
     },
     {
       "id": "test262-strings-match-S15.5.4.10_A1_T14",
@@ -2240,7 +2240,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against a native RegExp object argument instead of the earlier pattern/flags-only search boundary."
+      "notes": "Direct-lowered: translated against a native RegExp object argument instead of the earlier pattern/flags-only search boundary."
     },
     {
       "id": "test262-strings-match-this-value-not-obj-coercible",
@@ -2251,7 +2251,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.match while preserving RequireObjectCoercible(this)."
+      "notes": "Direct-lowered: translated against String.prototype.match while preserving RequireObjectCoercible(this)."
     },
     {
       "id": "jsmx-strings-json-backed-regexp-match-parity",
@@ -2262,7 +2262,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native String.prototype.match results through the new RegExp object model."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.match results through the new RegExp object model."
     },
     {
       "id": "test262-strings-matchAll-flags-nonglobal-throws",
@@ -2273,7 +2273,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.matchAll with the core non-global RegExp rejection preserved; the upstream reflective flags-property override sample is intentionally omitted because the current regex object model is semantic rather than reflective."
+      "notes": "Direct-lowered: translated against String.prototype.matchAll with the core non-global RegExp rejection preserved; the upstream reflective flags-property override sample is intentionally omitted because the current regex object model is semantic rather than reflective."
     },
     {
       "id": "test262-strings-matchAll-regexp-is-null",
@@ -2284,7 +2284,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.matchAll with a null argument lowered to RegExpCreate(\"null\", \"g\")."
+      "notes": "Direct-lowered: translated against String.prototype.matchAll with a null argument lowered to RegExpCreate(\"null\", \"g\")."
     },
     {
       "id": "test262-strings-matchAll-regexp-is-undefined",
@@ -2295,7 +2295,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.matchAll with an undefined argument lowered to the empty global regex and zero-width iterator progress preserved."
+      "notes": "Direct-lowered: translated against String.prototype.matchAll with an undefined argument lowered to the empty global regex and zero-width iterator progress preserved."
     },
     {
       "id": "test262-strings-matchAll-this-val-non-obj-coercible",
@@ -2306,7 +2306,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against String.prototype.matchAll while preserving RequireObjectCoercible(this)."
+      "notes": "Direct-lowered: translated against String.prototype.matchAll while preserving RequireObjectCoercible(this)."
     },
     {
       "id": "jsmx-strings-json-backed-matchAll-parity",
@@ -2317,7 +2317,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll iterator results through the jsval bridge."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll iterator results through the jsval bridge."
     },
     {
       "id": "test262-regex-matchAll-string-tostring",
@@ -2328,7 +2328,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: ToString(string) is materialized explicitly before calling the semantic RegExp matchAll iterator entrypoint."
+      "notes": "Idiomatic slow path: ToString(string) is materialized explicitly before calling the semantic RegExp matchAll iterator entrypoint."
     },
     {
       "id": "test262-regex-matchAll-string-tostring-throws",
@@ -2339,7 +2339,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: abrupt ToString(string) is preserved before entering the semantic RegExp matchAll iterator runtime."
+      "notes": "Idiomatic slow path: abrupt ToString(string) is preserved before entering the semantic RegExp matchAll iterator runtime."
     },
     {
       "id": "test262-regex-matchAll-this-lastindex-cached",
@@ -2350,7 +2350,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the semantic RegExp matchAll iterator clone, preserving cached lastIndex while isolating subsequent iterator progress from the original regex."
+      "notes": "Direct-lowered: translated against the semantic RegExp matchAll iterator clone, preserving cached lastIndex while isolating subsequent iterator progress from the original regex."
     },
     {
       "id": "test262-regex-matchAll-this-not-object-throws",
@@ -2361,7 +2361,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the explicit RegExp receiver type check in jsval_regexp_match_all."
+      "notes": "Direct-lowered: translated against the explicit RegExp receiver type check in jsval_regexp_match_all."
     },
     {
       "id": "test262-regex-test-S15.10.6.3_A1_T1",
@@ -2372,7 +2372,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_test and jsval_regexp_exec while preserving the upstream test/exec equivalence check."
+      "notes": "Direct-lowered: translated against jsval_regexp_test and jsval_regexp_exec while preserving the upstream test/exec equivalence check."
     },
     {
       "id": "test262-regex-test-S15.10.6.3_A1_T10",
@@ -2383,7 +2383,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against RegExp.prototype.test with numeric ToString(input) preserved through the regex runtime."
+      "notes": "Direct-lowered: translated against RegExp.prototype.test with numeric ToString(input) preserved through the regex runtime."
     },
     {
       "id": "test262-regex-test-S15.10.6.3_A1_T15",
@@ -2394,7 +2394,7 @@
       "lowering_class": "slow_path_needed",
       "translation_mode": "idiomatic_slow_path",
       "expected_status": "pass",
-      "notes": "Translated as an idiomatic slow path: the object's toString hook is materialized explicitly before both test and exec."
+      "notes": "Idiomatic slow path: the object's toString hook is materialized explicitly before both test and exec."
     },
     {
       "id": "test262-regex-test-S15.10.6.3_A2_T1",
@@ -2405,7 +2405,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against the explicit RegExp receiver type check in jsval_regexp_test."
+      "notes": "Direct-lowered: translated against the explicit RegExp receiver type check in jsval_regexp_test."
     },
     {
       "id": "test262-regex-test-y-init-lastindex",
@@ -2416,7 +2416,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against sticky lastIndex initialization in jsval_regexp_test."
+      "notes": "Direct-lowered: translated against sticky lastIndex initialization in jsval_regexp_test."
     },
     {
       "id": "test262-regex-test-y-fail-lastindex",
@@ -2427,7 +2427,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against sticky lastIndex reset-on-failure semantics in jsval_regexp_test."
+      "notes": "Direct-lowered: translated against sticky lastIndex reset-on-failure semantics in jsval_regexp_test."
     },
     {
       "id": "test262-regex-test-y-set-lastindex",
@@ -2438,7 +2438,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against sticky lastIndex advancement on a successful test call."
+      "notes": "Direct-lowered: translated against sticky lastIndex advancement on a successful test call."
     },
     {
       "id": "test262-regex-flags-this-val-regexp",
@@ -2449,7 +2449,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_flags for the supported gimsuy subset; the upstream d and v checks are intentionally omitted because the current backend does not expose those flags."
+      "notes": "Direct-lowered: translated against jsval_regexp_flags for the supported gimsuy subset; the upstream d and v checks are intentionally omitted because the current backend does not expose those flags."
     },
     {
       "id": "test262-regex-source-value",
@@ -2471,7 +2471,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_dot_all for supported dotAll combinations."
+      "notes": "Direct-lowered: translated against jsval_regexp_dot_all for supported dotAll combinations."
     },
     {
       "id": "test262-regex-constructor-lastIndex",
@@ -2482,7 +2482,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_get_last_index for constructor initialization; the upstream property-descriptor checks are intentionally omitted because the current regex value model is semantic rather than reflective."
+      "notes": "Direct-lowered: translated against jsval_regexp_get_last_index for constructor initialization; the upstream property-descriptor checks are intentionally omitted because the current regex value model is semantic rather than reflective."
     },
     {
       "id": "test262-regex-unicode-this-val-regexp",
@@ -2493,7 +2493,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_unicode for supported unicode combinations."
+      "notes": "Direct-lowered: translated against jsval_regexp_unicode for supported unicode combinations."
     },
     {
       "id": "test262-regex-sticky-this-val-regexp",
@@ -2504,7 +2504,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_sticky for supported sticky combinations."
+      "notes": "Direct-lowered: translated against jsval_regexp_sticky for supported sticky combinations."
     },
     {
       "id": "test262-regex-constructor-duplicate-flags",
@@ -2515,7 +2515,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_new for the supported gimsuy duplicate-flag subset; the upstream d duplicate check is intentionally omitted."
+      "notes": "Direct-lowered: translated against jsval_regexp_new for the supported gimsuy duplicate-flag subset; the upstream d duplicate check is intentionally omitted."
     },
     {
       "id": "test262-regex-constructor-valid-flags-y",
@@ -2526,7 +2526,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Translated against jsval_regexp_new for supported constructor acceptance of the sticky flag and its combinations."
+      "notes": "Direct-lowered: translated against jsval_regexp_new for supported constructor acceptance of the sticky flag and its combinations."
     },
     {
       "id": "jsmx-regex-json-backed-regexp-core-parity",
@@ -2537,7 +2537,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored parity fixture for parsed JSON-backed versus native regexp-core behavior, including semantic source access, per-flag accessors, flags/info access, and constructor copy/override reset semantics."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native regexp-core behavior, including semantic source access, per-flag accessors, flags/info access, and constructor copy/override reset semantics."
     },
     {
       "id": "jsmx-regex-json-backed-regexp-exec-parity",

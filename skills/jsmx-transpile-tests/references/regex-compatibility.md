@@ -71,6 +71,15 @@ Current status:
 - until a reviewed rewrite recipe lands, do **not** add that case as a passing
   direct runtime fixture
 
+## Current Known Gaps
+
+| Family | Representative case | Current classification | Next action |
+| --- | --- | --- | --- |
+| Unicode/surrogate-sensitive `/u` exec behavior | `strings/test262/exec/u-lastindex-adv` | `Unsupported:` rewrite-candidate | Land a reviewed rewrite recipe before adding a passing lowering |
+| Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
+| `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
+| Named groups and `groups` objects | future `exec` / `match` named-group files | `Unsupported:` | Expand the semantic regex result surface before translating those files as passing cases |
+
 ## Current Slow-Path Policy
 
 Use an idiomatic slow path when the JS behavior is understood but sits above the

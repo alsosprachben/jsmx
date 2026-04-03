@@ -12,6 +12,15 @@ main(void)
 	jsmethod_error_t error;
 
 	jsval_region_init(&region, storage, sizeof(storage));
+	/*
+	 * Generated from test262:
+	 * test/built-ins/RegExp/prototype/flags/this-val-regexp.js
+	 *
+	 * Direct-lowered: this fixture preserves the current semantic flags surface
+	 * for the supported gimsuy subset. The upstream d/v checks stay outside the
+	 * current runtime boundary and are documented as unsupported in the regex
+	 * compatibility guide and manifest notes.
+	 */
 	GENERATED_TEST_ASSERT(generated_regexp_new_utf8(&region, ".", NULL,
 			&regex, &error) == 0, SUITE, CASE_NAME, "regex build failed");
 	GENERATED_TEST_ASSERT(generated_expect_regexp_flags(&region, regex, "",
