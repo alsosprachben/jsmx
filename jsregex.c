@@ -307,6 +307,46 @@ jsregex_exec_u_literal_surrogate_utf16(const uint16_t *subject,
 }
 
 int
+jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
+		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
+		int *matched_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (matched_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_literal_surrogate_utf16(subject, subject_len,
+			surrogate_unit, start_index, &result) < 0) {
+		return -1;
+	}
+	*matched_ptr = result.matched;
+	return 0;
+}
+
+int
+jsregex_search_u_literal_surrogate_utf16(const uint16_t *subject,
+		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
+		jsregex_search_result_t *result_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_literal_surrogate_utf16(subject, subject_len,
+			surrogate_unit, start_index, &result) < 0) {
+		return -1;
+	}
+	result_ptr->matched = result.matched;
+	result_ptr->start = result.start;
+	result_ptr->end = result.end;
+	return 0;
+}
+
+int
 jsregex_search_utf16(const uint16_t *subject, size_t subject_len,
 		const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,

@@ -74,7 +74,7 @@ Current status:
 
 | Family | Representative case | Current classification | Next action |
 | --- | --- | --- | --- |
-| Single literal lone-surrogate `/u` exec behavior | `strings/test262/exec/u-lastindex-adv` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture exec/test/search cases until more recipes are reviewed |
+| Single literal lone-surrogate `/u` exec/test/search behavior | `strings/test262/exec/u-lastindex-adv` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture exec/test/search cases until more recipes are reviewed |
 | Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond one literal lone-surrogate atom | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
@@ -93,8 +93,10 @@ Use a rewrite-backed lowering only when all of these are true:
 Rewrite recipe:
 
 - do **not** lower the pattern through `jsval_regexp_new(...)`
-- emit explicit UTF-16 matching logic using
-  `jsregex_exec_u_literal_surrogate_utf16(...)`
+- emit explicit UTF-16 matching logic using:
+  - `jsregex_exec_u_literal_surrogate_utf16(...)` for exec-style result needs
+  - `jsregex_test_u_literal_surrogate_utf16(...)` for test-style booleanization
+  - `jsregex_search_u_literal_surrogate_utf16(...)` for search-style index needs
 - for a lone high surrogate atom, match only isolated high surrogates that are
   not followed by a low surrogate
 - for a lone low surrogate atom, match only isolated low surrogates that are

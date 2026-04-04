@@ -143,7 +143,11 @@ test_u_literal_surrogate_exec(void)
 	static const uint16_t lone_low[] = {0xDF06};
 	static const uint16_t lone_high[] = {0xD834};
 	static const uint16_t isolated_low[] = {'a', 0xDF06, 'b'};
+	static const uint16_t pair_then_lone_low[] = {0xD834, 0xDF06, 0xDF06};
+	static const uint16_t pair_then_lone_high[] = {0xD834, 0xDF06, 0xD834};
 	jsregex_exec_result_t result;
+	jsregex_search_result_t search_result;
+	int matched = 0;
 
 	assert(jsregex_exec_u_literal_surrogate_utf16(paired,
 			sizeof(paired) / sizeof(paired[0]), 0xDF06, 0, &result) == 0);
@@ -182,6 +186,50 @@ test_u_literal_surrogate_exec(void)
 	assert(jsregex_exec_u_literal_surrogate_utf16(lone_low,
 			sizeof(lone_low) / sizeof(lone_low[0]), 'a', 0, &result) == -1);
 	assert(errno == EINVAL);
+
+	assert(jsregex_test_u_literal_surrogate_utf16(lone_low,
+			sizeof(lone_low) / sizeof(lone_low[0]), 0xDF06, 0,
+			&matched) == 0);
+	assert(matched == 1);
+
+	assert(jsregex_test_u_literal_surrogate_utf16(paired,
+			sizeof(paired) / sizeof(paired[0]), 0xDF06, 0,
+			&matched) == 0);
+	assert(matched == 0);
+
+	assert(jsregex_test_u_literal_surrogate_utf16(lone_high,
+			sizeof(lone_high) / sizeof(lone_high[0]), 0xD834, 0,
+			&matched) == 0);
+	assert(matched == 1);
+
+	assert(jsregex_test_u_literal_surrogate_utf16(paired,
+			sizeof(paired) / sizeof(paired[0]), 0xD834, 0,
+			&matched) == 0);
+	assert(matched == 0);
+
+	assert(jsregex_search_u_literal_surrogate_utf16(pair_then_lone_low,
+			sizeof(pair_then_lone_low) / sizeof(pair_then_lone_low[0]),
+			0xDF06, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 2);
+	assert(search_result.end == 3);
+
+	assert(jsregex_search_u_literal_surrogate_utf16(pair_then_lone_high,
+			sizeof(pair_then_lone_high) / sizeof(pair_then_lone_high[0]),
+			0xD834, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 2);
+	assert(search_result.end == 3);
+
+	assert(jsregex_search_u_literal_surrogate_utf16(paired,
+			sizeof(paired) / sizeof(paired[0]), 0xDF06, 0,
+			&search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_search_u_literal_surrogate_utf16(paired,
+			sizeof(paired) / sizeof(paired[0]), 0xD834, 0,
+			&search_result) == 0);
+	assert(search_result.matched == 0);
 }
 
 int

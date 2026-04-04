@@ -2551,6 +2551,28 @@
       "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
     },
     {
+      "id": "jsmx-regex-u-literal-surrogate-exec-test-rewrite",
+      "suite": "regex",
+      "source": "compliance/js/regex/jsmx/u-literal-surrogate-exec-test-rewrite.js",
+      "generated": "compliance/generated/regex/jsmx/u-literal-surrogate-exec-test-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` exec/test cases are lowered to explicit UTF-16 surrogate-aware scan helpers so isolated surrogates match while surrogate halves inside pairs do not."
+    },
+    {
+      "id": "jsmx-strings-u-literal-surrogate-search-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-search-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-search-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` search cases are lowered to explicit UTF-16 surrogate-aware scan helpers so the first isolated surrogate index is reported without matching inside surrogate pairs."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",
