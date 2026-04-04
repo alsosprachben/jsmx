@@ -366,6 +366,58 @@ test_u_literal_class_exec(void)
 	assert(errno == EINVAL);
 }
 
+static void
+test_u_literal_negated_class_exec(void)
+{
+	static const uint16_t pair_then_low_b_d[] = {
+		0xD834, 0xDF06, 0xDF06, 'B', 'D'
+	};
+	static const uint16_t pair_then_high_c_b[] = {
+		0xD834, 0xDF06, 0xD834, 'C', 'B'
+	};
+	static const uint16_t pair_only[] = {0xD834, 0xDF06};
+	static const uint16_t low_d_members[] = {0xDF06, 'D'};
+	static const uint16_t high_c_members[] = {0xD834, 'C'};
+	static const uint16_t surrogate_members[] = {0xD834, 0xDF06};
+	jsregex_exec_result_t result;
+	jsregex_search_result_t search_result;
+
+	assert(jsregex_exec_u_literal_negated_class_utf16(pair_then_low_b_d,
+			sizeof(pair_then_low_b_d) / sizeof(pair_then_low_b_d[0]),
+			low_d_members,
+			sizeof(low_d_members) / sizeof(low_d_members[0]), 0,
+			&result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 3);
+	assert(result.end == 4);
+	assert(result.slot_count == 1);
+
+	assert(jsregex_search_u_literal_negated_class_utf16(pair_then_high_c_b,
+			sizeof(pair_then_high_c_b) / sizeof(pair_then_high_c_b[0]),
+			high_c_members,
+			sizeof(high_c_members) / sizeof(high_c_members[0]), 0,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 4);
+	assert(search_result.end == 5);
+
+	assert(jsregex_search_u_literal_negated_class_utf16(pair_only,
+			sizeof(pair_only) / sizeof(pair_only[0]), surrogate_members,
+			sizeof(surrogate_members) / sizeof(surrogate_members[0]), 0,
+			&search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_exec_u_literal_negated_class_utf16(pair_then_low_b_d,
+			sizeof(pair_then_low_b_d) / sizeof(pair_then_low_b_d[0]), NULL,
+			1, 0, &result) == -1);
+	assert(errno == EINVAL);
+
+	assert(jsregex_exec_u_literal_negated_class_utf16(pair_then_low_b_d,
+			sizeof(pair_then_low_b_d) / sizeof(pair_then_low_b_d[0]),
+			low_d_members, 0, 0, &result) == -1);
+	assert(errno == EINVAL);
+}
+
 int
 main(void)
 {
@@ -374,6 +426,7 @@ main(void)
 	test_u_literal_surrogate_exec();
 	test_u_literal_sequence_exec();
 	test_u_literal_class_exec();
+	test_u_literal_negated_class_exec();
 	return 0;
 }
 

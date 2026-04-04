@@ -4601,6 +4601,186 @@ static generated_status_t generated_smoke_jsmethod_regex_search_abrupt(
 
 	return GENERATED_PASS;
 }
+
+static generated_status_t
+generated_smoke_jsval_u_literal_negated_class_rewrite(char *detail,
+		size_t cap)
+{
+	static const uint16_t class_subject_units[] = {
+		0xD834, 0xDF06, 0xDF06, 'B', 'D'
+	};
+	static const uint16_t high_subject_units[] = {
+		0xD834, 0xDF06, 0xD834, 'C', 'B'
+	};
+	static const uint16_t low_d_members[] = {0xDF06, 'D'};
+	static const uint16_t high_c_members[] = {0xD834, 'C'};
+	static const uint16_t b_unit[] = {'B'};
+	static const uint16_t pair_low_units[] = {0xD834, 0xDF06, 0xDF06};
+	static const uint16_t d_unit[] = {'D'};
+	static const uint16_t callback_expected[] = {
+		0xD834, 0xDF06, 0xDF06, '[', '3', ']', 'D'
+	};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t class_text;
+	jsval_t high_text;
+	jsval_t limit_two;
+	jsval_t search_result;
+	jsval_t iterator;
+	jsval_t iterator_result;
+	jsval_t callback_result;
+	jsval_t split_result;
+	jsval_t value;
+	generated_replace_callback_ctx_t ctx = {0, 0};
+	jsmethod_error_t error;
+	generated_status_t status;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf16(&region, class_subject_units,
+			sizeof(class_subject_units) / sizeof(class_subject_units[0]),
+			&class_text) < 0
+			|| jsval_string_new_utf16(&region, high_subject_units,
+				sizeof(high_subject_units) /
+				sizeof(high_subject_units[0]), &high_text) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+				&limit_two) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf16/utf8(negated class rewrite args)");
+	}
+
+	if (jsval_method_string_search_u_literal_negated_class(&region,
+			class_text, low_d_members,
+			sizeof(low_d_members) / sizeof(low_d_members[0]),
+			&search_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_search_u_literal_negated_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_strict_eq(&region, search_result, jsval_number(3.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected negated class search index 3");
+	}
+
+	if (jsval_method_string_match_all_u_literal_negated_class(&region,
+			class_text, low_d_members,
+			sizeof(low_d_members) / sizeof(low_d_members[0]), &iterator,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all_u_literal_negated_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(negated class first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected first negated class matchAll iterator result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(negated class matchAll capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, b_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"index", 5, &value) < 0
+			|| jsval_strict_eq(&region, value, jsval_number(3.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected negated class matchAll index 3");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(negated class done) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (!done || iterator_result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected negated class matchAll iterator exhaustion");
+	}
+
+	if (jsval_method_string_replace_all_u_literal_negated_class_fn(&region,
+			class_text, low_d_members,
+			sizeof(low_d_members) / sizeof(low_d_members[0]),
+			generated_replace_offset_callback, &ctx, &callback_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_u_literal_negated_class_fn failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 1) {
+		return generated_failf(detail, cap,
+				"expected 1 negated class callback call, got %d",
+				ctx.call_count);
+	}
+	status = generated_expect_utf16_string(&region, callback_result,
+			callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_split_u_literal_negated_class(&region,
+			class_text, low_d_members,
+			sizeof(low_d_members) / sizeof(low_d_members[0]), 1,
+			limit_two, &split_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_split_u_literal_negated_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (split_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, split_result) != 2) {
+		return generated_failf(detail, cap,
+				"expected 2-entry negated class split result");
+	}
+	if (jsval_array_get(&region, split_result, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(negated class split 0)");
+	}
+	status = generated_expect_utf16_string(&region, value, pair_low_units,
+			sizeof(pair_low_units) / sizeof(pair_low_units[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_array_get(&region, split_result, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(negated class split 1)");
+	}
+	status = generated_expect_utf16_string(&region, value, d_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_match_u_literal_negated_class(&region, high_text,
+			high_c_members, sizeof(high_c_members) /
+			sizeof(high_c_members[0]), 0, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_u_literal_negated_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (value.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected non-global negated class match object");
+	}
+	if (jsval_object_get_utf8(&region, value, (const uint8_t *)"0", 1,
+			&iterator_result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(negated class match capture)");
+	}
+	return generated_expect_utf16_string(&region, iterator_result, b_unit, 1,
+			detail, cap);
+}
 #endif
 
 static generated_status_t generated_smoke_jsval_method_accessor(char *detail,
@@ -5298,6 +5478,8 @@ static const generated_case_t generated_cases[] = {
 		generated_smoke_jsval_u_literal_sequence_rewrite},
 	{"smoke", "jsval_u_literal_class_rewrite",
 		generated_smoke_jsval_u_literal_class_rewrite},
+	{"smoke", "jsval_u_literal_negated_class_rewrite",
+		generated_smoke_jsval_u_literal_negated_class_rewrite},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
 		generated_smoke_jsval_method_regex_replace_all},

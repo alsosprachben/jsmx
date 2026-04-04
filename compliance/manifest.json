@@ -2716,6 +2716,50 @@
       "notes": "Rewrite-backed: single no-capture `/u` class split cases are lowered to a dedicated jsval class helper so separators only match isolated literal-member code units."
     },
     {
+      "id": "jsmx-strings-u-literal-negated-class-search-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-negated-class-search-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-negated-class-search-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single negated no-capture `/u` class search cases are lowered to a dedicated jsval negated-class helper so explicit literal-member exclusions still respect Unicode code-point boundaries."
+    },
+    {
+      "id": "jsmx-strings-u-literal-negated-class-match-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-negated-class-match-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-negated-class-match-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single negated no-capture `/u` class match and matchAll cases are lowered to dedicated jsval negated-class helpers so global results and iterator payloads preserve boundary-aware one-unit exclusions."
+    },
+    {
+      "id": "jsmx-strings-u-literal-negated-class-replace-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-negated-class-replace-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-negated-class-replace-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single negated no-capture `/u` class replace and replaceAll cases, including callback replacers, are lowered to dedicated jsval negated-class helpers so replacements skip intact surrogate pairs and only consume boundary-aligned exclusions."
+    },
+    {
+      "id": "jsmx-strings-u-literal-negated-class-split-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-negated-class-split-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-negated-class-split-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single negated no-capture `/u` class split cases are lowered to a dedicated jsval negated-class helper so separators match only isolated boundary-aligned code units outside the explicit literal-member set."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

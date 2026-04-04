@@ -44,10 +44,11 @@ jsregex_is_code_point_boundary(const uint16_t *subject, size_t subject_len,
 static int
 jsregex_u_literal_class_match_at(const uint16_t *subject, size_t subject_len,
 		const uint16_t *members, size_t members_len, size_t index,
-		int *matched_ptr, size_t *end_ptr)
+		int negate, int *matched_ptr, size_t *end_ptr)
 {
 	uint16_t unit;
 	size_t i;
+	int member_found = 0;
 
 	if (matched_ptr == NULL || end_ptr == NULL || members == NULL
 			|| members_len == 0
@@ -73,13 +74,12 @@ jsregex_u_literal_class_match_at(const uint16_t *subject, size_t subject_len,
 
 	for (i = 0; i < members_len; i++) {
 		if (members[i] == unit) {
-			*matched_ptr = 1;
-			*end_ptr = index + 1;
-			return 0;
+			member_found = 1;
+			break;
 		}
 	}
 
-	*matched_ptr = 0;
+	*matched_ptr = negate ? !member_found : member_found;
 	*end_ptr = index + 1;
 	return 0;
 }
@@ -446,7 +446,57 @@ jsregex_exec_u_literal_class_utf16(const uint16_t *subject,
 		size_t end_index;
 
 		if (jsregex_u_literal_class_match_at(subject, subject_len,
-				members, members_len, index, &matched,
+				members, members_len, index, 0, &matched,
+				&end_index) < 0) {
+			return -1;
+		}
+		if (matched) {
+			result_ptr->matched = 1;
+			result_ptr->start = index;
+			result_ptr->end = end_index;
+			result_ptr->slot_count = 1;
+			return 0;
+		}
+		if (jsregex_advance_string_index_utf16(subject, subject_len, index, 1,
+				&index) < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = 0;
+	result_ptr->start = 0;
+	result_ptr->end = 0;
+	result_ptr->slot_count = 0;
+	return 0;
+}
+
+int
+jsregex_exec_u_literal_negated_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *members, size_t members_len,
+		size_t start_index, jsregex_exec_result_t *result_ptr)
+{
+	size_t index;
+
+	if (result_ptr == NULL || members == NULL || members_len == 0
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	index = start_index;
+	while (index < subject_len) {
+		int matched;
+		size_t end_index;
+
+		if (jsregex_u_literal_class_match_at(subject, subject_len,
+				members, members_len, index, 1, &matched,
 				&end_index) < 0) {
 			return -1;
 		}
@@ -543,6 +593,27 @@ jsregex_search_u_literal_class_utf16(const uint16_t *subject,
 		return -1;
 	}
 	if (jsregex_exec_u_literal_class_utf16(subject, subject_len,
+			members, members_len, start_index, &result) < 0) {
+		return -1;
+	}
+	result_ptr->matched = result.matched;
+	result_ptr->start = result.start;
+	result_ptr->end = result.end;
+	return 0;
+}
+
+int
+jsregex_search_u_literal_negated_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *members, size_t members_len,
+		size_t start_index, jsregex_search_result_t *result_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_literal_negated_class_utf16(subject, subject_len,
 			members, members_len, start_index, &result) < 0) {
 		return -1;
 	}
