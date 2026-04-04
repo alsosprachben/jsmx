@@ -2182,10 +2182,10 @@
       "source": "compliance/js/strings/test262/exec/u-lastindex-adv.js",
       "generated": "compliance/generated/strings/test262/exec/u-lastindex-adv.c",
       "required_features": ["regex"],
-      "lowering_class": "unsupported",
-      "translation_mode": "literal",
-      "expected_status": "known_unsupported",
-      "notes": "Unsupported: JS-valid unicode/surrogate-sensitive /u exec case from test262 `u-lastindex-adv`; the current PCRE2-backed runtime is not an honest direct lowering and no reviewed rewrite-backed recipe is committed yet."
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: `/\\udf06/u` is lowered to explicit UTF-16 surrogate-aware exec logic because PCRE2 UTF mode cannot represent a lone low-surrogate atom honestly; the rewrite matches isolated low surrogates only and therefore returns null for a full surrogate pair."
     },
     {
       "id": "test262-strings-exec-S15.10.6.2_A1_T19",

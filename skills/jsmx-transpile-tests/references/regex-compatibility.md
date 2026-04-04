@@ -65,20 +65,45 @@ Only use a rewrite when all of these are true:
 
 Current status:
 
-- the Unicode/surrogate-sensitive `u` family exemplified by
-  `strings/test262/exec/u-lastindex-adv` is **rewrite-candidate, not yet
-  approved for direct lowering**
-- until a reviewed rewrite recipe lands, do **not** add that case as a passing
-  direct runtime fixture
+- the single-literal lone-surrogate `/u` exec family now has one reviewed
+  rewrite-backed recipe, anchored by `strings/test262/exec/u-lastindex-adv`
+- broader Unicode/surrogate-sensitive `/u` behavior remains outside direct
+  lowering until additional rewrite recipes are reviewed
 
 ## Current Known Gaps
 
 | Family | Representative case | Current classification | Next action |
 | --- | --- | --- | --- |
-| Unicode/surrogate-sensitive `/u` exec behavior | `strings/test262/exec/u-lastindex-adv` | `Unsupported:` rewrite-candidate | Land a reviewed rewrite recipe before adding a passing lowering |
+| Single literal lone-surrogate `/u` exec behavior | `strings/test262/exec/u-lastindex-adv` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture exec/test/search cases until more recipes are reviewed |
+| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond one literal lone-surrogate atom | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
 | Named groups and `groups` objects | future `exec` / `match` named-group files | `Unsupported:` | Expand the semantic regex result surface before translating those files as passing cases |
+
+## Approved Rewrite: Single Literal Lone Surrogate Under `/u`
+
+Use a rewrite-backed lowering only when all of these are true:
+
+- the JS pattern is exactly one literal surrogate code unit under the `u` flag
+  (`\uD800..\uDFFF`)
+- the translated case only needs literal exec/test/search semantics
+- there are no captures, character classes, alternation, quantifiers,
+  backreferences, or other regex operators in the pattern
+
+Rewrite recipe:
+
+- do **not** lower the pattern through `jsval_regexp_new(...)`
+- emit explicit UTF-16 matching logic using
+  `jsregex_exec_u_literal_surrogate_utf16(...)`
+- for a lone high surrogate atom, match only isolated high surrogates that are
+  not followed by a low surrogate
+- for a lone low surrogate atom, match only isolated low surrogates that are
+  not preceded by a high surrogate
+- scan the subject with Unicode code-point advancement semantics so surrogate
+  pairs are skipped as indivisible code points during the search
+
+This rewrite is intentionally narrow. Any broader `/u` surrogate-sensitive case
+still needs a separate reviewed recipe before it can be translated as passing.
 
 ## Current Slow-Path Policy
 

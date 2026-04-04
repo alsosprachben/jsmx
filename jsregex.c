@@ -16,6 +16,18 @@ typedef struct jsregex_options_s {
 } jsregex_options_t;
 
 static int
+jsregex_is_high_surrogate(uint16_t unit)
+{
+	return unit >= 0xD800 && unit <= 0xDBFF;
+}
+
+static int
+jsregex_is_low_surrogate(uint16_t unit)
+{
+	return unit >= 0xDC00 && unit <= 0xDFFF;
+}
+
+static int
 jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 		jsregex_options_t *options_ptr)
 {
@@ -231,6 +243,66 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 	result_ptr->end = offsets[1];
 	result_ptr->slot_count = slot_count;
 	pcre2_match_data_free(match_data);
+	return 0;
+}
+
+int
+jsregex_exec_u_literal_surrogate_utf16(const uint16_t *subject,
+		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
+		jsregex_exec_result_t *result_ptr)
+{
+	size_t index;
+
+	if (result_ptr == NULL || (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!jsregex_is_high_surrogate(surrogate_unit)
+			&& !jsregex_is_low_surrogate(surrogate_unit)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	index = start_index;
+	while (index < subject_len) {
+		uint16_t unit = subject[index];
+
+		if (unit == surrogate_unit) {
+			int isolated = 0;
+
+			if (jsregex_is_high_surrogate(surrogate_unit)) {
+				isolated = !(index + 1 < subject_len
+						&& jsregex_is_low_surrogate(subject[index + 1]));
+			} else {
+				isolated = !(index > 0
+						&& jsregex_is_high_surrogate(subject[index - 1]));
+			}
+			if (isolated) {
+				result_ptr->matched = 1;
+				result_ptr->start = index;
+				result_ptr->end = index + 1;
+				result_ptr->slot_count = 1;
+				return 0;
+			}
+		}
+
+		if (jsregex_advance_string_index_utf16(subject, subject_len, index, 1,
+				&index) < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = 0;
+	result_ptr->start = 0;
+	result_ptr->end = 0;
+	result_ptr->slot_count = 0;
 	return 0;
 }
 

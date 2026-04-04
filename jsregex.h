@@ -44,6 +44,9 @@ int jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		const uint16_t *subject, size_t subject_len, size_t start_index,
 		size_t *offsets, size_t offsets_cap,
 		jsregex_exec_result_t *result_ptr);
+int jsregex_exec_u_literal_surrogate_utf16(const uint16_t *subject,
+		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
+		jsregex_exec_result_t *result_ptr);
 int jsregex_search_utf16(const uint16_t *subject, size_t subject_len,
 		const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,
