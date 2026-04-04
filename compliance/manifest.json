@@ -2672,6 +2672,50 @@
       "notes": "Rewrite-backed: fixed multi-literal no-capture `/u` split cases are lowered to a dedicated jsval sequence helper so separators only match on Unicode code-point boundaries."
     },
     {
+      "id": "jsmx-strings-u-literal-class-search-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-class-search-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-class-search-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single no-capture `/u` class search cases are lowered to a dedicated jsval class helper so explicit literal members match only at Unicode code-point boundaries."
+    },
+    {
+      "id": "jsmx-strings-u-literal-class-match-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-class-match-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-class-match-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single no-capture `/u` class match and matchAll cases are lowered to dedicated jsval class helpers so global results and iterator payloads preserve boundary-aware one-unit matches."
+    },
+    {
+      "id": "jsmx-strings-u-literal-class-replace-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-class-replace-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-class-replace-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single no-capture `/u` class replace and replaceAll cases, including callback replacers, are lowered to dedicated jsval class helpers so substitutions never consume surrogate halves inside pairs."
+    },
+    {
+      "id": "jsmx-strings-u-literal-class-split-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-class-split-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-class-split-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single no-capture `/u` class split cases are lowered to a dedicated jsval class helper so separators only match isolated literal-member code units."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

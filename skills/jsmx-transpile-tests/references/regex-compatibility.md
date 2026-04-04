@@ -71,6 +71,10 @@ Current status:
 - fixed multi-literal `/u` no-capture string-method behavior now has a
   reviewed rewrite-backed recipe covering `search`, `match`, `matchAll`,
   `replace`, `replaceAll`, callback replacers, and `split`
+- single no-capture character classes of explicit literal UTF-16 members
+  under `/u` now have a reviewed rewrite-backed recipe covering `search`,
+  `match`, `matchAll`, `replace`, `replaceAll`, callback replacers,
+  and `split`
 - broader Unicode/surrogate-sensitive `/u` behavior remains outside direct
   lowering until additional rewrite recipes are reviewed
 
@@ -80,7 +84,8 @@ Current status:
 | --- | --- | --- | --- |
 | Single literal lone-surrogate `/u` no-capture exec/test/search/match/matchAll/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-matchAll-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method, iterator, and callback-replacer cases until more recipes are reviewed |
 | Fixed multi-literal `/u` no-capture string-method behavior | `strings/jsmx/u-literal-sequence-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to exact UTF-16 literal sequences with no captures, classes, alternation, or quantifiers |
-| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond fixed literal no-capture `/u` sequences | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
+| Single no-capture character classes of explicit literal UTF-16 members under `/u` | `strings/jsmx/u-literal-class-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to one class atom with explicit literal members only; no ranges, negation, escapes, alternation, or quantifiers |
+| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond explicit literal no-capture `/u` classes | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
 | Named groups and `groups` objects | future `exec` / `match` named-group files | `Unsupported:` | Expand the semantic regex result surface before translating those files as passing cases |
@@ -159,8 +164,51 @@ Rewrite recipe:
   - `replace`/`replaceAll` callback replacers receive `(match, offset, input)`
 
 This rewrite is intentionally narrow. Any broader `/u` case, including
-character classes, quantifiers, alternation, captures, or named groups, still
-needs a separate reviewed recipe before it can be translated as passing.
+quantifiers, alternation, captures, or named groups, still needs a separate
+reviewed recipe before it can be translated as passing.
+
+## Approved Rewrite: Single No-Capture Character Class Under `/u`
+
+Use a rewrite-backed lowering only when all of these are true:
+
+- the JS pattern is exactly one character class atom under the `u` flag
+- the class contains only explicit literal UTF-16 members supplied directly by
+  the translator
+- the translated case only needs no-capture
+  `search`/`match`/`matchAll`/`replace`/`replaceAll`/`split` semantics
+- there are no ranges, negation, escapes with broader regex meaning,
+  alternation, quantifiers, backreferences, or other regex operators
+
+Rewrite recipe:
+
+- do **not** lower the pattern through `jsval_regexp_new(...)`
+- emit the class members as UTF-16 data and lower string-method surfaces
+  through the dedicated `jsval` helpers:
+  - `jsval_method_string_search_u_literal_class(...)`
+  - `jsval_method_string_match_u_literal_class(...)`
+  - `jsval_method_string_match_all_u_literal_class(...)`
+  - `jsval_method_string_replace_u_literal_class(...)`
+  - `jsval_method_string_replace_all_u_literal_class(...)`
+  - `jsval_method_string_replace_u_literal_class_fn(...)`
+  - `jsval_method_string_replace_all_u_literal_class_fn(...)`
+  - `jsval_method_string_split_u_literal_class(...)`
+- a class match consumes exactly one UTF-16 code unit at a Unicode code-point
+  boundary
+- intact surrogate pairs in the subject remain indivisible code points during
+  scanning, so a class member must never match only the high or low half of a
+  well-formed pair
+- isolated surrogate units in the subject may match when their exact code unit
+  appears in the class member set
+- keep the same no-capture result contract as the current semantic regex layer:
+  - `match` non-global returns an exec-shaped object or `null`
+  - `match` global returns an array of matched one-unit strings or `null`
+  - `matchAll` yields exec-shaped iterator results with `groups = undefined`
+  - `replace`/`replaceAll` callback replacers receive `(match, offset, input)`
+
+This rewrite is intentionally narrow. Any broader `/u` case, including ranged
+classes, negated classes, escapes, quantifiers, alternation, captures, or
+named groups, still needs a separate reviewed recipe before it can be
+translated as passing.
 
 ## Current Slow-Path Policy
 

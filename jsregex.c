@@ -42,6 +42,49 @@ jsregex_is_code_point_boundary(const uint16_t *subject, size_t subject_len,
 }
 
 static int
+jsregex_u_literal_class_match_at(const uint16_t *subject, size_t subject_len,
+		const uint16_t *members, size_t members_len, size_t index,
+		int *matched_ptr, size_t *end_ptr)
+{
+	uint16_t unit;
+	size_t i;
+
+	if (matched_ptr == NULL || end_ptr == NULL || members == NULL
+			|| members_len == 0
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= subject_len
+			|| !jsregex_is_code_point_boundary(subject, subject_len,
+				index)) {
+		*matched_ptr = 0;
+		*end_ptr = index;
+		return 0;
+	}
+
+	unit = subject[index];
+	if (jsregex_is_high_surrogate(unit) && index + 1 < subject_len
+			&& jsregex_is_low_surrogate(subject[index + 1])) {
+		*matched_ptr = 0;
+		*end_ptr = index + 2;
+		return 0;
+	}
+
+	for (i = 0; i < members_len; i++) {
+		if (members[i] == unit) {
+			*matched_ptr = 1;
+			*end_ptr = index + 1;
+			return 0;
+		}
+	}
+
+	*matched_ptr = 0;
+	*end_ptr = index + 1;
+	return 0;
+}
+
+static int
 jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 		jsregex_options_t *options_ptr)
 {
@@ -378,6 +421,56 @@ jsregex_exec_u_literal_sequence_utf16(const uint16_t *subject,
 }
 
 int
+jsregex_exec_u_literal_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *members, size_t members_len,
+		size_t start_index, jsregex_exec_result_t *result_ptr)
+{
+	size_t index;
+
+	if (result_ptr == NULL || members == NULL || members_len == 0
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	index = start_index;
+	while (index < subject_len) {
+		int matched;
+		size_t end_index;
+
+		if (jsregex_u_literal_class_match_at(subject, subject_len,
+				members, members_len, index, &matched,
+				&end_index) < 0) {
+			return -1;
+		}
+		if (matched) {
+			result_ptr->matched = 1;
+			result_ptr->start = index;
+			result_ptr->end = end_index;
+			result_ptr->slot_count = 1;
+			return 0;
+		}
+		if (jsregex_advance_string_index_utf16(subject, subject_len, index, 1,
+				&index) < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = 0;
+	result_ptr->start = 0;
+	result_ptr->end = 0;
+	result_ptr->slot_count = 0;
+	return 0;
+}
+
+int
 jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		int *matched_ptr)
@@ -430,6 +523,27 @@ jsregex_search_u_literal_sequence_utf16(const uint16_t *subject,
 	}
 	if (jsregex_exec_u_literal_sequence_utf16(subject, subject_len,
 			pattern, pattern_len, start_index, &result) < 0) {
+		return -1;
+	}
+	result_ptr->matched = result.matched;
+	result_ptr->start = result.start;
+	result_ptr->end = result.end;
+	return 0;
+}
+
+int
+jsregex_search_u_literal_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *members, size_t members_len,
+		size_t start_index, jsregex_search_result_t *result_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_literal_class_utf16(subject, subject_len,
+			members, members_len, start_index, &result) < 0) {
 		return -1;
 	}
 	result_ptr->matched = result.matched;
