@@ -28,6 +28,20 @@ jsregex_is_low_surrogate(uint16_t unit)
 }
 
 static int
+jsregex_is_code_point_boundary(const uint16_t *subject, size_t subject_len,
+		size_t index)
+{
+	if (index > subject_len) {
+		return 0;
+	}
+	if (index == 0 || index == subject_len) {
+		return 1;
+	}
+	return !(jsregex_is_low_surrogate(subject[index])
+			&& jsregex_is_high_surrogate(subject[index - 1]));
+}
+
+static int
 jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 		jsregex_options_t *options_ptr)
 {
@@ -307,6 +321,63 @@ jsregex_exec_u_literal_surrogate_utf16(const uint16_t *subject,
 }
 
 int
+jsregex_exec_u_literal_sequence_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *pattern, size_t pattern_len,
+		size_t start_index, jsregex_exec_result_t *result_ptr)
+{
+	size_t index;
+
+	if (result_ptr == NULL || pattern == NULL || pattern_len == 0
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	index = start_index;
+	while (index < subject_len) {
+		size_t end_index = index + pattern_len;
+
+		if (!jsregex_is_code_point_boundary(subject, subject_len, index)) {
+			if (jsregex_advance_string_index_utf16(subject, subject_len, index,
+					1, &index) < 0) {
+				return -1;
+			}
+			continue;
+		}
+		if (end_index > subject_len) {
+			break;
+		}
+		if (memcmp(subject + index, pattern,
+				pattern_len * sizeof(*pattern)) == 0
+				&& jsregex_is_code_point_boundary(subject, subject_len,
+					end_index)) {
+			result_ptr->matched = 1;
+			result_ptr->start = index;
+			result_ptr->end = end_index;
+			result_ptr->slot_count = 1;
+			return 0;
+		}
+		if (jsregex_advance_string_index_utf16(subject, subject_len, index, 1,
+				&index) < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = 0;
+	result_ptr->start = 0;
+	result_ptr->end = 0;
+	result_ptr->slot_count = 0;
+	return 0;
+}
+
+int
 jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		int *matched_ptr)
@@ -338,6 +409,27 @@ jsregex_search_u_literal_surrogate_utf16(const uint16_t *subject,
 	}
 	if (jsregex_exec_u_literal_surrogate_utf16(subject, subject_len,
 			surrogate_unit, start_index, &result) < 0) {
+		return -1;
+	}
+	result_ptr->matched = result.matched;
+	result_ptr->start = result.start;
+	result_ptr->end = result.end;
+	return 0;
+}
+
+int
+jsregex_search_u_literal_sequence_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *pattern, size_t pattern_len,
+		size_t start_index, jsregex_search_result_t *result_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_literal_sequence_utf16(subject, subject_len,
+			pattern, pattern_len, start_index, &result) < 0) {
 		return -1;
 	}
 	result_ptr->matched = result.matched;

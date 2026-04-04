@@ -67,6 +67,9 @@ Current status:
 
 - the single-literal lone-surrogate `/u` no-capture family now has a reviewed
   rewrite-backed recipe covering `exec`, `test`, `search`, `match`,
+  `matchAll`, `replace`, `replaceAll`, callback replacers, and `split`
+- fixed multi-literal `/u` no-capture string-method behavior now has a
+  reviewed rewrite-backed recipe covering `search`, `match`, `matchAll`,
   `replace`, `replaceAll`, callback replacers, and `split`
 - broader Unicode/surrogate-sensitive `/u` behavior remains outside direct
   lowering until additional rewrite recipes are reviewed
@@ -76,7 +79,8 @@ Current status:
 | Family | Representative case | Current classification | Next action |
 | --- | --- | --- | --- |
 | Single literal lone-surrogate `/u` no-capture exec/test/search/match/matchAll/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-matchAll-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method, iterator, and callback-replacer cases until more recipes are reviewed |
-| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond one literal lone-surrogate atom | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
+| Fixed multi-literal `/u` no-capture string-method behavior | `strings/jsmx/u-literal-sequence-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to exact UTF-16 literal sequences with no captures, classes, alternation, or quantifiers |
+| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond fixed literal no-capture `/u` sequences | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
 | Named groups and `groups` objects | future `exec` / `match` named-group files | `Unsupported:` | Expand the semantic regex result surface before translating those files as passing cases |
@@ -120,6 +124,43 @@ Rewrite recipe:
 
 This rewrite is intentionally narrow. Any broader `/u` surrogate-sensitive case
 still needs a separate reviewed recipe before it can be translated as passing.
+
+## Approved Rewrite: Fixed Multi-Literal No-Capture Sequence Under `/u`
+
+Use a rewrite-backed lowering only when all of these are true:
+
+- the JS pattern is a fixed UTF-16 literal sequence under the `u` flag
+- the translated case only needs literal no-capture
+  `search`/`match`/`matchAll`/`replace`/`replaceAll`/`split` semantics
+- there are no captures, character classes, alternation, quantifiers,
+  backreferences, or other regex operators in the pattern
+
+Rewrite recipe:
+
+- do **not** lower the pattern through `jsval_regexp_new(...)`
+- emit the fixed literal pattern as UTF-16 data and lower string-method
+  surfaces through the dedicated `jsval` helpers:
+  - `jsval_method_string_search_u_literal_sequence(...)`
+  - `jsval_method_string_match_u_literal_sequence(...)`
+  - `jsval_method_string_match_all_u_literal_sequence(...)`
+  - `jsval_method_string_replace_u_literal_sequence(...)`
+  - `jsval_method_string_replace_all_u_literal_sequence(...)`
+  - `jsval_method_string_replace_u_literal_sequence_fn(...)`
+  - `jsval_method_string_replace_all_u_literal_sequence_fn(...)`
+  - `jsval_method_string_split_u_literal_sequence(...)`
+- match exact UTF-16 code-unit sequences only when the candidate start and end
+  both fall on Unicode code-point boundaries
+- scan the subject with Unicode code-point advancement semantics so intact
+  surrogate pairs are skipped as indivisible code points during the search
+- keep the same no-capture result contract as the current semantic regex layer:
+  - `match` non-global returns an exec-shaped object or `null`
+  - `match` global returns an array of matched strings or `null`
+  - `matchAll` yields exec-shaped iterator results with `groups = undefined`
+  - `replace`/`replaceAll` callback replacers receive `(match, offset, input)`
+
+This rewrite is intentionally narrow. Any broader `/u` case, including
+character classes, quantifiers, alternation, captures, or named groups, still
+needs a separate reviewed recipe before it can be translated as passing.
 
 ## Current Slow-Path Policy
 

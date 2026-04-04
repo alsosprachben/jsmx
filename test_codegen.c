@@ -4092,6 +4092,208 @@ static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 			detail, cap);
 }
 
+static generated_status_t
+generated_smoke_jsval_u_literal_sequence_rewrite(char *detail, size_t cap)
+{
+	static const uint16_t low_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06, 'B', 'C'
+	};
+	static const uint16_t pair_subject_units[] = {
+		'A', 0xD834, 0xDF06, '!', 'X', 0xD834, 0xDF06, '!', 'Y'
+	};
+	static const uint16_t low_b_units[] = {0xDF06, 'B'};
+	static const uint16_t pair_bang_units[] = {0xD834, 0xDF06, '!'};
+	static const uint16_t pair_prefix_units[] = {'A', 0xD834, 0xDF06};
+	static const uint16_t callback_expected[] = {
+		'A', 0xD834, 0xDF06, '[', '3', ']', '[', '5', ']', 'C'
+	};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t low_text;
+	jsval_t pair_text;
+	jsval_t limit_two;
+	jsval_t search_result;
+	jsval_t iterator;
+	jsval_t iterator_result;
+	jsval_t callback_result;
+	jsval_t split_result;
+	jsval_t value;
+	generated_replace_callback_ctx_t ctx = {0, 0};
+	jsmethod_error_t error;
+	generated_status_t status;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf16(&region, low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]),
+			&low_text) < 0
+			|| jsval_string_new_utf16(&region, pair_subject_units,
+				sizeof(pair_subject_units) / sizeof(pair_subject_units[0]),
+				&pair_text) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+				&limit_two) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf16/utf8(sequence rewrite args)");
+	}
+
+	if (jsval_method_string_search_u_literal_sequence(&region, pair_text,
+			pair_bang_units,
+			sizeof(pair_bang_units) / sizeof(pair_bang_units[0]),
+			&search_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_search_u_literal_sequence failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_strict_eq(&region, search_result, jsval_number(1.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected pair sequence search index 1");
+	}
+
+	if (jsval_method_string_match_all_u_literal_sequence(&region, low_text,
+			low_b_units, sizeof(low_b_units) / sizeof(low_b_units[0]),
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all_u_literal_sequence failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(sequence first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected first sequence matchAll iterator result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(sequence matchAll first capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_b_units,
+			sizeof(low_b_units) / sizeof(low_b_units[0]), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"index", 5, &value) < 0
+			|| jsval_strict_eq(&region, value, jsval_number(3.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected first sequence matchAll index 3");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(sequence second) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected second sequence matchAll iterator result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(sequence matchAll second capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_b_units,
+			sizeof(low_b_units) / sizeof(low_b_units[0]), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"index", 5, &value) < 0
+			|| jsval_strict_eq(&region, value, jsval_number(5.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected second sequence matchAll index 5");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(sequence done) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (!done || iterator_result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected sequence matchAll iterator exhaustion");
+	}
+
+	if (jsval_method_string_replace_all_u_literal_sequence_fn(&region, low_text,
+			low_b_units, sizeof(low_b_units) / sizeof(low_b_units[0]),
+			generated_replace_offset_callback, &ctx, &callback_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_u_literal_sequence_fn failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 2) {
+		return generated_failf(detail, cap,
+				"expected 2 sequence callback calls, got %d", ctx.call_count);
+	}
+	status = generated_expect_utf16_string(&region, callback_result,
+			callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_split_u_literal_sequence(&region, low_text,
+			low_b_units, sizeof(low_b_units) / sizeof(low_b_units[0]), 1,
+			limit_two, &split_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_split_u_literal_sequence failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (split_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, split_result) != 2) {
+		return generated_failf(detail, cap,
+				"expected 2-entry sequence split result");
+	}
+	if (jsval_array_get(&region, split_result, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(sequence split 0)");
+	}
+	status = generated_expect_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_array_get(&region, split_result, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(sequence split 1)");
+	}
+	status = generated_expect_utf16_string(&region, value, NULL, 0,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_match_u_literal_sequence(&region, pair_text,
+			pair_bang_units,
+			sizeof(pair_bang_units) / sizeof(pair_bang_units[0]), 0, &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_u_literal_sequence failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (value.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected non-global sequence match object");
+	}
+	if (jsval_object_get_utf8(&region, value, (const uint8_t *)"0", 1,
+			&iterator_result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(sequence match capture)");
+	}
+	return generated_expect_utf16_string(&region, iterator_result,
+			pair_bang_units,
+			sizeof(pair_bang_units) / sizeof(pair_bang_units[0]),
+			detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_regex_search(
 		char *detail, size_t cap)
 {
@@ -4885,6 +5087,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
 	{"smoke", "jsval_u_literal_surrogate_rewrite",
 		generated_smoke_jsval_u_literal_surrogate_rewrite},
+	{"smoke", "jsval_u_literal_sequence_rewrite",
+		generated_smoke_jsval_u_literal_sequence_rewrite},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
 		generated_smoke_jsval_method_regex_replace_all},

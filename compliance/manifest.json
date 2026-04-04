@@ -2628,6 +2628,50 @@
       "notes": "Rewrite-backed: single literal lone-surrogate `/u` split cases are lowered to a dedicated jsval split helper so isolated surrogates act as separators without splitting inside surrogate pairs."
     },
     {
+      "id": "jsmx-strings-u-literal-sequence-search-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-sequence-search-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-sequence-search-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: fixed multi-literal no-capture `/u` search cases are lowered to a dedicated jsval sequence helper so exact UTF-16 literal matches only land on Unicode code-point boundaries."
+    },
+    {
+      "id": "jsmx-strings-u-literal-sequence-match-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-sequence-match-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-sequence-match-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: fixed multi-literal no-capture `/u` match and matchAll cases are lowered to dedicated jsval sequence helpers so non-global/global results and iterator payloads preserve code-point-boundary matching."
+    },
+    {
+      "id": "jsmx-strings-u-literal-sequence-replace-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-sequence-replace-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-sequence-replace-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: fixed multi-literal no-capture `/u` replace and replaceAll cases, including callback replacers, are lowered to dedicated jsval sequence helpers so substitutions operate only on code-point-boundary-aligned matches."
+    },
+    {
+      "id": "jsmx-strings-u-literal-sequence-split-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-sequence-split-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-sequence-split-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: fixed multi-literal no-capture `/u` split cases are lowered to a dedicated jsval sequence helper so separators only match on Unicode code-point boundaries."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",
