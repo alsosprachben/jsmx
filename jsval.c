@@ -35,11 +35,19 @@ typedef struct jsval_native_regexp_s {
 	uintptr_t backend_code;
 } jsval_native_regexp_t;
 
+typedef enum jsval_match_iterator_mode_e {
+	JSVAL_MATCH_ITERATOR_MODE_REGEX = 0,
+	JSVAL_MATCH_ITERATOR_MODE_U_LITERAL_SURROGATE = 1
+} jsval_match_iterator_mode_t;
+
 typedef struct jsval_native_match_iterator_s {
 	jsval_t regexp_value;
 	jsval_t input_value;
+	size_t cursor;
+	uint16_t surrogate_unit;
 	uint8_t done;
-	uint8_t reserved[7];
+	uint8_t mode;
+	uint8_t reserved[4];
 } jsval_native_match_iterator_t;
 
 typedef struct jsval_native_prop_s {
@@ -4624,8 +4632,10 @@ jsval_regexp_clone_for_replace(jsval_region_t *region, jsval_t regexp_value,
 }
 
 static int
-jsval_match_iterator_new(jsval_region_t *region, jsval_t regexp_value,
-		jsval_t input_value, jsval_t *value_ptr)
+jsval_match_iterator_new(jsval_region_t *region,
+		jsval_match_iterator_mode_t mode, jsval_t regexp_value,
+		jsval_t input_value, size_t cursor, uint16_t surrogate_unit,
+		jsval_t *value_ptr)
 {
 	jsval_native_match_iterator_t *iterator;
 	jsval_off_t off;
@@ -4640,7 +4650,10 @@ jsval_match_iterator_new(jsval_region_t *region, jsval_t regexp_value,
 	}
 	iterator->regexp_value = regexp_value;
 	iterator->input_value = input_value;
+	iterator->cursor = cursor;
+	iterator->surrogate_unit = surrogate_unit;
 	iterator->done = 0;
+	iterator->mode = (uint8_t)mode;
 	memset(iterator->reserved, 0, sizeof(iterator->reserved));
 
 	*value_ptr = jsval_undefined();
@@ -4680,8 +4693,8 @@ jsval_regexp_match_all(jsval_region_t *region, jsval_t regexp_value,
 			&iterator_regex, error) < 0) {
 		return -1;
 	}
-	return jsval_match_iterator_new(region, iterator_regex, input_string,
-			value_ptr);
+	return jsval_match_iterator_new(region, JSVAL_MATCH_ITERATOR_MODE_REGEX,
+			iterator_regex, input_string, 0, 0, value_ptr);
 }
 
 int
@@ -4713,51 +4726,93 @@ jsval_match_iterator_next(jsval_region_t *region, jsval_t iterator_value,
 		return 0;
 	}
 
-	regexp = jsval_native_regexp(region, iterator->regexp_value);
 	input_native = jsval_native_string(region, iterator->input_value);
-	if (regexp == NULL || input_native == NULL) {
+	if (input_native == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
-	{
-		size_t offsets[offsets_cap ? offsets_cap : 2];
-		jsregex_exec_result_t exec_result;
-
-		if (jsval_regexp_exec_raw(region, iterator->regexp_value,
-				jsval_native_string_units(input_native), input_native->len,
-				offsets, offsets_cap, &exec_result, error) < 0) {
+	switch ((jsval_match_iterator_mode_t)iterator->mode) {
+	case JSVAL_MATCH_ITERATOR_MODE_REGEX:
+		regexp = jsval_native_regexp(region, iterator->regexp_value);
+		if (regexp == NULL) {
+			errno = EINVAL;
 			return -1;
 		}
-		if (!exec_result.matched) {
-			iterator->done = 1;
-			*done_ptr = 1;
-			*value_ptr = jsval_undefined();
-			return 0;
-		}
-		if (jsval_regexp_exec_result_object(region, iterator->input_value,
-				jsval_native_string_units(input_native), input_native->len,
-				offsets, exec_result.slot_count, exec_result.start,
-				value_ptr) < 0) {
-			return -1;
-		}
-		if ((regexp->flags & JSREGEX_FLAG_GLOBAL) == 0) {
-			iterator->done = 1;
-		} else if (exec_result.start == exec_result.end) {
-			size_t next_index;
+		offsets_cap = ((size_t)regexp->capture_count + 1) * 2;
+		{
+			size_t offsets[offsets_cap ? offsets_cap : 2];
+			jsregex_exec_result_t exec_result;
 
-			if (jsregex_advance_string_index_utf16(
-					jsval_native_string_units(input_native), input_native->len,
-					regexp->last_index,
-					(regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
-					&next_index) < 0) {
+			if (jsval_regexp_exec_raw(region, iterator->regexp_value,
+					jsval_native_string_units(input_native),
+					input_native->len, offsets, offsets_cap, &exec_result,
+					error) < 0) {
 				return -1;
 			}
-			regexp->last_index = next_index;
+			if (!exec_result.matched) {
+				iterator->done = 1;
+				*done_ptr = 1;
+				*value_ptr = jsval_undefined();
+				return 0;
+			}
+			if (jsval_regexp_exec_result_object(region,
+					iterator->input_value,
+					jsval_native_string_units(input_native),
+					input_native->len, offsets, exec_result.slot_count,
+					exec_result.start, value_ptr) < 0) {
+				return -1;
+			}
+			if ((regexp->flags & JSREGEX_FLAG_GLOBAL) == 0) {
+				iterator->done = 1;
+			} else if (exec_result.start == exec_result.end) {
+				size_t next_index;
+
+				if (jsregex_advance_string_index_utf16(
+						jsval_native_string_units(input_native),
+						input_native->len, regexp->last_index,
+						(regexp->flags & JSREGEX_FLAG_UNICODE) != 0,
+						&next_index) < 0) {
+					return -1;
+				}
+				regexp->last_index = next_index;
+			}
+			*done_ptr = 0;
+			return 0;
 		}
-		*done_ptr = 0;
-		return 0;
+	case JSVAL_MATCH_ITERATOR_MODE_U_LITERAL_SURROGATE:
+		{
+			int matched;
+			size_t match_start;
+			size_t match_end;
+
+			if (jsval_u_literal_surrogate_find_match(
+					jsval_native_string_units(input_native),
+					input_native->len, iterator->surrogate_unit,
+					iterator->cursor, &matched, &match_start,
+					&match_end) < 0) {
+				return -1;
+			}
+			if (!matched) {
+				iterator->done = 1;
+				*done_ptr = 1;
+				*value_ptr = jsval_undefined();
+				return 0;
+			}
+			if (jsval_u_literal_surrogate_exec_result_object(region,
+					iterator->input_value,
+					jsval_native_string_units(input_native),
+					input_native->len, match_start, match_end,
+					value_ptr) < 0) {
+				return -1;
+			}
+			iterator->cursor = match_end;
+			*done_ptr = 0;
+			return 0;
+		}
+	default:
+		errno = EINVAL;
+		return -1;
 	}
 }
 
@@ -4816,6 +4871,27 @@ jsval_method_string_match_all(jsval_region_t *region, jsval_t this_value,
 
 	return jsval_regexp_match_all(region, regex_value, input_string, value_ptr,
 			error);
+}
+
+int
+jsval_method_string_match_all_u_literal_surrogate(jsval_region_t *region,
+		jsval_t this_value, uint16_t surrogate_unit, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_t input_string;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, this_value, 1, &input_string,
+			error) < 0) {
+		return -1;
+	}
+	return jsval_match_iterator_new(region,
+			JSVAL_MATCH_ITERATOR_MODE_U_LITERAL_SURROGATE,
+			jsval_undefined(), input_string, 0, surrogate_unit, value_ptr);
 }
 
 int

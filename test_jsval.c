@@ -1734,6 +1734,88 @@ test_u_literal_surrogate_match_rewrite(void)
 }
 
 static void
+test_u_literal_surrogate_match_all_rewrite(void)
+{
+	static const uint16_t low_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06
+	};
+	static const uint16_t high_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xD834, 'B', 0xD834
+	};
+	static const uint16_t pair_only_units[] = {0xD834, 0xDF06};
+	static const uint16_t low_unit[] = {0xDF06};
+	static const uint16_t high_unit[] = {0xD834};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t low_subject;
+	jsval_t high_subject;
+	jsval_t pair_only;
+	jsval_t iterator;
+	jsval_t result;
+	int done;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]),
+			&low_subject) == 0);
+	assert(jsval_string_new_utf16(&region, high_subject_units,
+			sizeof(high_subject_units) / sizeof(high_subject_units[0]),
+			&high_subject) == 0);
+	assert(jsval_string_new_utf16(&region, pair_only_units,
+			sizeof(pair_only_units) / sizeof(pair_only_units[0]),
+			&pair_only) == 0);
+
+	assert(jsval_method_string_match_all_u_literal_surrogate(&region,
+			low_subject, 0xDF06, &iterator, &error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", low_unit, 1);
+	assert_object_number_prop(&region, result, "length", 1.0);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert_object_utf16_prop(&region, result, "input", low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]));
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", low_unit, 1);
+	assert_object_number_prop(&region, result, "index", 5.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_match_all_u_literal_surrogate(&region,
+			high_subject, 0xD834, &iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", high_unit, 1);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", high_unit, 1);
+	assert_object_number_prop(&region, result, "index", 5.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_match_all_u_literal_surrogate(&region,
+			pair_only, 0xDF06, &iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void
 test_u_literal_surrogate_replace_rewrite(void)
 {
 	static const uint16_t pair_low_units[] = {
@@ -3258,6 +3340,7 @@ int main(void)
 	test_regexp_match_all();
 	test_method_regex_search_bridge();
 	test_u_literal_surrogate_match_rewrite();
+	test_u_literal_surrogate_match_all_rewrite();
 	test_u_literal_surrogate_replace_rewrite();
 	test_u_literal_surrogate_split_rewrite();
 #endif

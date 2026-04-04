@@ -2584,6 +2584,28 @@
       "notes": "Rewrite-backed: single literal lone-surrogate `/u` match cases are lowered to dedicated jsval match helpers so non-global/global String.prototype.match semantics skip surrogate halves inside pairs while still returning isolated surrogates."
     },
     {
+      "id": "jsmx-strings-u-literal-surrogate-matchAll-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-matchAll-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-matchAll-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` matchAll cases are lowered to a dedicated jsval iterator helper so exec-shaped iterator results skip surrogate halves inside pairs while still yielding isolated surrogates."
+    },
+    {
+      "id": "jsmx-strings-u-literal-surrogate-matchAll-pair-skip-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-matchAll-pair-skip-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-matchAll-pair-skip-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` matchAll pair-only cases are lowered to the dedicated jsval iterator helper so surrogate halves inside a well-formed pair are never reported as matches."
+    },
+    {
       "id": "jsmx-strings-u-literal-surrogate-replace-rewrite",
       "suite": "strings",
       "source": "compliance/js/strings/jsmx/u-literal-surrogate-replace-rewrite.js",

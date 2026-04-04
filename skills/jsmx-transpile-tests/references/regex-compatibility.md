@@ -75,7 +75,7 @@ Current status:
 
 | Family | Representative case | Current classification | Next action |
 | --- | --- | --- | --- |
-| Single literal lone-surrogate `/u` no-capture exec/test/search/match/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-replace-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method and callback-replacer cases until more recipes are reviewed |
+| Single literal lone-surrogate `/u` no-capture exec/test/search/match/matchAll/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-matchAll-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method, iterator, and callback-replacer cases until more recipes are reviewed |
 | Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond one literal lone-surrogate atom | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
@@ -101,6 +101,7 @@ Rewrite recipe:
   - `jsregex_search_u_literal_surrogate_utf16(...)` for search-style index needs
 - for string-method surfaces, use the dedicated translator-facing `jsval`
   helpers:
+  - `jsval_method_string_match_all_u_literal_surrogate(...)`
   - `jsval_method_string_match_u_literal_surrogate(...)`
   - `jsval_method_string_replace_u_literal_surrogate(...)`
   - `jsval_method_string_replace_all_u_literal_surrogate(...)`
@@ -113,10 +114,12 @@ Rewrite recipe:
   not preceded by a high surrogate
 - scan the subject with Unicode code-point advancement semantics so surrogate
   pairs are skipped as indivisible code points during the search
+- for `matchAll`, lower to the dedicated iterator helper and keep the same
+  no-capture result shape already used by the semantic regex iterator:
+  `[match]`, `length`, `index`, `input`, and `groups = undefined`
 
 This rewrite is intentionally narrow. Any broader `/u` surrogate-sensitive case
-still needs a separate reviewed recipe before it can be translated as passing,
-and `matchAll` remains outside this approved family.
+still needs a separate reviewed recipe before it can be translated as passing.
 
 ## Current Slow-Path Policy
 

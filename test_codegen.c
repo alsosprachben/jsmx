@@ -3907,6 +3907,8 @@ static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 	jsval_t replacement;
 	jsval_t limit_two;
 	jsval_t match_result;
+	jsval_t iterator;
+	jsval_t iterator_result;
 	jsval_t replace_result;
 	jsval_t callback_result;
 	jsval_t split_result;
@@ -3914,6 +3916,7 @@ static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 	generated_replace_callback_ctx_t ctx = {0, 0};
 	jsmethod_error_t error;
 	generated_status_t status;
+	int done;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	if (jsval_string_new_utf16(&region, subject_units,
@@ -3956,6 +3959,75 @@ static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 			detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
+	}
+
+	if (jsval_method_string_match_all_u_literal_surrogate(&region, text,
+			0xDF06, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all_u_literal_surrogate failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(surrogate first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected first surrogate matchAll iterator result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(surrogate matchAll first capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"index", 5, &value) < 0
+			|| jsval_strict_eq(&region, value, jsval_number(3.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected first surrogate matchAll index 3");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(surrogate second) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected second surrogate matchAll iterator result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(surrogate matchAll second capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"index", 5, &value) < 0
+			|| jsval_strict_eq(&region, value, jsval_number(5.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected second surrogate matchAll index 5");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(surrogate done) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (!done || iterator_result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected surrogate matchAll iterator exhaustion");
 	}
 
 	if (jsval_method_string_replace_u_literal_surrogate(&region, text, 0xDF06,
