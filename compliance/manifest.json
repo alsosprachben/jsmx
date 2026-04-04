@@ -2573,6 +2573,39 @@
       "notes": "Rewrite-backed: single literal lone-surrogate `/u` search cases are lowered to explicit UTF-16 surrogate-aware scan helpers so the first isolated surrogate index is reported without matching inside surrogate pairs."
     },
     {
+      "id": "jsmx-strings-u-literal-surrogate-match-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-match-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-match-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` match cases are lowered to dedicated jsval match helpers so non-global/global String.prototype.match semantics skip surrogate halves inside pairs while still returning isolated surrogates."
+    },
+    {
+      "id": "jsmx-strings-u-literal-surrogate-replace-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-replace-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-replace-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` replace and replaceAll cases, including callback replacers, are lowered to dedicated jsval helpers that keep the no-capture contract and skip surrogate halves inside pairs."
+    },
+    {
+      "id": "jsmx-strings-u-literal-surrogate-split-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-literal-surrogate-split-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-literal-surrogate-split-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single literal lone-surrogate `/u` split cases are lowered to a dedicated jsval split helper so isolated surrogates act as separators without splitting inside surrogate pairs."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

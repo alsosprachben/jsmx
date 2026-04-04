@@ -32,6 +32,16 @@ typedef struct test_replace_regex_callback_ctx_s {
 	const char *replacement_values[4];
 } test_replace_regex_callback_ctx_t;
 
+typedef struct test_replace_surrogate_callback_ctx_s {
+	int call_count;
+	const uint16_t *expected_input;
+	size_t expected_input_len;
+	const uint16_t *expected_matches[4];
+	size_t expected_match_lens[4];
+	size_t expected_offsets[4];
+	const char *replacement_values[4];
+} test_replace_surrogate_callback_ctx_t;
+
 static void assert_string(jsval_region_t *region, jsval_t value, const char *expected)
 {
 	size_t expected_len = strlen(expected);
@@ -43,6 +53,20 @@ static void assert_string(jsval_region_t *region, jsval_t value, const char *exp
 	assert(actual_len == expected_len);
 	assert(jsval_string_copy_utf8(region, value, buf, actual_len, NULL) == 0);
 	assert(memcmp(buf, expected, expected_len) == 0);
+}
+
+static void
+assert_utf16_string(jsval_region_t *region, jsval_t value,
+		const uint16_t *expected, size_t expected_len)
+{
+	static const uint16_t empty_unit = 0;
+	jsval_t expected_value;
+
+	assert(value.kind == JSVAL_KIND_STRING);
+	assert(jsval_string_new_utf16(region,
+			expected_len > 0 ? expected : &empty_unit, expected_len,
+			&expected_value) == 0);
+	assert(jsval_strict_eq(region, value, expected_value) == 1);
 }
 
 static void assert_json(jsval_region_t *region, jsval_t value, const char *expected)
@@ -66,6 +90,18 @@ static void assert_object_string_prop(jsval_region_t *region, jsval_t object,
 	assert(jsval_object_get_utf8(region, object, (const uint8_t *)key,
 			strlen(key), &value) == 0);
 	assert_string(region, value, expected);
+}
+
+static void
+assert_object_utf16_prop(jsval_region_t *region, jsval_t object,
+		const char *key, const uint16_t *expected, size_t expected_len)
+{
+	jsval_t value;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)key,
+			strlen(key), &value) == 0);
+	assert_utf16_string(region, value, expected, expected_len);
 }
 
 static void assert_object_number_prop(jsval_region_t *region, jsval_t object,
@@ -217,6 +253,30 @@ test_replace_regex_callback(jsval_region_t *region, void *opaque,
 		assert_string(region, call->captures[1],
 				ctx->expected_capture2[index]);
 	}
+	return jsval_string_new_utf8(region,
+			(const uint8_t *)ctx->replacement_values[index],
+			strlen(ctx->replacement_values[index]), result_ptr);
+}
+
+static int
+test_replace_surrogate_callback(jsval_region_t *region, void *opaque,
+		const jsval_replace_call_t *call, jsval_t *result_ptr,
+		jsmethod_error_t *error)
+{
+	test_replace_surrogate_callback_ctx_t *ctx =
+			(test_replace_surrogate_callback_ctx_t *)opaque;
+	size_t index = (size_t)ctx->call_count++;
+
+	(void)error;
+	assert(call != NULL);
+	assert(index < 4);
+	assert(call->capture_count == 0);
+	assert(call->captures == NULL);
+	assert(call->offset == ctx->expected_offsets[index]);
+	assert_utf16_string(region, call->input, ctx->expected_input,
+			ctx->expected_input_len);
+	assert_utf16_string(region, call->match, ctx->expected_matches[index],
+			ctx->expected_match_lens[index]);
 	return jsval_string_new_utf8(region,
 			(const uint8_t *)ctx->replacement_values[index],
 			strlen(ctx->replacement_values[index]), result_ptr);
@@ -1607,6 +1667,238 @@ test_method_regex_search_bridge(void)
 			jsval_undefined(), &result, &error) < 0);
 	assert(errno == ENOTSUP);
 }
+
+static void
+test_u_literal_surrogate_match_rewrite(void)
+{
+	static const uint16_t low_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06
+	};
+	static const uint16_t high_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xD834, 'B', 0xD834
+	};
+	static const uint16_t pair_only_units[] = {0xD834, 0xDF06};
+	static const uint16_t low_unit[] = {0xDF06};
+	static const uint16_t high_unit[] = {0xD834};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t low_subject;
+	jsval_t high_subject;
+	jsval_t pair_only;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]),
+			&low_subject) == 0);
+	assert(jsval_string_new_utf16(&region, high_subject_units,
+			sizeof(high_subject_units) / sizeof(high_subject_units[0]),
+			&high_subject) == 0);
+	assert(jsval_string_new_utf16(&region, pair_only_units,
+			sizeof(pair_only_units) / sizeof(pair_only_units[0]),
+			&pair_only) == 0);
+
+	assert(jsval_method_string_match_u_literal_surrogate(&region, low_subject,
+			0xDF06, 0, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", low_unit, 1);
+	assert_object_number_prop(&region, result, "length", 1.0);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert_object_utf16_prop(&region, result, "input", low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]));
+	assert_object_undefined_prop(&region, result, "groups");
+
+	assert(jsval_method_string_match_u_literal_surrogate(&region, pair_only,
+			0xDF06, 0, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_NULL);
+
+	assert(jsval_method_string_match_u_literal_surrogate(&region, low_subject,
+			0xDF06, 1, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, low_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, low_unit, 1);
+
+	assert(jsval_method_string_match_u_literal_surrogate(&region, high_subject,
+			0xD834, 1, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, high_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, high_unit, 1);
+}
+
+static void
+test_u_literal_surrogate_replace_rewrite(void)
+{
+	static const uint16_t pair_low_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06
+	};
+	static const uint16_t subst_subject_units[] = {
+		'X', 0xDF06, 'Y', 0xDF06
+	};
+	static const uint16_t low_unit[] = {0xDF06};
+	static const uint16_t replace_first_expected[] = {
+		'A', 0xD834, 0xDF06, 'X', 'B', 0xDF06
+	};
+	static const uint16_t replace_all_expected[] = {
+		'A', 0xD834, 0xDF06, 'X', 'B', 'X'
+	};
+	static const uint16_t special_expected[] = {
+		'X', '[', '$', ']', '[', 0xDF06, ']', '[', '$', '1', ']',
+		'[', 'X', ']', '[', 'Y', 0xDF06, ']', 'Y', 0xDF06
+	};
+	static const uint16_t callback_first_expected[] = {
+		'A', 0xD834, 0xDF06, '<', 'L', '>', 'B', 0xDF06
+	};
+	static const uint16_t callback_all_expected[] = {
+		'A', 0xD834, 0xDF06, '<', 'A', '>', 'B', '<', 'B', '>'
+	};
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t pair_low;
+	jsval_t subst_subject;
+	jsval_t ascii_x;
+	jsval_t special_replacement;
+	jsval_t result;
+	jsmethod_error_t error;
+	test_replace_surrogate_callback_ctx_t replace_ctx = {
+		0,
+		pair_low_units,
+		sizeof(pair_low_units) / sizeof(pair_low_units[0]),
+		{low_unit},
+		{1},
+		{3},
+		{"<L>"}
+	};
+	test_replace_surrogate_callback_ctx_t replace_all_ctx = {
+		0,
+		pair_low_units,
+		sizeof(pair_low_units) / sizeof(pair_low_units[0]),
+		{low_unit, low_unit},
+		{1, 1},
+		{3, 5},
+		{"<A>", "<B>"}
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, pair_low_units,
+			sizeof(pair_low_units) / sizeof(pair_low_units[0]),
+			&pair_low) == 0);
+	assert(jsval_string_new_utf16(&region, subst_subject_units,
+			sizeof(subst_subject_units) / sizeof(subst_subject_units[0]),
+			&subst_subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"X", 1,
+			&ascii_x) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"[$$][$&][$1][$`][$']", 20,
+			&special_replacement) == 0);
+
+	assert(jsval_method_string_replace_u_literal_surrogate(&region, pair_low,
+			0xDF06, ascii_x, &result, &error) == 0);
+	assert_utf16_string(&region, result, replace_first_expected,
+			sizeof(replace_first_expected) /
+			sizeof(replace_first_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_surrogate(&region,
+			pair_low, 0xDF06, ascii_x, &result, &error) == 0);
+	assert_utf16_string(&region, result, replace_all_expected,
+			sizeof(replace_all_expected) /
+			sizeof(replace_all_expected[0]));
+
+	assert(jsval_method_string_replace_u_literal_surrogate(&region,
+			subst_subject, 0xDF06, special_replacement, &result,
+			&error) == 0);
+	assert_utf16_string(&region, result, special_expected,
+			sizeof(special_expected) / sizeof(special_expected[0]));
+
+	assert(jsval_method_string_replace_u_literal_surrogate_fn(&region,
+			pair_low, 0xDF06, test_replace_surrogate_callback,
+			&replace_ctx, &result, &error) == 0);
+	assert(replace_ctx.call_count == 1);
+	assert_utf16_string(&region, result, callback_first_expected,
+			sizeof(callback_first_expected) /
+			sizeof(callback_first_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_surrogate_fn(&region,
+			pair_low, 0xDF06, test_replace_surrogate_callback,
+			&replace_all_ctx, &result, &error) == 0);
+	assert(replace_all_ctx.call_count == 2);
+	assert_utf16_string(&region, result, callback_all_expected,
+			sizeof(callback_all_expected) /
+			sizeof(callback_all_expected[0]));
+}
+
+static void
+test_u_literal_surrogate_split_rewrite(void)
+{
+	static const uint16_t low_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06, 'C'
+	};
+	static const uint16_t high_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xD834, 'B', 0xD834, 'C'
+	};
+	static const uint16_t pair_prefix_units[] = {'A', 0xD834, 0xDF06};
+	static const uint16_t b_unit[] = {'B'};
+	static const uint16_t c_unit[] = {'C'};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t low_subject;
+	jsval_t high_subject;
+	jsval_t limit_two;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, low_subject_units,
+			sizeof(low_subject_units) / sizeof(low_subject_units[0]),
+			&low_subject) == 0);
+	assert(jsval_string_new_utf16(&region, high_subject_units,
+			sizeof(high_subject_units) / sizeof(high_subject_units[0]),
+			&high_subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&limit_two) == 0);
+
+	assert(jsval_method_string_split_u_literal_surrogate(&region, low_subject,
+			0xDF06, 0, jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, c_unit, 1);
+
+	assert(jsval_method_string_split_u_literal_surrogate(&region, low_subject,
+			0xDF06, 1, limit_two, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+
+	assert(jsval_method_string_split_u_literal_surrogate(&region, high_subject,
+			0xD834, 0, jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, c_unit, 1);
+}
 #endif
 
 static void test_method_concat_bridge(void)
@@ -2965,6 +3257,9 @@ int main(void)
 	test_regexp_exec_and_match();
 	test_regexp_match_all();
 	test_method_regex_search_bridge();
+	test_u_literal_surrogate_match_rewrite();
+	test_u_literal_surrogate_replace_rewrite();
+	test_u_literal_surrogate_split_rewrite();
 #endif
 	test_method_concat_bridge();
 	test_method_accessor_bridge();

@@ -122,6 +122,29 @@ static generated_status_t generated_expect_string(jsval_region_t *region,
 	return GENERATED_PASS;
 }
 
+static generated_status_t
+generated_expect_utf16_string(jsval_region_t *region, jsval_t value,
+		const uint16_t *expected, size_t expected_len,
+		char *detail, size_t cap)
+{
+	static const uint16_t empty_unit = 0;
+	jsval_t expected_value;
+
+	if (value.kind != JSVAL_KIND_STRING) {
+		return generated_failf(detail, cap, "expected string result");
+	}
+	if (jsval_string_new_utf16(region,
+			expected_len > 0 ? expected : &empty_unit, expected_len,
+			&expected_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf16");
+	}
+	if (jsval_strict_eq(region, value, expected_value) != 1) {
+		return generated_failf(detail, cap,
+				"utf16 string result did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_expect_string_array(jsval_region_t *region,
 		jsval_t array, const char *const *expected, size_t expected_len,
 		char *detail, size_t cap)
@@ -3863,6 +3886,140 @@ static generated_status_t generated_smoke_jsval_regexp_match_all(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
+		char *detail, size_t cap)
+{
+	static const uint16_t subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xDF06, 'B', 0xDF06, 'C'
+	};
+	static const uint16_t low_unit[] = {0xDF06};
+	static const uint16_t replace_expected[] = {
+		'A', 0xD834, 0xDF06, 'X', 'B', 0xDF06, 'C'
+	};
+	static const uint16_t callback_expected[] = {
+		'A', 0xD834, 0xDF06, '[', '3', ']', 'B', '[', '5', ']', 'C'
+	};
+	static const uint16_t prefix_expected[] = {'A', 0xD834, 0xDF06};
+	static const uint16_t b_unit[] = {'B'};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t text;
+	jsval_t replacement;
+	jsval_t limit_two;
+	jsval_t match_result;
+	jsval_t replace_result;
+	jsval_t callback_result;
+	jsval_t split_result;
+	jsval_t value;
+	generated_replace_callback_ctx_t ctx = {0, 0};
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf16(&region, subject_units,
+			sizeof(subject_units) / sizeof(subject_units[0]), &text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf16(surrogate rewrite text)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"X", 1,
+			&replacement) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+				&limit_two) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(surrogate rewrite args)");
+	}
+	if (jsval_method_string_match_u_literal_surrogate(&region, text, 0xDF06, 1,
+			&match_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_u_literal_surrogate failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (match_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, match_result) != 2) {
+		return generated_failf(detail, cap,
+				"expected 2-entry surrogate match array");
+	}
+	if (jsval_array_get(&region, match_result, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(surrogate match 0)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_array_get(&region, match_result, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(surrogate match 1)");
+	}
+	status = generated_expect_utf16_string(&region, value, low_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_replace_u_literal_surrogate(&region, text, 0xDF06,
+			replacement, &replace_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_u_literal_surrogate failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_utf16_string(&region, replace_result,
+			replace_expected,
+			sizeof(replace_expected) / sizeof(replace_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_replace_all_u_literal_surrogate_fn(&region, text,
+			0xDF06, generated_replace_offset_callback, &ctx, &callback_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_u_literal_surrogate_fn failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 2) {
+		return generated_failf(detail, cap,
+				"expected 2 surrogate callback calls, got %d", ctx.call_count);
+	}
+	status = generated_expect_utf16_string(&region, callback_result,
+			callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_split_u_literal_surrogate(&region, text, 0xDF06, 1,
+			limit_two, &split_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_split_u_literal_surrogate failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (split_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, split_result) != 2) {
+		return generated_failf(detail, cap,
+				"expected 2-entry surrogate split result");
+	}
+	if (jsval_array_get(&region, split_result, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(surrogate split 0)");
+	}
+	status = generated_expect_utf16_string(&region, value, prefix_expected,
+			sizeof(prefix_expected) / sizeof(prefix_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_array_get(&region, split_result, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(surrogate split 1)");
+	}
+	return generated_expect_utf16_string(&region, value, b_unit, 1,
+			detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_method_regex_search(
 		char *detail, size_t cap)
 {
@@ -4654,6 +4811,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
 	{"smoke", "jsval_regexp_exec_state", generated_smoke_jsval_regexp_exec_state},
 	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
+	{"smoke", "jsval_u_literal_surrogate_rewrite",
+		generated_smoke_jsval_u_literal_surrogate_rewrite},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
 		generated_smoke_jsval_method_regex_replace_all},

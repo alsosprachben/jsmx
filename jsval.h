@@ -326,6 +326,29 @@ int jsval_method_string_match(jsval_region_t *region, jsval_t this_value,
 int jsval_method_string_match_all(jsval_region_t *region, jsval_t this_value,
 		int have_regexp, jsval_t regexp_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_match_u_literal_surrogate(jsval_region_t *region,
+		jsval_t this_value, uint16_t surrogate_unit, int global,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_surrogate(jsval_region_t *region,
+		jsval_t this_value, uint16_t surrogate_unit,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_surrogate(
+		jsval_region_t *region, jsval_t this_value, uint16_t surrogate_unit,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_surrogate_fn(
+		jsval_region_t *region, jsval_t this_value, uint16_t surrogate_unit,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_surrogate_fn(
+		jsval_region_t *region, jsval_t this_value, uint16_t surrogate_unit,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_split_u_literal_surrogate(jsval_region_t *region,
+		jsval_t this_value, uint16_t surrogate_unit, int have_limit,
+		jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_search_regex(jsval_region_t *region,
 		jsval_t this_value, jsval_t pattern_value,
 		int have_flags, jsval_t flags_value, jsval_t *value_ptr,

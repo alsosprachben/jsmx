@@ -65,8 +65,9 @@ Only use a rewrite when all of these are true:
 
 Current status:
 
-- the single-literal lone-surrogate `/u` exec family now has one reviewed
-  rewrite-backed recipe, anchored by `strings/test262/exec/u-lastindex-adv`
+- the single-literal lone-surrogate `/u` no-capture family now has a reviewed
+  rewrite-backed recipe covering `exec`, `test`, `search`, `match`,
+  `replace`, `replaceAll`, callback replacers, and `split`
 - broader Unicode/surrogate-sensitive `/u` behavior remains outside direct
   lowering until additional rewrite recipes are reviewed
 
@@ -74,7 +75,7 @@ Current status:
 
 | Family | Representative case | Current classification | Next action |
 | --- | --- | --- | --- |
-| Single literal lone-surrogate `/u` exec/test/search behavior | `strings/test262/exec/u-lastindex-adv` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture exec/test/search cases until more recipes are reviewed |
+| Single literal lone-surrogate `/u` no-capture exec/test/search/match/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-replace-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method and callback-replacer cases until more recipes are reviewed |
 | Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond one literal lone-surrogate atom | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
@@ -86,7 +87,8 @@ Use a rewrite-backed lowering only when all of these are true:
 
 - the JS pattern is exactly one literal surrogate code unit under the `u` flag
   (`\uD800..\uDFFF`)
-- the translated case only needs literal exec/test/search semantics
+- the translated case only needs literal no-capture
+  `exec`/`test`/`search`/`match`/`replace`/`replaceAll`/`split` semantics
 - there are no captures, character classes, alternation, quantifiers,
   backreferences, or other regex operators in the pattern
 
@@ -97,6 +99,14 @@ Rewrite recipe:
   - `jsregex_exec_u_literal_surrogate_utf16(...)` for exec-style result needs
   - `jsregex_test_u_literal_surrogate_utf16(...)` for test-style booleanization
   - `jsregex_search_u_literal_surrogate_utf16(...)` for search-style index needs
+- for string-method surfaces, use the dedicated translator-facing `jsval`
+  helpers:
+  - `jsval_method_string_match_u_literal_surrogate(...)`
+  - `jsval_method_string_replace_u_literal_surrogate(...)`
+  - `jsval_method_string_replace_all_u_literal_surrogate(...)`
+  - `jsval_method_string_replace_u_literal_surrogate_fn(...)`
+  - `jsval_method_string_replace_all_u_literal_surrogate_fn(...)`
+  - `jsval_method_string_split_u_literal_surrogate(...)`
 - for a lone high surrogate atom, match only isolated high surrogates that are
   not followed by a low surrogate
 - for a lone low surrogate atom, match only isolated low surrogates that are
@@ -105,7 +115,8 @@ Rewrite recipe:
   pairs are skipped as indivisible code points during the search
 
 This rewrite is intentionally narrow. Any broader `/u` surrogate-sensitive case
-still needs a separate reviewed recipe before it can be translated as passing.
+still needs a separate reviewed recipe before it can be translated as passing,
+and `matchAll` remains outside this approved family.
 
 ## Current Slow-Path Policy
 
