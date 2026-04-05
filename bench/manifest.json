@@ -45,6 +45,24 @@
       "expected_stdout": "3040000\n",
       "required_features": ["regex"],
       "notes": "Direct-lowered global exec loop with named-group result access over alternating subjects."
+    },
+    {
+      "id": "regex-compile-once-exec-loop",
+      "suite": "regex",
+      "source": "bench/js/regex/compile-once-exec-loop.js",
+      "generated": "bench/generated/regex/compile-once-exec-loop.c",
+      "expected_stdout": "3040000\n",
+      "required_features": ["regex"],
+      "notes": "Compile-once global exec loop that isolates repeated backend regex execution from jsval result-object work."
+    },
+    {
+      "id": "regex-exec-no-groups-loop",
+      "suite": "regex",
+      "source": "bench/js/regex/exec-no-groups-loop.js",
+      "generated": "bench/generated/regex/exec-no-groups-loop.c",
+      "expected_stdout": "3040000\n",
+      "required_features": ["regex"],
+      "notes": "High-level global exec loop with capture access but no groups-object property reads."
     }
   ]
 }

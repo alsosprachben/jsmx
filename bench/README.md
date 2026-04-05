@@ -57,10 +57,16 @@ explicit choice and still adds `-flto` unless it is already present.
 
 - benchmark manifest entries may declare `required_features`
 - default `make bench` skips cases whose features are not enabled
-- the current corpus includes a regex benchmark gated on `regex`
+- the current corpus includes multiple regex benchmarks gated on `regex`
 
 Run regex-gated benchmarks with the same regex-enabled `CFLAGS`, `LDLIBS`,
 and `JSMX_FEATURES=regex` setup used for the regex test matrix.
+
+The regex corpus is split into three lanes:
+
+- end-to-end named-groups `exec` through the high-level `jsval` path
+- compile-once repeated `exec` through the lower-level `jsregex` path
+- high-level `exec` without `groups` object reads
 
 That path is ignored in Git so local history can accumulate outside the
 committed corpus.
