@@ -3730,6 +3730,26 @@
       "notes": "Repo-authored idiomatic dense-array fixture for empty shift plus undefined head shifts after an explicit logical-length grow."
     },
     {
+      "id": "jsmx-objects-array-unshift-observable",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-unshift-observable.js",
+      "generated": "compliance/generated/objects/jsmx/array-unshift-observable.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for observable native front insertion through the explicit jsval array unshift helper."
+    },
+    {
+      "id": "jsmx-objects-array-unshift-capacity-error",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-unshift-capacity-error.js",
+      "generated": "compliance/generated/objects/jsmx/array-unshift-capacity-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for ENOBUFS when unshift would exceed the translator-chosen native capacity."
+    },
+    {
       "id": "jsmx-objects-json-shallow-object-add-property",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-shallow-object-add-property.js",
@@ -3828,6 +3848,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then shifting the native dense head."
+    },
+    {
+      "id": "jsmx-objects-json-array-shallow-promote-and-unshift",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-array-shallow-promote-and-unshift.js",
+      "generated": "compliance/generated/objects/jsmx/json-array-shallow-promote-and-unshift.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then unshifting the native dense head."
     }
   ]
 }

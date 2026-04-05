@@ -20,7 +20,7 @@ The design target is:
 - strings, Unicode, casing, normalization, and well-formedness
 - page-resident values, objects, arrays, and JSON-backed reads
 - explicit promotion from JSON-backed storage to native storage
-- dense, capacity-bounded native array semantics such as push, pop, shift, and explicit length writes
+- dense, capacity-bounded native array semantics such as push, pop, shift, unshift, and explicit length writes
 - deterministic JS-method helpers such as `String.prototype.normalize`
 
 ### Translator

@@ -1846,12 +1846,13 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 {
 	static const uint8_t input[] = "[4,5]";
 	static const uint8_t expected_json[] =
-		"{\"native\":[],\"parsed\":[5]}";
+		"{\"native\":[1,9],\"parsed\":[4,5]}";
 	uint8_t storage[32768];
 	jsval_region_t region;
 	jsval_t root;
 	jsval_t native_items;
 	jsval_t parsed_items;
+	jsval_t tight_items;
 	jsval_t got;
 	size_t bytes;
 	size_t len_before;
@@ -1889,6 +1890,15 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 		return generated_failf(detail, cap,
 				"expected ENOTSUP from parsed array shift, got %d", errno);
 	}
+	errno = 0;
+	if (jsval_array_unshift(&region, parsed_items, jsval_number(4.0)) == 0) {
+		return generated_failf(detail, cap,
+				"expected JSON-backed parsed array unshift to fail before promotion");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP from parsed array unshift, got %d", errno);
+	}
 	if (jsval_promote_array_shallow_measure(&region, parsed_items, 3, &bytes) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_promote_array_shallow_measure(parsed)");
@@ -1919,6 +1929,9 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 	}
 	if (generated_expect_number(&region, got, 4.0, detail, cap) != GENERATED_PASS) {
 		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_array_unshift(&region, parsed_items, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_unshift(parsed)");
 	}
 
 	if (jsval_array_new(&region, 4, &native_items) < 0) {
@@ -2027,6 +2040,28 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 	if (got.kind != JSVAL_KIND_UNDEFINED) {
 		return generated_failf(detail, cap,
 				"expected empty native shift to return undefined");
+	}
+	if (jsval_array_unshift(&region, native_items, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_unshift(native tail)");
+	}
+	if (jsval_array_unshift(&region, native_items, jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_unshift(native head)");
+	}
+
+	if (jsval_array_new(&region, 1, &tight_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(tight)");
+	}
+	if (jsval_array_push(&region, tight_items, jsval_number(5.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(tight)");
+	}
+	errno = 0;
+	if (jsval_array_unshift(&region, tight_items, jsval_number(4.0)) == 0) {
+		return generated_failf(detail, cap,
+				"expected native unshift past capacity to fail");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from native unshift past capacity, got %d", errno);
 	}
 
 	if (jsval_object_new(&region, 2, &root) < 0) {
