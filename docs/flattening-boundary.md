@@ -2,7 +2,10 @@
 
 ## Goal
 
-`jsmx` is the flattened, page-resident semantic layer for a JS-to-C translator. It is not meant to become a general dynamic JavaScript runtime.
+`jsmx` is the flattened, page-resident semantic layer for a JS-to-C
+translator.
+
+It is not meant to become a general dynamic JavaScript runtime.
 
 The design target is:
 
@@ -15,14 +18,23 @@ The design target is:
 
 ### `jsmx`
 
-`jsmx` owns the semantics that can be expressed as explicit data transforms over caller-provided memory:
+`jsmx` owns semantics that can be expressed as explicit data transforms over
+caller-provided memory:
 
 - strings, Unicode, casing, normalization, and well-formedness
 - page-resident values, objects, arrays, and JSON-backed reads
 - explicit promotion from JSON-backed storage to native storage
-- deterministic ordered object key/value access over current stored or parsed order
-- shallow own-property copy from native or JSON-backed source objects into pre-capacity-planned native destinations
-- dense, capacity-bounded native array semantics such as push, pop, shift, unshift, and explicit length writes
+- deterministic ordered object key / value access
+  - over current stored or parsed order
+- shallow own-property copy
+  - from native or JSON-backed source objects
+  - into pre-capacity-planned native destinations
+- dense, capacity-bounded native array semantics such as:
+  - push
+  - pop
+  - shift
+  - unshift
+  - explicit length writes
 - deterministic JS-method helpers such as `String.prototype.normalize`
 
 ### Translator
@@ -40,7 +52,8 @@ It is responsible for:
 
 ### Slow Path
 
-Dynamic behavior that depends on user-defined or late-bound semantics should stay outside `jsmx`.
+Dynamic behavior that depends on user-defined or late-bound semantics should
+stay outside `jsmx`.
 
 Examples:
 
@@ -53,18 +66,58 @@ Examples:
 
 Compliance entries and translator planning should use these classes:
 
-- `static_pass`: the behavior can be lowered entirely through current `jsmx` and `jsmethod` surfaces
-- `slow_path_needed`: the behavior is valid JS, but flattening would require dynamic runtime behavior outside the current `jsmx` model
-- `unsupported`: the behavior is intentionally outside the current project scope
+- `static_pass`
+  - the behavior can be lowered entirely through current `jsmx` and `jsmethod`
+    surfaces
+- `slow_path_needed`
+  - the behavior is valid JS
+  - flattening would require dynamic runtime behavior outside the current
+    `jsmx` model
+- `unsupported`
+  - the behavior is intentionally outside the current project scope
 
-`expected_status` in the compliance manifest remains an execution result. `lowering_class` describes why the test fits, or does not fit, the flattened layer. `translation_mode` says whether the committed fixture demonstrates an idiomatic flattened lowering or an idiomatic slow path.
+Manifest fields:
+
+- `expected_status`
+  - remains an execution result
+- `lowering_class`
+  - describes why the test fits, or does not fit, the flattened layer
+- `translation_mode`
+  - says whether the committed fixture demonstrates:
+    - an idiomatic flattened lowering
+    - an idiomatic slow path
 
 ## Rule Of Thumb
 
-If the translator can compute the needed storage, select the target helper, and preserve semantics without hidden callbacks, the behavior belongs in `jsmx`.
+If the translator can compute the needed storage, select the target helper, and
+preserve semantics without hidden callbacks, the behavior belongs in `jsmx`.
 
-If correct behavior depends on dynamic object semantics, hidden hooks, or general runtime dispatch, the translator should emit a slow path instead of teaching `jsval` to become a dynamic object system.
+If correct behavior depends on:
 
-Dense native arrays fit that flattened model. So do shallow promotion patterns where the translator promotes only the object or array that will mutate and leaves surrounding child values JSON-backed until they are explicitly selected. Hole-preserving `delete arr[i]`, sparse-index behavior, and other semantics that depend on distinguishing absent elements from explicit `undefined` values remain outside the current slice.
+- dynamic object semantics
+- hidden hooks
+- general runtime dispatch
 
-When the corpus includes those cases, prefer an idiomatic slow-path translation that still passes over a boundary-only `KNOWN_UNSUPPORTED` placeholder, unless the required slow-path contract has not been designed yet.
+the translator should emit a slow path instead of teaching `jsval` to become a
+dynamic object system.
+
+Dense native arrays fit that flattened model.
+
+So do shallow promotion patterns where the translator:
+
+- promotes only the object or array that will mutate
+- leaves surrounding child values JSON-backed until they are explicitly
+  selected
+
+These remain outside the current slice:
+
+- hole-preserving `delete arr[i]`
+- sparse-index behavior
+- other semantics that depend on distinguishing absent elements from explicit
+  `undefined` values
+
+When the corpus includes those cases:
+
+- prefer an idiomatic slow-path translation that still passes
+- avoid a boundary-only `KNOWN_UNSUPPORTED` placeholder
+- unless the required slow-path contract has not been designed yet

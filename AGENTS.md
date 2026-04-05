@@ -1,28 +1,413 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository is a C runtime support library for transpiling JavaScript to C. Core parsing lives in `jsmn.c` and `jsmn.h`, numeric text/math helpers now live in `jsnum.c` and `jsnum.h`, optional backend-gated regex support lives in `jsregex.c`, `jsregex.h`, and `jsmx_config.h`, and JS-facing helpers sit in top-level modules such as `jsval.c`, `jsmethod.c`, `jsstr.c`, `unicode.c`, `mnurl.c`, and `utf8.h`. `jsval` now stores values inside a versioned page-set with an in-page root handle so relocated buffers remain self-describing, keeps JSON-backed values readable without implicit mutation, exposes explicit promotion helpers for generated C, includes shallow capacity-planned promotion so the translator can selectively convert only the object or array that will mutate, can emit JSON-compatible values back to JSON text, includes explicit native object/array helpers for own-property checks, ordered key/value access, shallow own-property copy, delete, overwrite, push, pop, shift, unshift, and dense length writes, includes primitive numeric coercion plus arithmetic, integer coercion, bitwise operators, shift operators, abstract-equality, and relational helpers for flattened generated code, includes feature-gated native regex values with semantic `source`, `lastIndex`, `exec`, `test`, `match`, `matchAll`, and flag/state helpers, including deeper repeated exec-result and `lastIndex` fidelity, includes translator-facing callback replacers for `replace` / `replaceAll`, includes the narrow `/u` literal rewrite helpers for regex-backed string methods including lone-surrogate atoms, fixed no-capture sequences, simple no-capture literal-member and negated literal-member classes, and `matchAll`, and includes a direct bridge from `jsval_t` into the thin string-method layer. `jsmethod` is the thin JS-method layer for receiver coercion, Symbol rejection, typed method errors, and string built-ins such as `normalize`, `concat`, `replace`, `replaceAll`, case conversion, trim/repeat plus the legacy trim aliases, padding (`padStart`, `padEnd`), non-regex search/membership (`indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`) plus `split`, feature-gated regex-backed `search`, accessor methods (`charAt`, `at`, `charCodeAt`, `codePointAt`), substring extraction (`slice`, `substring`, `substr`), and `toWellFormed`. `jsstr` exposes explicit normalization-form APIs for `NFC`, `NFD`, `NFKC`, and `NFKD`, while the legacy `jsstr*_normalize()` entrypoints remain NFC wrappers; `unicode` also exposes a small parser for mapping JS form strings onto that enum surface. The normalization path is now explicitly two-phase all the way up the stack: callers can measure exact workspace and result sizes with `unicode_normalize_form_workspace_len()`, `unicode_normalize_form_needed()`, and `jsstr*_normalize_form_needed()`, then use `jsmethod_string_normalize_measure()` / `jsmethod_string_normalize_into()` or `jsval_method_string_normalize_measure()` / `jsval_method_string_normalize()` to keep generated C allocation-free and explicit. Concat, replace, replaceAll, repetition, and padding now follow the same measure-then-execute shape through `jsmethod_string_concat_measure()` / `jsmethod_string_concat()`, `jsmethod_string_replace_measure()` / `jsmethod_string_replace()`, `jsmethod_string_replace_all_measure()` / `jsmethod_string_replace_all()`, `jsmethod_string_repeat_measure()` / `jsmethod_string_repeat()`, `jsmethod_string_pad_start_measure()` / `jsmethod_string_pad_start()`, `jsmethod_string_pad_end_measure()` / `jsmethod_string_pad_end()`, and the corresponding `jsval` bridge entrypoints. The project boundary is documented in [`docs/flattening-boundary.md`](/home/ben/repos/jsmx/docs/flattening-boundary.md): `jsmx` is the flattened semantic layer, while the translator owns storage selection, explicit promotion, and any slow path for non-flattenable semantics. Regex compatibility choices are translator-owned first and should follow the repo-local guide in `skills/jsmx-transpile-tests/` before adding or editing regex-bearing fixtures. Example programs live in `example/`. Parser regression tests are in [`test/tests.c`](/home/ben/repos/jsmx/test/tests.c), while feature-specific executables use files like `test_jsnum.c`, `test_jsregex.c`, `test_jsval.c`, `test_jsmethod.c`, `test_codegen.c`, `test_jsstr.c`, `test_unicode.c`, and `test_mnurl.c`. Real compliance sources and committed generated fixtures live under `compliance/`, which now includes `strings`, `regex`, `values`, and `objects` suites. The strings suite includes official concat, replace, and replaceAll coverage, official trim/repeat coverage, runtime coverage for the legacy trim aliases (`trimLeft`, `trimRight`), padding coverage for `padStart` and `padEnd`, search-core coverage for `indexOf`, `lastIndexOf`, `includes`, `startsWith`, and `endsWith`, and `split`, feature-gated regex `search`, `replace`, `replaceAll`, `split`, `exec`, `match`, and `matchAll` coverage when `JSMX_WITH_REGEX=1`, accessor coverage for `charAt`, `at`, `charCodeAt`, and `codePointAt`, and substring extraction coverage for `slice`, `substring`, and `substr`, including idiomatic slow-path translations where abrupt coercion or known object-literal coercions cross the flattened boundary. The regex suite adds feature-gated semantic `RegExp.prototype.source`, `RegExp.prototype.test`, `RegExp.prototype[Symbol.matchAll]`, supported flag/state access, constructor-state behavior, deeper repeated `exec` / `test` / `match` state fidelity, and repo-authored parsed/native parity for the current regex core. The values suite includes official test262 strict-equality, primitive abstract equality/inequality, logical-operator slices (`!`, `&&`, `||`), primitive numeric coercion/arithmetic slices, primitive integer coercion plus bitwise and shift slices (`~`, `&`, `|`, `^`, `<<`, `>>`, `>>>`), primitive relational-operator slices (`<`, `<=`, `>`, `>=`) across both numeric and string ordering paths, and idiomatic slow-path translations for official value files whose boxed-wrapper checks are already understood above the flattened boundary. The compliance runner now understands feature-gated cases through a `required_features` manifest field. The repo-local translation workflow guidance lives in `skills/jsmx-transpile-tests/`. Arrays in the current flattened layer are dense and capacity-bounded; hole and sparse-index semantics are still out of scope. Unicode source data (`UnicodeData.txt`, `allkeys.txt`, etc.) and generated headers (`unicode_*.h`) also live at the repository root. Generator scripts are in `scripts/`.
+
+This repository is a C runtime support library for transpiling JavaScript to C.
+
+### Core modules
+
+- `jsmn.c`, `jsmn.h`
+  - parser core and token model
+- `jsnum.c`, `jsnum.h`
+  - numeric text / math helpers
+  - shared by `jsval`
+- `jsregex.c`, `jsregex.h`, `jsmx_config.h`
+  - optional backend-gated regex support
+- top-level JS-facing helpers
+  - `jsval.c`
+  - `jsmethod.c`
+  - `jsstr.c`
+  - `unicode.c`
+  - `mnurl.c`
+  - `utf8.h`
+
+### `jsval`
+
+`jsval` now provides:
+
+- versioned page-set storage with an in-page root handle
+  - relocated buffers remain self-describing
+- readable JSON-backed values without implicit mutation
+- explicit promotion helpers for generated C
+- shallow capacity-planned promotion
+  - the translator can selectively convert only the object or array that will
+    mutate
+- JSON emission for JSON-compatible values
+- explicit native object / array helpers for:
+  - own-property checks
+  - ordered key / value access
+  - shallow own-property copy
+  - delete
+  - overwrite
+  - push
+  - pop
+  - shift
+  - unshift
+  - dense length writes
+- primitive numeric coercion plus:
+  - arithmetic
+  - integer coercion
+  - bitwise operators
+  - shift operators
+  - abstract equality
+  - relational helpers
+- flattened generated-code support for:
+  - feature-gated native regex values
+  - semantic `source`
+  - `lastIndex`
+  - `exec`
+  - `test`
+  - `match`
+  - `matchAll`
+  - flag / state helpers
+  - deeper repeated exec-result and `lastIndex` fidelity
+- translator-facing callback replacers for `replace` / `replaceAll`
+- narrow `/u` literal rewrite helpers for regex-backed string methods,
+  including:
+  - lone-surrogate atoms
+  - fixed no-capture sequences
+  - simple no-capture literal-member classes
+  - simple no-capture negated literal-member classes
+  - `matchAll`
+- a direct bridge from `jsval_t` into the thin string-method layer
+
+### `jsmethod`
+
+`jsmethod` is the thin JS-method layer for:
+
+- receiver coercion
+- Symbol rejection
+- typed method errors
+- string built-ins such as:
+  - `normalize`
+  - `concat`
+  - `replace`
+  - `replaceAll`
+  - case conversion
+  - trim / repeat plus the legacy trim aliases
+  - padding:
+    - `padStart`
+    - `padEnd`
+  - non-regex search / membership:
+    - `indexOf`
+    - `lastIndexOf`
+    - `includes`
+    - `startsWith`
+    - `endsWith`
+    - `split`
+  - feature-gated regex-backed `search`
+  - accessor methods:
+    - `charAt`
+    - `at`
+    - `charCodeAt`
+    - `codePointAt`
+  - substring extraction:
+    - `slice`
+    - `substring`
+    - `substr`
+  - `toWellFormed`
+
+### Unicode and normalization
+
+- `jsstr`
+  - explicit normalization-form APIs for:
+    - `NFC`
+    - `NFD`
+    - `NFKC`
+    - `NFKD`
+  - legacy `jsstr*_normalize()` entrypoints remain NFC wrappers
+- `unicode`
+  - exposes a small parser for mapping JS form strings onto that enum surface
+
+The normalization path is explicitly two-phase all the way up the stack.
+
+Callers can measure exact workspace and result sizes with:
+
+- `unicode_normalize_form_workspace_len()`
+- `unicode_normalize_form_needed()`
+- `jsstr*_normalize_form_needed()`
+
+Then generated code can use:
+
+- `jsmethod_string_normalize_measure()`
+- `jsmethod_string_normalize_into()`
+- `jsval_method_string_normalize_measure()`
+- `jsval_method_string_normalize()`
+
+The same measure-then-execute pattern now also covers:
+
+- concat
+  - `jsmethod_string_concat_measure()`
+  - `jsmethod_string_concat()`
+- replace
+  - `jsmethod_string_replace_measure()`
+  - `jsmethod_string_replace()`
+- replaceAll
+  - `jsmethod_string_replace_all_measure()`
+  - `jsmethod_string_replace_all()`
+- repeat
+  - `jsmethod_string_repeat_measure()`
+  - `jsmethod_string_repeat()`
+- padding
+  - `jsmethod_string_pad_start_measure()`
+  - `jsmethod_string_pad_start()`
+  - `jsmethod_string_pad_end_measure()`
+  - `jsmethod_string_pad_end()`
+- matching `jsval` bridge entrypoints
+
+### Repository layout
+
+- examples live in `example/`
+- parser regression tests live in
+  [`test/tests.c`](/home/ben/repos/jsmx/test/tests.c)
+- feature-specific executables use files such as:
+  - `test_jsnum.c`
+  - `test_jsregex.c`
+  - `test_jsval.c`
+  - `test_jsmethod.c`
+  - `test_codegen.c`
+  - `test_jsstr.c`
+  - `test_unicode.c`
+  - `test_mnurl.c`
+- real compliance sources and committed generated fixtures live under
+  `compliance/`
+  - suites:
+    - `strings`
+    - `regex`
+    - `values`
+    - `objects`
+- repo-local translation workflow guidance lives in
+  `skills/jsmx-transpile-tests/`
+- the flattening boundary is documented in
+  [`docs/flattening-boundary.md`](/home/ben/repos/jsmx/docs/flattening-boundary.md)
+- arrays in the current flattened layer are:
+  - dense
+  - capacity-bounded
+  - still out of scope for hole and sparse-index semantics
+- Unicode source data and generated headers also live at the repository root:
+  - `UnicodeData.txt`
+  - `allkeys.txt`
+  - `unicode_*.h`
+- generator scripts live in `scripts/`
+
+### Current compliance coverage
+
+- strings
+  - official concat / replace / replaceAll coverage
+  - official trim / repeat coverage
+  - runtime coverage for legacy trim aliases:
+    - `trimLeft`
+    - `trimRight`
+  - padding coverage:
+    - `padStart`
+    - `padEnd`
+  - search-core coverage:
+    - `indexOf`
+    - `lastIndexOf`
+    - `includes`
+    - `startsWith`
+    - `endsWith`
+    - `split`
+  - feature-gated regex coverage:
+    - `search`
+    - `replace`
+    - `replaceAll`
+    - `split`
+    - `exec`
+    - `match`
+    - `matchAll`
+  - accessor coverage:
+    - `charAt`
+    - `at`
+    - `charCodeAt`
+    - `codePointAt`
+  - substring extraction coverage:
+    - `slice`
+    - `substring`
+    - `substr`
+  - includes idiomatic slow-path translations where abrupt coercion or known
+    object-literal coercions cross the flattened boundary
+- regex
+  - feature-gated semantic `RegExp.prototype.source`
+  - `RegExp.prototype.test`
+  - `RegExp.prototype[Symbol.matchAll]`
+  - supported flag / state access
+  - constructor-state behavior
+  - deeper repeated `exec` / `test` / `match` state fidelity
+  - repo-authored parsed / native parity for the current regex core
+- values
+  - official test262 strict-equality
+  - primitive abstract equality / inequality
+  - logical-operator slices:
+    - `!`
+    - `&&`
+    - `||`
+  - primitive numeric coercion / arithmetic
+  - primitive integer coercion plus bitwise and shift slices:
+    - `~`
+    - `&`
+    - `|`
+    - `^`
+    - `<<`
+    - `>>`
+    - `>>>`
+  - primitive relational-operator slices across numeric and string ordering
+    paths:
+    - `<`
+    - `<=`
+    - `>`
+    - `>=`
+  - idiomatic slow-path translations for official value files whose
+    boxed-wrapper checks are already understood above the flattened boundary
 
 ## Build, Test, and Development Commands
-Use `make` to build the library, examples, and all test binaries. Common targets:
 
-- `make`: builds `libjsmn.a`, example binaries, and all tests.
-- `make test`: runs the parser matrix in `test/` (`default`, `strict`, `links`, `strict_links`, `emitter`).
-- `make test_jsnum`: builds and runs the internal numeric backend tests that back `jsval` parsing, formatting, remainder, and integer-coercion semantics.
-- `make test_jsval`: builds and runs the page-resident value/object storage tests, including native object/array helper coverage and the `jsval` to `jsmethod` bridge.
-- `make test_jsmethod`: builds and runs the thin JS-method coercion and normalize tests.
-- `make test_codegen`: builds and runs the generated-C smoke harness across value, native object/array, and string semantics.
-- `make test_compliance`: builds and runs committed generated compliance fixtures listed in `compliance/manifest.json` in parallel; the runner builds one shared runtime archive per invocation and then compiles each fixture against it, and `JOBS=N` or `COMPLIANCE_JOBS=N` override worker count.
-- `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`, `make test_collation`: build and run focused feature tests.
-- `make clean`: removes common build artifacts, but check `git status` afterward because some generated test binaries may remain.
+Use `make` to build the library, examples, and all test binaries.
 
-If you need custom compiler flags, add a local `config.mk` rather than editing `Makefile`.
+### Common targets
+
+- `make`
+  - builds `libjsmn.a`, example binaries, and all tests
+- `make test`
+  - runs the parser matrix in `test/`
+  - variants:
+    - `default`
+    - `strict`
+    - `links`
+    - `strict_links`
+    - `emitter`
+- `make test_jsnum`
+  - builds and runs the internal numeric backend tests that back `jsval`
+    parsing, formatting, remainder, and integer-coercion semantics
+- `make test_jsval`
+  - builds and runs the page-resident value / object storage tests
+  - includes native object / array helper coverage and the `jsval` to
+    `jsmethod` bridge
+- `make test_jsmethod`
+  - builds and runs the thin JS-method coercion and normalize tests
+- `make test_codegen`
+  - builds and runs the generated-C smoke harness across value, native
+    object / array, and string semantics
+- `make test_compliance`
+  - builds and runs committed generated compliance fixtures listed in
+    `compliance/manifest.json` in parallel
+  - the runner builds one shared runtime archive per invocation
+  - then compiles each fixture against it
+  - `JOBS=N` or `COMPLIANCE_JOBS=N` override worker count
+- `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`,
+  `make test_collation`
+  - build and run focused feature tests
+- `make clean`
+  - removes common build artifacts
+  - check `git status` afterward because some generated test binaries may
+    remain
+
+If you need custom compiler flags, add a local `config.mk` rather than editing
+`Makefile`.
 
 ## Coding Style & Naming Conventions
-Match the existing C style: tabs for indentation, opening braces on the same line, and short `/* ... */` comments only where logic is non-obvious. Use `snake_case` for functions and helpers, `UPPER_CASE` for macros, and keep new modules paired as `name.c` and `name.h` when they expose public APIs. Prefer C-idiomatic interfaces that preserve JavaScript semantics instead of mirroring JS syntax directly. There is no repo-managed formatter or linter, so preserve local include order and whitespace patterns.
+
+Match the existing C style:
+
+- tabs for indentation
+- opening braces on the same line
+- short `/* ... */` comments only where logic is non-obvious
+
+Naming:
+
+- `snake_case` for functions and helpers
+- `UPPER_CASE` for macros
+- pair new public modules as `name.c` and `name.h`
+
+General guidance:
+
+- prefer C-idiomatic interfaces that preserve JavaScript semantics
+- do not mirror JS syntax directly unless there is a strong reason
+- there is no repo-managed formatter or linter
+  - preserve local include order and whitespace patterns
 
 ## Testing Guidelines
-There is no formal coverage gate, but new behavior should ship with a targeted test. Add parser cases to `test/tests.c`; add standalone feature tests as `test_<area>.c` at the repo root when they need separate fixtures or generated Unicode data. For real JS compliance translations, prefer a real upstream source under `compliance/js/` plus one idiomatic generated C fixture under `compliance/generated/`; keep repo-authored sources for `jsmx`-specific contracts such as JSON-backed parity or planned-capacity behavior, including legacy alias behavior when the upstream directory only contains metadata or same-function-object checks. Update `compliance/manifest.json`, set `lowering_class` to `static_pass`, `slow_path_needed`, or `unsupported` based on [`docs/flattening-boundary.md`](/home/ben/repos/jsmx/docs/flattening-boundary.md), and set `translation_mode` to `idiomatic_flattened`, `idiomatic_slow_path`, or `literal`. Prefer passing idiomatic slow-path fixtures over boundary-only `KNOWN_UNSUPPORTED` placeholders when the slow-path contract is already clear, and prefer idiomatic translations over literal ones unless the literal structure itself needs review. For regex-bearing fixtures, decide direct lowering, rewrite-backed lowering, idiomatic slow path, or unsupported status in the translator guidance first, and make new or updated manifest notes start with `Direct-lowered:`, `Rewrite-backed:`, `Idiomatic slow path:`, or `Unsupported:` accordingly. `make test_compliance` is manifest-driven, so new committed fixtures should become runnable by updating the manifest rather than editing `Makefile`. Numeric internals now have both default and `USE_LIBC` backends; when you touch `jsnum` or numeric `jsval` behavior, verify both `make test_jsnum test_jsval test_codegen test_compliance test` and `make CFLAGS='-DUSE_LIBC' LDLIBS='-lm' test_jsnum test_jsval test_codegen test_compliance test`. Run the narrowest relevant target first, then `make test` before opening a PR.
+
+There is no formal coverage gate, but new behavior should ship with a targeted
+test.
+
+### Where tests go
+
+- add parser cases to `test/tests.c`
+- add standalone feature tests as `test_<area>.c` at the repo root when they
+  need separate fixtures or generated Unicode data
+
+### Compliance fixture guidance
+
+- prefer a real upstream source under `compliance/js/`
+- pair it with one idiomatic generated C fixture under `compliance/generated/`
+- keep repo-authored sources for `jsmx`-specific contracts such as:
+  - JSON-backed parity
+  - planned-capacity behavior
+  - legacy alias behavior when the upstream directory only contains metadata or
+    same-function-object checks
+
+### Manifest metadata
+
+Update `compliance/manifest.json` and set:
+
+- `lowering_class`
+  - `static_pass`
+  - `slow_path_needed`
+  - `unsupported`
+- `translation_mode`
+  - `idiomatic_flattened`
+  - `idiomatic_slow_path`
+  - `literal`
+
+Use [`docs/flattening-boundary.md`](/home/ben/repos/jsmx/docs/flattening-boundary.md)
+as the boundary reference.
+
+Preferred choices:
+
+- prefer passing idiomatic slow-path fixtures over boundary-only
+  `KNOWN_UNSUPPORTED` placeholders when the slow-path contract is already clear
+- prefer idiomatic translations over literal ones unless the literal structure
+  itself needs review
+
+For regex-bearing fixtures:
+
+- decide direct lowering, rewrite-backed lowering, idiomatic slow path, or
+  unsupported status in the translator guidance first
+- make new or updated manifest notes start with:
+  - `Direct-lowered:`
+  - `Rewrite-backed:`
+  - `Idiomatic slow path:`
+  - `Unsupported:`
+
+`make test_compliance` is manifest-driven, so new committed fixtures should
+become runnable by updating the manifest rather than editing `Makefile`.
+
+Numeric internals now have both default and `USE_LIBC` backends. When you touch
+`jsnum` or numeric `jsval` behavior, verify both:
+
+- `make test_jsnum test_jsval test_codegen test_compliance test`
+- `make CFLAGS='-DUSE_LIBC' LDLIBS='-lm' test_jsnum test_jsval test_codegen test_compliance test`
+
+Run the narrowest relevant target first, then `make test` before opening a PR.
 
 ## Commit & Pull Request Guidelines
-Recent history favors short imperative subjects, for example `Implement NFC normalization` and `Refactor normalize API`. Keep commits focused and explain regenerated data files explicitly when Unicode headers change. Pull requests should include a brief problem statement, the main files touched, and the exact test commands you ran. Screenshots are not relevant here; `git status` should be clean of build outputs before review.
+
+Recent history favors short imperative subjects, for example:
+
+- `Implement NFC normalization`
+- `Refactor normalize API`
+
+Guidance:
+
+- keep commits focused
+- explain regenerated data files explicitly when Unicode headers change
+
+Pull requests should include:
+
+- a brief problem statement
+- the main files touched
+- the exact test commands you ran
+
+Screenshots are not relevant here. `git status` should be clean of build
+outputs before review.
