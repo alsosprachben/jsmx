@@ -84,6 +84,7 @@ The committed suites currently cover:
     - own-property checks
     - ordered key / value access
     - shallow own-property copy
+    - fresh own-property clone into a new native object
     - delete
     - overwrite
     - push

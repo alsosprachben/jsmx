@@ -809,6 +809,70 @@ static void test_object_copy_own_helpers(void)
 	assert(errno == EINVAL);
 }
 
+static void test_object_clone_own_helpers(void)
+{
+	static const char json_source[] = "{\"z\":1,\"a\":2}";
+	static const char json_dups[] = "{\"a\":1,\"a\":9,\"c\":3}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t native_src;
+	jsval_t clone;
+	jsval_t items;
+	jsval_t json_src;
+	jsval_t dup_clone;
+	jsval_t fail_out;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_object_new(&region, 2, &native_src) == 0);
+	assert(jsval_array_new(&region, 0, &items) == 0);
+	assert(jsval_object_set_utf8(&region, native_src, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) == 0);
+	assert(jsval_object_set_utf8(&region, native_src, (const uint8_t *)"items", 5,
+			items) == 0);
+	assert(jsval_object_clone_own(&region, native_src, 2, &clone) == 0);
+	assert(jsval_is_native(clone) == 1);
+	assert_json(&region, clone, "{\"keep\":true,\"items\":[]}");
+	assert_object_key_at(&region, clone, 0, "keep");
+	assert_object_key_at(&region, clone, 1, "items");
+	assert(jsval_object_set_utf8(&region, clone, (const uint8_t *)"keep", 4,
+			jsval_bool(0)) == 0);
+	assert_json(&region, native_src, "{\"keep\":true,\"items\":[]}");
+	assert_json(&region, clone, "{\"keep\":false,\"items\":[]}");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_source,
+			sizeof(json_source) - 1, 8, &json_src) == 0);
+	assert(jsval_object_clone_own(&region, json_src, 2, &clone) == 0);
+	assert(jsval_is_native(clone) == 1);
+	assert_json(&region, clone, "{\"z\":1,\"a\":2}");
+	assert_object_key_at(&region, clone, 0, "z");
+	assert_object_key_at(&region, clone, 1, "a");
+	assert(jsval_object_set_utf8(&region, clone, (const uint8_t *)"z", 1,
+			jsval_number(7.0)) == 0);
+	assert_json(&region, json_src, "{\"z\":1,\"a\":2}");
+	assert_json(&region, clone, "{\"z\":7,\"a\":2}");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_dups,
+			sizeof(json_dups) - 1, 8, &json_src) == 0);
+	assert(jsval_object_clone_own(&region, json_src, 3, &dup_clone) == 0);
+	assert_json(&region, dup_clone, "{\"a\":9,\"c\":3}");
+	assert_object_key_at(&region, dup_clone, 0, "a");
+	assert_object_key_at(&region, dup_clone, 1, "c");
+
+	fail_out = jsval_null();
+	errno = 0;
+	assert(jsval_object_clone_own(&region, json_src, 2, &fail_out) < 0);
+	assert(errno == ENOBUFS);
+	assert(fail_out.kind == JSVAL_KIND_NULL);
+
+	errno = 0;
+	assert(jsval_object_clone_own(&region, jsval_number(1.0), 1, &clone) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_object_clone_own(&region, json_src, 3, NULL) < 0);
+	assert(errno == EINVAL);
+}
+
 static void test_policy_layer()
 {
 	static const char json[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -4255,6 +4319,7 @@ int main(void)
 	test_native_container_helpers();
 	test_json_container_helpers();
 	test_object_copy_own_helpers();
+	test_object_clone_own_helpers();
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();

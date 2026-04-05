@@ -9022,6 +9022,39 @@ jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src)
 	return 0;
 }
 
+int
+jsval_object_clone_own(jsval_region_t *region, jsval_t src, size_t capacity,
+		jsval_t *value_ptr)
+{
+	jsval_t clone;
+	size_t src_len;
+
+	if (region == NULL || value_ptr == NULL || src.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src.repr != JSVAL_REPR_NATIVE && src.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	src_len = jsval_object_size(region, src);
+	if (capacity < src_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (jsval_object_new(region, capacity, &clone) < 0) {
+		return -1;
+	}
+	if (jsval_object_copy_own(region, clone, src) < 0) {
+		return -1;
+	}
+
+	*value_ptr = clone;
+	return 0;
+}
+
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value)
 {
 	size_t index;

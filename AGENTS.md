@@ -37,6 +37,7 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - own-property checks
   - ordered key / value access
   - shallow own-property copy
+  - fresh own-property clone into a new native object
   - delete
   - overwrite
   - push

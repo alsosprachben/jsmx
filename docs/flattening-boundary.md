@@ -29,6 +29,9 @@ caller-provided memory:
 - shallow own-property copy
   - from native or JSON-backed source objects
   - into pre-capacity-planned native destinations
+- fresh own-property clone
+  - from native or JSON-backed source objects
+  - into a newly allocated pre-capacity-planned native destination
 - dense, capacity-bounded native array semantics such as:
   - push
   - pop

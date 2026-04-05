@@ -67,6 +67,7 @@ That makes semantic correctness more important than surface familiarity:
     - own-property checks
     - ordered key/value access
     - shallow own-property copy
+    - fresh own-property clone into a new native object
     - delete
     - push
     - pop

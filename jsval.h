@@ -123,6 +123,7 @@ int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object, const uint8
 int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index, jsval_t *key_ptr);
 int jsval_object_value_at(jsval_region_t *region, jsval_t object, size_t index, jsval_t *value_ptr);
 int jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src);
+int jsval_object_clone_own(jsval_region_t *region, jsval_t src, size_t capacity, jsval_t *value_ptr);
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr);
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
 int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);
