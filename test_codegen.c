@@ -1846,7 +1846,7 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 {
 	static const uint8_t input[] = "[4,5]";
 	static const uint8_t expected_json[] =
-		"{\"native\":[1,9],\"parsed\":[4,5,6]}";
+		"{\"native\":[],\"parsed\":[4,5]}";
 	uint8_t storage[32768];
 	jsval_region_t region;
 	jsval_t root;
@@ -1871,6 +1871,15 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 	if (generated_expect_number(&region, got, 5.0, detail, cap) != GENERATED_PASS) {
 		return GENERATED_WRONG_RESULT;
 	}
+	errno = 0;
+	if (jsval_array_pop(&region, parsed_items, &got) == 0) {
+		return generated_failf(detail, cap,
+				"expected JSON-backed parsed array pop to fail before promotion");
+	}
+	if (errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP from parsed array pop, got %d", errno);
+	}
 	if (jsval_promote_array_shallow_measure(&region, parsed_items, 3, &bytes) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_promote_array_shallow_measure(parsed)");
@@ -1889,6 +1898,12 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 	}
 	if (jsval_array_push(&region, parsed_items, jsval_number(6.0)) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_array_push(parsed)");
+	}
+	if (jsval_array_pop(&region, parsed_items, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_pop(parsed)");
+	}
+	if (generated_expect_number(&region, got, 6.0, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
 	}
 
 	if (jsval_array_new(&region, 4, &native_items) < 0) {
@@ -1933,6 +1948,45 @@ static generated_status_t generated_smoke_jsval_dense_array_semantics(
 	if (got.kind != JSVAL_KIND_UNDEFINED) {
 		return generated_failf(detail, cap,
 				"expected truncated native slot to read as undefined");
+	}
+	if (jsval_array_pop(&region, native_items, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_pop(native first)");
+	}
+	if (generated_expect_number(&region, got, 9.0, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_array_pop(&region, native_items, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_pop(native second)");
+	}
+	if (generated_expect_number(&region, got, 1.0, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_array_pop(&region, native_items, &got) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_pop(native empty)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected empty native pop to return undefined");
+	}
+	if (jsval_array_set_length(&region, native_items, 2) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_set_length(native regrow)");
+	}
+	if (jsval_array_pop(&region, native_items, &got) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_pop(native grown undefined tail)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected grown undefined tail pop to return undefined");
+	}
+	if (jsval_array_pop(&region, native_items, &got) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_pop(native final undefined tail)");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected final native pop to return undefined");
 	}
 
 	if (jsval_object_new(&region, 2, &root) < 0) {

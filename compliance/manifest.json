@@ -3690,6 +3690,26 @@
       "notes": "Repo-authored idiomatic dense-array fixture for push and explicit length writes through the native jsval array helpers."
     },
     {
+      "id": "jsmx-objects-array-pop-observable",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-pop-observable.js",
+      "generated": "compliance/generated/objects/jsmx/array-pop-observable.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for observable native tail mutation through the explicit jsval array pop helper."
+    },
+    {
+      "id": "jsmx-objects-array-pop-empty-undefined",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-pop-empty-undefined.js",
+      "generated": "compliance/generated/objects/jsmx/array-pop-empty-undefined.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for empty pop plus undefined tail pops after an explicit logical-length grow."
+    },
+    {
       "id": "jsmx-objects-json-shallow-object-add-property",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-shallow-object-add-property.js",
@@ -3768,6 +3788,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for reading a parsed JSON-backed array, then shallow-promoting it with exact final capacity before overwrite and append."
+    },
+    {
+      "id": "jsmx-objects-json-array-shallow-promote-and-pop",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-array-shallow-promote-and-pop.js",
+      "generated": "compliance/generated/objects/jsmx/json-array-shallow-promote-and-pop.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then popping the native dense tail."
     }
   ]
 }
