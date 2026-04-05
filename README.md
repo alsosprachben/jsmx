@@ -50,6 +50,8 @@ That makes semantic correctness more important than surface familiarity:
     - `exec`
     - `match`
     - `matchAll`
+    - named capture groups across exec-shaped results and regex replace-family
+      substitutions
     - `RegExp.prototype.test`
     - semantic `source`
     - core regex state helpers, including repeated `lastIndex` and exec-result
@@ -78,7 +80,8 @@ That makes semantic correctness more important than surface familiarity:
     - dense length writes
   - primitive numeric, arithmetic, equality, and relational helpers for
     flattened generated code
-  - translator-facing callback replacers for `replace` / `replaceAll`
+  - translator-facing callback replacers for `replace` / `replaceAll`,
+    including regex named-group `groups` arguments
   - narrow `/u` literal rewrite helpers for regex-backed string methods,
     including:
     - lone-surrogate atoms
@@ -198,7 +201,8 @@ The committed corpus currently spans:
   - `concat`
   - `replace`
   - `replaceAll`
-  - callback replacers for `replace` / `replaceAll`
+  - callback replacers for `replace` / `replaceAll`, including regex
+    named-group `groups` arguments
   - case conversion
   - well-formedness
   - trim methods:

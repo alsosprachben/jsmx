@@ -12,7 +12,8 @@ The committed suites currently cover:
   - `concat`
   - `replace`
   - `replaceAll`
-  - translator-facing callback replacers for `replace` / `replaceAll`
+  - translator-facing callback replacers for `replace` / `replaceAll`,
+    including regex named-group `groups` arguments
   - case conversion
   - well-formedness
   - trim methods:
@@ -37,6 +38,7 @@ The committed suites currently cover:
     - `search`
     - `replace`
     - `replaceAll`
+    - named-group replacements and callback `groups`
     - `split`
     - `exec`
     - `match`

@@ -236,6 +236,55 @@ static jsval_native_named_group_t *jsval_native_regexp_named_groups(
 			regexp->named_groups_off);
 }
 
+static int
+jsval_regexp_named_group_capture_index(jsval_region_t *region,
+		jsval_native_regexp_t *regexp, const uint16_t *name, size_t name_len,
+		size_t *capture_index_ptr)
+{
+	jsval_native_named_group_t *named_groups;
+	size_t i;
+
+	if (regexp == NULL || capture_index_ptr == NULL
+			|| (name_len > 0 && name == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (regexp->named_group_count == 0) {
+		errno = ENOENT;
+		return -1;
+	}
+
+	named_groups = jsval_native_regexp_named_groups(region, regexp);
+	if (named_groups == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < regexp->named_group_count; i++) {
+		jsval_t group_name;
+		jsval_native_string_t *group_name_native;
+
+		group_name = jsval_undefined();
+		group_name.kind = JSVAL_KIND_STRING;
+		group_name.repr = JSVAL_REPR_NATIVE;
+		group_name.off = named_groups[i].name_off;
+		group_name_native = jsval_native_string(region, group_name);
+		if (group_name_native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (group_name_native->len == name_len
+				&& (name_len == 0 || memcmp(
+					jsval_native_string_units(group_name_native), name,
+					name_len * sizeof(name[0])) == 0)) {
+			*capture_index_ptr = named_groups[i].capture_index;
+			return 0;
+		}
+	}
+
+	errno = ENOENT;
+	return -1;
+}
+
 static jsval_native_match_iterator_t *jsval_native_match_iterator(
 		jsval_region_t *region, jsval_t value)
 {
@@ -2075,6 +2124,7 @@ jsval_string_replace_fill_parts(jsval_region_t *region, jsval_t input_value,
 			call.captures = NULL;
 			call.offset = pos;
 			call.input = input_value;
+			call.groups = jsval_undefined();
 			if (jsval_string_new_utf16(region, NULL, 0, &match_value) < 0) {
 				return -1;
 			}
@@ -2143,6 +2193,7 @@ jsval_string_replace_fill_parts(jsval_region_t *region, jsval_t input_value,
 		call.captures = NULL;
 		call.offset = match_start;
 		call.input = input_value;
+		call.groups = jsval_undefined();
 		if (jsval_string_new_utf16(region, subject + match_start,
 				match_end - match_start, &match_value) < 0) {
 			return -1;
@@ -6075,13 +6126,15 @@ static int
 jsval_replace_substitution(jsstr16_t *out, size_t *offset_ptr,
 		const uint16_t *replacement, size_t replacement_len,
 		const uint16_t *subject, size_t subject_len, size_t match_start,
-		size_t match_end, const size_t *offsets, size_t slot_count, int build)
+		size_t match_end, const size_t *offsets, size_t slot_count,
+		jsval_native_regexp_t *regexp, jsval_region_t *region, int build)
 {
 	size_t i = 0;
 
 	if (offset_ptr == NULL || (replacement_len > 0 && replacement == NULL)
 			|| (subject_len > 0 && subject == NULL) || match_start > match_end
-			|| match_end > subject_len) {
+			|| match_end > subject_len
+			|| (regexp != NULL && region == NULL)) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -6127,6 +6180,33 @@ jsval_replace_substitution(jsstr16_t *out, size_t *offset_ptr,
 			i += 2;
 			break;
 		default:
+			if (regexp != NULL && replacement[i + 1] == '<') {
+				size_t group_end = i + 2;
+
+				while (group_end < replacement_len
+						&& replacement[group_end] != '>') {
+					group_end++;
+				}
+				if (group_end < replacement_len) {
+					size_t capture_index;
+
+					if (jsval_regexp_named_group_capture_index(region, regexp,
+							replacement + i + 2,
+							group_end - (i + 2),
+							&capture_index) == 0) {
+						if (jsval_replace_append_capture(out, offset_ptr,
+								subject, subject_len, offsets,
+								slot_count, capture_index, build) < 0) {
+							return -1;
+						}
+						i = group_end + 1;
+						break;
+					}
+					if (errno != ENOENT) {
+						return -1;
+					}
+				}
+			}
 			if (replacement[i + 1] >= '1' && replacement[i + 1] <= '9') {
 				size_t capture_index = (size_t)(replacement[i + 1] - '0');
 				size_t consumed = 1;
@@ -6215,7 +6295,7 @@ jsval_regexp_replace_walk(jsval_region_t *region, jsval_t regexp_value,
 			if (jsval_replace_substitution(out, &offset, replacement,
 					replacement_len, subject, subject_len, exec_result.start,
 					exec_result.end, offsets, exec_result.slot_count,
-					build_string) < 0) {
+					regexp, region, build_string) < 0) {
 				return -1;
 			}
 			cursor = exec_result.end;
@@ -6375,6 +6455,7 @@ jsval_regexp_replace_fill_parts(jsval_region_t *region, jsval_t regexp_value,
 			call.capture_count = capture_count;
 			call.offset = exec_result.start;
 			call.input = input_value;
+			call.groups = jsval_undefined();
 			if (capture_count == 0) {
 				call.captures = NULL;
 			} else {
@@ -6393,11 +6474,21 @@ jsval_regexp_replace_fill_parts(jsval_region_t *region, jsval_t regexp_value,
 					}
 				}
 				call.captures = captures;
+				if (jsval_regexp_groups_object(region, regexp, subject,
+						offsets, exec_result.slot_count,
+						&call.groups) < 0) {
+					return -1;
+				}
 				if (jsval_replace_callback_stringify(region, callback,
 						callback_ctx, &call, &replacement_string,
 						error) < 0) {
 					return -1;
 				}
+			}
+			if (capture_count == 0
+					&& jsval_regexp_groups_object(region, regexp, subject,
+					offsets, exec_result.slot_count, &call.groups) < 0) {
+				return -1;
 			}
 			if (capture_count == 0
 					&& jsval_replace_callback_stringify(region, callback,
@@ -6641,7 +6732,7 @@ jsval_u_literal_surrogate_replace_walk(const uint16_t *subject,
 		offsets[1] = match_end;
 		if (jsval_replace_substitution(out, &offset, replacement,
 				replacement_len, subject, subject_len, match_start,
-				match_end, offsets, 1, build_string) < 0) {
+				match_end, offsets, 1, NULL, NULL, build_string) < 0) {
 			return -1;
 		}
 		cursor = match_end;
@@ -6766,6 +6857,7 @@ jsval_u_literal_surrogate_replace_fill_parts(jsval_region_t *region,
 		call.captures = NULL;
 		call.offset = match_start;
 		call.input = input_value;
+		call.groups = jsval_undefined();
 		if (jsval_string_new_utf16(region, subject + match_start,
 				match_end - match_start, &match_value) < 0) {
 			return -1;
@@ -6926,7 +7018,7 @@ jsval_u_literal_sequence_replace_walk(const uint16_t *subject,
 		offsets[1] = match_end;
 		if (jsval_replace_substitution(out, &offset, replacement,
 				replacement_len, subject, subject_len, match_start,
-				match_end, offsets, 1, build_string) < 0) {
+				match_end, offsets, 1, NULL, NULL, build_string) < 0) {
 			return -1;
 		}
 		cursor = match_end;
@@ -7054,6 +7146,7 @@ jsval_u_literal_sequence_replace_fill_parts(jsval_region_t *region,
 		call.captures = NULL;
 		call.offset = match_start;
 		call.input = input_value;
+		call.groups = jsval_undefined();
 		if (jsval_string_new_utf16(region, subject + match_start,
 				match_end - match_start, &match_value) < 0) {
 			return -1;
@@ -7216,7 +7309,7 @@ jsval_u_literal_class_replace_walk(const uint16_t *subject,
 		offsets[1] = match_end;
 		if (jsval_replace_substitution(out, &offset, replacement,
 				replacement_len, subject, subject_len, match_start,
-				match_end, offsets, 1, build_string) < 0) {
+				match_end, offsets, 1, NULL, NULL, build_string) < 0) {
 			return -1;
 		}
 		cursor = match_end;
@@ -7344,6 +7437,7 @@ jsval_u_literal_class_replace_fill_parts(jsval_region_t *region,
 		call.captures = NULL;
 		call.offset = match_start;
 		call.input = input_value;
+		call.groups = jsval_undefined();
 		if (jsval_string_new_utf16(region, subject + match_start,
 				match_end - match_start, &match_value) < 0) {
 			return -1;
@@ -7506,7 +7600,7 @@ jsval_u_literal_negated_class_replace_walk(const uint16_t *subject,
 		offsets[1] = match_end;
 		if (jsval_replace_substitution(out, &offset, replacement,
 				replacement_len, subject, subject_len, match_start,
-				match_end, offsets, 1, build_string) < 0) {
+				match_end, offsets, 1, NULL, NULL, build_string) < 0) {
 			return -1;
 		}
 		cursor = match_end;
@@ -7634,6 +7728,7 @@ jsval_u_literal_negated_class_replace_fill_parts(jsval_region_t *region,
 		call.captures = NULL;
 		call.offset = match_start;
 		call.input = input_value;
+		call.groups = jsval_undefined();
 		if (jsval_string_new_utf16(region, subject + match_start,
 				match_end - match_start, &match_value) < 0) {
 			return -1;

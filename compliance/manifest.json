@@ -1756,6 +1756,28 @@
       "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native regex callback-replacer behavior on the jsval bridge, including capture arguments."
     },
     {
+      "id": "jsmx-strings-named-groups-replace-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/named-groups-replace-parity.js",
+      "generated": "compliance/generated/strings/jsmx/named-groups-replace-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: repo-authored parity fixture for named-group regex replace and replaceAll substitutions through the jsval bridge, including unmatched optional groups."
+    },
+    {
+      "id": "jsmx-strings-named-groups-replace-callback-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/named-groups-replace-callback-parity.js",
+      "generated": "compliance/generated/strings/jsmx/named-groups-replace-callback-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: repo-authored parity fixture for named-group regex replace and replaceAll callback-replacer groups objects through the jsval bridge."
+    },
+    {
       "id": "test262-strings-replaceAll-searchValue-empty-string",
       "suite": "strings",
       "source": "compliance/js/strings/test262/replaceAll/searchValue-empty-string.js",

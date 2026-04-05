@@ -73,6 +73,7 @@ typedef struct jsval_replace_call_s {
 	const jsval_t *captures;
 	size_t offset;
 	jsval_t input;
+	jsval_t groups;
 } jsval_replace_call_t;
 
 typedef int (*jsval_replace_callback_fn)(jsval_region_t *region, void *ctx,

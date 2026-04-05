@@ -64,8 +64,10 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - `matchAll`
   - flag / state helpers
   - deeper repeated exec-result and `lastIndex` fidelity
-  - named capture groups and `groups` objects on exec-shaped results
-- translator-facing callback replacers for `replace` / `replaceAll`
+  - named capture groups and `groups` objects on exec-shaped results and
+    replace-family substitutions
+- translator-facing callback replacers for `replace` / `replaceAll`,
+  including regex named-group `groups` arguments
 - narrow `/u` literal rewrite helpers for regex-backed string methods,
   including:
   - lone-surrogate atoms
@@ -198,6 +200,7 @@ The same measure-then-execute pattern now also covers:
 
 - strings
   - official concat / replace / replaceAll coverage
+  - named-group regex replace / replaceAll parity coverage
   - official trim / repeat coverage
   - runtime coverage for legacy trim aliases:
     - `trimLeft`

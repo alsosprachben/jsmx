@@ -395,6 +395,10 @@ generated_replace_offset_callback(jsval_region_t *region, void *opaque,
 			return -1;
 		}
 	}
+	if (call->groups.kind != JSVAL_KIND_UNDEFINED) {
+		errno = EINVAL;
+		return -1;
+	}
 	len = snprintf(buf, sizeof(buf), "[%zu]", call->offset);
 	if (len < 0 || (size_t)len >= sizeof(buf)) {
 		errno = EOVERFLOW;
@@ -436,6 +440,10 @@ generated_regex_replace_callback(jsval_region_t *region, void *opaque,
 		errno = EINVAL;
 		return -1;
 	}
+	if (call->groups.kind != JSVAL_KIND_UNDEFINED) {
+		errno = EINVAL;
+		return -1;
+	}
 	if (generated_copy_jsval_utf8(region, call->captures[0], cap1_buf,
 			sizeof(cap1_buf)) < 0) {
 		return -1;
@@ -448,6 +456,59 @@ generated_regex_replace_callback(jsval_region_t *region, void *opaque,
 	}
 	len = snprintf(buf, sizeof(buf), "<%s|%s|%s|%zu>", match_buf, cap1_buf,
 			cap2_buf, call->offset);
+	if (len < 0 || (size_t)len >= sizeof(buf)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, (const uint8_t *)buf, (size_t)len,
+			result_ptr);
+}
+
+static int
+generated_named_groups_replace_callback(jsval_region_t *region, void *opaque,
+		const jsval_replace_call_t *call, jsval_t *result_ptr,
+		jsmethod_error_t *error)
+{
+	generated_regex_replace_callback_ctx_t *ctx =
+			(generated_regex_replace_callback_ctx_t *)opaque;
+	jsval_t value;
+	char digits_buf[16];
+	char tail_buf[16];
+	char buf[96];
+	int len;
+
+	(void)error;
+	if (ctx != NULL) {
+		ctx->call_count++;
+		if (ctx->should_throw) {
+			errno = EINVAL;
+			error->kind = JSMETHOD_ERROR_ABRUPT;
+			error->message = "generated named-group replace callback threw";
+			return -1;
+		}
+	}
+	if (call->groups.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_get_utf8(region, call->groups,
+			(const uint8_t *)"digits", 6, &value) < 0
+			|| generated_copy_jsval_utf8(region, value, digits_buf,
+				sizeof(digits_buf)) < 0) {
+		return -1;
+	}
+	if (jsval_object_get_utf8(region, call->groups,
+			(const uint8_t *)"tail", 4, &value) < 0) {
+		return -1;
+	}
+	if (value.kind == JSVAL_KIND_UNDEFINED) {
+		strcpy(tail_buf, "U");
+	} else if (generated_copy_jsval_utf8(region, value, tail_buf,
+			sizeof(tail_buf)) < 0) {
+		return -1;
+	}
+	len = snprintf(buf, sizeof(buf), "<%s|%s|%zu>", digits_buf, tail_buf,
+			call->offset);
 	if (len < 0 || (size_t)len >= sizeof(buf)) {
 		errno = EOVERFLOW;
 		return -1;
@@ -3721,6 +3782,135 @@ static generated_status_t generated_smoke_jsval_method_regex_replace_callback(
 	return generated_expect_json(&region, root, expected_json,
 			sizeof(expected_json) - 1, detail, cap);
 }
+
+static generated_status_t generated_smoke_jsval_method_regex_replace_named_groups(
+		char *detail, size_t cap)
+{
+	static const uint8_t input[] = "{\"text\":\"a1b2\"}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t single_regex;
+	jsval_t global_regex;
+	jsval_t replacement;
+	jsval_t missing_replacement;
+	jsval_t result;
+	generated_regex_replace_callback_ctx_t ctx = {0, 0};
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_json_parse(&region, input, sizeof(input) - 1, 8, &root) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_json_parse(named regex replace)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(named regex replace)");
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"(?<digits>[0-9])(?<tail>[a-z])?",
+			sizeof("(?<digits>[0-9])(?<tail>[a-z])?") - 1,
+			&pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(named regex replace args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&single_regex, &error) < 0
+			|| jsval_regexp_new(&region, pattern, 1, global_flags,
+				&global_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(named regex replace) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"<$<digits>|$<tail>|$1>",
+			sizeof("<$<digits>|$<tail>|$1>") - 1, &replacement) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(named regex replacement)");
+	}
+	if (jsval_method_string_replace(&region, text, single_regex, replacement,
+			&result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace(named regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"a<1|b|1>2",
+			sizeof("a<1|b|1>2") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_method_string_replace_all(&region, text, global_regex,
+			replacement, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all(named regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"a<1|b|1><2||2>",
+			sizeof("a<1|b|1><2||2>") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"$<missing>",
+			sizeof("$<missing>") - 1, &missing_replacement) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(missing named replacement)");
+	}
+	if (jsval_method_string_replace(&region, text, single_regex,
+			missing_replacement, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace(missing named regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"a$<missing>2",
+			sizeof("a$<missing>2") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_method_string_replace_fn(&region, text, global_regex,
+			generated_named_groups_replace_callback, &ctx,
+			&result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_fn(named regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 2) {
+		return generated_failf(detail, cap,
+				"expected 2 named regex callback calls, got %d",
+				ctx.call_count);
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"a<1|b|1><2|U|3>",
+			sizeof("a<1|b|1><2|U|3>") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	ctx.call_count = 0;
+	if (jsval_method_string_replace_all_fn(&region, text, global_regex,
+			generated_named_groups_replace_callback, &ctx,
+			&result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_fn(named regex) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 2) {
+		return generated_failf(detail, cap,
+				"expected 2 named regex replaceAll callback calls, got %d",
+				ctx.call_count);
+	}
+	return generated_expect_string(&region, result,
+			(const uint8_t *)"a<1|b|1><2|U|3>",
+			sizeof("a<1|b|1><2|U|3>") - 1, detail, cap);
+}
 #endif
 
 static generated_status_t generated_smoke_jsval_method_replace_callback_abrupt(
@@ -6452,6 +6642,8 @@ static const generated_case_t generated_cases[] = {
 		generated_smoke_jsval_method_regex_replace_all},
 	{"smoke", "jsval_method_regex_replace_callback",
 		generated_smoke_jsval_method_regex_replace_callback},
+	{"smoke", "jsval_method_regex_replace_named_groups",
+		generated_smoke_jsval_method_regex_replace_named_groups},
 	{"smoke", "jsval_method_regex_search", generated_smoke_jsval_method_regex_search},
 	{"smoke", "jsval_method_regex_split", generated_smoke_jsval_method_regex_split},
 #endif

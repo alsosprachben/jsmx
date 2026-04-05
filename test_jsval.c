@@ -32,6 +32,16 @@ typedef struct test_replace_regex_callback_ctx_s {
 	const char *replacement_values[4];
 } test_replace_regex_callback_ctx_t;
 
+typedef struct test_replace_named_groups_callback_ctx_s {
+	int call_count;
+	const char *expected_input;
+	const char *expected_matches[4];
+	const char *expected_digits[4];
+	const char *expected_tail[4];
+	size_t expected_offsets[4];
+	const char *replacement_values[4];
+} test_replace_named_groups_callback_ctx_t;
+
 typedef struct test_replace_surrogate_callback_ctx_s {
 	int call_count;
 	const uint16_t *expected_input;
@@ -248,6 +258,7 @@ test_replace_string_callback(jsval_region_t *region, void *opaque,
 	assert(call->capture_count == 0);
 	assert(call->captures == NULL);
 	assert(call->offset == ctx->expected_offsets[index]);
+	assert(call->groups.kind == JSVAL_KIND_UNDEFINED);
 	assert_string(region, call->input, ctx->expected_input);
 	assert_string(region, call->match, ctx->expected_matches[index]);
 	return jsval_string_new_utf8(region,
@@ -268,6 +279,7 @@ test_replace_offset_number_callback(jsval_region_t *region, void *opaque,
 	assert(call != NULL);
 	assert(call->capture_count == 0);
 	assert(call->captures == NULL);
+	assert(call->groups.kind == JSVAL_KIND_UNDEFINED);
 	*result_ptr = jsval_number((double)call->offset);
 	return 0;
 }
@@ -306,6 +318,7 @@ test_replace_regex_callback(jsval_region_t *region, void *opaque,
 	assert(call->capture_count == 2);
 	assert(call->captures != NULL);
 	assert(call->offset == ctx->expected_offsets[index]);
+	assert(call->groups.kind == JSVAL_KIND_UNDEFINED);
 	assert_string(region, call->input, ctx->expected_input);
 	assert_string(region, call->match, ctx->expected_matches[index]);
 	assert_string(region, call->captures[0], ctx->expected_capture1[index]);
@@ -314,6 +327,46 @@ test_replace_regex_callback(jsval_region_t *region, void *opaque,
 	} else {
 		assert_string(region, call->captures[1],
 				ctx->expected_capture2[index]);
+	}
+	return jsval_string_new_utf8(region,
+			(const uint8_t *)ctx->replacement_values[index],
+			strlen(ctx->replacement_values[index]), result_ptr);
+}
+
+static int
+test_replace_named_groups_callback(jsval_region_t *region, void *opaque,
+		const jsval_replace_call_t *call, jsval_t *result_ptr,
+		jsmethod_error_t *error)
+{
+	test_replace_named_groups_callback_ctx_t *ctx =
+			(test_replace_named_groups_callback_ctx_t *)opaque;
+	size_t index = (size_t)ctx->call_count++;
+	jsval_t value;
+
+	(void)error;
+	assert(call != NULL);
+	assert(index < 4);
+	assert(call->capture_count == 2);
+	assert(call->captures != NULL);
+	assert(call->offset == ctx->expected_offsets[index]);
+	assert_string(region, call->input, ctx->expected_input);
+	assert_string(region, call->match, ctx->expected_matches[index]);
+	assert_string(region, call->captures[0], ctx->expected_digits[index]);
+	if (ctx->expected_tail[index] == NULL) {
+		assert(call->captures[1].kind == JSVAL_KIND_UNDEFINED);
+	} else {
+		assert_string(region, call->captures[1], ctx->expected_tail[index]);
+	}
+	assert(call->groups.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, call->groups,
+			(const uint8_t *)"digits", 6, &value) == 0);
+	assert_string(region, value, ctx->expected_digits[index]);
+	assert(jsval_object_get_utf8(region, call->groups,
+			(const uint8_t *)"tail", 4, &value) == 0);
+	if (ctx->expected_tail[index] == NULL) {
+		assert(value.kind == JSVAL_KIND_UNDEFINED);
+	} else {
+		assert_string(region, value, ctx->expected_tail[index]);
 	}
 	return jsval_string_new_utf8(region,
 			(const uint8_t *)ctx->replacement_values[index],
@@ -335,6 +388,7 @@ test_replace_surrogate_callback(jsval_region_t *region, void *opaque,
 	assert(call->capture_count == 0);
 	assert(call->captures == NULL);
 	assert(call->offset == ctx->expected_offsets[index]);
+	assert(call->groups.kind == JSVAL_KIND_UNDEFINED);
 	assert_utf16_string(region, call->input, ctx->expected_input,
 			ctx->expected_input_len);
 	assert_utf16_string(region, call->match, ctx->expected_matches[index],
@@ -1684,6 +1738,77 @@ test_method_replace_regex_callback_bridge(void)
 			test_replace_regex_callback, &ctx, &result, &error) < 0);
 	assert(errno == EINVAL);
 	assert(error.kind == JSMETHOD_ERROR_TYPE);
+}
+
+static void
+test_method_replace_regex_named_groups_bridge(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t text;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t global_regex;
+	jsval_t single_regex;
+	jsval_t replacement;
+	jsval_t missing_replacement;
+	jsval_t result;
+	jsmethod_error_t error;
+	test_replace_named_groups_callback_ctx_t ctx = {
+		0,
+		"a1b2",
+		{"1b", "2"},
+		{"1", "2"},
+		{"b", NULL},
+		{1, 3},
+		{"<1|b|1>", "<2|U|3>"}
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+			&text) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"(?<digits>[0-9])(?<tail>[a-z])?",
+			sizeof("(?<digits>[0-9])(?<tail>[a-z])?") - 1,
+			&pattern) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) == 0);
+	assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&single_regex, &error) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, global_flags, &global_regex,
+			&error) == 0);
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"<$<digits>|$1|$<tail>>",
+			sizeof("<$<digits>|$1|$<tail>>") - 1,
+			&replacement) == 0);
+	assert(jsval_method_string_replace(&region, text, single_regex,
+			replacement, &result, &error) == 0);
+	assert_string(&region, result, "a<1|1|b>2");
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"$<digits>:$<tail>;",
+			sizeof("$<digits>:$<tail>;") - 1,
+			&replacement) == 0);
+	assert(jsval_method_string_replace_all(&region, text, global_regex,
+			replacement, &result, &error) == 0);
+	assert_string(&region, result, "a1:b;2:;");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"$<missing>",
+			sizeof("$<missing>") - 1, &missing_replacement) == 0);
+	assert(jsval_method_string_replace(&region, text, single_regex,
+			missing_replacement, &result, &error) == 0);
+	assert_string(&region, result, "a$<missing>2");
+
+	assert(jsval_method_string_replace_fn(&region, text, global_regex,
+			test_replace_named_groups_callback, &ctx, &result, &error) == 0);
+	assert_string(&region, result, "a<1|b|1><2|U|3>");
+	assert(ctx.call_count == 2);
+	ctx.call_count = 0;
+	assert(jsval_method_string_replace_all_fn(&region, text, global_regex,
+			test_replace_named_groups_callback, &ctx, &result, &error) == 0);
+	assert_string(&region, result, "a<1|b|1><2|U|3>");
+	assert(ctx.call_count == 2);
 }
 #endif
 
@@ -4640,6 +4765,7 @@ int main(void)
 	test_method_replace_callback_bridge();
 #if JSMX_WITH_REGEX
 	test_method_replace_regex_callback_bridge();
+	test_method_replace_regex_named_groups_bridge();
 	test_regexp_exec_and_match();
 	test_regexp_match_all();
 	test_regexp_named_groups();
