@@ -34,6 +34,7 @@ caller-provided memory:
   - into a newly allocated pre-capacity-planned native destination
 - dense, capacity-bounded native array semantics such as:
   - fresh dense-array clone
+  - bounded dense-array splice edits
   - push
   - pop
   - shift

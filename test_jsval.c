@@ -945,6 +945,140 @@ static void test_array_clone_dense_helpers(void)
 	assert(errno == EINVAL);
 }
 
+static void test_array_splice_dense_helpers(void)
+{
+	static const char json_source[] = "[1,2]";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t array;
+	jsval_t removed;
+	jsval_t json_array;
+	jsval_t fail_removed;
+	jsval_t child;
+	jsval_t got;
+	jsval_t insert_one[] = {jsval_number(9.0)};
+	jsval_t insert_two[] = {jsval_number(7.0), jsval_number(8.0)};
+	jsval_t insert_three[] = {
+		jsval_number(7.0),
+		jsval_number(8.0),
+		jsval_number(9.0)
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_array_new(&region, 6, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(4.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 2, NULL, 0, &removed)
+			== 0);
+	assert_json(&region, array, "[1,4]");
+	assert_json(&region, removed, "[2,3]");
+	assert(jsval_array_get(&region, array, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_array_new(&region, 6, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(4.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 0, insert_two, 2,
+			&removed) == 0);
+	assert_json(&region, array, "[1,7,8,4]");
+	assert_json(&region, removed, "[]");
+
+	assert(jsval_array_new(&region, 5, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 1, insert_one, 1,
+			&removed) == 0);
+	assert_json(&region, array, "[1,9,3]");
+	assert_json(&region, removed, "[2]");
+
+	assert(jsval_array_new(&region, 5, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 1, insert_three, 3,
+			&removed) == 0);
+	assert_json(&region, array, "[1,7,8,9,3]");
+	assert_json(&region, removed, "[2]");
+
+	assert(jsval_array_new(&region, 4, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(4.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 2, insert_one, 1,
+			&removed) == 0);
+	assert_json(&region, array, "[1,9,4]");
+	assert_json(&region, removed, "[2,3]");
+	assert(jsval_array_get(&region, array, 3, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_array_new(&region, 3, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 9, 5, insert_one, 1,
+			&removed) == 0);
+	assert_json(&region, array, "[1,2,9]");
+	assert_json(&region, removed, "[]");
+
+	assert(jsval_array_new(&region, 2, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 1, 5, NULL, 0, &removed)
+			== 0);
+	assert_json(&region, array, "[1]");
+	assert_json(&region, removed, "[2]");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_source,
+			sizeof(json_source) - 1, 8, &json_array) == 0);
+	fail_removed = jsval_null();
+	errno = 0;
+	assert(jsval_array_splice_dense(&region, json_array, 0, 1, NULL, 0,
+			&fail_removed) < 0);
+	assert(errno == ENOTSUP);
+	assert(fail_removed.kind == JSVAL_KIND_NULL);
+
+	assert(jsval_array_new(&region, 4, &array) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(4.0)) == 0);
+	fail_removed = jsval_null();
+	errno = 0;
+	assert(jsval_array_splice_dense(&region, array, 1, 1, insert_three, 3,
+			&fail_removed) < 0);
+	assert(errno == ENOBUFS);
+	assert(fail_removed.kind == JSVAL_KIND_NULL);
+	assert_json(&region, array, "[1,2,3,4]");
+
+	errno = 0;
+	assert(jsval_array_splice_dense(&region, jsval_number(1.0), 0, 0, NULL, 0,
+			&removed) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_array_splice_dense(&region, array, 0, 0, NULL, 1, &removed)
+			< 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_array_splice_dense(&region, array, 0, 0, NULL, 0, NULL) < 0);
+	assert(errno == EINVAL);
+
+	assert(jsval_object_new(&region, 1, &child) == 0);
+	assert(jsval_object_set_utf8(&region, child, (const uint8_t *)"v", 1,
+			jsval_number(1.0)) == 0);
+	assert(jsval_array_new(&region, 2, &array) == 0);
+	assert(jsval_array_push(&region, array, child) == 0);
+	assert(jsval_array_push(&region, array, jsval_number(3.0)) == 0);
+	assert(jsval_array_splice_dense(&region, array, 0, 1, NULL, 0, &removed)
+			== 0);
+	assert(jsval_array_length(&region, removed) == 1);
+	assert(jsval_array_get(&region, removed, 0, &got) == 0);
+	assert(jsval_strict_eq(&region, got, child) == 1);
+}
+
 static void test_policy_layer()
 {
 	static const char json[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -4393,6 +4527,7 @@ int main(void)
 	test_object_copy_own_helpers();
 	test_object_clone_own_helpers();
 	test_array_clone_dense_helpers();
+	test_array_splice_dense_helpers();
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();

@@ -2389,6 +2389,112 @@ static generated_status_t generated_smoke_jsval_array_clone_dense(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_array_splice_dense(char *detail,
+		size_t cap)
+{
+	static const uint8_t expected_json[] =
+		"{\"deleteTarget\":[1,4],\"deleteRemoved\":[2,3],\"replaceTarget\":[1,9,4],\"replaceRemoved\":[2,3],\"unchanged\":[1,2,3,4]}";
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t delete_target;
+	jsval_t delete_removed;
+	jsval_t replace_target;
+	jsval_t replace_removed;
+	jsval_t unchanged;
+	jsval_t fail_removed;
+	jsval_t got;
+	jsval_t insert_one[] = {jsval_number(9.0)};
+	jsval_t insert_three[] = {
+		jsval_number(7.0),
+		jsval_number(8.0),
+		jsval_number(9.0)
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 5, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+	if (jsval_array_new(&region, 4, &delete_target) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(delete_target)");
+	}
+	if (jsval_array_push(&region, delete_target, jsval_number(1.0)) < 0
+			|| jsval_array_push(&region, delete_target, jsval_number(2.0)) < 0
+			|| jsval_array_push(&region, delete_target, jsval_number(3.0)) < 0
+			|| jsval_array_push(&region, delete_target, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(delete_target)");
+	}
+	if (jsval_array_splice_dense(&region, delete_target, 1, 2, NULL, 0,
+			&delete_removed) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_splice_dense(delete)");
+	}
+
+	if (jsval_array_new(&region, 4, &replace_target) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(replace_target)");
+	}
+	if (jsval_array_push(&region, replace_target, jsval_number(1.0)) < 0
+			|| jsval_array_push(&region, replace_target, jsval_number(2.0)) < 0
+			|| jsval_array_push(&region, replace_target, jsval_number(3.0)) < 0
+			|| jsval_array_push(&region, replace_target, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(replace_target)");
+	}
+	if (jsval_array_splice_dense(&region, replace_target, 1, 2, insert_one, 1,
+			&replace_removed) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_splice_dense(replace)");
+	}
+	if (jsval_array_get(&region, replace_target, 3, &got) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(replace_target[3])");
+	}
+	if (got.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected vacated dense tail to read as undefined after shrink");
+	}
+
+	if (jsval_array_new(&region, 4, &unchanged) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(unchanged)");
+	}
+	if (jsval_array_push(&region, unchanged, jsval_number(1.0)) < 0
+			|| jsval_array_push(&region, unchanged, jsval_number(2.0)) < 0
+			|| jsval_array_push(&region, unchanged, jsval_number(3.0)) < 0
+			|| jsval_array_push(&region, unchanged, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(unchanged)");
+	}
+	fail_removed = jsval_null();
+	errno = 0;
+	if (jsval_array_splice_dense(&region, unchanged, 1, 1, insert_three, 3,
+			&fail_removed) != -1) {
+		return generated_failf(detail, cap,
+				"expected splice into undersized dense array to fail");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from undersized dense splice, got %d", errno);
+	}
+	if (fail_removed.kind != JSVAL_KIND_NULL) {
+		return generated_failf(detail, cap,
+				"expected failed dense splice removed output to remain unchanged");
+	}
+
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"deleteTarget", 12,
+			delete_target) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"deleteRemoved", 13, delete_removed) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"replaceTarget", 13, replace_target) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"replaceRemoved", 14, replace_removed) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"unchanged", 9, unchanged) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_dense_array_semantics(
 		char *detail, size_t cap)
 {
@@ -6129,6 +6235,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_object_copy_own", generated_smoke_jsval_object_copy_own},
 	{"smoke", "jsval_object_clone_own", generated_smoke_jsval_object_clone_own},
 	{"smoke", "jsval_array_clone_dense", generated_smoke_jsval_array_clone_dense},
+	{"smoke", "jsval_array_splice_dense", generated_smoke_jsval_array_splice_dense},
 	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},

@@ -69,6 +69,7 @@ That makes semantic correctness more important than surface familiarity:
     - shallow own-property copy
     - fresh own-property clone into a new native object
     - fresh dense-array clone into a new native array
+    - bounded dense-array splice edits with removed-result arrays
     - delete
     - push
     - pop

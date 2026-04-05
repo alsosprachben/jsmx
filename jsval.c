@@ -9287,6 +9287,89 @@ int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value)
 	return jsval_array_set(region, array, len, value);
 }
 
+int jsval_array_splice_dense(jsval_region_t *region, jsval_t array, size_t start,
+		size_t delete_count, const jsval_t *insert_values, size_t insert_count,
+		jsval_t *removed_ptr)
+{
+	jsval_native_array_t *native;
+	jsval_t *values;
+	jsval_t removed;
+	size_t len;
+	size_t effective_start;
+	size_t effective_delete_count;
+	size_t suffix_count;
+	size_t new_len;
+	size_t i;
+	jsval_t inserts[insert_count ? insert_count : 1];
+
+	if (region == NULL || removed_ptr == NULL || array.kind != JSVAL_KIND_ARRAY
+			|| (insert_count > 0 && insert_values == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_array(region, array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (insert_count > 0) {
+		memcpy(inserts, insert_values, insert_count * sizeof(*inserts));
+	}
+
+	len = native->len;
+	effective_start = start > len ? len : start;
+	effective_delete_count = delete_count;
+	if (effective_delete_count > len - effective_start) {
+		effective_delete_count = len - effective_start;
+	}
+	if (insert_count > SIZE_MAX - (len - effective_delete_count)) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	new_len = len - effective_delete_count + insert_count;
+	if (new_len > native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (jsval_array_new(region, effective_delete_count, &removed) < 0) {
+		return -1;
+	}
+
+	values = jsval_native_array_values(native);
+	for (i = 0; i < effective_delete_count; i++) {
+		if (jsval_array_set(region, removed, i,
+				values[effective_start + i]) < 0) {
+			return -1;
+		}
+	}
+
+	suffix_count = len - effective_start - effective_delete_count;
+	if (insert_count != effective_delete_count && suffix_count > 0) {
+		memmove(values + effective_start + insert_count,
+				values + effective_start + effective_delete_count,
+				suffix_count * sizeof(*values));
+	}
+	for (i = 0; i < insert_count; i++) {
+		values[effective_start + i] = inserts[i];
+	}
+	if (new_len < len) {
+		for (i = new_len; i < len; i++) {
+			values[i] = jsval_undefined();
+		}
+	}
+
+	native->len = new_len;
+	*removed_ptr = removed;
+	return 0;
+}
+
 int jsval_array_pop(jsval_region_t *region, jsval_t array, jsval_t *value_ptr)
 {
 	jsval_native_array_t *native;

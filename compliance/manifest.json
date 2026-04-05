@@ -3870,6 +3870,46 @@
       "notes": "Repo-authored idiomatic dense-array fixture for the ENOBUFS capacity contract on jsval_array_clone_dense(), leaving the output value unchanged on failure."
     },
     {
+      "id": "jsmx-objects-array-splice-dense-delete",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-splice-dense-delete.js",
+      "generated": "compliance/generated/objects/jsmx/array-splice-dense-delete.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for delete-only middle edits through jsval_array_splice_dense(), including the removed-result array."
+    },
+    {
+      "id": "jsmx-objects-array-splice-dense-insert-replace",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-splice-dense-insert-replace.js",
+      "generated": "compliance/generated/objects/jsmx/array-splice-dense-insert-replace.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for insert-only and replace edits through jsval_array_splice_dense()."
+    },
+    {
+      "id": "jsmx-objects-array-splice-dense-removed-result",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-splice-dense-removed-result.js",
+      "generated": "compliance/generated/objects/jsmx/array-splice-dense-removed-result.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for observing the removed-result array and clamped delete-count behavior through jsval_array_splice_dense()."
+    },
+    {
+      "id": "jsmx-objects-array-splice-dense-capacity-error",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-splice-dense-capacity-error.js",
+      "generated": "compliance/generated/objects/jsmx/array-splice-dense-capacity-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for the all-or-nothing ENOBUFS contract on jsval_array_splice_dense(), leaving both target and removed output unchanged on failure."
+    },
+    {
       "id": "jsmx-objects-array-push-length",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-push-length.js",
