@@ -8927,6 +8927,44 @@ int jsval_array_pop(jsval_region_t *region, jsval_t array, jsval_t *value_ptr)
 	return 0;
 }
 
+int jsval_array_shift(jsval_region_t *region, jsval_t array, jsval_t *value_ptr)
+{
+	jsval_native_array_t *native;
+	jsval_t *values;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (array.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_array(region, array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->len == 0) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+
+	values = jsval_native_array_values(native);
+	*value_ptr = values[0];
+	if (native->len > 1) {
+		memmove(values, values + 1, (native->len - 1) * sizeof(*values));
+	}
+	native->len--;
+	values[native->len] = jsval_undefined();
+	return 0;
+}
+
 int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len)
 {
 	jsval_native_array_t *native;

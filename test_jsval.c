@@ -3975,6 +3975,21 @@ static void test_dense_array_observable_behavior(void)
 	assert(got.kind == JSVAL_KIND_UNDEFINED);
 	assert(jsval_array_length(&region, native_array) == 0);
 	assert_json(&region, native_array, "[]");
+	assert(jsval_array_set(&region, native_array, 0, jsval_number(1.0)) == 0);
+	assert(jsval_array_set(&region, native_array, 1, jsval_number(9.0)) == 0);
+	assert(jsval_array_shift(&region, native_array, &got) == 0);
+	assert(got.kind == JSVAL_KIND_NUMBER);
+	assert(got.as.number == 1.0);
+	assert(jsval_array_length(&region, native_array) == 1);
+	assert_json(&region, native_array, "[9]");
+	assert(jsval_array_shift(&region, native_array, &got) == 0);
+	assert(got.kind == JSVAL_KIND_NUMBER);
+	assert(got.as.number == 9.0);
+	assert(jsval_array_length(&region, native_array) == 0);
+	assert_json(&region, native_array, "[]");
+	assert(jsval_array_shift(&region, native_array, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_length(&region, native_array) == 0);
 
 	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 8,
 			&parsed_array) == 0);
@@ -3983,6 +3998,9 @@ static void test_dense_array_observable_behavior(void)
 	assert(jsval_strict_eq(&region, got, jsval_number(2.0)) == 1);
 	errno = 0;
 	assert(jsval_array_pop(&region, parsed_array, &got) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_array_shift(&region, parsed_array, &got) < 0);
 	assert(errno == ENOTSUP);
 	assert(jsval_promote_array_shallow_measure(&region, parsed_array, 3, &bytes)
 			== 0);
@@ -3997,6 +4015,10 @@ static void test_dense_array_observable_behavior(void)
 	assert(got.kind == JSVAL_KIND_NUMBER);
 	assert(got.as.number == 3.0);
 	assert_json(&region, parsed_array, "[7,2]");
+	assert(jsval_array_shift(&region, parsed_array, &got) == 0);
+	assert(got.kind == JSVAL_KIND_NUMBER);
+	assert(got.as.number == 7.0);
+	assert_json(&region, parsed_array, "[2]");
 }
 
 int main(void)

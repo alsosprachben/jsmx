@@ -3710,6 +3710,26 @@
       "notes": "Repo-authored idiomatic dense-array fixture for empty pop plus undefined tail pops after an explicit logical-length grow."
     },
     {
+      "id": "jsmx-objects-array-shift-observable",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-shift-observable.js",
+      "generated": "compliance/generated/objects/jsmx/array-shift-observable.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for observable native front mutation through the explicit jsval array shift helper."
+    },
+    {
+      "id": "jsmx-objects-array-shift-empty-undefined",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-shift-empty-undefined.js",
+      "generated": "compliance/generated/objects/jsmx/array-shift-empty-undefined.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for empty shift plus undefined head shifts after an explicit logical-length grow."
+    },
+    {
       "id": "jsmx-objects-json-shallow-object-add-property",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-shallow-object-add-property.js",
@@ -3798,6 +3818,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then popping the native dense tail."
+    },
+    {
+      "id": "jsmx-objects-json-array-shallow-promote-and-shift",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-array-shallow-promote-and-shift.js",
+      "generated": "compliance/generated/objects/jsmx/json-array-shallow-promote-and-shift.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then shifting the native dense head."
     }
   ]
 }

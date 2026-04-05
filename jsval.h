@@ -124,6 +124,7 @@ int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
 int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);
 int jsval_array_pop(jsval_region_t *region, jsval_t array, jsval_t *value_ptr);
+int jsval_array_shift(jsval_region_t *region, jsval_t array, jsval_t *value_ptr);
 int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len);
 
 int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
