@@ -64,6 +64,7 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - `matchAll`
   - flag / state helpers
   - deeper repeated exec-result and `lastIndex` fidelity
+  - named capture groups and `groups` objects on exec-shaped results
 - translator-facing callback replacers for `replace` / `replaceAll`
 - narrow `/u` literal rewrite helpers for regex-backed string methods,
   including:

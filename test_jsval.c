@@ -126,6 +126,32 @@ static void assert_object_undefined_prop(jsval_region_t *region, jsval_t object,
 	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
+static void
+assert_object_groups_string_prop(jsval_region_t *region, jsval_t object,
+		const char *group_key, const char *expected)
+{
+	jsval_t groups;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)"groups", 6,
+			&groups) == 0);
+	assert(groups.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(region, groups, group_key, expected);
+}
+
+static void
+assert_object_groups_undefined_prop(jsval_region_t *region, jsval_t object,
+		const char *group_key)
+{
+	jsval_t groups;
+
+	assert(object.kind == JSVAL_KIND_OBJECT);
+	assert(jsval_object_get_utf8(region, object, (const uint8_t *)"groups", 6,
+			&groups) == 0);
+	assert(groups.kind == JSVAL_KIND_OBJECT);
+	assert_object_undefined_prop(region, groups, group_key);
+}
+
 static void assert_object_key_at(jsval_region_t *region, jsval_t object,
 		size_t index, const char *expected)
 {
@@ -2072,6 +2098,82 @@ test_regexp_match_all(void)
 	assert(done == 0);
 	assert_object_string_prop(&region, result, "0", "1");
 	assert_object_number_prop(&region, result, "index", 1.0);
+}
+
+static void
+test_regexp_named_groups(void)
+{
+	static const uint8_t pattern_utf8[] = "(?<digits>[0-9])(?<tail>[a-z])?";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t regex;
+	jsval_t global_regex;
+	jsval_t subject;
+	jsval_t subject_without_tail;
+	jsval_t result;
+	jsval_t iterator;
+	jsmethod_error_t error;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf8(&region, pattern_utf8,
+			sizeof(pattern_utf8) - 1, &pattern) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+			&global_flags) == 0);
+	assert(jsval_regexp_new(&region, pattern, 0, jsval_undefined(), &regex,
+			&error) == 0);
+	assert(jsval_regexp_new(&region, pattern, 1, global_flags, &global_regex,
+			&error) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+			&subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a2", 2,
+			&subject_without_tail) == 0);
+
+	assert(jsval_regexp_exec(&region, regex, subject, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert_object_string_prop(&region, result, "1", "1");
+	assert_object_string_prop(&region, result, "2", "b");
+	assert_object_groups_string_prop(&region, result, "digits", "1");
+	assert_object_groups_string_prop(&region, result, "tail", "b");
+
+	assert(jsval_regexp_exec(&region, regex, subject_without_tail, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "2");
+	assert_object_string_prop(&region, result, "1", "2");
+	assert_object_undefined_prop(&region, result, "2");
+	assert_object_groups_string_prop(&region, result, "digits", "2");
+	assert_object_groups_undefined_prop(&region, result, "tail");
+
+	assert(jsval_method_string_match(&region, subject, 1, regex, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert_object_groups_string_prop(&region, result, "digits", "1");
+	assert_object_groups_string_prop(&region, result, "tail", "b");
+
+	assert(jsval_method_string_match_all(&region, subject, 1, global_regex,
+			&iterator, &error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert_object_groups_string_prop(&region, result, "digits", "1");
+	assert_object_groups_string_prop(&region, result, "tail", "b");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "2");
+	assert_object_groups_string_prop(&region, result, "digits", "2");
+	assert_object_groups_undefined_prop(&region, result, "tail");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
 }
 
 static void
@@ -4540,6 +4642,7 @@ int main(void)
 	test_method_replace_regex_callback_bridge();
 	test_regexp_exec_and_match();
 	test_regexp_match_all();
+	test_regexp_named_groups();
 	test_method_regex_search_bridge();
 	test_u_literal_surrogate_match_rewrite();
 	test_u_literal_surrogate_match_all_rewrite();

@@ -2265,6 +2265,17 @@
       "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.match results through the new RegExp object model."
     },
     {
+      "id": "jsmx-strings-named-groups-match-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/named-groups-match-parity.js",
+      "generated": "compliance/generated/strings/jsmx/named-groups-match-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native non-global String.prototype.match named-group result objects, including unmatched optional groups."
+    },
+    {
       "id": "test262-strings-matchAll-flags-nonglobal-throws",
       "suite": "strings",
       "source": "compliance/js/strings/test262/matchAll/flags-nonglobal-throws.js",
@@ -2318,6 +2329,17 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll iterator results through the jsval bridge."
+    },
+    {
+      "id": "jsmx-strings-named-groups-matchAll-parity",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/named-groups-matchAll-parity.js",
+      "generated": "compliance/generated/strings/jsmx/named-groups-matchAll-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll named-group iterator results, including unmatched optional groups on later yields."
     },
     {
       "id": "test262-regex-matchAll-string-tostring",
@@ -2549,6 +2571,17 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
+    },
+    {
+      "id": "jsmx-regex-named-groups-exec-parity",
+      "suite": "regex",
+      "source": "compliance/js/regex/jsmx/named-groups-exec-parity.js",
+      "generated": "compliance/generated/regex/jsmx/named-groups-exec-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native RegExp.prototype.exec named-group result objects, including unmatched optional groups."
     },
     {
       "id": "jsmx-regex-u-literal-surrogate-exec-test-rewrite",

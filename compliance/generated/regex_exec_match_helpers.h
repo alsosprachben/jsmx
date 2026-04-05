@@ -101,6 +101,54 @@ generated_expect_match_undefined_prop(jsval_region_t *region, jsval_t object,
 }
 
 static inline int
+generated_expect_match_groups_string_prop(jsval_region_t *region,
+		jsval_t object, const char *group_key, const char *expected,
+		const char *suite, const char *case_name, const char *label)
+{
+	jsval_t groups;
+
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected object-like match result", label);
+	}
+	if (jsval_object_get_utf8(region, object, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: groups lookup failed: %s", label, strerror(errno));
+	}
+	if (groups.kind != JSVAL_KIND_OBJECT) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected groups object", label);
+	}
+	return generated_expect_match_string_prop(region, groups, group_key, expected,
+			suite, case_name, label);
+}
+
+static inline int
+generated_expect_match_groups_undefined_prop(jsval_region_t *region,
+		jsval_t object, const char *group_key, const char *suite,
+		const char *case_name, const char *label)
+{
+	jsval_t groups;
+
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected object-like match result", label);
+	}
+	if (jsval_object_get_utf8(region, object, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_test_fail(suite, case_name,
+				"%s: groups lookup failed: %s", label, strerror(errno));
+	}
+	if (groups.kind != JSVAL_KIND_OBJECT) {
+		return generated_test_fail(suite, case_name,
+				"%s: expected groups object", label);
+	}
+	return generated_expect_match_undefined_prop(region, groups, group_key,
+			suite, case_name, label);
+}
+
+static inline int
 generated_expect_match_array_strings(jsval_region_t *region, jsval_t array,
 		const char *const *expected, size_t expected_len,
 		const char *suite, const char *case_name, const char *label)

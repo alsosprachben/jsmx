@@ -57,6 +57,7 @@ The committed suites currently cover:
   - supported regex flag / state access
   - constructor-state behavior
   - deeper repeated `exec` / `test` / `match` state fidelity
+  - named capture groups and `groups` objects on exec-shaped results
 - official and repo-authored `jsval` value semantics
   - test262 strict-equality
   - primitive abstract equality / inequality

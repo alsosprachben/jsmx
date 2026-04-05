@@ -29,11 +29,18 @@ typedef struct jsval_native_array_s {
 
 typedef struct jsval_native_regexp_s {
 	jsval_off_t source_off;
+	jsval_off_t named_groups_off;
 	uint32_t flags;
 	uint32_t capture_count;
+	uint32_t named_group_count;
 	size_t last_index;
 	uintptr_t backend_code;
 } jsval_native_regexp_t;
+
+typedef struct jsval_native_named_group_s {
+	jsval_off_t name_off;
+	uint32_t capture_index;
+} jsval_native_named_group_t;
 
 typedef enum jsval_match_iterator_mode_e {
 	JSVAL_MATCH_ITERATOR_MODE_REGEX = 0,
@@ -219,6 +226,16 @@ static jsval_native_regexp_t *jsval_native_regexp(jsval_region_t *region,
 	return (jsval_native_regexp_t *)jsval_region_ptr(region, value.off);
 }
 
+static jsval_native_named_group_t *jsval_native_regexp_named_groups(
+		jsval_region_t *region, jsval_native_regexp_t *regexp)
+{
+	if (regexp == NULL || regexp->named_group_count == 0) {
+		return NULL;
+	}
+	return (jsval_native_named_group_t *)jsval_region_ptr(region,
+			regexp->named_groups_off);
+}
+
 static jsval_native_match_iterator_t *jsval_native_match_iterator(
 		jsval_region_t *region, jsval_t value)
 {
@@ -356,6 +373,31 @@ static int jsval_native_string_copy_utf8(jsval_region_t *region, jsval_t value, 
 	}
 
 	return 0;
+}
+
+static int
+jsval_object_set_string_key(jsval_region_t *region, jsval_t object,
+		jsval_t key, jsval_t value)
+{
+	size_t key_len = 0;
+
+	if (region == NULL || key.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, key, NULL, 0, &key_len) < 0) {
+		return -1;
+	}
+	{
+		uint8_t key_buf[key_len ? key_len : 1];
+
+		if (key_len > 0 && jsval_string_copy_utf8(region, key, key_buf,
+				key_len, NULL) < 0) {
+			return -1;
+		}
+		return jsval_object_set_utf8(region, object, key_len > 0 ? key_buf : NULL,
+				key_len, value);
+	}
 }
 
 static int jsval_native_string_copy_utf16(jsval_region_t *region, jsval_t value, uint16_t *buf, size_t cap, size_t *len_ptr)
@@ -3861,8 +3903,11 @@ jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 {
 	jsregex_compiled_t compiled;
 	jsval_native_regexp_t *regexp;
+	jsval_native_named_group_t *named_groups = NULL;
 	jsval_t source_value;
+	jsval_off_t named_groups_off = 0;
 	jsval_off_t off;
+	size_t i;
 
 	if (region == NULL || value_ptr == NULL
 			|| (pattern_len > 0 && pattern == NULL)
@@ -3884,6 +3929,60 @@ jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 		jsregex_release(&compiled);
 		return -1;
 	}
+	if (compiled.named_group_count > 0) {
+		if (jsval_region_reserve(region,
+				(size_t)compiled.named_group_count * sizeof(*named_groups),
+				JSVAL_ALIGN, &named_groups_off, (void **)&named_groups) < 0) {
+			jsregex_release(&compiled);
+			return -1;
+		}
+		for (i = 0; i < compiled.named_group_count; i++) {
+			uint32_t capture_index = 0;
+			size_t name_len = 0;
+			jsval_t name_value;
+
+			if (jsregex_named_group_utf16(&compiled, i, &capture_index, NULL, 0,
+					&name_len) < 0) {
+				jsregex_release(&compiled);
+				return -1;
+			}
+			{
+				uint16_t name_buf[name_len ? name_len : 1];
+
+				if (jsregex_named_group_utf16(&compiled, i, &capture_index,
+						name_len > 0 ? name_buf : NULL, name_len,
+						&name_len) < 0) {
+					jsregex_release(&compiled);
+					return -1;
+				}
+				if (jsval_string_new_utf16(region,
+						name_len > 0 ? name_buf : NULL, name_len,
+						&name_value) < 0) {
+					jsregex_release(&compiled);
+					return -1;
+				}
+			}
+			if (name_value.kind != JSVAL_KIND_STRING
+					|| name_value.repr != JSVAL_REPR_NATIVE) {
+				jsregex_release(&compiled);
+				errno = EINVAL;
+				return -1;
+			}
+			named_groups[i].name_off = name_value.off;
+			named_groups[i].capture_index = capture_index;
+		}
+		for (i = 1; i < compiled.named_group_count; i++) {
+			size_t j = i;
+			jsval_native_named_group_t entry = named_groups[i];
+
+			while (j > 0
+					&& named_groups[j - 1].capture_index > entry.capture_index) {
+				named_groups[j] = named_groups[j - 1];
+				j--;
+			}
+			named_groups[j] = entry;
+		}
+	}
 	if (jsval_region_reserve(region, sizeof(*regexp), JSVAL_ALIGN, &off,
 			(void **)&regexp) < 0) {
 		jsregex_release(&compiled);
@@ -3891,8 +3990,10 @@ jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 	}
 
 	regexp->source_off = source_value.off;
+	regexp->named_groups_off = named_groups_off;
 	regexp->flags = compiled.flags;
 	regexp->capture_count = compiled.capture_count;
+	regexp->named_group_count = compiled.named_group_count;
 	regexp->last_index = 0;
 	regexp->backend_code = compiled.backend_code;
 
@@ -4060,6 +4161,7 @@ jsval_regexp_exec_raw(jsval_region_t *region, jsval_t regexp_value,
 	compiled.backend_code = regexp->backend_code;
 	compiled.flags = regexp->flags;
 	compiled.capture_count = regexp->capture_count;
+	compiled.named_group_count = regexp->named_group_count;
 	if (jsregex_exec_utf16(&compiled, subject, subject_len, start_index,
 			offsets, offsets_cap, result_ptr) < 0) {
 		if (error != NULL) {
@@ -4081,11 +4183,67 @@ jsval_regexp_exec_raw(jsval_region_t *region, jsval_t regexp_value,
 }
 
 static int
-jsval_regexp_exec_result_object(jsval_region_t *region, jsval_t input_value,
+jsval_regexp_groups_object(jsval_region_t *region,
+		jsval_native_regexp_t *regexp, const uint16_t *subject,
+		const size_t *offsets, size_t slot_count, jsval_t *value_ptr)
+{
+	jsval_native_named_group_t *named_groups;
+	jsval_t groups;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (regexp == NULL || regexp->named_group_count == 0) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+
+	named_groups = jsval_native_regexp_named_groups(region, regexp);
+	if (named_groups == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, regexp->named_group_count, &groups) < 0) {
+		return -1;
+	}
+	for (i = 0; i < regexp->named_group_count; i++) {
+		jsval_t key;
+		jsval_t capture_value = jsval_undefined();
+		uint32_t capture_index = named_groups[i].capture_index;
+
+		key = jsval_undefined();
+		key.kind = JSVAL_KIND_STRING;
+		key.repr = JSVAL_REPR_NATIVE;
+		key.off = named_groups[i].name_off;
+		if ((size_t)capture_index < slot_count
+				&& offsets[(size_t)capture_index * 2] != SIZE_MAX) {
+			size_t start = offsets[(size_t)capture_index * 2];
+			size_t end = offsets[(size_t)capture_index * 2 + 1];
+
+			if (jsval_string_new_utf16(region, subject + start, end - start,
+					&capture_value) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_object_set_string_key(region, groups, key, capture_value) < 0) {
+			return -1;
+		}
+	}
+
+	*value_ptr = groups;
+	return 0;
+}
+
+static int
+jsval_regexp_exec_result_object(jsval_region_t *region,
+		jsval_native_regexp_t *regexp, jsval_t input_value,
 		const uint16_t *subject, size_t subject_len, const size_t *offsets,
 		size_t slot_count, size_t match_index, jsval_t *value_ptr)
 {
 	jsval_t object;
+	jsval_t groups;
 	size_t prop_cap = slot_count + 4;
 	size_t i;
 
@@ -4131,8 +4289,12 @@ jsval_regexp_exec_result_object(jsval_region_t *region, jsval_t input_value,
 			input_value) < 0) {
 		return -1;
 	}
+	if (jsval_regexp_groups_object(region, regexp, subject, offsets, slot_count,
+			&groups) < 0) {
+		return -1;
+	}
 	if (jsval_object_set_utf8(region, object, (const uint8_t *)"groups", 6,
-			jsval_undefined()) < 0) {
+			groups) < 0) {
 		return -1;
 	}
 
@@ -4176,7 +4338,7 @@ jsval_u_literal_match_exec_result_object(jsval_region_t *region,
 	}
 	offsets[0] = match_start;
 	offsets[1] = match_end;
-	return jsval_regexp_exec_result_object(region, input_value, subject,
+	return jsval_regexp_exec_result_object(region, NULL, input_value, subject,
 			subject_len, offsets, 1, match_start, value_ptr);
 }
 
@@ -4683,7 +4845,7 @@ jsval_regexp_exec(jsval_region_t *region, jsval_t regexp_value,
 			*value_ptr = jsval_null();
 			return 0;
 		}
-		return jsval_regexp_exec_result_object(region, input_string,
+		return jsval_regexp_exec_result_object(region, regexp, input_string,
 				jsval_native_string_units(input_native), input_native->len,
 				offsets, exec_result.slot_count, exec_result.start, value_ptr);
 	}
@@ -5023,7 +5185,7 @@ jsval_match_iterator_next(jsval_region_t *region, jsval_t iterator_value,
 				*value_ptr = jsval_undefined();
 				return 0;
 			}
-			if (jsval_regexp_exec_result_object(region,
+			if (jsval_regexp_exec_result_object(region, regexp,
 					iterator->input_value,
 					jsval_native_string_units(input_native),
 					input_native->len, offsets, exec_result.slot_count,

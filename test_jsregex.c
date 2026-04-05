@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "jsregex.h"
 
@@ -134,6 +135,51 @@ test_regex_compile_exec(void)
 	assert(jsregex_advance_string_index_utf16(subject,
 			sizeof(subject) / sizeof(subject[0]), 1, 0, &next_index) == 0);
 	assert(next_index == 2);
+}
+
+static void
+test_regex_named_groups(void)
+{
+	static const uint16_t pattern[] = {
+		'(','?','<','d','i','g','i','t','s','>','[','0','-','9',']','+',
+		')','(','?','<','t','a','i','l','>','[','a','-','z',']',')','?'
+	};
+	static const uint16_t digits_name[] = {'d','i','g','i','t','s'};
+	static const uint16_t tail_name[] = {'t','a','i','l'};
+	jsregex_compiled_t compiled;
+	uint32_t capture_index;
+	size_t name_len = 0;
+	uint16_t name_buf[8];
+
+	assert(jsregex_compile_utf16(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(compiled.named_group_count == 2);
+
+	assert(jsregex_named_group_utf16(&compiled, 0, &capture_index, NULL, 0,
+			&name_len) == 0);
+	assert(capture_index == 1);
+	assert(name_len == sizeof(digits_name) / sizeof(digits_name[0]));
+	assert(jsregex_named_group_utf16(&compiled, 0, &capture_index, name_buf,
+			sizeof(name_buf) / sizeof(name_buf[0]), &name_len) == 0);
+	assert(capture_index == 1);
+	assert(name_len == sizeof(digits_name) / sizeof(digits_name[0]));
+	assert(memcmp(name_buf, digits_name, sizeof(digits_name)) == 0);
+
+	assert(jsregex_named_group_utf16(&compiled, 1, &capture_index, name_buf,
+			sizeof(name_buf) / sizeof(name_buf[0]), &name_len) == 0);
+	assert(capture_index == 2);
+	assert(name_len == sizeof(tail_name) / sizeof(tail_name[0]));
+	assert(memcmp(name_buf, tail_name, sizeof(tail_name)) == 0);
+
+	assert(jsregex_named_group_utf16(&compiled, 2, &capture_index, name_buf,
+			sizeof(name_buf) / sizeof(name_buf[0]), &name_len) == -1);
+	assert(errno == EINVAL);
+	assert(jsregex_named_group_utf16(&compiled, 0, &capture_index, name_buf, 2,
+			&name_len) == -1);
+	assert(errno == ENOBUFS);
+
+	jsregex_release(&compiled);
 }
 
 static void
@@ -423,6 +469,7 @@ main(void)
 {
 	test_regex_search();
 	test_regex_compile_exec();
+	test_regex_named_groups();
 	test_u_literal_surrogate_exec();
 	test_u_literal_sequence_exec();
 	test_u_literal_class_exec();

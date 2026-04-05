@@ -176,6 +176,7 @@ jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 	int error_code;
 	PCRE2_SIZE error_offset;
 	uint32_t capture_count = 0;
+	uint32_t named_group_count = 0;
 
 	if ((pattern_len > 0 && pattern == NULL) || compiled_ptr == NULL) {
 		errno = EINVAL;
@@ -199,10 +200,17 @@ jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 		errno = EINVAL;
 		return -1;
 	}
+	if (pcre2_pattern_info(code, PCRE2_INFO_NAMECOUNT,
+			&named_group_count) != 0) {
+		pcre2_code_free(code);
+		errno = EINVAL;
+		return -1;
+	}
 
 	compiled_ptr->backend_code = (uintptr_t)code;
 	compiled_ptr->flags = options.flags;
 	compiled_ptr->capture_count = capture_count;
+	compiled_ptr->named_group_count = named_group_count;
 	return 0;
 }
 
@@ -219,6 +227,7 @@ jsregex_release(jsregex_compiled_t *compiled_ptr)
 	compiled_ptr->backend_code = 0;
 	compiled_ptr->flags = 0;
 	compiled_ptr->capture_count = 0;
+	compiled_ptr->named_group_count = 0;
 }
 
 int
@@ -300,6 +309,63 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 	result_ptr->end = offsets[1];
 	result_ptr->slot_count = slot_count;
 	pcre2_match_data_free(match_data);
+	return 0;
+}
+
+int
+jsregex_named_group_utf16(const jsregex_compiled_t *compiled,
+		size_t index, uint32_t *capture_index_ptr, uint16_t *name_buf,
+		size_t name_cap, size_t *name_len_ptr)
+{
+	pcre2_code *code;
+	uint32_t name_count = 0;
+	uint32_t name_entry_size = 0;
+	PCRE2_SPTR16 name_table = NULL;
+	PCRE2_SPTR16 entry;
+	size_t name_len = 0;
+
+	if (compiled == NULL || compiled->backend_code == 0 || index >= SIZE_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= compiled->named_group_count) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	code = (pcre2_code *)(uintptr_t)compiled->backend_code;
+	if (pcre2_pattern_info(code, PCRE2_INFO_NAMECOUNT, &name_count) != 0
+			|| pcre2_pattern_info(code, PCRE2_INFO_NAMEENTRYSIZE,
+				&name_entry_size) != 0
+			|| pcre2_pattern_info(code, PCRE2_INFO_NAMETABLE,
+				&name_table) != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= name_count || name_entry_size < 2 || name_table == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	entry = name_table + index * name_entry_size;
+	while (name_len + 1 < name_entry_size && entry[name_len + 1] != 0) {
+		name_len++;
+	}
+	if (name_len_ptr != NULL) {
+		*name_len_ptr = name_len;
+	}
+	if (capture_index_ptr != NULL) {
+		*capture_index_ptr = (uint32_t)entry[0];
+	}
+	if (name_buf != NULL) {
+		if (name_cap < name_len) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		if (name_len > 0) {
+			memcpy(name_buf, entry + 1, name_len * sizeof(*name_buf));
+		}
+	}
 	return 0;
 }
 

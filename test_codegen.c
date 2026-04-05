@@ -4669,6 +4669,183 @@ static generated_status_t generated_smoke_jsval_regexp_match_all(
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_regexp_named_groups(
+		char *detail, size_t cap)
+{
+	static const uint8_t pattern_utf8[] = "(?<digits>[0-9])(?<tail>[a-z])?";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t regex;
+	jsval_t global_regex;
+	jsval_t subject;
+	jsval_t subject_without_tail;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t groups;
+	jsmethod_error_t error;
+	int done = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region,
+			pattern_utf8, sizeof(pattern_utf8) - 1, &pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+				&subject) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"a2", 2,
+				&subject_without_tail) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(named groups args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 0, jsval_undefined(), &regex,
+			&error) < 0
+			|| jsval_regexp_new(&region, pattern, 1, global_flags,
+				&global_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(named groups) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+
+	if (jsval_regexp_exec(&region, regex, subject, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(named groups) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec groups)");
+	}
+	if (groups.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected exec groups object");
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"digits", 6,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec groups.digits)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"tail", 4,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec groups.tail)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"b", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	if (jsval_regexp_exec(&region, regex, subject_without_tail, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(named groups optional) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec optional groups)");
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"tail", 4,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec optional groups.tail)");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected optional named group to be undefined");
+	}
+
+	if (jsval_method_string_match(&region, subject, 1, regex, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match(named groups) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(match groups)");
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"digits", 6,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(match groups.digits)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	if (jsval_method_string_match_all(&region, subject, 1, global_regex,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all(named groups) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0 || done) {
+		return generated_failf(detail, cap,
+				"first named-group matchAll result failed: errno=%d kind=%d done=%d",
+				errno, (int)error.kind, done);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0
+			|| jsval_object_get_utf8(&region, groups,
+				(const uint8_t *)"tail", 4, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"matchAll first groups lookup");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"b", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0 || done) {
+		return generated_failf(detail, cap,
+				"second named-group matchAll result failed: errno=%d kind=%d done=%d",
+				errno, (int)error.kind, done);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0
+			|| jsval_object_get_utf8(&region, groups,
+				(const uint8_t *)"digits", 6, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"matchAll second groups lookup");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"2", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"tail", 4,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"matchAll second groups.tail lookup");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected second matchAll optional named group to be undefined");
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"named-group matchAll exhaustion failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (!done || result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected named-group matchAll iterator exhaustion");
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 		char *detail, size_t cap)
 {
@@ -6261,6 +6438,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_exec_match", generated_smoke_jsval_regexp_exec_match},
 	{"smoke", "jsval_regexp_exec_state", generated_smoke_jsval_regexp_exec_state},
 	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
+	{"smoke", "jsval_regexp_named_groups", generated_smoke_jsval_regexp_named_groups},
 	{"smoke", "jsval_u_literal_surrogate_rewrite",
 		generated_smoke_jsval_u_literal_surrogate_rewrite},
 	{"smoke", "jsval_u_literal_sequence_rewrite",

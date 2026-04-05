@@ -21,6 +21,7 @@ typedef struct jsregex_compiled_s {
 	uintptr_t backend_code;
 	uint32_t flags;
 	uint32_t capture_count;
+	uint32_t named_group_count;
 } jsregex_compiled_t;
 
 typedef struct jsregex_exec_result_s {
@@ -44,6 +45,9 @@ int jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		const uint16_t *subject, size_t subject_len, size_t start_index,
 		size_t *offsets, size_t offsets_cap,
 		jsregex_exec_result_t *result_ptr);
+int jsregex_named_group_utf16(const jsregex_compiled_t *compiled,
+		size_t index, uint32_t *capture_index_ptr, uint16_t *name_buf,
+		size_t name_cap, size_t *name_len_ptr);
 int jsregex_exec_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		jsregex_exec_result_t *result_ptr);

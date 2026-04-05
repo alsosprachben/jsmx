@@ -40,12 +40,15 @@ Every regex-bearing fixture or emitted lowering should be classified as one of:
 Use direct lowering for the current supported subset:
 
 - flags limited to `g`, `i`, `m`, `s`, `u`, `y`
-- no named groups
+- named groups and `groups` objects on direct-lowered `exec`,
+  non-global `match`, and `matchAll`
+- no named replacement tokens or replace-callback `groups` arguments
 - no `d` or `v`
 - no Unicode sets
 - no exact `RegExp.prototype.source` serialization claims beyond the current
   semantic `source`
-- result arrays where `groups` remains `undefined`
+- exec-shaped results where `groups` is a native object for named-group regexes
+  and `undefined` otherwise
 
 If a test depends only on those semantics, lower it directly and say so in the
 manifest `notes` using a `Direct-lowered:` prefix.
@@ -88,7 +91,7 @@ Current status:
 | Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond explicit literal no-capture `/u` classes | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
-| Named groups and `groups` objects | future `exec` / `match` named-group files | `Unsupported:` | Expand the semantic regex result surface before translating those files as passing cases |
+| Named replacement tokens and replace callback `groups` arguments | future `replace` / `replaceAll` named-group files | `Unsupported:` | Expand the replace-family semantic surface after result-shape named groups |
 
 ## Approved Rewrite: Single Literal Lone Surrogate Under `/u`
 
