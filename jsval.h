@@ -356,6 +356,14 @@ int jsval_method_string_match_all_u_literal_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_search_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_match_all_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_search_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, jsval_t *value_ptr,
@@ -364,13 +372,29 @@ int jsval_method_string_match_all_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_search_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_match_all_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_match_u_literal_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, int global,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_match_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, int global,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_match_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, int global,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_match_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, int global,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_match_u_literal_sequence(
 		jsval_region_t *region, jsval_t this_value,
@@ -425,6 +449,16 @@ int jsval_method_string_replace_all_u_literal_class(
 		const uint16_t *members, size_t members_len,
 		jsval_t replacement_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_replace_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len,
@@ -433,6 +467,16 @@ int jsval_method_string_replace_u_literal_negated_class(
 int jsval_method_string_replace_all_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_t replacement_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
 		jsval_t replacement_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 int jsval_method_string_replace_u_literal_class_fn(
@@ -445,6 +489,16 @@ int jsval_method_string_replace_all_u_literal_class_fn(
 		const uint16_t *members, size_t members_len,
 		jsval_replace_callback_fn callback, void *callback_ctx,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_range_class_fn(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_range_class_fn(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_replace_u_literal_negated_class_fn(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len,
@@ -453,6 +507,16 @@ int jsval_method_string_replace_u_literal_negated_class_fn(
 int jsval_method_string_replace_all_u_literal_negated_class_fn(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_u_literal_negated_range_class_fn(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
+		jsval_replace_callback_fn callback, void *callback_ctx,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_method_string_replace_all_u_literal_negated_range_class_fn(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count,
 		jsval_replace_callback_fn callback, void *callback_ctx,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_method_string_split_u_literal_surrogate(jsval_region_t *region,
@@ -469,9 +533,19 @@ int jsval_method_string_split_u_literal_class(
 		const uint16_t *members, size_t members_len, int have_limit,
 		jsval_t limit_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_method_string_split_u_literal_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, int have_limit,
+		jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_method_string_split_u_literal_negated_class(
 		jsval_region_t *region, jsval_t this_value,
 		const uint16_t *members, size_t members_len, int have_limit,
+		jsval_t limit_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_method_string_split_u_literal_negated_range_class(
+		jsval_region_t *region, jsval_t this_value,
+		const uint16_t *ranges, size_t range_count, int have_limit,
 		jsval_t limit_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 int jsval_method_string_search_regex(jsval_region_t *region,

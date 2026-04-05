@@ -464,6 +464,124 @@ test_u_literal_negated_class_exec(void)
 	assert(errno == EINVAL);
 }
 
+static void
+test_u_literal_range_class_exec(void)
+{
+	static const uint16_t pair_then_b_d_low[] = {
+		'A', 0xD834, 0xDF06, 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t pair_then_high_c[] = {
+		'A', 0xD834, 0xDF06, 0xD834, 'C'
+	};
+	static const uint16_t pair_only[] = {0xD834, 0xDF06};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t high_range[] = {0xD834, 0xD834};
+	static const uint16_t surrogate_range[] = {0xD800, 0xDFFF};
+	static const uint16_t malformed_ranges[] = {'D', 'B'};
+	jsregex_exec_result_t result;
+	jsregex_search_result_t search_result;
+
+	assert(jsregex_exec_u_literal_range_class_utf16(pair_then_b_d_low,
+			sizeof(pair_then_b_d_low) / sizeof(pair_then_b_d_low[0]),
+			b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 3);
+	assert(result.end == 4);
+	assert(result.slot_count == 1);
+
+	assert(jsregex_search_u_literal_range_class_utf16(pair_then_b_d_low,
+			sizeof(pair_then_b_d_low) / sizeof(pair_then_b_d_low[0]),
+			b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 4,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 4);
+	assert(search_result.end == 5);
+
+	assert(jsregex_search_u_literal_range_class_utf16(pair_then_high_c,
+			sizeof(pair_then_high_c) / sizeof(pair_then_high_c[0]),
+			high_range, sizeof(high_range) / (2 * sizeof(high_range[0])), 0,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 3);
+	assert(search_result.end == 4);
+
+	assert(jsregex_search_u_literal_range_class_utf16(pair_only,
+			sizeof(pair_only) / sizeof(pair_only[0]), surrogate_range,
+			sizeof(surrogate_range) / (2 * sizeof(surrogate_range[0])), 0,
+			&search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_exec_u_literal_range_class_utf16(pair_then_b_d_low,
+			sizeof(pair_then_b_d_low) / sizeof(pair_then_b_d_low[0]),
+			malformed_ranges,
+			sizeof(malformed_ranges) / (2 * sizeof(malformed_ranges[0])), 0,
+			&result) == -1);
+	assert(errno == EINVAL);
+}
+
+static void
+test_u_literal_negated_range_class_exec(void)
+{
+	static const uint16_t pair_a_b_d_low_z[] = {
+		0xD834, 0xDF06, 'A', 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t pair_then_high_c_b[] = {
+		0xD834, 0xDF06, 0xD834, 'C', 'B'
+	};
+	static const uint16_t pair_only[] = {0xD834, 0xDF06};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t high_and_c_ranges[] = {
+		0xD834, 0xD834, 'C', 'C'
+	};
+	static const uint16_t surrogate_range[] = {0xD800, 0xDFFF};
+	static const uint16_t malformed_ranges[] = {'D', 'B'};
+	jsregex_exec_result_t result;
+	jsregex_search_result_t search_result;
+
+	assert(jsregex_exec_u_literal_negated_range_class_utf16(
+			pair_a_b_d_low_z,
+			sizeof(pair_a_b_d_low_z) / sizeof(pair_a_b_d_low_z[0]),
+			b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 2);
+	assert(result.end == 3);
+	assert(result.slot_count == 1);
+
+	assert(jsregex_search_u_literal_negated_range_class_utf16(
+			pair_then_high_c_b,
+			sizeof(pair_then_high_c_b) / sizeof(pair_then_high_c_b[0]),
+			high_and_c_ranges,
+			sizeof(high_and_c_ranges) /
+			(2 * sizeof(high_and_c_ranges[0])), 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 4);
+	assert(search_result.end == 5);
+
+	assert(jsregex_search_u_literal_negated_range_class_utf16(pair_only,
+			sizeof(pair_only) / sizeof(pair_only[0]), surrogate_range,
+			sizeof(surrogate_range) / (2 * sizeof(surrogate_range[0])), 0,
+			&search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_exec_u_literal_negated_range_class_utf16(
+			pair_a_b_d_low_z,
+			sizeof(pair_a_b_d_low_z) / sizeof(pair_a_b_d_low_z[0]),
+			malformed_ranges,
+			sizeof(malformed_ranges) / (2 * sizeof(malformed_ranges[0])), 0,
+			&result) == -1);
+	assert(errno == EINVAL);
+}
+
 int
 main(void)
 {
@@ -474,6 +592,8 @@ main(void)
 	test_u_literal_sequence_exec();
 	test_u_literal_class_exec();
 	test_u_literal_negated_class_exec();
+	test_u_literal_range_class_exec();
+	test_u_literal_negated_range_class_exec();
 	return 0;
 }
 

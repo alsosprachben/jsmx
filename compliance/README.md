@@ -110,6 +110,8 @@ Regex compatibility choices are translator-owned first.
   - fixed no-capture literal sequences
   - simple no-capture literal-member classes
   - simple no-capture negated literal-member classes
+  - simple no-capture ranged classes
+  - simple no-capture negated ranged classes
 
 ## Layout
 

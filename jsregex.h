@@ -60,6 +60,13 @@ int jsregex_exec_u_literal_class_utf16(const uint16_t *subject,
 int jsregex_exec_u_literal_negated_class_utf16(const uint16_t *subject,
 		size_t subject_len, const uint16_t *members, size_t members_len,
 		size_t start_index, jsregex_exec_result_t *result_ptr);
+int jsregex_exec_u_literal_range_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *ranges, size_t range_count,
+		size_t start_index, jsregex_exec_result_t *result_ptr);
+int jsregex_exec_u_literal_negated_range_class_utf16(
+		const uint16_t *subject, size_t subject_len,
+		const uint16_t *ranges, size_t range_count, size_t start_index,
+		jsregex_exec_result_t *result_ptr);
 int jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		int *matched_ptr);
@@ -75,6 +82,13 @@ int jsregex_search_u_literal_class_utf16(const uint16_t *subject,
 int jsregex_search_u_literal_negated_class_utf16(const uint16_t *subject,
 		size_t subject_len, const uint16_t *members, size_t members_len,
 		size_t start_index, jsregex_search_result_t *result_ptr);
+int jsregex_search_u_literal_range_class_utf16(const uint16_t *subject,
+		size_t subject_len, const uint16_t *ranges, size_t range_count,
+		size_t start_index, jsregex_search_result_t *result_ptr);
+int jsregex_search_u_literal_negated_range_class_utf16(
+		const uint16_t *subject, size_t subject_len,
+		const uint16_t *ranges, size_t range_count, size_t start_index,
+		jsregex_search_result_t *result_ptr);
 int jsregex_search_utf16(const uint16_t *subject, size_t subject_len,
 		const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,

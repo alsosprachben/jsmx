@@ -3333,6 +3333,490 @@ test_u_literal_negated_class_replace_split_rewrite(void)
 	assert(jsval_array_get(&region, result, 1, &value) == 0);
 	assert_utf16_string(&region, value, d_unit, 1);
 }
+
+static void
+test_u_literal_range_class_search_match_rewrite(void)
+{
+	static const uint16_t range_subject_units[] = {
+		'A', 0xD834, 0xDF06, 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t pair_only_units[] = {
+		'A', 0xD834, 0xDF06, '!'
+	};
+	static const uint16_t high_subject_units[] = {
+		'A', 0xD834, 0xDF06, 0xD834, 'C'
+	};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t high_range[] = {0xD834, 0xD834};
+	static const uint16_t surrogate_range[] = {0xD800, 0xDFFF};
+	static const uint16_t b_unit[] = {'B'};
+	static const uint16_t d_unit[] = {'D'};
+	static const uint16_t low_unit[] = {0xDF06};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t range_subject;
+	jsval_t pair_only;
+	jsval_t high_subject;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, range_subject_units,
+			sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+			&range_subject) == 0);
+	assert(jsval_string_new_utf16(&region, pair_only_units,
+			sizeof(pair_only_units) / sizeof(pair_only_units[0]),
+			&pair_only) == 0);
+	assert(jsval_string_new_utf16(&region, high_subject_units,
+			sizeof(high_subject_units) / sizeof(high_subject_units[0]),
+			&high_subject) == 0);
+
+	assert(jsval_method_string_search_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), &result,
+			&error) == 0);
+	assert_number_value(result, 3.0);
+
+	assert(jsval_method_string_search_u_literal_range_class(&region,
+			pair_only, surrogate_range,
+			sizeof(surrogate_range) / (2 * sizeof(surrogate_range[0])),
+			&result, &error) == 0);
+	assert_number_value(result, -1.0);
+
+	assert(jsval_method_string_search_u_literal_range_class(&region,
+			high_subject, high_range,
+			sizeof(high_range) / (2 * sizeof(high_range[0])), &result,
+			&error) == 0);
+	assert_number_value(result, 3.0);
+
+	assert(jsval_method_string_match_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", b_unit, 1);
+	assert_object_number_prop(&region, result, "length", 1.0);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert_object_utf16_prop(&region, result, "input", range_subject_units,
+			sizeof(range_subject_units) / sizeof(range_subject_units[0]));
+	assert_object_undefined_prop(&region, result, "groups");
+
+	assert(jsval_method_string_match_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 1, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, d_unit, 1);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, low_unit, 1);
+
+	assert(jsval_method_string_match_all_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), &iterator,
+			&error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", b_unit, 1);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", d_unit, 1);
+	assert_object_number_prop(&region, result, "index", 4.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", low_unit, 1);
+	assert_object_number_prop(&region, result, "index", 5.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void
+test_u_literal_range_class_replace_split_rewrite(void)
+{
+	static const uint16_t range_subject_units[] = {
+		'A', 0xD834, 0xDF06, 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t subst_subject_units[] = {
+		'X', 'B', 'Y', 0xDF06
+	};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t b_unit[] = {'B'};
+	static const uint16_t d_unit[] = {'D'};
+	static const uint16_t low_unit[] = {0xDF06};
+	static const uint16_t replace_first_expected[] = {
+		'A', 0xD834, 0xDF06, 'X', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t replace_all_expected[] = {
+		'A', 0xD834, 0xDF06, 'X', 'X', 'X', 'Z'
+	};
+	static const uint16_t special_expected[] = {
+		'X', '[', '$', ']', '[', 'B', ']', '[', '$', '1', ']',
+		'[', 'X', ']', '[', 'Y', 0xDF06, ']', 'Y', 0xDF06
+	};
+	static const uint16_t callback_all_expected[] = {
+		'A', 0xD834, 0xDF06, '<', 'A', '>', '<', 'B', '>', '<', 'C', '>',
+		'Z'
+	};
+	static const uint16_t pair_prefix_units[] = {'A', 0xD834, 0xDF06};
+	static const uint16_t z_unit[] = {'Z'};
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t range_subject;
+	jsval_t subst_subject;
+	jsval_t ascii_x;
+	jsval_t special_replacement;
+	jsval_t limit_two;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	test_replace_surrogate_callback_ctx_t replace_all_ctx = {
+		0,
+		range_subject_units,
+		sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+		{b_unit, d_unit, low_unit},
+		{1, 1, 1},
+		{3, 4, 5},
+		{"<A>", "<B>", "<C>"}
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, range_subject_units,
+			sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+			&range_subject) == 0);
+	assert(jsval_string_new_utf16(&region, subst_subject_units,
+			sizeof(subst_subject_units) / sizeof(subst_subject_units[0]),
+			&subst_subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"X", 1,
+			&ascii_x) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"[$$][$&][$1][$`][$']", 20,
+			&special_replacement) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&limit_two) == 0);
+
+	assert(jsval_method_string_replace_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), ascii_x,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, replace_first_expected,
+			sizeof(replace_first_expected) /
+			sizeof(replace_first_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), ascii_x,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, replace_all_expected,
+			sizeof(replace_all_expected) /
+			sizeof(replace_all_expected[0]));
+
+	assert(jsval_method_string_replace_u_literal_range_class(&region,
+			subst_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), special_replacement,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, special_expected,
+			sizeof(special_expected) / sizeof(special_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_range_class_fn(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])),
+			test_replace_surrogate_callback, &replace_all_ctx, &result,
+			&error) == 0);
+	assert(replace_all_ctx.call_count == 3);
+	assert_utf16_string(&region, result, callback_all_expected,
+			sizeof(callback_all_expected) /
+			sizeof(callback_all_expected[0]));
+
+	assert(jsval_method_string_split_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 4);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, NULL, 0);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, NULL, 0);
+	assert(jsval_array_get(&region, result, 3, &value) == 0);
+	assert_utf16_string(&region, value, z_unit, 1);
+
+	assert(jsval_method_string_split_u_literal_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 1,
+			limit_two, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_prefix_units,
+			sizeof(pair_prefix_units) / sizeof(pair_prefix_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, NULL, 0);
+}
+
+static void
+test_u_literal_negated_range_class_search_match_rewrite(void)
+{
+	static const uint16_t range_subject_units[] = {
+		0xD834, 0xDF06, 'A', 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t pair_only_units[] = {0xD834, 0xDF06};
+	static const uint16_t high_subject_units[] = {
+		0xD834, 0xDF06, 0xD834, 'C', 'B'
+	};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t high_and_c_ranges[] = {
+		0xD834, 0xD834, 'C', 'C'
+	};
+	static const uint16_t surrogate_range[] = {0xD800, 0xDFFF};
+	static const uint16_t a_unit[] = {'A'};
+	static const uint16_t z_unit[] = {'Z'};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t range_subject;
+	jsval_t pair_only;
+	jsval_t high_subject;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, range_subject_units,
+			sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+			&range_subject) == 0);
+	assert(jsval_string_new_utf16(&region, pair_only_units,
+			sizeof(pair_only_units) / sizeof(pair_only_units[0]),
+			&pair_only) == 0);
+	assert(jsval_string_new_utf16(&region, high_subject_units,
+			sizeof(high_subject_units) / sizeof(high_subject_units[0]),
+			&high_subject) == 0);
+
+	assert(jsval_method_string_search_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), &result,
+			&error) == 0);
+	assert_number_value(result, 2.0);
+
+	assert(jsval_method_string_search_u_literal_negated_range_class(&region,
+			pair_only, surrogate_range,
+			sizeof(surrogate_range) / (2 * sizeof(surrogate_range[0])),
+			&result, &error) == 0);
+	assert_number_value(result, -1.0);
+
+	assert(jsval_method_string_search_u_literal_negated_range_class(&region,
+			high_subject, high_and_c_ranges,
+			sizeof(high_and_c_ranges) /
+			(2 * sizeof(high_and_c_ranges[0])), &result,
+			&error) == 0);
+	assert_number_value(result, 4.0);
+
+	assert(jsval_method_string_match_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", a_unit, 1);
+	assert_object_number_prop(&region, result, "index", 2.0);
+	assert_object_undefined_prop(&region, result, "groups");
+
+	assert(jsval_method_string_match_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 1, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, a_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, z_unit, 1);
+
+	assert(jsval_method_string_match_all_u_literal_negated_range_class(
+			&region, range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), &iterator,
+			&error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", a_unit, 1);
+	assert_object_number_prop(&region, result, "index", 2.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", z_unit, 1);
+	assert_object_number_prop(&region, result, "index", 6.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void
+test_u_literal_negated_range_class_replace_split_rewrite(void)
+{
+	static const uint16_t range_subject_units[] = {
+		0xD834, 0xDF06, 'A', 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t subst_subject_units[] = {'A', 'B', 'D', 'Z'};
+	static const uint16_t b_to_d_and_low_ranges[] = {
+		'B', 'D', 0xDF06, 0xDF06
+	};
+	static const uint16_t replace_expected[] = {
+		0xD834, 0xDF06, 'X', 'B', 'D', 0xDF06, 'Z'
+	};
+	static const uint16_t replace_all_expected[] = {
+		0xD834, 0xDF06, 'X', 'B', 'D', 0xDF06, 'X'
+	};
+	static const uint16_t special_expected[] = {
+		'[', '$', ']', '[', 'A', ']', '[', '$', '1', ']',
+		'[', ']', '[', 'B', 'D', 'Z', ']', 'B', 'D', 'Z'
+	};
+	static const uint16_t callback_expected[] = {
+		0xD834, 0xDF06, '<', 'A', '>', 'B', 'D', 0xDF06, '<', 'B', '>'
+	};
+	static const uint16_t pair_units[] = {0xD834, 0xDF06};
+	static const uint16_t bdlow_units[] = {'B', 'D', 0xDF06};
+	static const uint16_t a_unit[] = {'A'};
+	static const uint16_t z_unit[] = {'Z'};
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t range_subject;
+	jsval_t subst_subject;
+	jsval_t ascii_x;
+	jsval_t special_replacement;
+	jsval_t limit_two;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	test_replace_surrogate_callback_ctx_t replace_all_ctx = {
+		0,
+		range_subject_units,
+		sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+		{a_unit, z_unit},
+		{1, 1},
+		{2, 6},
+		{"<A>", "<B>"}
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, range_subject_units,
+			sizeof(range_subject_units) / sizeof(range_subject_units[0]),
+			&range_subject) == 0);
+	assert(jsval_string_new_utf16(&region, subst_subject_units,
+			sizeof(subst_subject_units) / sizeof(subst_subject_units[0]),
+			&subst_subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"X", 1,
+			&ascii_x) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"[$$][$&][$1][$`][$']", 20,
+			&special_replacement) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&limit_two) == 0);
+
+	assert(jsval_method_string_replace_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), ascii_x,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, replace_expected,
+			sizeof(replace_expected) / sizeof(replace_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_negated_range_class(
+			&region, range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), ascii_x,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, replace_all_expected,
+			sizeof(replace_all_expected) / sizeof(replace_all_expected[0]));
+
+	assert(jsval_method_string_replace_u_literal_negated_range_class(&region,
+			subst_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), special_replacement,
+			&result, &error) == 0);
+	assert_utf16_string(&region, result, special_expected,
+			sizeof(special_expected) / sizeof(special_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_literal_negated_range_class_fn(
+			&region, range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])),
+			test_replace_surrogate_callback, &replace_all_ctx, &result,
+			&error) == 0);
+	assert(replace_all_ctx.call_count == 2);
+	assert_utf16_string(&region, result, callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]));
+
+	assert(jsval_method_string_split_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 0,
+			jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_units,
+			sizeof(pair_units) / sizeof(pair_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, bdlow_units,
+			sizeof(bdlow_units) / sizeof(bdlow_units[0]));
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, NULL, 0);
+
+	assert(jsval_method_string_split_u_literal_negated_range_class(&region,
+			range_subject, b_to_d_and_low_ranges,
+			sizeof(b_to_d_and_low_ranges) /
+			(2 * sizeof(b_to_d_and_low_ranges[0])), 1,
+			limit_two, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_units,
+			sizeof(pair_units) / sizeof(pair_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, bdlow_units,
+			sizeof(bdlow_units) / sizeof(bdlow_units[0]));
+}
 #endif
 
 static void test_method_concat_bridge(void)
@@ -4780,6 +5264,10 @@ int main(void)
 	test_u_literal_class_replace_split_rewrite();
 	test_u_literal_negated_class_search_match_rewrite();
 	test_u_literal_negated_class_replace_split_rewrite();
+	test_u_literal_range_class_search_match_rewrite();
+	test_u_literal_range_class_replace_split_rewrite();
+	test_u_literal_negated_range_class_search_match_rewrite();
+	test_u_literal_negated_range_class_replace_split_rewrite();
 #endif
 	test_method_concat_bridge();
 	test_method_accessor_bridge();

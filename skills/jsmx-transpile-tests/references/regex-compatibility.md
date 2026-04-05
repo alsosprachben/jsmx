@@ -89,7 +89,8 @@ Current status:
 | Single literal lone-surrogate `/u` no-capture exec/test/search/match/matchAll/replace/replaceAll/split behavior | `strings/test262/exec/u-lastindex-adv` and `strings/jsmx/u-literal-surrogate-matchAll-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to literal no-capture string-method, iterator, and callback-replacer cases until more recipes are reviewed |
 | Fixed multi-literal `/u` no-capture string-method behavior | `strings/jsmx/u-literal-sequence-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to exact UTF-16 literal sequences with no captures, classes, alternation, or quantifiers |
 | Single no-capture character classes of explicit literal UTF-16 members under `/u`, including negated literal-member classes | `strings/jsmx/u-literal-negated-class-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to one class atom with explicit literal members only; negation is allowed, but ranges, escapes, alternation, and quantifiers remain out of scope |
-| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond explicit literal no-capture `/u` classes | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
+| Single no-capture character classes of explicit inclusive UTF-16 ranges under `/u`, including negated ranged classes | `strings/jsmx/u-literal-negated-range-class-match-rewrite` | `Rewrite-backed:` | Keep the rewrite scoped to one class atom with explicit inclusive range data only; negation is allowed, but escapes, alternation, and quantifiers remain out of scope |
+| Broader Unicode/surrogate-sensitive `/u` behavior | future cases beyond explicit literal or ranged no-capture `/u` classes | `Unsupported:` rewrite-candidate | Land additional reviewed rewrite recipes before translating them as passing cases |
 | Reflective regex property-override behavior | `strings/test262/matchAll/flags-nonglobal-throws` | `Idiomatic slow path:` | Keep it as an explicit slow path unless the runtime grows a reflective regex object model |
 | `d` / `v` flag surface | `regex/test262/flags/this-val-regexp` | `Unsupported:` beyond the current `gimsuy` subset | Add runtime/backend support before expanding coverage |
 
@@ -225,9 +226,69 @@ Rewrite recipe:
   - `matchAll` yields exec-shaped iterator results with `groups = undefined`
   - `replace`/`replaceAll` callback replacers receive `(match, offset, input)`
 
-This rewrite is intentionally narrow. Any broader `/u` case, including ranged
-classes, escapes, quantifiers, alternation, captures, or named groups, still
-needs a separate reviewed recipe before it can be translated as passing.
+This rewrite is intentionally narrow. Any broader `/u` case, including
+multi-atom classes with mixed operators, escapes, quantifiers, alternation,
+captures, or named groups, still needs a separate reviewed recipe before it
+can be translated as passing.
+
+## Approved Rewrite: Single No-Capture Ranged Character Class Under `/u`
+
+Use a rewrite-backed lowering only when all of these are true:
+
+- the JS pattern is exactly one character class atom under the `u` flag
+- the class is represented as one or more explicit inclusive UTF-16
+  `[start, end]` range pairs supplied directly by the translator
+- optional negation is allowed for the whole class atom
+- the translated case only needs no-capture
+  `search`/`match`/`matchAll`/`replace`/`replaceAll`/`split` semantics
+- there are no escapes with broader regex meaning, alternation, quantifiers,
+  backreferences, or other regex operators
+- empty range tables are outside the approved family; the translator should
+  not lower them through this rewrite lane
+
+Rewrite recipe:
+
+- do **not** lower the pattern through `jsval_regexp_new(...)`
+- emit the class as explicit inclusive UTF-16 range data and lower
+  string-method surfaces through the dedicated `jsval` helpers:
+  - `jsval_method_string_search_u_literal_range_class(...)`
+  - `jsval_method_string_match_u_literal_range_class(...)`
+  - `jsval_method_string_match_all_u_literal_range_class(...)`
+  - `jsval_method_string_replace_u_literal_range_class(...)`
+  - `jsval_method_string_replace_all_u_literal_range_class(...)`
+  - `jsval_method_string_replace_u_literal_range_class_fn(...)`
+  - `jsval_method_string_replace_all_u_literal_range_class_fn(...)`
+  - `jsval_method_string_split_u_literal_range_class(...)`
+- for negated ranged classes, use the parallel dedicated helpers:
+  - `jsval_method_string_search_u_literal_negated_range_class(...)`
+  - `jsval_method_string_match_u_literal_negated_range_class(...)`
+  - `jsval_method_string_match_all_u_literal_negated_range_class(...)`
+  - `jsval_method_string_replace_u_literal_negated_range_class(...)`
+  - `jsval_method_string_replace_all_u_literal_negated_range_class(...)`
+  - `jsval_method_string_replace_u_literal_negated_range_class_fn(...)`
+  - `jsval_method_string_replace_all_u_literal_negated_range_class_fn(...)`
+  - `jsval_method_string_split_u_literal_negated_range_class(...)`
+- a ranged-class match consumes exactly one UTF-16 code unit at a Unicode
+  code-point boundary
+- intact surrogate pairs in the subject remain indivisible code points during
+  scanning, so a range must never match only the high or low half of a
+  well-formed pair
+- isolated surrogate units in the subject may match when their exact code unit
+  falls inside one of the supplied inclusive ranges
+- for negated ranged classes, a match still consumes exactly one
+  boundary-aligned UTF-16 code unit, but only when that isolated code unit is
+  not covered by the explicit range table; intact surrogate pairs remain
+  indivisible and are never consumed by the negated helper
+- keep the same no-capture result contract as the current semantic regex layer:
+  - `match` non-global returns an exec-shaped object or `null`
+  - `match` global returns an array of matched one-unit strings or `null`
+  - `matchAll` yields exec-shaped iterator results with `groups = undefined`
+  - `replace`/`replaceAll` callback replacers receive `(match, offset, input)`
+
+This rewrite is intentionally narrow. Any broader `/u` case, including
+escaped classes, predefined classes, set operators, alternation, quantifiers,
+captures, or named groups, still needs a separate reviewed recipe before it
+can be translated as passing.
 
 ## Current Slow-Path Policy
 
