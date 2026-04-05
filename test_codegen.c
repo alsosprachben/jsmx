@@ -2314,6 +2314,81 @@ static generated_status_t generated_smoke_jsval_object_clone_own(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_array_clone_dense(char *detail,
+		size_t cap)
+{
+	static const uint8_t json_source[] = "[1,2]";
+	static const uint8_t expected_json[] =
+		"{\"jsonSource\":[1,2],\"jsonClone\":[7,2],\"nativeSource\":[4,5],\"nativeClone\":[4,5,6]}";
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t parsed_src;
+	jsval_t json_clone;
+	jsval_t native_src;
+	jsval_t native_clone;
+	jsval_t fail_out;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 4, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+	if (jsval_json_parse(&region, json_source, sizeof(json_source) - 1, 8,
+			&parsed_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(json_source)");
+	}
+	if (jsval_array_clone_dense(&region, parsed_src, 2, &json_clone) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_clone_dense(json)");
+	}
+	if (jsval_array_set(&region, json_clone, 0, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(json_clone[0])");
+	}
+
+	if (jsval_array_new(&region, 2, &native_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(native_src)");
+	}
+	if (jsval_array_push(&region, native_src, jsval_number(4.0)) < 0
+			|| jsval_array_push(&region, native_src, jsval_number(5.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(native_src)");
+	}
+	if (jsval_array_clone_dense(&region, native_src, 3, &native_clone) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_clone_dense(native)");
+	}
+	if (jsval_array_push(&region, native_clone, jsval_number(6.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(native_clone)");
+	}
+
+	fail_out = jsval_null();
+	errno = 0;
+	if (jsval_array_clone_dense(&region, parsed_src, 1, &fail_out) != -1) {
+		return generated_failf(detail, cap,
+				"expected clone with undersized capacity to fail");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from undersized clone capacity, got %d",
+				errno);
+	}
+	if (fail_out.kind != JSVAL_KIND_NULL) {
+		return generated_failf(detail, cap,
+				"expected failed clone output to remain unchanged");
+	}
+
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"jsonSource", 10,
+			parsed_src) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"jsonClone", 9, json_clone) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"nativeSource", 12, native_src) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"nativeClone", 11, native_clone) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_dense_array_semantics(
 		char *detail, size_t cap)
 {
@@ -6053,6 +6128,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_object_value_order", generated_smoke_jsval_object_value_order},
 	{"smoke", "jsval_object_copy_own", generated_smoke_jsval_object_copy_own},
 	{"smoke", "jsval_object_clone_own", generated_smoke_jsval_object_clone_own},
+	{"smoke", "jsval_array_clone_dense", generated_smoke_jsval_array_clone_dense},
 	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},

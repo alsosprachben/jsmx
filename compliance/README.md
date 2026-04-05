@@ -85,6 +85,7 @@ The committed suites currently cover:
     - ordered key / value access
     - shallow own-property copy
     - fresh own-property clone into a new native object
+    - fresh dense-array clone into a new native array
     - delete
     - overwrite
     - push

@@ -33,6 +33,7 @@ caller-provided memory:
   - from native or JSON-backed source objects
   - into a newly allocated pre-capacity-planned native destination
 - dense, capacity-bounded native array semantics such as:
+  - fresh dense-array clone
   - push
   - pop
   - shift

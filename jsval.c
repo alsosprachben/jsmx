@@ -9149,6 +9149,46 @@ int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object,
 	return 0;
 }
 
+int jsval_array_clone_dense(jsval_region_t *region, jsval_t src, size_t capacity,
+		jsval_t *value_ptr)
+{
+	jsval_t out;
+	size_t len;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL || src.kind != JSVAL_KIND_ARRAY) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src.repr != JSVAL_REPR_NATIVE && src.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	len = jsval_array_length(region, src);
+	if (capacity < len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	if (jsval_array_new(region, capacity, &out) < 0) {
+		return -1;
+	}
+	for (i = 0; i < len; i++) {
+		jsval_t child;
+
+		if (jsval_array_get(region, src, i, &child) < 0) {
+			return -1;
+		}
+		if (jsval_array_set(region, out, i, child) < 0) {
+			return -1;
+		}
+	}
+
+	*value_ptr = out;
+	return 0;
+}
+
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr)
 {
 	if (array.kind != JSVAL_KIND_ARRAY) {

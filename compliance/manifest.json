@@ -3830,6 +3830,46 @@
       "notes": "Repo-authored idiomatic object fixture for the ENOBUFS capacity contract on jsval_object_clone_own(), leaving the output value unchanged on failure."
     },
     {
+      "id": "jsmx-objects-array-clone-dense-native",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-clone-dense-native.js",
+      "generated": "compliance/generated/objects/jsmx/array-clone-dense-native.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for fresh native array cloning through jsval_array_clone_dense()."
+    },
+    {
+      "id": "jsmx-objects-array-clone-dense-json-source",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-clone-dense-json-source.js",
+      "generated": "compliance/generated/objects/jsmx/array-clone-dense-json-source.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for fresh cloning from a JSON-backed array source through jsval_array_clone_dense()."
+    },
+    {
+      "id": "jsmx-objects-array-clone-dense-mutate-independence",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-clone-dense-mutate-independence.js",
+      "generated": "compliance/generated/objects/jsmx/array-clone-dense-mutate-independence.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for clone-then-mutate lowering through jsval_array_clone_dense(), leaving the original dense source unchanged."
+    },
+    {
+      "id": "jsmx-objects-array-clone-dense-capacity-error",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-clone-dense-capacity-error.js",
+      "generated": "compliance/generated/objects/jsmx/array-clone-dense-capacity-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for the ENOBUFS capacity contract on jsval_array_clone_dense(), leaving the output value unchanged on failure."
+    },
+    {
       "id": "jsmx-objects-array-push-length",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-push-length.js",

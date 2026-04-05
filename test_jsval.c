@@ -873,6 +873,78 @@ static void test_object_clone_own_helpers(void)
 	assert(errno == EINVAL);
 }
 
+static void test_array_clone_dense_helpers(void)
+{
+	static const char json_source[] = "[1,2]";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t native_src;
+	jsval_t clone;
+	jsval_t json_src;
+	jsval_t fail_out;
+	jsval_t child;
+	jsval_t child_src;
+	jsval_t child_clone;
+	jsval_t got;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_array_new(&region, 4, &native_src) == 0);
+	assert(jsval_array_push(&region, native_src, jsval_number(1.0)) == 0);
+	assert(jsval_array_push(&region, native_src, jsval_number(2.0)) == 0);
+	assert(jsval_array_clone_dense(&region, native_src, 3, &clone) == 0);
+	assert(jsval_is_native(clone) == 1);
+	assert(jsval_array_length(&region, clone) == 2);
+	assert_json(&region, clone, "[1,2]");
+	assert(jsval_array_push(&region, clone, jsval_number(3.0)) == 0);
+	assert_json(&region, native_src, "[1,2]");
+	assert_json(&region, clone, "[1,2,3]");
+
+	assert(jsval_array_set_length(&region, native_src, 4) == 0);
+	assert(jsval_array_clone_dense(&region, native_src, 4, &clone) == 0);
+	assert(jsval_array_length(&region, clone) == 4);
+	assert(jsval_array_get(&region, clone, 2, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_array_get(&region, clone, 3, &got) == 0);
+	assert(got.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_source,
+			sizeof(json_source) - 1, 8, &json_src) == 0);
+	assert(jsval_array_clone_dense(&region, json_src, 2, &clone) == 0);
+	assert(jsval_is_native(clone) == 1);
+	assert_json(&region, clone, "[1,2]");
+	assert(jsval_array_set(&region, clone, 0, jsval_number(7.0)) == 0);
+	assert_json(&region, json_src, "[1,2]");
+	assert_json(&region, clone, "[7,2]");
+
+	assert(jsval_object_new(&region, 1, &child) == 0);
+	assert(jsval_object_set_utf8(&region, child, (const uint8_t *)"v", 1,
+			jsval_number(1.0)) == 0);
+	assert(jsval_array_new(&region, 1, &native_src) == 0);
+	assert(jsval_array_push(&region, native_src, child) == 0);
+	assert(jsval_array_clone_dense(&region, native_src, 1, &clone) == 0);
+	assert(jsval_array_get(&region, native_src, 0, &child_src) == 0);
+	assert(jsval_array_get(&region, clone, 0, &child_clone) == 0);
+	assert(jsval_strict_eq(&region, child_src, child_clone) == 1);
+	assert(jsval_object_set_utf8(&region, child_clone, (const uint8_t *)"v", 1,
+			jsval_number(2.0)) == 0);
+	assert_json(&region, native_src, "[{\"v\":2}]");
+	assert_json(&region, clone, "[{\"v\":2}]");
+
+	fail_out = jsval_null();
+	errno = 0;
+	assert(jsval_array_clone_dense(&region, json_src, 1, &fail_out) < 0);
+	assert(errno == ENOBUFS);
+	assert(fail_out.kind == JSVAL_KIND_NULL);
+
+	errno = 0;
+	assert(jsval_array_clone_dense(&region, jsval_number(1.0), 1, &clone) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_array_clone_dense(&region, json_src, 2, NULL) < 0);
+	assert(errno == EINVAL);
+}
+
 static void test_policy_layer()
 {
 	static const char json[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -4320,6 +4392,7 @@ int main(void)
 	test_json_container_helpers();
 	test_object_copy_own_helpers();
 	test_object_clone_own_helpers();
+	test_array_clone_dense_helpers();
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();
