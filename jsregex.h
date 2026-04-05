@@ -37,6 +37,15 @@ typedef struct jsregex_search_result_s {
 	size_t end;
 } jsregex_search_result_t;
 
+typedef enum jsregex_u_predefined_class_kind_e {
+	JSREGEX_U_PREDEFINED_CLASS_DIGIT = 0,
+	JSREGEX_U_PREDEFINED_CLASS_NOT_DIGIT = 1,
+	JSREGEX_U_PREDEFINED_CLASS_WHITESPACE = 2,
+	JSREGEX_U_PREDEFINED_CLASS_NOT_WHITESPACE = 3,
+	JSREGEX_U_PREDEFINED_CLASS_WORD = 4,
+	JSREGEX_U_PREDEFINED_CLASS_NOT_WORD = 5
+} jsregex_u_predefined_class_kind_t;
+
 int jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,
 		jsregex_compiled_t *compiled_ptr);
@@ -67,6 +76,9 @@ int jsregex_exec_u_literal_negated_range_class_utf16(
 		const uint16_t *subject, size_t subject_len,
 		const uint16_t *ranges, size_t range_count, size_t start_index,
 		jsregex_exec_result_t *result_ptr);
+int jsregex_exec_u_predefined_class_utf16(const uint16_t *subject,
+		size_t subject_len, jsregex_u_predefined_class_kind_t kind,
+		size_t start_index, jsregex_exec_result_t *result_ptr);
 int jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		int *matched_ptr);
@@ -89,6 +101,9 @@ int jsregex_search_u_literal_negated_range_class_utf16(
 		const uint16_t *subject, size_t subject_len,
 		const uint16_t *ranges, size_t range_count, size_t start_index,
 		jsregex_search_result_t *result_ptr);
+int jsregex_search_u_predefined_class_utf16(const uint16_t *subject,
+		size_t subject_len, jsregex_u_predefined_class_kind_t kind,
+		size_t start_index, jsregex_search_result_t *result_ptr);
 int jsregex_search_utf16(const uint16_t *subject, size_t subject_len,
 		const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,

@@ -112,6 +112,8 @@ Regex compatibility choices are translator-owned first.
   - simple no-capture negated literal-member classes
   - simple no-capture ranged classes
   - simple no-capture negated ranged classes
+  - simple no-capture predefined classes `\d`, `\D`, `\s`, `\S`, `\w`, and
+    `\W`
 
 ## Layout
 

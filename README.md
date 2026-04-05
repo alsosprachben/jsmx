@@ -90,6 +90,8 @@ That makes semantic correctness more important than surface familiarity:
     - simple no-capture negated literal-member classes
     - simple no-capture ranged classes
     - simple no-capture negated ranged classes
+    - simple no-capture predefined classes `\\d`, `\\D`, `\\s`, `\\S`,
+      `\\w`, and `\\W`
     - `matchAll`
   - a direct bridge from `jsval_t` into the thin `jsmethod` string-builtins
     layer

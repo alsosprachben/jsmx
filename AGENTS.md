@@ -76,6 +76,8 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - simple no-capture negated literal-member classes
   - simple no-capture ranged classes
   - simple no-capture negated ranged classes
+  - simple no-capture predefined classes `\d`, `\D`, `\s`, `\S`, `\w`, and
+    `\W`
   - `matchAll`
 - a direct bridge from `jsval_t` into the thin string-method layer
 

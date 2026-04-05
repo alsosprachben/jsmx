@@ -582,6 +582,98 @@ test_u_literal_negated_range_class_exec(void)
 	assert(errno == EINVAL);
 }
 
+static void
+test_u_predefined_class_exec(void)
+{
+	static const uint16_t pair_then_digits[] = {
+		0xD834, 0xDF06, 'A', '1', '2', 'B'
+	};
+	static const uint16_t whitespace_subject[] = {
+		'A', 0x00A0, 'B', 0x2028, 'C'
+	};
+	static const uint16_t word_subject[] = {
+		0xD834, 0xDF06, '!', 'A', '1', '_', 0xD834, '?'
+	};
+	static const uint16_t pair_only[] = {0xD834, 0xDF06};
+	jsregex_exec_result_t result;
+	jsregex_search_result_t search_result;
+
+	assert(jsregex_search_u_predefined_class_utf16(pair_then_digits,
+			sizeof(pair_then_digits) / sizeof(pair_then_digits[0]),
+			JSREGEX_U_PREDEFINED_CLASS_DIGIT, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 3);
+	assert(search_result.end == 4);
+
+	assert(jsregex_search_u_predefined_class_utf16(pair_then_digits,
+			sizeof(pair_then_digits) / sizeof(pair_then_digits[0]),
+			JSREGEX_U_PREDEFINED_CLASS_NOT_DIGIT, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 2);
+	assert(search_result.end == 3);
+
+	assert(jsregex_exec_u_predefined_class_utf16(whitespace_subject,
+			sizeof(whitespace_subject) / sizeof(whitespace_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_WHITESPACE, 0, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 1);
+	assert(result.end == 2);
+	assert(result.slot_count == 1);
+
+	assert(jsregex_search_u_predefined_class_utf16(whitespace_subject,
+			sizeof(whitespace_subject) / sizeof(whitespace_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_WHITESPACE, 2,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 3);
+	assert(search_result.end == 4);
+
+	assert(jsregex_search_u_predefined_class_utf16(whitespace_subject,
+			sizeof(whitespace_subject) / sizeof(whitespace_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_NOT_WHITESPACE, 0,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 0);
+	assert(search_result.end == 1);
+
+	assert(jsregex_search_u_predefined_class_utf16(word_subject,
+			sizeof(word_subject) / sizeof(word_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_WORD, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 3);
+	assert(search_result.end == 4);
+
+	assert(jsregex_search_u_predefined_class_utf16(word_subject,
+			sizeof(word_subject) / sizeof(word_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_NOT_WORD, 0, &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 2);
+	assert(search_result.end == 3);
+
+	assert(jsregex_search_u_predefined_class_utf16(word_subject,
+			sizeof(word_subject) / sizeof(word_subject[0]),
+			JSREGEX_U_PREDEFINED_CLASS_NOT_WORD, 3,
+			&search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 6);
+	assert(search_result.end == 7);
+
+	assert(jsregex_search_u_predefined_class_utf16(pair_only,
+			sizeof(pair_only) / sizeof(pair_only[0]),
+			JSREGEX_U_PREDEFINED_CLASS_WORD, 0, &search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_search_u_predefined_class_utf16(pair_only,
+			sizeof(pair_only) / sizeof(pair_only[0]),
+			JSREGEX_U_PREDEFINED_CLASS_NOT_WORD, 0, &search_result) == 0);
+	assert(search_result.matched == 0);
+
+	assert(jsregex_exec_u_predefined_class_utf16(word_subject,
+			sizeof(word_subject) / sizeof(word_subject[0]),
+			(jsregex_u_predefined_class_kind_t)99, 0, &result) == -1);
+	assert(errno == EINVAL);
+}
+
 int
 main(void)
 {
@@ -594,6 +686,7 @@ main(void)
 	test_u_literal_negated_class_exec();
 	test_u_literal_range_class_exec();
 	test_u_literal_negated_range_class_exec();
+	test_u_predefined_class_exec();
 	return 0;
 }
 

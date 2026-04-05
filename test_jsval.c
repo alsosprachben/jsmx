@@ -3817,6 +3817,315 @@ test_u_literal_negated_range_class_replace_split_rewrite(void)
 	assert_utf16_string(&region, value, bdlow_units,
 			sizeof(bdlow_units) / sizeof(bdlow_units[0]));
 }
+
+static void
+test_u_predefined_class_search_match_rewrite(void)
+{
+	static const uint16_t digit_subject_units[] = {
+		0xD834, 0xDF06, 'A', '1', '2', 'B'
+	};
+	static const uint16_t whitespace_subject_units[] = {
+		'A', 0x00A0, 'B', 0x2028, 'C'
+	};
+	static const uint16_t word_subject_units[] = {
+		0xD834, 0xDF06, '!', 'A', '1', '_', 0xD834, '?'
+	};
+	static const uint16_t a_unit[] = {'A'};
+	static const uint16_t b_unit[] = {'B'};
+	static const uint16_t one_unit[] = {'1'};
+	static const uint16_t two_unit[] = {'2'};
+	static const uint16_t nbsp_unit[] = {0x00A0};
+	static const uint16_t line_sep_unit[] = {0x2028};
+	static const uint16_t bang_unit[] = {'!'};
+	static const uint16_t underscore_unit[] = {'_'};
+	static const uint16_t high_unit[] = {0xD834};
+	static const uint16_t q_unit[] = {'?'};
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t digit_subject;
+	jsval_t whitespace_subject;
+	jsval_t word_subject;
+	jsval_t iterator;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, digit_subject_units,
+			sizeof(digit_subject_units) / sizeof(digit_subject_units[0]),
+			&digit_subject) == 0);
+	assert(jsval_string_new_utf16(&region, whitespace_subject_units,
+			sizeof(whitespace_subject_units) /
+			sizeof(whitespace_subject_units[0]), &whitespace_subject) == 0);
+	assert(jsval_string_new_utf16(&region, word_subject_units,
+			sizeof(word_subject_units) / sizeof(word_subject_units[0]),
+			&word_subject) == 0);
+
+	assert(jsval_method_string_search_u_digit_class(&region, digit_subject,
+			&result, &error) == 0);
+	assert_number_value(result, 3.0);
+	assert(jsval_method_string_search_u_negated_digit_class(&region,
+			digit_subject, &result, &error) == 0);
+	assert_number_value(result, 2.0);
+	assert(jsval_method_string_match_u_digit_class(&region, digit_subject, 0,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", one_unit, 1);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_method_string_match_u_digit_class(&region, digit_subject, 1,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, one_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, two_unit, 1);
+	assert(jsval_method_string_match_all_u_negated_digit_class(&region,
+			digit_subject, &iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", a_unit, 1);
+	assert_object_number_prop(&region, result, "index", 2.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", b_unit, 1);
+	assert_object_number_prop(&region, result, "index", 5.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_search_u_whitespace_class(&region,
+			whitespace_subject, &result, &error) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_method_string_search_u_negated_whitespace_class(&region,
+			whitespace_subject, &result, &error) == 0);
+	assert_number_value(result, 0.0);
+	assert(jsval_method_string_match_u_whitespace_class(&region,
+			whitespace_subject, 0, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", nbsp_unit, 1);
+	assert_object_number_prop(&region, result, "index", 1.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_method_string_match_all_u_whitespace_class(&region,
+			whitespace_subject, &iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", nbsp_unit, 1);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", line_sep_unit, 1);
+	assert_object_number_prop(&region, result, "index", 3.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_method_string_search_u_word_class(&region, word_subject,
+			&result, &error) == 0);
+	assert_number_value(result, 3.0);
+	assert(jsval_method_string_search_u_negated_word_class(&region,
+			word_subject, &result, &error) == 0);
+	assert_number_value(result, 2.0);
+	assert(jsval_method_string_match_u_negated_word_class(&region,
+			word_subject, 0, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_utf16_prop(&region, result, "0", bang_unit, 1);
+	assert_object_number_prop(&region, result, "index", 2.0);
+	assert_object_undefined_prop(&region, result, "groups");
+	assert(jsval_method_string_match_u_word_class(&region, word_subject, 1,
+			&result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, a_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, one_unit, 1);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, underscore_unit, 1);
+	assert(jsval_method_string_match_all_u_negated_word_class(&region,
+			word_subject, &iterator, &error) == 0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", bang_unit, 1);
+	assert_object_number_prop(&region, result, "index", 2.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", high_unit, 1);
+	assert_object_number_prop(&region, result, "index", 6.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_utf16_prop(&region, result, "0", q_unit, 1);
+	assert_object_number_prop(&region, result, "index", 7.0);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 1);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void
+test_u_predefined_class_replace_split_rewrite(void)
+{
+	static const uint16_t digit_subject_units[] = {
+		0xD834, 0xDF06, 'A', '1', '2', 'B'
+	};
+	static const uint16_t whitespace_subject_units[] = {
+		'A', 0x00A0, 'B', 0x2028, 'C'
+	};
+	static const uint16_t word_subject_units[] = {
+		0xD834, 0xDF06, '!', 'A', '1', '_', 0xD834, '?'
+	};
+	static const uint16_t digit_subst_subject_units[] = {'A', '1', 'B'};
+	static const uint16_t replace_digit_expected[] = {
+		0xD834, 0xDF06, 'A', 'X', '2', 'B'
+	};
+	static const uint16_t replace_all_digit_expected[] = {
+		0xD834, 0xDF06, 'A', 'X', 'X', 'B'
+	};
+	static const uint16_t special_digit_expected[] = {
+		'A', '[', '$', ']', '[', '1', ']', '[', '$', '1', ']',
+		'[', 'A', ']', '[', 'B', ']', 'B'
+	};
+	static const uint16_t replace_space_expected[] = {
+		'A', 'X', 'B', 'X', 'C'
+	};
+	static const uint16_t callback_expected[] = {
+		0xD834, 0xDF06, '<', 'A', '>', 'A', '1', '_',
+		'<', 'B', '>', '<', 'C', '>'
+	};
+	static const uint16_t pair_units[] = {0xD834, 0xDF06};
+	static const uint16_t digits_units[] = {'1', '2'};
+	static const uint16_t a_unit[] = {'A'};
+	static const uint16_t b_unit[] = {'B'};
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t digit_subject;
+	jsval_t whitespace_subject;
+	jsval_t word_subject;
+	jsval_t digit_subst_subject;
+	jsval_t ascii_x;
+	jsval_t special_replacement;
+	jsval_t limit_two;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	test_replace_surrogate_callback_ctx_t callback_ctx = {
+		0,
+		word_subject_units,
+		sizeof(word_subject_units) / sizeof(word_subject_units[0]),
+		{
+			(const uint16_t[]){'!'},
+			(const uint16_t[]){0xD834},
+			(const uint16_t[]){'?'}
+		},
+		{1, 1, 1},
+		{2, 6, 7},
+		{"<A>", "<B>", "<C>"}
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_string_new_utf16(&region, digit_subject_units,
+			sizeof(digit_subject_units) / sizeof(digit_subject_units[0]),
+			&digit_subject) == 0);
+	assert(jsval_string_new_utf16(&region, whitespace_subject_units,
+			sizeof(whitespace_subject_units) /
+			sizeof(whitespace_subject_units[0]), &whitespace_subject) == 0);
+	assert(jsval_string_new_utf16(&region, word_subject_units,
+			sizeof(word_subject_units) / sizeof(word_subject_units[0]),
+			&word_subject) == 0);
+	assert(jsval_string_new_utf16(&region, digit_subst_subject_units,
+			sizeof(digit_subst_subject_units) /
+			sizeof(digit_subst_subject_units[0]), &digit_subst_subject) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"X", 1,
+			&ascii_x) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"[$$][$&][$1][$`][$']", 20,
+			&special_replacement) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+			&limit_two) == 0);
+
+	assert(jsval_method_string_replace_u_digit_class(&region, digit_subject,
+			ascii_x, &result, &error) == 0);
+	assert_utf16_string(&region, result, replace_digit_expected,
+			sizeof(replace_digit_expected) /
+			sizeof(replace_digit_expected[0]));
+	assert(jsval_method_string_replace_all_u_digit_class(&region,
+			digit_subject, ascii_x, &result, &error) == 0);
+	assert_utf16_string(&region, result, replace_all_digit_expected,
+			sizeof(replace_all_digit_expected) /
+			sizeof(replace_all_digit_expected[0]));
+	assert(jsval_method_string_replace_u_digit_class(&region,
+			digit_subst_subject, special_replacement, &result, &error) == 0);
+	assert_utf16_string(&region, result, special_digit_expected,
+			sizeof(special_digit_expected) /
+			sizeof(special_digit_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_whitespace_class(&region,
+			whitespace_subject, ascii_x, &result, &error) == 0);
+	assert_utf16_string(&region, result, replace_space_expected,
+			sizeof(replace_space_expected) /
+			sizeof(replace_space_expected[0]));
+
+	assert(jsval_method_string_replace_all_u_negated_word_class_fn(&region,
+			word_subject, test_replace_surrogate_callback, &callback_ctx,
+			&result, &error) == 0);
+	assert(callback_ctx.call_count == 3);
+	assert_utf16_string(&region, result, callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]));
+
+	assert(jsval_method_string_split_u_whitespace_class(&region,
+			whitespace_subject, 0, jsval_undefined(), &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, a_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, (const uint16_t[]){'C'}, 1);
+	assert(jsval_method_string_split_u_whitespace_class(&region,
+			whitespace_subject, 1, limit_two, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, a_unit, 1);
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, b_unit, 1);
+
+	assert(jsval_method_string_split_u_negated_digit_class(&region,
+			digit_subject, 0, jsval_undefined(), &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_units,
+			sizeof(pair_units) / sizeof(pair_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, digits_units,
+			sizeof(digits_units) / sizeof(digits_units[0]));
+	assert(jsval_array_get(&region, result, 2, &value) == 0);
+	assert_utf16_string(&region, value, NULL, 0);
+	assert(jsval_method_string_split_u_negated_digit_class(&region,
+			digit_subject, 1, limit_two, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 2);
+	assert(jsval_array_get(&region, result, 0, &value) == 0);
+	assert_utf16_string(&region, value, pair_units,
+			sizeof(pair_units) / sizeof(pair_units[0]));
+	assert(jsval_array_get(&region, result, 1, &value) == 0);
+	assert_utf16_string(&region, value, digits_units,
+			sizeof(digits_units) / sizeof(digits_units[0]));
+}
 #endif
 
 static void test_method_concat_bridge(void)
@@ -5268,6 +5577,8 @@ int main(void)
 	test_u_literal_range_class_replace_split_rewrite();
 	test_u_literal_negated_range_class_search_match_rewrite();
 	test_u_literal_negated_range_class_replace_split_rewrite();
+	test_u_predefined_class_search_match_rewrite();
+	test_u_predefined_class_replace_split_rewrite();
 #endif
 	test_method_concat_bridge();
 	test_method_accessor_bridge();

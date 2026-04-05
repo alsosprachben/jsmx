@@ -2903,6 +2903,50 @@
       "notes": "Rewrite-backed: single negated no-capture `/u` ranged-class split cases are lowered to a dedicated jsval negated-range-class helper so separators only match isolated boundary-aligned code units outside the explicit inclusive exclusion ranges."
     },
     {
+      "id": "jsmx-strings-u-predefined-digit-class-search-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-predefined-digit-class-search-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-predefined-digit-class-search-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single predefined `/u` digit-class search cases are lowered to dedicated jsval digit and negated-digit helpers so `\\d` stays ASCII-only, `\\D` remains its boundary-aware complement, and intact surrogate pairs are skipped."
+    },
+    {
+      "id": "jsmx-strings-u-predefined-word-class-match-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-predefined-word-class-match-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-predefined-word-class-match-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single predefined `/u` word-class match and matchAll cases are lowered to dedicated jsval word and negated-word helpers so `\\w` stays ASCII-only, `\\W` matches isolated non-word code units, and iterator results keep the no-capture exec shape."
+    },
+    {
+      "id": "jsmx-strings-u-predefined-whitespace-class-replace-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-predefined-whitespace-class-replace-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-predefined-whitespace-class-replace-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single predefined `/u` whitespace replace and replaceAll cases, including negated callback replacers, are lowered to dedicated jsval whitespace helpers so `\\s` uses the JS WhiteSpace plus LineTerminator set and callback `groups` remains undefined."
+    },
+    {
+      "id": "jsmx-strings-u-predefined-whitespace-class-split-rewrite",
+      "suite": "strings",
+      "source": "compliance/js/strings/jsmx/u-predefined-whitespace-class-split-rewrite.js",
+      "generated": "compliance/generated/strings/jsmx/u-predefined-whitespace-class-split-rewrite.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Rewrite-backed: single predefined `/u` whitespace split cases are lowered to a dedicated jsval whitespace helper so separators follow the JS WhiteSpace plus LineTerminator set while limit handling stays inside the no-capture rewrite lane."
+    },
+    {
       "id": "test262-values-S11.6.1_A2.1_T1",
       "suite": "values",
       "source": "compliance/js/values/test262/S11.6.1_A2.1_T1.js",

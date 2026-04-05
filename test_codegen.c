@@ -6376,6 +6376,142 @@ generated_smoke_jsval_u_literal_negated_range_class_rewrite(char *detail,
 	return generated_expect_utf16_string(&region, iterator_result, b_unit, 1,
 			detail, cap);
 }
+
+static generated_status_t
+generated_smoke_jsval_u_predefined_class_rewrite(char *detail, size_t cap)
+{
+	static const uint16_t digit_subject_units[] = {
+		0xD834, 0xDF06, 'A', '1', '2', 'B'
+	};
+	static const uint16_t whitespace_subject_units[] = {
+		'A', 0x00A0, 'B', 0x2028, 'C'
+	};
+	static const uint16_t word_subject_units[] = {
+		0xD834, 0xDF06, '!', 'A', '1', '_', 0xD834, '?'
+	};
+	static const uint16_t a_unit[] = {'A'};
+	static const uint16_t callback_expected[] = {
+		0xD834, 0xDF06, '[', '2', ']', 'A', '1', '_',
+		'[', '6', ']', '[', '7', ']'
+	};
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t digit_text;
+	jsval_t whitespace_text;
+	jsval_t word_text;
+	jsval_t limit_two;
+	jsval_t search_result;
+	jsval_t iterator;
+	jsval_t iterator_result;
+	jsval_t callback_result;
+	jsval_t split_result;
+	jsval_t value;
+	generated_replace_callback_ctx_t ctx = {0, 0};
+	jsmethod_error_t error;
+	generated_status_t status;
+	int done;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf16(&region, digit_subject_units,
+			sizeof(digit_subject_units) / sizeof(digit_subject_units[0]),
+			&digit_text) < 0
+			|| jsval_string_new_utf16(&region, whitespace_subject_units,
+				sizeof(whitespace_subject_units) /
+				sizeof(whitespace_subject_units[0]), &whitespace_text) < 0
+			|| jsval_string_new_utf16(&region, word_subject_units,
+				sizeof(word_subject_units) /
+				sizeof(word_subject_units[0]), &word_text) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"2", 1,
+				&limit_two) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf16/utf8(predefined class args)");
+	}
+
+	if (jsval_method_string_search_u_digit_class(&region, digit_text,
+			&search_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_search_u_digit_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_strict_eq(&region, search_result, jsval_number(3.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected predefined digit search index 3");
+	}
+
+	if (jsval_method_string_match_all_u_word_class(&region, word_text,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_match_all_u_word_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_match_iterator_next(&region, iterator, &done, &iterator_result,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_match_iterator_next(predefined word first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (done || iterator_result.kind != JSVAL_KIND_OBJECT) {
+		return generated_failf(detail, cap,
+				"expected first predefined word matchAll result");
+	}
+	if (jsval_object_get_utf8(&region, iterator_result,
+			(const uint8_t *)"0", 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(predefined word first capture)");
+	}
+	status = generated_expect_utf16_string(&region, value, a_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_replace_all_u_negated_word_class_fn(&region,
+			word_text, generated_replace_offset_callback, &ctx,
+			&callback_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_replace_all_u_negated_word_class_fn failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (ctx.call_count != 3) {
+		return generated_failf(detail, cap,
+				"expected 3 predefined negated-word callback calls, got %d",
+				ctx.call_count);
+	}
+	status = generated_expect_utf16_string(&region, callback_result,
+			callback_expected,
+			sizeof(callback_expected) / sizeof(callback_expected[0]),
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_method_string_split_u_whitespace_class(&region, whitespace_text,
+			1, limit_two, &split_result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_method_string_split_u_whitespace_class failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (split_result.kind != JSVAL_KIND_ARRAY
+			|| jsval_array_length(&region, split_result) != 2) {
+		return generated_failf(detail, cap,
+				"expected 2-entry predefined whitespace split result");
+	}
+	if (jsval_array_get(&region, split_result, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(predefined whitespace split 0)");
+	}
+	status = generated_expect_utf16_string(&region, value, a_unit, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_array_get(&region, split_result, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_get(predefined whitespace split 1)");
+	}
+	return generated_expect_utf16_string(&region, value,
+			(const uint16_t[]){'B'}, 1, detail, cap);
+}
 #endif
 
 static generated_status_t generated_smoke_jsval_method_accessor(char *detail,
@@ -7086,6 +7222,8 @@ static const generated_case_t generated_cases[] = {
 		generated_smoke_jsval_u_literal_range_class_rewrite},
 	{"smoke", "jsval_u_literal_negated_range_class_rewrite",
 		generated_smoke_jsval_u_literal_negated_range_class_rewrite},
+	{"smoke", "jsval_u_predefined_class_rewrite",
+		generated_smoke_jsval_u_predefined_class_rewrite},
 	{"smoke", "jsval_method_regex_replace", generated_smoke_jsval_method_regex_replace},
 	{"smoke", "jsval_method_regex_replace_all",
 		generated_smoke_jsval_method_regex_replace_all},

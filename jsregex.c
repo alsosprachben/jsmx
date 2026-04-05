@@ -135,6 +135,110 @@ jsregex_u_literal_range_class_match_at(const uint16_t *subject,
 }
 
 static int
+jsregex_is_ecma_whitespace_or_line_terminator(uint16_t unit)
+{
+	switch (unit) {
+	case 0x0009:
+	case 0x000A:
+	case 0x000B:
+	case 0x000C:
+	case 0x000D:
+	case 0x0020:
+	case 0x00A0:
+	case 0x1680:
+	case 0x2028:
+	case 0x2029:
+	case 0x202F:
+	case 0x205F:
+	case 0x3000:
+	case 0xFEFF:
+		return 1;
+	default:
+		return unit >= 0x2000 && unit <= 0x200A;
+	}
+}
+
+static int
+jsregex_u_predefined_class_matches_unit(uint16_t unit,
+		jsregex_u_predefined_class_kind_t kind, int *matched_ptr)
+{
+	int positive_match;
+
+	if (matched_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (kind) {
+	case JSREGEX_U_PREDEFINED_CLASS_DIGIT:
+		positive_match = unit >= '0' && unit <= '9';
+		break;
+	case JSREGEX_U_PREDEFINED_CLASS_NOT_DIGIT:
+		positive_match = !(unit >= '0' && unit <= '9');
+		break;
+	case JSREGEX_U_PREDEFINED_CLASS_WHITESPACE:
+		positive_match = jsregex_is_ecma_whitespace_or_line_terminator(unit);
+		break;
+	case JSREGEX_U_PREDEFINED_CLASS_NOT_WHITESPACE:
+		positive_match = !jsregex_is_ecma_whitespace_or_line_terminator(unit);
+		break;
+	case JSREGEX_U_PREDEFINED_CLASS_WORD:
+		positive_match = (unit >= 'A' && unit <= 'Z')
+				|| (unit >= 'a' && unit <= 'z')
+				|| (unit >= '0' && unit <= '9')
+				|| unit == '_';
+		break;
+	case JSREGEX_U_PREDEFINED_CLASS_NOT_WORD:
+		positive_match = !((unit >= 'A' && unit <= 'Z')
+				|| (unit >= 'a' && unit <= 'z')
+				|| (unit >= '0' && unit <= '9')
+				|| unit == '_');
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	*matched_ptr = positive_match;
+	return 0;
+}
+
+static int
+jsregex_u_predefined_class_match_at(const uint16_t *subject,
+		size_t subject_len, jsregex_u_predefined_class_kind_t kind,
+		size_t index, int *matched_ptr, size_t *end_ptr)
+{
+	uint16_t unit;
+
+	if (matched_ptr == NULL || end_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= subject_len
+			|| !jsregex_is_code_point_boundary(subject, subject_len,
+				index)) {
+		*matched_ptr = 0;
+		*end_ptr = index;
+		return 0;
+	}
+
+	unit = subject[index];
+	if (jsregex_is_high_surrogate(unit) && index + 1 < subject_len
+			&& jsregex_is_low_surrogate(subject[index + 1])) {
+		*matched_ptr = 0;
+		*end_ptr = index + 2;
+		return 0;
+	}
+
+	if (jsregex_u_predefined_class_matches_unit(unit, kind, matched_ptr) < 0) {
+		return -1;
+	}
+	*end_ptr = index + 1;
+	return 0;
+}
+
+static int
 jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 		jsregex_options_t *options_ptr)
 {
@@ -735,6 +839,54 @@ jsregex_exec_u_literal_negated_range_class_utf16(const uint16_t *subject,
 }
 
 int
+jsregex_exec_u_predefined_class_utf16(const uint16_t *subject,
+		size_t subject_len, jsregex_u_predefined_class_kind_t kind,
+		size_t start_index, jsregex_exec_result_t *result_ptr)
+{
+	size_t index;
+
+	if (result_ptr == NULL || (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	index = start_index;
+	while (index < subject_len) {
+		int matched;
+		size_t end_index;
+
+		if (jsregex_u_predefined_class_match_at(subject, subject_len, kind,
+				index, &matched, &end_index) < 0) {
+			return -1;
+		}
+		if (matched) {
+			result_ptr->matched = 1;
+			result_ptr->start = index;
+			result_ptr->end = end_index;
+			result_ptr->slot_count = 1;
+			return 0;
+		}
+		if (jsregex_advance_string_index_utf16(subject, subject_len, index, 1,
+				&index) < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = 0;
+	result_ptr->start = 0;
+	result_ptr->end = 0;
+	result_ptr->slot_count = 0;
+	return 0;
+}
+
+int
 jsregex_test_u_literal_surrogate_utf16(const uint16_t *subject,
 		size_t subject_len, uint16_t surrogate_unit, size_t start_index,
 		int *matched_ptr)
@@ -871,6 +1023,27 @@ jsregex_search_u_literal_negated_range_class_utf16(const uint16_t *subject,
 	}
 	if (jsregex_exec_u_literal_negated_range_class_utf16(subject, subject_len,
 			ranges, range_count, start_index, &result) < 0) {
+		return -1;
+	}
+	result_ptr->matched = result.matched;
+	result_ptr->start = result.start;
+	result_ptr->end = result.end;
+	return 0;
+}
+
+int
+jsregex_search_u_predefined_class_utf16(const uint16_t *subject,
+		size_t subject_len, jsregex_u_predefined_class_kind_t kind,
+		size_t start_index, jsregex_search_result_t *result_ptr)
+{
+	jsregex_exec_result_t result;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex_exec_u_predefined_class_utf16(subject, subject_len, kind,
+			start_index, &result) < 0) {
 		return -1;
 	}
 	result_ptr->matched = result.matched;
