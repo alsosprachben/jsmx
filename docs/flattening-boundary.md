@@ -32,6 +32,9 @@ caller-provided memory:
 - fresh own-property clone
   - from native or JSON-backed source objects
   - into a newly allocated pre-capacity-planned native destination
+- translator-visible object / array spread-style lowerings
+  - composed from shallow clone, copy, and dense append over explicit
+    capacities
 - dense, capacity-bounded native array semantics such as:
   - fresh dense-array clone
   - bounded dense-array splice edits

@@ -90,6 +90,7 @@ The committed suites currently cover:
     - fresh own-property clone into a new native object
     - fresh dense-array clone into a new native array
     - bounded dense-array splice edits with removed-result arrays
+    - explicit object / array spread-style parity lowerings
     - delete
     - overwrite
     - push

@@ -283,6 +283,30 @@ generated_build_object_entries_array(jsval_region_t *region, jsval_t object,
 	return 0;
 }
 
+static int
+generated_append_dense_array(jsval_region_t *region, jsval_t dst, jsval_t src)
+{
+	size_t len;
+	size_t i;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	len = jsval_array_length(region, src);
+	for (i = 0; i < len; i++) {
+		jsval_t value;
+
+		if (jsval_array_get(region, src, i, &value) < 0) {
+			return -1;
+		}
+		if (jsval_array_push(region, dst, value) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
 static generated_status_t generated_expect_number(jsval_region_t *region, jsval_t value, double expected,
 		char *detail, size_t cap)
 {
@@ -2375,6 +2399,133 @@ static generated_status_t generated_smoke_jsval_object_clone_own(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_object_spread_parity(
+		char *detail, size_t cap)
+{
+	static const uint8_t json_source[] = "{\"z\":1,\"a\":2}";
+	static const uint8_t merge_source[] = "{\"drop\":9,\"tail\":10}";
+	static const uint8_t around_source[] = "{\"mid\":7,\"tail\":8}";
+	static const uint8_t expected_json[] =
+		"{\"nativeSrc\":{\"keep\":1,\"nested\":[]},\"nativeClone\":{\"keep\":7,\"nested\":[]},\"jsonClone\":{\"z\":1,\"a\":2},\"merged\":{\"keep\":true,\"drop\":9,\"items\":[],\"tail\":10},\"around\":{\"head\":1,\"mid\":7,\"tail\":2}}";
+	uint8_t storage[24576];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t native_src;
+	jsval_t nested;
+	jsval_t native_clone;
+	jsval_t parsed_src;
+	jsval_t json_clone;
+	jsval_t first;
+	jsval_t items;
+	jsval_t second;
+	jsval_t merged;
+	jsval_t around_src;
+	jsval_t around;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 5, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+
+	if (jsval_object_new(&region, 2, &native_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(native_src)");
+	}
+	if (jsval_array_new(&region, 0, &nested) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(nested)");
+	}
+	if (jsval_object_set_utf8(&region, native_src, (const uint8_t *)"keep", 4,
+			jsval_number(1.0)) < 0
+			|| jsval_object_set_utf8(&region, native_src,
+			(const uint8_t *)"nested", 6, nested) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(native_src)");
+	}
+	if (jsval_object_clone_own(&region, native_src, 2, &native_clone) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_clone_own(native_clone)");
+	}
+	if (jsval_object_set_utf8(&region, native_clone, (const uint8_t *)"keep", 4,
+			jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(native_clone)");
+	}
+
+	if (jsval_json_parse(&region, json_source, sizeof(json_source) - 1, 8,
+			&parsed_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(json_source)");
+	}
+	if (jsval_object_clone_own(&region, parsed_src, 2, &json_clone) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_clone_own(json_clone)");
+	}
+
+	if (jsval_object_new(&region, 3, &first) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(first)");
+	}
+	if (jsval_array_new(&region, 0, &items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(items)");
+	}
+	if (jsval_object_set_utf8(&region, first, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) < 0
+			|| jsval_object_set_utf8(&region, first,
+			(const uint8_t *)"drop", 4, jsval_number(7.0)) < 0
+			|| jsval_object_set_utf8(&region, first,
+			(const uint8_t *)"items", 5, items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(first)");
+	}
+	if (jsval_json_parse(&region, merge_source, sizeof(merge_source) - 1, 8,
+			&second) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(merge_source)");
+	}
+	if (jsval_object_clone_own(&region, first, 4, &merged) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_clone_own(merged)");
+	}
+	if (jsval_object_copy_own(&region, merged, second) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_copy_own(merged)");
+	}
+
+	if (jsval_json_parse(&region, around_source, sizeof(around_source) - 1, 8,
+			&around_src) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_json_parse(around_source)");
+	}
+	if (jsval_object_new(&region, 3, &around) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(around)");
+	}
+	if (jsval_object_set_utf8(&region, around, (const uint8_t *)"head", 4,
+			jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(around head)");
+	}
+	if (jsval_object_copy_own(&region, around, around_src) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_copy_own(around)");
+	}
+	if (jsval_object_set_utf8(&region, around, (const uint8_t *)"tail", 4,
+			jsval_number(2.0)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(around tail)");
+	}
+
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"nativeSrc", 9,
+			native_src) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"nativeClone", 11, native_clone) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"jsonClone", 9, json_clone) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"merged", 6, merged) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"around", 6, around) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_array_clone_dense(char *detail,
 		size_t cap)
 {
@@ -2443,6 +2594,102 @@ static generated_status_t generated_smoke_jsval_array_clone_dense(char *detail,
 			(const uint8_t *)"nativeSource", 12, native_src) < 0
 			|| jsval_object_set_utf8(&region, output,
 			(const uint8_t *)"nativeClone", 11, native_clone) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_array_spread_parity(
+		char *detail, size_t cap)
+{
+	static const uint8_t json_source[] = "[1,2]";
+	static const uint8_t merge_source[] = "[3,4]";
+	static const uint8_t expected_json[] =
+		"{\"nativeSrc\":[4,5],\"nativeClone\":[9,5],\"jsonSrc\":[1,2],\"jsonClone\":[1,2,3],\"merged\":[1,2,3,4],\"around\":[0,1,2,9]}";
+	uint8_t storage[24576];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t native_src;
+	jsval_t native_clone;
+	jsval_t parsed_src;
+	jsval_t json_clone;
+	jsval_t merge_src;
+	jsval_t merged;
+	jsval_t around;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 6, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+
+	if (jsval_array_new(&region, 2, &native_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(native_src)");
+	}
+	if (jsval_array_push(&region, native_src, jsval_number(4.0)) < 0
+			|| jsval_array_push(&region, native_src, jsval_number(5.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(native_src)");
+	}
+	if (jsval_array_clone_dense(&region, native_src, 2, &native_clone) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_clone_dense(native_clone)");
+	}
+	if (jsval_array_set(&region, native_clone, 0, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_set(native_clone)");
+	}
+
+	if (jsval_json_parse(&region, json_source, sizeof(json_source) - 1, 8,
+			&parsed_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(json_source)");
+	}
+	if (jsval_array_clone_dense(&region, parsed_src, 3, &json_clone) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_clone_dense(json_clone)");
+	}
+	if (jsval_array_push(&region, json_clone, jsval_number(3.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(json_clone)");
+	}
+
+	if (jsval_json_parse(&region, merge_source, sizeof(merge_source) - 1, 8,
+			&merge_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(merge_source)");
+	}
+	if (jsval_array_clone_dense(&region, parsed_src, 4, &merged) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_clone_dense(merged)");
+	}
+	if (generated_append_dense_array(&region, merged, merge_src) < 0) {
+		return generated_fail_errno(detail, cap,
+				"generated_append_dense_array(merged)");
+	}
+
+	if (jsval_array_new(&region, 4, &around) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(around)");
+	}
+	if (jsval_array_push(&region, around, jsval_number(0.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(around head)");
+	}
+	if (generated_append_dense_array(&region, around, parsed_src) < 0) {
+		return generated_fail_errno(detail, cap,
+				"generated_append_dense_array(around)");
+	}
+	if (jsval_array_push(&region, around, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(around tail)");
+	}
+
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"nativeSrc", 9,
+			native_src) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"nativeClone", 11, native_clone) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"jsonSrc", 7, parsed_src) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"jsonClone", 9, json_clone) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"merged", 6, merged) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"around", 6, around) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
 	}
 
@@ -7182,7 +7429,9 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_object_value_order", generated_smoke_jsval_object_value_order},
 	{"smoke", "jsval_object_copy_own", generated_smoke_jsval_object_copy_own},
 	{"smoke", "jsval_object_clone_own", generated_smoke_jsval_object_clone_own},
+	{"smoke", "jsval_object_spread_parity", generated_smoke_jsval_object_spread_parity},
 	{"smoke", "jsval_array_clone_dense", generated_smoke_jsval_array_clone_dense},
+	{"smoke", "jsval_array_spread_parity", generated_smoke_jsval_array_spread_parity},
 	{"smoke", "jsval_array_splice_dense", generated_smoke_jsval_array_splice_dense},
 	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},

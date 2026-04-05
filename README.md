@@ -72,6 +72,8 @@ That makes semantic correctness more important than surface familiarity:
     - fresh own-property clone into a new native object
     - fresh dense-array clone into a new native array
     - bounded dense-array splice edits with removed-result arrays
+    - translator-visible object / array spread-style lowerings built from
+      clone, copy, and append recipes
     - delete
     - push
     - pop
@@ -278,6 +280,8 @@ The committed corpus currently spans:
     - own-property checks
     - ordered key / value access
     - shallow own-property copy
+    - object spread / `Object.assign`-style fresh clone and merge
+    - array spread-style fresh clone and append
     - delete
     - overwrite
     - push

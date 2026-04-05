@@ -40,6 +40,8 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - fresh own-property clone into a new native object
   - fresh dense-array clone into a new native array
   - bounded dense-array splice edits with removed-result arrays
+  - translator-visible object / array spread-style lowerings built from
+    clone, copy, and append recipes
   - delete
   - overwrite
   - push

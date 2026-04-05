@@ -4017,6 +4017,46 @@
       "notes": "Repo-authored idiomatic object fixture for the ENOBUFS capacity contract on jsval_object_clone_own(), leaving the output value unchanged on failure."
     },
     {
+      "id": "jsmx-objects-object-spread-native",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-spread-native.js",
+      "generated": "compliance/generated/objects/jsmx/object-spread-native.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for fresh object spread from a native source through jsval_object_clone_own(), including independent overwrite after cloning."
+    },
+    {
+      "id": "jsmx-objects-object-spread-json-source",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-spread-json-source.js",
+      "generated": "compliance/generated/objects/jsmx/object-spread-json-source.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for fresh object spread from a JSON-backed source in parsed source order through jsval_object_clone_own()."
+    },
+    {
+      "id": "jsmx-objects-object-spread-merge-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-spread-merge-order.js",
+      "generated": "compliance/generated/objects/jsmx/object-spread-merge-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for object spread merge order through jsval_object_clone_own() plus jsval_object_copy_own(), preserving overwrite-in-place plus append order."
+    },
+    {
+      "id": "jsmx-objects-object-spread-literal-around",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-spread-literal-around.js",
+      "generated": "compliance/generated/objects/jsmx/object-spread-literal-around.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for literal properties around an object spread segment through explicit set plus jsval_object_copy_own()."
+    },
+    {
       "id": "jsmx-objects-array-clone-dense-native",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-clone-dense-native.js",
@@ -4055,6 +4095,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for the ENOBUFS capacity contract on jsval_array_clone_dense(), leaving the output value unchanged on failure."
+    },
+    {
+      "id": "jsmx-objects-array-spread-native",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-spread-native.js",
+      "generated": "compliance/generated/objects/jsmx/array-spread-native.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for fresh array spread from a native source through jsval_array_clone_dense(), including independent overwrite after cloning."
+    },
+    {
+      "id": "jsmx-objects-array-spread-json-source",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-spread-json-source.js",
+      "generated": "compliance/generated/objects/jsmx/array-spread-json-source.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for fresh array spread from a JSON-backed source through jsval_array_clone_dense(), followed by independent append."
+    },
+    {
+      "id": "jsmx-objects-array-spread-merge-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-spread-merge-order.js",
+      "generated": "compliance/generated/objects/jsmx/array-spread-merge-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for array spread concatenation through jsval_array_clone_dense() plus explicit element append in source order."
+    },
+    {
+      "id": "jsmx-objects-array-spread-literal-around",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/array-spread-literal-around.js",
+      "generated": "compliance/generated/objects/jsmx/array-spread-literal-around.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic dense-array fixture for literal elements around an array spread segment through explicit push plus element append."
     },
     {
       "id": "jsmx-objects-array-splice-dense-delete",
