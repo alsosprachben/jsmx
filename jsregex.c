@@ -3,6 +3,7 @@
 #if JSMX_WITH_REGEX
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if JSMX_REGEX_BACKEND_PCRE2
@@ -15,10 +16,51 @@ typedef struct jsregex_options_s {
 	uint32_t flags;
 } jsregex_options_t;
 
+typedef struct jsregex_backend_s {
+	pcre2_code *code;
+	pcre2_match_data *match_data;
+	uint8_t use_match_data_cache;
+} jsregex_backend_t;
+
 static int
 jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len, int use_jit,
 		jsregex_compiled_t *compiled_ptr);
+
+static jsregex_backend_t *
+jsregex_backend(const jsregex_compiled_t *compiled)
+{
+	if (compiled == NULL || compiled->backend_code == 0) {
+		return NULL;
+	}
+	return (jsregex_backend_t *)(uintptr_t)compiled->backend_code;
+}
+
+static pcre2_code *
+jsregex_backend_code(const jsregex_compiled_t *compiled)
+{
+	jsregex_backend_t *backend = jsregex_backend(compiled);
+
+	return backend != NULL ? backend->code : NULL;
+}
+
+static pcre2_match_data *
+jsregex_backend_match_data(jsregex_backend_t *backend)
+{
+	if (backend == NULL || backend->code == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+	if (backend->match_data == NULL) {
+		backend->match_data = pcre2_match_data_create_from_pattern(
+				backend->code, NULL);
+		if (backend->match_data == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+	}
+	return backend->match_data;
+}
 
 static int
 jsregex_is_high_surrogate(uint16_t unit)
@@ -331,6 +373,7 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		int use_jit, jsregex_compiled_t *compiled_ptr)
 {
 	jsregex_options_t options;
+	jsregex_backend_t *backend = NULL;
 	pcre2_code *code = NULL;
 	int error_code;
 	PCRE2_SIZE error_offset;
@@ -373,7 +416,17 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		(void)pcre2_jit_compile(code, PCRE2_JIT_COMPLETE);
 	}
 
-	compiled_ptr->backend_code = (uintptr_t)code;
+	backend = (jsregex_backend_t *)malloc(sizeof(*backend));
+	if (backend == NULL) {
+		pcre2_code_free(code);
+		errno = ENOMEM;
+		return -1;
+	}
+	backend->code = code;
+	backend->match_data = NULL;
+	backend->use_match_data_cache = use_jit ? 1u : 0u;
+
+	compiled_ptr->backend_code = (uintptr_t)backend;
 	compiled_ptr->flags = options.flags;
 	compiled_ptr->capture_count = capture_count;
 	compiled_ptr->named_group_count = named_group_count;
@@ -401,13 +454,21 @@ jsregex_compile_utf16_jit(const uint16_t *pattern, size_t pattern_len,
 void
 jsregex_release(jsregex_compiled_t *compiled_ptr)
 {
-	pcre2_code *code;
+	jsregex_backend_t *backend;
 
 	if (compiled_ptr == NULL || compiled_ptr->backend_code == 0) {
 		return;
 	}
-	code = (pcre2_code *)(uintptr_t)compiled_ptr->backend_code;
-	pcre2_code_free(code);
+	backend = jsregex_backend(compiled_ptr);
+	if (backend != NULL) {
+		if (backend->match_data != NULL) {
+			pcre2_match_data_free(backend->match_data);
+		}
+		if (backend->code != NULL) {
+			pcre2_code_free(backend->code);
+		}
+		free(backend);
+	}
 	compiled_ptr->backend_code = 0;
 	compiled_ptr->flags = 0;
 	compiled_ptr->capture_count = 0;
@@ -420,8 +481,9 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		size_t *offsets, size_t offsets_cap,
 		jsregex_exec_result_t *result_ptr)
 {
+	jsregex_backend_t *backend;
 	pcre2_code *code;
-	pcre2_match_data *match_data = NULL;
+	pcre2_match_data *match_data;
 	PCRE2_SIZE *ovector;
 	uint32_t match_options = 0;
 	size_t slot_count;
@@ -448,11 +510,28 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		return -1;
 	}
 
-	code = (pcre2_code *)(uintptr_t)compiled->backend_code;
-	match_data = pcre2_match_data_create_from_pattern(code, NULL);
-	if (match_data == NULL) {
-		errno = ENOMEM;
+	backend = jsregex_backend(compiled);
+	code = jsregex_backend_code(compiled);
+	if (code == NULL || backend == NULL) {
+		if (errno == 0) {
+			errno = EINVAL;
+		}
 		return -1;
+	}
+	if (backend->use_match_data_cache) {
+		match_data = jsregex_backend_match_data(backend);
+		if (match_data == NULL) {
+			if (errno == 0) {
+				errno = ENOMEM;
+			}
+			return -1;
+		}
+	} else {
+		match_data = pcre2_match_data_create_from_pattern(code, NULL);
+		if (match_data == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
 	}
 	if ((compiled->flags & JSREGEX_FLAG_STICKY) != 0) {
 		match_options |= PCRE2_ANCHORED;
@@ -465,11 +544,15 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		result_ptr->start = 0;
 		result_ptr->end = 0;
 		result_ptr->slot_count = 0;
-		pcre2_match_data_free(match_data);
+		if (!backend->use_match_data_cache) {
+			pcre2_match_data_free(match_data);
+		}
 		return 0;
 	}
 	if (rc < 0) {
-		pcre2_match_data_free(match_data);
+		if (!backend->use_match_data_cache) {
+			pcre2_match_data_free(match_data);
+		}
 		errno = EINVAL;
 		return -1;
 	}
@@ -492,7 +575,9 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 	result_ptr->start = offsets[0];
 	result_ptr->end = offsets[1];
 	result_ptr->slot_count = slot_count;
-	pcre2_match_data_free(match_data);
+	if (!backend->use_match_data_cache) {
+		pcre2_match_data_free(match_data);
+	}
 	return 0;
 }
 
@@ -517,7 +602,11 @@ jsregex_named_group_utf16(const jsregex_compiled_t *compiled,
 		return -1;
 	}
 
-	code = (pcre2_code *)(uintptr_t)compiled->backend_code;
+	code = jsregex_backend_code(compiled);
+	if (code == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
 	if (pcre2_pattern_info(code, PCRE2_INFO_NAMECOUNT, &name_count) != 0
 			|| pcre2_pattern_info(code, PCRE2_INFO_NAMEENTRYSIZE,
 				&name_entry_size) != 0

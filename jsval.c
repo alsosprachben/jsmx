@@ -239,6 +239,27 @@ static jsval_native_named_group_t *jsval_native_regexp_named_groups(
 			regexp->named_groups_off);
 }
 
+static int jsval_object_append_native_prop(jsval_region_t *region, jsval_t object,
+		jsval_off_t name_off, jsval_t value)
+{
+	jsval_native_object_t *native = jsval_native_object(region, object);
+	jsval_native_prop_t *props;
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->len >= native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	props = jsval_native_object_props(native);
+	props[native->len].name_off = name_off;
+	props[native->len].value = value;
+	native->len++;
+	return 0;
+}
+
 static int
 jsval_regexp_named_group_capture_index(jsval_region_t *region,
 		jsval_native_regexp_t *regexp, const uint16_t *name, size_t name_len,
@@ -3951,6 +3972,28 @@ jsval_regexp_slot_key(size_t index, uint8_t *buf, size_t cap, size_t *len_ptr)
 }
 
 static int
+jsval_regexp_init_cached_key(jsval_region_t *region, const uint8_t *key,
+		size_t key_len, jsval_off_t *off_ptr)
+{
+	jsval_t key_value;
+
+	if (region == NULL || off_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, key, key_len, &key_value) < 0) {
+		return -1;
+	}
+	if (key_value.kind != JSVAL_KIND_STRING
+			|| key_value.repr != JSVAL_REPR_NATIVE) {
+		errno = EINVAL;
+		return -1;
+	}
+	*off_ptr = key_value.off;
+	return 0;
+}
+
+static int
 jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 		size_t pattern_len, const uint16_t *flags, size_t flags_len,
 		int use_jit, jsval_t *value_ptr, jsmethod_error_t *error)
@@ -4240,9 +4283,34 @@ jsval_regexp_exec_raw(jsval_region_t *region, jsval_t regexp_value,
 }
 
 static int
+jsval_regexp_capture_values(jsval_region_t *region, const uint16_t *subject,
+		const size_t *offsets, size_t slot_count, jsval_t *capture_values)
+{
+	size_t i;
+
+	if (region == NULL || offsets == NULL || capture_values == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < slot_count; i++) {
+		capture_values[i] = jsval_undefined();
+		if (offsets[i * 2] != SIZE_MAX) {
+			size_t start = offsets[i * 2];
+			size_t end = offsets[i * 2 + 1];
+
+			if (jsval_string_new_utf16(region, subject + start, end - start,
+					&capture_values[i]) < 0) {
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int
 jsval_regexp_groups_object(jsval_region_t *region,
-		jsval_native_regexp_t *regexp, const uint16_t *subject,
-		const size_t *offsets, size_t slot_count, jsval_t *value_ptr)
+		jsval_native_regexp_t *regexp, const jsval_t *capture_values,
+		size_t slot_count, jsval_t *value_ptr)
 {
 	jsval_native_named_group_t *named_groups;
 	jsval_t groups;
@@ -4256,6 +4324,10 @@ jsval_regexp_groups_object(jsval_region_t *region,
 		*value_ptr = jsval_undefined();
 		return 0;
 	}
+	if (capture_values == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
 
 	named_groups = jsval_native_regexp_named_groups(region, regexp);
 	if (named_groups == NULL) {
@@ -4266,25 +4338,14 @@ jsval_regexp_groups_object(jsval_region_t *region,
 		return -1;
 	}
 	for (i = 0; i < regexp->named_group_count; i++) {
-		jsval_t key;
 		jsval_t capture_value = jsval_undefined();
 		uint32_t capture_index = named_groups[i].capture_index;
 
-		key = jsval_undefined();
-		key.kind = JSVAL_KIND_STRING;
-		key.repr = JSVAL_REPR_NATIVE;
-		key.off = named_groups[i].name_off;
-		if ((size_t)capture_index < slot_count
-				&& offsets[(size_t)capture_index * 2] != SIZE_MAX) {
-			size_t start = offsets[(size_t)capture_index * 2];
-			size_t end = offsets[(size_t)capture_index * 2 + 1];
-
-			if (jsval_string_new_utf16(region, subject + start, end - start,
-					&capture_value) < 0) {
-				return -1;
-			}
+		if ((size_t)capture_index < slot_count) {
+			capture_value = capture_values[capture_index];
 		}
-		if (jsval_object_set_string_key(region, groups, key, capture_value) < 0) {
+		if (jsval_object_append_native_prop(region, groups,
+				named_groups[i].name_off, capture_value) < 0) {
 			return -1;
 		}
 	}
@@ -4307,6 +4368,69 @@ jsval_regexp_exec_result_object(jsval_region_t *region,
 	if (region == NULL || value_ptr == NULL || offsets == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+	if (regexp != NULL) {
+		jsval_t capture_values[slot_count ? slot_count : 1];
+
+		if (jsval_regexp_capture_values(region, subject, offsets, slot_count,
+				capture_values) < 0) {
+			return -1;
+		}
+		if (jsval_object_new(region, prop_cap, &object) < 0) {
+			return -1;
+		}
+		for (i = 0; i < slot_count; i++) {
+			uint8_t key_buf[32];
+			size_t key_len = 0;
+			jsval_off_t key_off = 0;
+
+			if (jsval_regexp_slot_key(i, key_buf, sizeof(key_buf), &key_len) < 0) {
+				return -1;
+			}
+			if (jsval_regexp_init_cached_key(region, key_buf, key_len,
+					&key_off) < 0) {
+				return -1;
+			}
+			if (jsval_object_append_native_prop(region, object, key_off,
+					capture_values[i]) < 0) {
+				return -1;
+			}
+		}
+		{
+			jsval_off_t length_key_off = 0;
+			jsval_off_t index_key_off = 0;
+			jsval_off_t input_key_off = 0;
+			jsval_off_t groups_key_off = 0;
+
+			if (jsval_regexp_init_cached_key(region,
+					(const uint8_t *)"length", 6, &length_key_off) < 0
+					|| jsval_regexp_init_cached_key(region,
+						(const uint8_t *)"index", 5, &index_key_off) < 0
+					|| jsval_regexp_init_cached_key(region,
+						(const uint8_t *)"input", 5, &input_key_off) < 0
+					|| jsval_regexp_init_cached_key(region,
+						(const uint8_t *)"groups", 6, &groups_key_off) < 0) {
+				return -1;
+			}
+			if (jsval_object_append_native_prop(region, object, length_key_off,
+					jsval_number((double)slot_count)) < 0
+					|| jsval_object_append_native_prop(region, object, index_key_off,
+						jsval_number((double)match_index)) < 0
+					|| jsval_object_append_native_prop(region, object, input_key_off,
+						input_value) < 0) {
+				return -1;
+			}
+			if (jsval_regexp_groups_object(region, regexp, capture_values,
+					slot_count, &groups) < 0) {
+				return -1;
+			}
+			if (jsval_object_append_native_prop(region, object, groups_key_off,
+					groups) < 0) {
+				return -1;
+			}
+		}
+		*value_ptr = object;
+		return 0;
 	}
 	if (jsval_object_new(region, prop_cap, &object) < 0) {
 		return -1;
@@ -4346,12 +4470,8 @@ jsval_regexp_exec_result_object(jsval_region_t *region,
 			input_value) < 0) {
 		return -1;
 	}
-	if (jsval_regexp_groups_object(region, regexp, subject, offsets, slot_count,
-			&groups) < 0) {
-		return -1;
-	}
 	if (jsval_object_set_utf8(region, object, (const uint8_t *)"groups", 6,
-			groups) < 0) {
+			jsval_undefined()) < 0) {
 		return -1;
 	}
 
@@ -7259,11 +7379,10 @@ jsval_regexp_replace_fill_parts(jsval_region_t *region, jsval_t regexp_value,
 
 		for (;;) {
 			jsval_replace_call_t call;
-			jsval_t match_value;
 			jsval_t replacement_string;
 			jsval_native_string_t *replacement_native;
+			jsval_t capture_values[(size_t)regexp->capture_count + 1];
 			size_t capture_count;
-			size_t i;
 
 			if (jsval_regexp_exec_raw(region, regexp_value, subject, subject_len,
 					offsets, offsets_cap, &exec_result, error) < 0) {
@@ -7281,53 +7400,22 @@ jsval_regexp_replace_fill_parts(jsval_region_t *region, jsval_t regexp_value,
 					exec_result.start - cursor, 0) < 0) {
 				return -1;
 			}
-			if (jsval_string_new_utf16(region, subject + exec_result.start,
-					exec_result.end - exec_result.start, &match_value) < 0) {
+			if (jsval_regexp_capture_values(region, subject, offsets,
+					exec_result.slot_count, capture_values) < 0) {
 				return -1;
 			}
 			capture_count = exec_result.slot_count > 0
 					? exec_result.slot_count - 1 : 0;
-			call.match = match_value;
+			call.match = capture_values[0];
 			call.capture_count = capture_count;
 			call.offset = exec_result.start;
 			call.input = input_value;
-			call.groups = jsval_undefined();
-			if (capture_count == 0) {
-				call.captures = NULL;
-			} else {
-				jsval_t captures[capture_count];
-
-				for (i = 0; i < capture_count; i++) {
-					captures[i] = jsval_undefined();
-					if (offsets[(i + 1) * 2] != SIZE_MAX) {
-						if (jsval_string_new_utf16(region,
-								subject + offsets[(i + 1) * 2],
-								offsets[(i + 1) * 2 + 1]
-										- offsets[(i + 1) * 2],
-								&captures[i]) < 0) {
-							return -1;
-						}
-					}
-				}
-				call.captures = captures;
-				if (jsval_regexp_groups_object(region, regexp, subject,
-						offsets, exec_result.slot_count,
-						&call.groups) < 0) {
-					return -1;
-				}
-				if (jsval_replace_callback_stringify(region, callback,
-						callback_ctx, &call, &replacement_string,
-						error) < 0) {
-					return -1;
-				}
-			}
-			if (capture_count == 0
-					&& jsval_regexp_groups_object(region, regexp, subject,
-					offsets, exec_result.slot_count, &call.groups) < 0) {
+			call.captures = capture_count > 0 ? capture_values + 1 : NULL;
+			if (jsval_regexp_groups_object(region, regexp, capture_values,
+					exec_result.slot_count, &call.groups) < 0) {
 				return -1;
 			}
-			if (capture_count == 0
-					&& jsval_replace_callback_stringify(region, callback,
+			if (jsval_replace_callback_stringify(region, callback,
 					callback_ctx, &call, &replacement_string, error) < 0) {
 				return -1;
 			}
