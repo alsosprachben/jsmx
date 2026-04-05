@@ -80,6 +80,9 @@ test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsstr.c
 test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
 	python3 scripts/run_compliance_manifest.py
 
+bench: scripts/run_bench_manifest.py bench/manifest.json bench/generated/bench_util.h
+	python3 scripts/run_bench_manifest.py
+
 test_utf8: utf8.c
 	$(CC) -g -DUTF8_TEST $(CFLAGS) $(LDFLAGS) $^ -o $@
 	./$@
@@ -134,4 +137,4 @@ clean:
 	rm -f test/test_default test/test_strict test/test_links test/test_strict_links test/test_emitter
 	rm -f test_compliance_*
 
-.PHONY: all clean test test_collation test_compliance
+.PHONY: all clean test test_collation test_compliance bench

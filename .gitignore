@@ -1,2 +1,3 @@
 # Temporary unicode collation data
 unicode_collation.h
+bench/results/

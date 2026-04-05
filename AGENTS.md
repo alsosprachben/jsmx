@@ -307,6 +307,9 @@ Use `make` to build the library, examples, and all test binaries.
   - the runner builds one shared runtime archive per invocation
   - then compiles each fixture against it
   - `JOBS=N` or `COMPLIANCE_JOBS=N` override worker count
+- `make bench`
+  - runs the dedicated benchmark corpus in `bench/` against both Node and
+    compiled generated C, writing local JSON timing results by default
 - `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`,
   `make test_collation`
   - build and run focused feature tests

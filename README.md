@@ -138,6 +138,9 @@ That makes semantic correctness more important than surface familiarity:
     - `regex`
     - `values`
     - `objects`
+- `bench/`
+  - dedicated runtime benchmark corpus for Node versus committed generated C
+  - local JSON timing output and manifest-driven pairing
 - `example/`
   - small example programs
 - `test/` and `test_*.c`
@@ -188,6 +191,16 @@ Use `make` for the standard workflow.
   - the runner builds one shared runtime archive per invocation
   - fixture compiles then fan out in parallel
   - `JOBS=N` or `COMPLIANCE_JOBS=N` override worker count
+- `make bench`
+  - run the dedicated runtime benchmark suite against Node and compiled
+    generated C
+  - emit local JSON results under `bench/results/latest.json` by default
+  - optional environment overrides:
+    - `BENCH_FILTER`
+    - `BENCH_ITERATIONS`
+    - `BENCH_WARMUP`
+    - `BENCH_OUTPUT`
+    - `BENCH_NODE`
 
 Generated compliance fixtures are checked in under `compliance/generated/`.
 

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "warmup_iterations": 2,
+    "measured_iterations": 5
+  },
+  "cases": [
+    {
+      "id": "values-arithmetic-loop",
+      "suite": "values",
+      "source": "bench/js/values/arithmetic-loop.js",
+      "generated": "bench/generated/values/arithmetic-loop.c",
+      "expected_stdout": "-942717448\n",
+      "notes": "Arithmetic and bitwise helper loop over jsval inline numeric operations."
+    },
+    {
+      "id": "strings-string-transform-loop",
+      "suite": "strings",
+      "source": "bench/js/strings/string-transform-loop.js",
+      "generated": "bench/generated/strings/string-transform-loop.c",
+      "expected_stdout": "6945000\n",
+      "notes": "ASCII string replaceAll/slice/concat/accessor loop through jsval string methods."
+    },
+    {
+      "id": "objects-object-spread-loop",
+      "suite": "objects",
+      "source": "bench/js/objects/object-spread-loop.js",
+      "generated": "bench/generated/objects/object-spread-loop.c",
+      "expected_stdout": "920000\n",
+      "notes": "Fresh object spread loop with native and JSON-backed sources through clone/copy helpers."
+    },
+    {
+      "id": "objects-array-spread-loop",
+      "suite": "objects",
+      "source": "bench/js/objects/array-spread-loop.js",
+      "generated": "bench/generated/objects/array-spread-loop.c",
+      "expected_stdout": "860000\n",
+      "notes": "Fresh dense array spread loop with explicit append over native and JSON-backed sources."
+    }
+  ]
+}
