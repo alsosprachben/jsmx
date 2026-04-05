@@ -120,6 +120,7 @@ int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object, const uint
 int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t *value_ptr);
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value);
 int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, int *deleted_ptr);
+int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index, jsval_t *key_ptr);
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr);
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
 int jsval_array_push(jsval_region_t *region, jsval_t array, jsval_t value);

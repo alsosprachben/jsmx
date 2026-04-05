@@ -126,6 +126,24 @@ static void assert_object_undefined_prop(jsval_region_t *region, jsval_t object,
 	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
+static void assert_object_key_at(jsval_region_t *region, jsval_t object,
+		size_t index, const char *expected)
+{
+	jsval_t value;
+
+	assert(jsval_object_key_at(region, object, index, &value) == 0);
+	assert_string(region, value, expected);
+}
+
+static void assert_object_key_undefined_at(jsval_region_t *region,
+		jsval_t object, size_t index)
+{
+	jsval_t value;
+
+	assert(jsval_object_key_at(region, object, index, &value) == 0);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+}
+
 static void assert_array_strings(jsval_region_t *region, jsval_t array,
 		const char *const *expected, size_t expected_len)
 {
@@ -510,6 +528,18 @@ static void test_native_container_helpers(void)
 			jsval_number(7.0)) == 0);
 	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"items", 5,
 			array) == 0);
+	assert(jsval_object_size(&region, object) == 3);
+	assert_object_key_at(&region, object, 0, "keep");
+	assert_object_key_at(&region, object, 1, "drop");
+	assert_object_key_at(&region, object, 2, "items");
+	assert_object_key_undefined_at(&region, object, 3);
+
+	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"drop", 4,
+			jsval_number(8.0)) == 0);
+	assert(jsval_object_size(&region, object) == 3);
+	assert_object_key_at(&region, object, 0, "keep");
+	assert_object_key_at(&region, object, 1, "drop");
+	assert_object_key_at(&region, object, 2, "items");
 
 	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"keep", 4,
 			&has) == 0);
@@ -534,6 +564,9 @@ static void test_native_container_helpers(void)
 			&got) == 0);
 	assert(got.kind == JSVAL_KIND_UNDEFINED);
 	assert(jsval_object_size(&region, object) == 2);
+	assert_object_key_at(&region, object, 0, "keep");
+	assert_object_key_at(&region, object, 1, "items");
+	assert_object_key_undefined_at(&region, object, 2);
 
 	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
 	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
@@ -559,6 +592,10 @@ static void test_native_container_helpers(void)
 	assert(jsval_array_push(&region, array, jsval_number(6.0)) < 0);
 	assert(errno == ENOBUFS);
 
+	errno = 0;
+	assert(jsval_object_key_at(&region, jsval_number(1.0), 0, &got) < 0);
+	assert(errno == EINVAL);
+
 	assert_json(&region, object, "{\"keep\":true,\"items\":[1,2,3,4,5]}");
 }
 
@@ -569,12 +606,18 @@ static void test_json_container_helpers(void)
 	jsval_region_t region;
 	jsval_t root;
 	jsval_t items;
+	jsval_t got;
 	int has;
 	int deleted;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 32,
 			&root) == 0);
+	assert(jsval_object_size(&region, root) == 3);
+	assert_object_key_at(&region, root, 0, "drop");
+	assert_object_key_at(&region, root, 1, "keep");
+	assert_object_key_at(&region, root, 2, "items");
+	assert_object_key_undefined_at(&region, root, 3);
 
 	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"drop", 4,
 			&has) == 0);
@@ -604,6 +647,9 @@ static void test_json_container_helpers(void)
 	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"drop", 4,
 			&has) == 0);
 	assert(has == 0);
+	assert_object_key_at(&region, root, 0, "keep");
+	assert_object_key_at(&region, root, 1, "items");
+	assert_object_key_undefined_at(&region, root, 2);
 	assert_json(&region, root, "{\"keep\":true,\"items\":[1,2]}");
 
 	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
@@ -614,6 +660,10 @@ static void test_json_container_helpers(void)
 	errno = 0;
 	assert(jsval_array_set_length(&region, items, 3) < 0);
 	assert(errno == ENOBUFS);
+
+	errno = 0;
+	assert(jsval_object_key_at(&region, jsval_null(), 0, &got) < 0);
+	assert(errno == EINVAL);
 }
 
 static void test_policy_layer()

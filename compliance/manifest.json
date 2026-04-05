@@ -3680,6 +3680,36 @@
       "notes": "Repo-authored idiomatic native object fixture for own-property checks and deletion through the explicit jsval object helpers."
     },
     {
+      "id": "jsmx-objects-object-key-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-key-order.js",
+      "generated": "compliance/generated/objects/jsmx/object-key-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for ordered key access through jsval_object_size() and jsval_object_key_at(), including overwrite that preserves insertion order."
+    },
+    {
+      "id": "jsmx-objects-object-key-delete-compaction",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-key-delete-compaction.js",
+      "generated": "compliance/generated/objects/jsmx/object-key-delete-compaction.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for ordered key access after delete compacts later properties left."
+    },
+    {
+      "id": "jsmx-objects-json-object-key-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-object-key-order.js",
+      "generated": "compliance/generated/objects/jsmx/json-object-key-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic JSON-backed object fixture for ordered key access in parsed source order without implicit promotion."
+    },
+    {
       "id": "jsmx-objects-array-push-length",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-push-length.js",

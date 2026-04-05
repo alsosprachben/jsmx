@@ -183,6 +183,36 @@ static generated_status_t generated_expect_string_array(jsval_region_t *region,
 	return GENERATED_PASS;
 }
 
+static int
+generated_build_object_keys_array(jsval_region_t *region, jsval_t object,
+		jsval_t *array_ptr)
+{
+	jsval_t array;
+	size_t len;
+	size_t i;
+
+	if (region == NULL || array_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	len = jsval_object_size(region, object);
+	if (jsval_array_new(region, len, &array) < 0) {
+		return -1;
+	}
+	for (i = 0; i < len; i++) {
+		jsval_t key;
+
+		if (jsval_object_key_at(region, object, i, &key) < 0) {
+			return -1;
+		}
+		if (jsval_array_push(region, array, key) < 0) {
+			return -1;
+		}
+	}
+	*array_ptr = array;
+	return 0;
+}
+
 static generated_status_t generated_expect_number(jsval_region_t *region, jsval_t value, double expected,
 		char *detail, size_t cap)
 {
@@ -1838,6 +1868,107 @@ static generated_status_t generated_smoke_jsval_lookup_capacity_contracts(
 	}
 
 	return generated_expect_json(&region, root, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
+static generated_status_t generated_smoke_jsval_object_key_order(char *detail,
+		size_t cap)
+{
+	static const uint8_t json_input[] = "{\"z\":1,\"a\":2,\"m\":3}";
+	static const uint8_t expected_json[] =
+		"{\"native\":[\"keep\",\"items\"],\"json\":[\"z\",\"a\",\"m\"]}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t native_object;
+	jsval_t native_items;
+	jsval_t native_keys;
+	jsval_t parsed_object;
+	jsval_t parsed_keys;
+	jsval_t key;
+	int deleted;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 2, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+	if (jsval_object_new(&region, 3, &native_object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(native)");
+	}
+	if (jsval_array_new(&region, 1, &native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(native_items)");
+	}
+	if (jsval_object_set_utf8(&region, native_object, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(keep)");
+	}
+	if (jsval_object_set_utf8(&region, native_object, (const uint8_t *)"drop", 4,
+			jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(drop)");
+	}
+	if (jsval_object_set_utf8(&region, native_object, (const uint8_t *)"items", 5,
+			native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(items)");
+	}
+	if (jsval_object_set_utf8(&region, native_object, (const uint8_t *)"drop", 4,
+			jsval_number(8.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(overwrite drop)");
+	}
+	if (jsval_object_key_at(&region, native_object, 0, &key) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(native 0)");
+	}
+	status = generated_expect_string(&region, key, (const uint8_t *)"keep", 4,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_key_at(&region, native_object, 1, &key) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(native 1)");
+	}
+	status = generated_expect_string(&region, key, (const uint8_t *)"drop", 4,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_key_at(&region, native_object, 2, &key) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(native 2)");
+	}
+	status = generated_expect_string(&region, key, (const uint8_t *)"items", 5,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_delete_utf8(&region, native_object,
+			(const uint8_t *)"drop", 4, &deleted) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_delete_utf8(drop)");
+	}
+	if (!deleted) {
+		return generated_failf(detail, cap,
+				"expected drop deletion to report success");
+	}
+	if (generated_build_object_keys_array(&region, native_object, &native_keys) < 0) {
+		return generated_fail_errno(detail, cap,
+				"generated_build_object_keys_array(native)");
+	}
+	if (jsval_json_parse(&region, json_input, sizeof(json_input) - 1, 16,
+			&parsed_object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (generated_build_object_keys_array(&region, parsed_object, &parsed_keys) < 0) {
+		return generated_fail_errno(detail, cap,
+				"generated_build_object_keys_array(json)");
+	}
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"native", 6,
+			native_keys) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(native)");
+	}
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"json", 4,
+			parsed_keys) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(json)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
@@ -5576,6 +5707,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_shallow_planned_promotion", generated_smoke_jsval_shallow_planned_promotion},
 	{"smoke", "jsval_native_containers", generated_smoke_jsval_native_containers},
 	{"smoke", "jsval_lookup_capacity_contracts", generated_smoke_jsval_lookup_capacity_contracts},
+	{"smoke", "jsval_object_key_order", generated_smoke_jsval_object_key_order},
 	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},
