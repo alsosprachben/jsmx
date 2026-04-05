@@ -144,6 +144,24 @@ static void assert_object_key_undefined_at(jsval_region_t *region,
 	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
+static void assert_object_value_json_at(jsval_region_t *region, jsval_t object,
+		size_t index, const char *expected)
+{
+	jsval_t value;
+
+	assert(jsval_object_value_at(region, object, index, &value) == 0);
+	assert_json(region, value, expected);
+}
+
+static void assert_object_value_undefined_at(jsval_region_t *region,
+		jsval_t object, size_t index)
+{
+	jsval_t value;
+
+	assert(jsval_object_value_at(region, object, index, &value) == 0);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+}
+
 static void assert_array_strings(jsval_region_t *region, jsval_t array,
 		const char *const *expected, size_t expected_len)
 {
@@ -533,6 +551,10 @@ static void test_native_container_helpers(void)
 	assert_object_key_at(&region, object, 1, "drop");
 	assert_object_key_at(&region, object, 2, "items");
 	assert_object_key_undefined_at(&region, object, 3);
+	assert_object_value_json_at(&region, object, 0, "true");
+	assert_object_value_json_at(&region, object, 1, "7");
+	assert_object_value_json_at(&region, object, 2, "[]");
+	assert_object_value_undefined_at(&region, object, 3);
 
 	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"drop", 4,
 			jsval_number(8.0)) == 0);
@@ -540,6 +562,7 @@ static void test_native_container_helpers(void)
 	assert_object_key_at(&region, object, 0, "keep");
 	assert_object_key_at(&region, object, 1, "drop");
 	assert_object_key_at(&region, object, 2, "items");
+	assert_object_value_json_at(&region, object, 1, "8");
 
 	assert(jsval_object_has_own_utf8(&region, object, (const uint8_t *)"keep", 4,
 			&has) == 0);
@@ -567,6 +590,9 @@ static void test_native_container_helpers(void)
 	assert_object_key_at(&region, object, 0, "keep");
 	assert_object_key_at(&region, object, 1, "items");
 	assert_object_key_undefined_at(&region, object, 2);
+	assert_object_value_json_at(&region, object, 0, "true");
+	assert_object_value_json_at(&region, object, 1, "[]");
+	assert_object_value_undefined_at(&region, object, 2);
 
 	assert(jsval_array_push(&region, array, jsval_number(1.0)) == 0);
 	assert(jsval_array_push(&region, array, jsval_number(2.0)) == 0);
@@ -595,8 +621,12 @@ static void test_native_container_helpers(void)
 	errno = 0;
 	assert(jsval_object_key_at(&region, jsval_number(1.0), 0, &got) < 0);
 	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_object_value_at(&region, jsval_number(1.0), 0, &got) < 0);
+	assert(errno == EINVAL);
 
 	assert_json(&region, object, "{\"keep\":true,\"items\":[1,2,3,4,5]}");
+	assert_object_value_json_at(&region, object, 1, "[1,2,3,4,5]");
 }
 
 static void test_json_container_helpers(void)
@@ -618,6 +648,10 @@ static void test_json_container_helpers(void)
 	assert_object_key_at(&region, root, 1, "keep");
 	assert_object_key_at(&region, root, 2, "items");
 	assert_object_key_undefined_at(&region, root, 3);
+	assert_object_value_json_at(&region, root, 0, "1");
+	assert_object_value_json_at(&region, root, 1, "true");
+	assert_object_value_json_at(&region, root, 2, "[1,2]");
+	assert_object_value_undefined_at(&region, root, 3);
 
 	assert(jsval_object_has_own_utf8(&region, root, (const uint8_t *)"drop", 4,
 			&has) == 0);
@@ -650,6 +684,9 @@ static void test_json_container_helpers(void)
 	assert_object_key_at(&region, root, 0, "keep");
 	assert_object_key_at(&region, root, 1, "items");
 	assert_object_key_undefined_at(&region, root, 2);
+	assert_object_value_json_at(&region, root, 0, "true");
+	assert_object_value_json_at(&region, root, 1, "[1,2]");
+	assert_object_value_undefined_at(&region, root, 2);
 	assert_json(&region, root, "{\"keep\":true,\"items\":[1,2]}");
 
 	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"items", 5,
@@ -663,6 +700,9 @@ static void test_json_container_helpers(void)
 
 	errno = 0;
 	assert(jsval_object_key_at(&region, jsval_null(), 0, &got) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_object_value_at(&region, jsval_null(), 0, &got) < 0);
 	assert(errno == EINVAL);
 }
 

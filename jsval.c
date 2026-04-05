@@ -8764,6 +8764,68 @@ int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index,
 	return -1;
 }
 
+int jsval_object_value_at(jsval_region_t *region, jsval_t object, size_t index,
+		jsval_t *value_ptr)
+{
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+		jsval_native_prop_t *props;
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (index >= native->len) {
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		props = jsval_native_object_props(native);
+		*value_ptr = props[index].value;
+		return 0;
+	}
+
+	if (object.repr == JSVAL_REPR_JSON) {
+		int cursor;
+		unsigned int i;
+		jsval_json_doc_t *doc = jsval_json_doc(region, object);
+		jsmntok_t *tokens = jsval_json_doc_tokens(region, doc);
+
+		cursor = (int)object.as.index + 1;
+		for (i = 0; i < (unsigned int)tokens[object.as.index].size; i++) {
+			int key_index = cursor;
+			int value_index = jsval_json_next(region, doc, key_index);
+
+			if (value_index < 0) {
+				break;
+			}
+			if ((size_t)i == index) {
+				*value_ptr = jsval_json_value(region, object,
+						(uint32_t)value_index);
+				return 0;
+			}
+			cursor = jsval_json_next(region, doc, value_index);
+			if (cursor < 0) {
+				break;
+			}
+		}
+
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value)
 {
 	size_t index;

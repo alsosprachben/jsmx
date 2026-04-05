@@ -3710,6 +3710,46 @@
       "notes": "Repo-authored idiomatic JSON-backed object fixture for ordered key access in parsed source order without implicit promotion."
     },
     {
+      "id": "jsmx-objects-object-value-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-value-order.js",
+      "generated": "compliance/generated/objects/jsmx/object-value-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for ordered value access through jsval_object_size() and jsval_object_value_at(), including overwrite that preserves insertion order."
+    },
+    {
+      "id": "jsmx-objects-object-entry-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-entry-order.js",
+      "generated": "compliance/generated/objects/jsmx/object-entry-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for Object.entries-style lowering through jsval_object_key_at() plus jsval_object_value_at()."
+    },
+    {
+      "id": "jsmx-objects-object-value-delete-compaction",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-value-delete-compaction.js",
+      "generated": "compliance/generated/objects/jsmx/object-value-delete-compaction.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for ordered value access after delete compacts later properties left."
+    },
+    {
+      "id": "jsmx-objects-json-object-value-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/json-object-value-order.js",
+      "generated": "compliance/generated/objects/jsmx/json-object-value-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic JSON-backed object fixture for ordered value access in parsed source order without implicit promotion."
+    },
+    {
       "id": "jsmx-objects-array-push-length",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-push-length.js",
