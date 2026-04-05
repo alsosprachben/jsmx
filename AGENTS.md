@@ -68,6 +68,8 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - deeper repeated exec-result and `lastIndex` fidelity
   - named capture groups and `groups` objects on exec-shaped results and
     replace-family substitutions
+  - explicit translator-visible JIT versus non-JIT regex construction, with
+    JIT intended only for clearly hoisted reused direct-lowered regexes
 - translator-facing callback replacers for `replace` / `replaceAll`,
   including regex named-group `groups` arguments
 - narrow `/u` literal rewrite helpers for regex-backed string methods,

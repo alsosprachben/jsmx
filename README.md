@@ -48,6 +48,8 @@ That makes semantic correctness more important than surface familiarity:
   - default regex construction stays non-JIT
   - explicit `jsregex_compile_utf16_jit(...)` and `jsval_regexp_new_jit(...)`
     entrypoints let generated code choose JIT for longer-lived regexes
+  - translator-facing generated code should only choose the JIT constructor
+    when the regex is clearly hoisted and reused across repeated matches
   - the current JS-facing slice covers:
     - regex-backed `search`
     - `exec`

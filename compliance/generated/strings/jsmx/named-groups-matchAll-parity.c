@@ -29,7 +29,7 @@ main(void)
 	GENERATED_TEST_ASSERT(jsval_string_new_utf8(&region,
 			(const uint8_t *)"a1b2", 4, &native_text) == 0,
 			SUITE, CASE_NAME, "native text build failed");
-	GENERATED_TEST_ASSERT(generated_regexp_new_utf8(&region,
+	GENERATED_TEST_ASSERT(generated_regexp_new_utf8_jit(&region,
 			"(?<digits>[0-9])(?<tail>[a-z])?", "g", &regex, &error) == 0,
 			SUITE, CASE_NAME, "regex build failed");
 

@@ -35,6 +35,27 @@ generated_regexp_new_utf8(jsval_region_t *region, const char *pattern,
 }
 
 static inline int
+generated_regexp_new_utf8_jit(jsval_region_t *region, const char *pattern,
+		const char *flags, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_t pattern_value;
+	jsval_t flags_value = jsval_undefined();
+
+	if (jsval_string_new_utf8(region, (const uint8_t *)pattern,
+			strlen(pattern), &pattern_value) < 0) {
+		return -1;
+	}
+	if (flags != NULL) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)flags,
+				strlen(flags), &flags_value) < 0) {
+			return -1;
+		}
+	}
+	return jsval_regexp_new_jit(region, pattern_value, flags != NULL,
+			flags_value, value_ptr, error);
+}
+
+static inline int
 generated_expect_regexp_source(jsval_region_t *region, jsval_t regexp,
 		const char *expected, const char *suite, const char *case_name,
 		const char *label)

@@ -5344,6 +5344,106 @@ static generated_status_t generated_smoke_jsval_regexp_named_groups_jit(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_regexp_constructor_choice(
+		char *detail, size_t cap)
+{
+	static const uint8_t pattern_utf8[] = "([0-9])";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t one_shot_regex;
+	jsval_t reused_regex;
+	jsval_t subject;
+	jsval_t result;
+	size_t last_index = 0;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, pattern_utf8,
+			sizeof(pattern_utf8) - 1, &pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+				&subject) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(constructor choice args)");
+	}
+	if (jsval_regexp_new(&region, pattern, 0, jsval_undefined(),
+			&one_shot_regex, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new(one-shot) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_exec(&region, one_shot_regex, subject, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(one-shot) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"0", 1,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(one-shot match)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_regexp_get_last_index(&region, one_shot_regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(one-shot)");
+	}
+	if (last_index != 0) {
+		return generated_failf(detail, cap,
+				"expected one-shot lastIndex 0, got %zu", last_index);
+	}
+
+	if (jsval_regexp_new_jit(&region, pattern, 1, global_flags, &reused_regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new_jit(reused) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_exec(&region, reused_regex, subject, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(reused first) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"0", 1,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(reused first match)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_regexp_exec(&region, reused_regex, subject, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(reused second) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"0", 1,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(reused second match)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"2", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_regexp_get_last_index(&region, reused_regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(reused)");
+	}
+	if (last_index != 4) {
+		return generated_failf(detail, cap,
+				"expected reused lastIndex 4, got %zu", last_index);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 		char *detail, size_t cap)
 {
@@ -7522,6 +7622,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_named_groups", generated_smoke_jsval_regexp_named_groups},
 	{"smoke", "jsval_regexp_named_groups_jit",
 		generated_smoke_jsval_regexp_named_groups_jit},
+	{"smoke", "jsval_regexp_constructor_choice",
+		generated_smoke_jsval_regexp_constructor_choice},
 	{"smoke", "jsval_u_literal_surrogate_rewrite",
 		generated_smoke_jsval_u_literal_surrogate_rewrite},
 	{"smoke", "jsval_u_literal_sequence_rewrite",

@@ -32,6 +32,13 @@ For regex-bearing cases, also read `references/regex-compatibility.md` before
 choosing between direct lowering, rewrite, slow path, or unsupported
 classification.
 
+When a case is direct-lowered through native regex values, keep the constructor
+choice explicit and reviewable in generated C:
+
+- use `jsval_regexp_new(...)` for the default non-JIT lane
+- use `jsval_regexp_new_jit(...)` only when the emitted code clearly hoists
+  and reuses the regex long enough for JIT setup cost to pay back
+
 ## API Selection
 
 - Use `jsstr` for pure string semantics:

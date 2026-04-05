@@ -35,7 +35,7 @@ main(void)
 	GENERATED_TEST_ASSERT(jsval_string_new_utf8(&region,
 			(const uint8_t *)"a2", 2, &native_other) == 0,
 			SUITE, CASE_NAME, "native other build failed");
-	GENERATED_TEST_ASSERT(generated_regexp_new_utf8(&region,
+	GENERATED_TEST_ASSERT(generated_regexp_new_utf8_jit(&region,
 			"(?<digits>[0-9])(?<tail>[a-z])?", NULL, &regex, &error) == 0,
 			SUITE, CASE_NAME, "regex build failed");
 
@@ -91,4 +91,3 @@ main(void)
 
 	return generated_test_pass(SUITE, CASE_NAME);
 }
-

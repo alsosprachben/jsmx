@@ -14,7 +14,6 @@ main(void)
 	jsval_t parsed_text;
 	jsval_t native_text;
 	jsval_t pattern;
-	jsval_t global_flags;
 	jsval_t parsed_global_regex;
 	jsval_t native_global_regex;
 	jsval_t parsed_non_global_regex;
@@ -35,14 +34,11 @@ main(void)
 	GENERATED_TEST_ASSERT(jsval_string_new_utf8(&region,
 			(const uint8_t *)"([0-9])", 7, &pattern) == 0,
 			SUITE, CASE_NAME, "pattern build failed");
-	GENERATED_TEST_ASSERT(jsval_string_new_utf8(&region,
-			(const uint8_t *)"g", 1, &global_flags) == 0,
-			SUITE, CASE_NAME, "global flags build failed");
-	GENERATED_TEST_ASSERT(jsval_regexp_new(&region, pattern, 1, global_flags,
-			&parsed_global_regex, &error) == 0,
+	GENERATED_TEST_ASSERT(generated_regexp_new_utf8_jit(&region, "([0-9])",
+			"g", &parsed_global_regex, &error) == 0,
 			SUITE, CASE_NAME, "parsed global regex failed");
-	GENERATED_TEST_ASSERT(jsval_regexp_new(&region, pattern, 1, global_flags,
-			&native_global_regex, &error) == 0,
+	GENERATED_TEST_ASSERT(generated_regexp_new_utf8_jit(&region, "([0-9])",
+			"g", &native_global_regex, &error) == 0,
 			SUITE, CASE_NAME, "native global regex failed");
 	GENERATED_TEST_ASSERT(jsval_regexp_new(&region, pattern, 0,
 			jsval_undefined(), &parsed_non_global_regex, &error) == 0,

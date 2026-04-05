@@ -64,6 +64,33 @@ construction choice within the direct-lowered lane:
 - use `jsval_regexp_new_jit(...)` when the transpilation can see the regex
   will be reused long enough for JIT compile cost to pay back
 
+Use the explicit JIT constructor only when the emitted C makes the longer
+lifetime obvious and reviewable. Good JIT candidates include:
+
+- one regex object constructed once and reused across repeated `exec` calls
+- one global regex object constructed once and reused across multiple
+  `matchAll` iterator constructions
+- one hoisted direct-lowered regex reused across multiple replace-family
+  operations
+
+Stay on the default constructor for:
+
+- one-shot constructor sites followed by a single regex operation
+- compile-per-iteration or compile-per-call sites
+- `jsval_regexp_new(existing_regexp, ...)` copy or flag-override sites unless
+  the new regex is itself clearly hoisted and reused
+- all rewrite-backed `/u` helper families, which do not lower through
+  `jsval_regexp_new(...)`
+
+Reviewable emitted-C examples:
+
+- positive:
+  `jsval_regexp_new_jit(..., &regex, ...)` once, then repeated
+  `jsval_regexp_exec(..., regex, ...)`
+- negative:
+  `jsval_regexp_new(..., &regex, ...)` immediately followed by one
+  `jsval_regexp_exec(..., regex, ...)`
+
 ## Current Rewrite Policy
 
 Do **not** invent ad hoc regex rewrites while translating fixtures.

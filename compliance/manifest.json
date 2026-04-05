@@ -2361,7 +2361,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll named-group iterator results, including unmatched optional groups on later yields."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native String.prototype.matchAll named-group iterator results, including unmatched optional groups on later yields. The hoisted reused global regex is lowered through the explicit JIT constructor."
     },
     {
       "id": "test262-regex-matchAll-string-tostring",
@@ -2592,7 +2592,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native repeated regexp exec state, including global miss reset and non-global lastIndex preservation. The reused global regexes are lowered through the explicit JIT constructor, while the one-shot non-global regexes stay on the default constructor."
     },
     {
       "id": "jsmx-regex-named-groups-exec-parity",
@@ -2603,7 +2603,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native RegExp.prototype.exec named-group result objects, including unmatched optional groups."
+      "notes": "Direct-lowered: repo-authored parity fixture for parsed JSON-backed versus native RegExp.prototype.exec named-group result objects, including unmatched optional groups. The reused direct-lowered regex is lowered through the explicit JIT constructor."
     },
     {
       "id": "jsmx-regex-u-literal-surrogate-exec-test-rewrite",
