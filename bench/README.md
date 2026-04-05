@@ -53,5 +53,14 @@ The C side of the benchmark build defaults to:
 If `CFLAGS` already supplies an optimization level, the runner keeps that
 explicit choice and still adds `-flto` unless it is already present.
 
+## Feature-Gated Cases
+
+- benchmark manifest entries may declare `required_features`
+- default `make bench` skips cases whose features are not enabled
+- the current corpus includes a regex benchmark gated on `regex`
+
+Run regex-gated benchmarks with the same regex-enabled `CFLAGS`, `LDLIBS`,
+and `JSMX_FEATURES=regex` setup used for the regex test matrix.
+
 That path is ignored in Git so local history can accumulate outside the
 committed corpus.

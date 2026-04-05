@@ -36,6 +36,15 @@
       "generated": "bench/generated/objects/array-spread-loop.c",
       "expected_stdout": "860000\n",
       "notes": "Fresh dense array spread loop with explicit append over native and JSON-backed sources."
+    },
+    {
+      "id": "regex-named-groups-exec-loop",
+      "suite": "regex",
+      "source": "bench/js/regex/named-groups-exec-loop.js",
+      "generated": "bench/generated/regex/named-groups-exec-loop.c",
+      "expected_stdout": "3040000\n",
+      "required_features": ["regex"],
+      "notes": "Direct-lowered global exec loop with named-group result access over alternating subjects."
     }
   ]
 }
