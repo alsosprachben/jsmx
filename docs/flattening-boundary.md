@@ -21,6 +21,7 @@ The design target is:
 - page-resident values, objects, arrays, and JSON-backed reads
 - explicit promotion from JSON-backed storage to native storage
 - deterministic ordered object key/value access over current stored or parsed order
+- shallow own-property copy from native or JSON-backed source objects into pre-capacity-planned native destinations
 - dense, capacity-bounded native array semantics such as push, pop, shift, unshift, and explicit length writes
 - deterministic JS-method helpers such as `String.prototype.normalize`
 

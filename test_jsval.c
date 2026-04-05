@@ -706,6 +706,109 @@ static void test_json_container_helpers(void)
 	assert(errno == EINVAL);
 }
 
+static void test_object_copy_own_helpers(void)
+{
+	static const char json_source[] = "{\"z\":1,\"a\":2}";
+	static const char json_multi[] = "{\"b\":9,\"c\":3}";
+	static const char json_dups[] = "{\"a\":1,\"a\":9,\"c\":3}";
+	static const char json_fail[] = "{\"a\":1,\"b\":2}";
+	static const char json_dst_text[] = "{\"keep\":true}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t dst;
+	jsval_t src_native;
+	jsval_t items;
+	jsval_t src_json;
+	jsval_t multi_dst;
+	jsval_t multi_src;
+	jsval_t dup_dst;
+	jsval_t dup_src;
+	jsval_t tight_dst;
+	jsval_t json_dst;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_object_new(&region, 3, &dst) == 0);
+	assert(jsval_object_new(&region, 2, &src_native) == 0);
+	assert(jsval_array_new(&region, 0, &items) == 0);
+	assert(jsval_object_set_utf8(&region, dst, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) == 0);
+	assert(jsval_object_set_utf8(&region, dst, (const uint8_t *)"drop", 4,
+			jsval_number(7.0)) == 0);
+	assert(jsval_object_set_utf8(&region, src_native, (const uint8_t *)"drop", 4,
+			jsval_number(8.0)) == 0);
+	assert(jsval_object_set_utf8(&region, src_native, (const uint8_t *)"items", 5,
+			items) == 0);
+	assert(jsval_object_copy_own(&region, dst, src_native) == 0);
+	assert_json(&region, dst, "{\"keep\":true,\"drop\":8,\"items\":[]}");
+	assert_object_key_at(&region, dst, 0, "keep");
+	assert_object_key_at(&region, dst, 1, "drop");
+	assert_object_key_at(&region, dst, 2, "items");
+	assert_object_value_json_at(&region, dst, 0, "true");
+	assert_object_value_json_at(&region, dst, 1, "8");
+	assert_object_value_json_at(&region, dst, 2, "[]");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_source,
+			sizeof(json_source) - 1, 8, &src_json) == 0);
+	assert(jsval_object_new(&region, 3, &multi_dst) == 0);
+	assert(jsval_object_set_utf8(&region, multi_dst, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) == 0);
+	assert(jsval_object_copy_own(&region, multi_dst, src_json) == 0);
+	assert_json(&region, multi_dst, "{\"keep\":true,\"z\":1,\"a\":2}");
+	assert_object_key_at(&region, multi_dst, 0, "keep");
+	assert_object_key_at(&region, multi_dst, 1, "z");
+	assert_object_key_at(&region, multi_dst, 2, "a");
+
+	assert(jsval_object_new(&region, 3, &multi_dst) == 0);
+	assert(jsval_object_new(&region, 2, &multi_src) == 0);
+	assert(jsval_object_set_utf8(&region, multi_src, (const uint8_t *)"a", 1,
+			jsval_number(1.0)) == 0);
+	assert(jsval_object_set_utf8(&region, multi_src, (const uint8_t *)"b", 1,
+			jsval_number(2.0)) == 0);
+	assert(jsval_json_parse(&region, (const uint8_t *)json_multi,
+			sizeof(json_multi) - 1, 8, &src_json) == 0);
+	assert(jsval_object_copy_own(&region, multi_dst, multi_src) == 0);
+	assert(jsval_object_copy_own(&region, multi_dst, src_json) == 0);
+	assert_json(&region, multi_dst, "{\"a\":1,\"b\":9,\"c\":3}");
+	assert_object_key_at(&region, multi_dst, 0, "a");
+	assert_object_key_at(&region, multi_dst, 1, "b");
+	assert_object_key_at(&region, multi_dst, 2, "c");
+
+	assert(jsval_object_new(&region, 3, &dup_dst) == 0);
+	assert(jsval_json_parse(&region, (const uint8_t *)json_dups,
+			sizeof(json_dups) - 1, 8, &dup_src) == 0);
+	assert(jsval_object_copy_own(&region, dup_dst, dup_src) == 0);
+	assert_json(&region, dup_dst, "{\"a\":9,\"c\":3}");
+	assert_object_key_at(&region, dup_dst, 0, "a");
+	assert_object_key_at(&region, dup_dst, 1, "c");
+
+	assert(jsval_object_copy_own(&region, dup_dst, dup_dst) == 0);
+	assert_json(&region, dup_dst, "{\"a\":9,\"c\":3}");
+
+	assert(jsval_object_new(&region, 2, &tight_dst) == 0);
+	assert(jsval_object_set_utf8(&region, tight_dst, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) == 0);
+	assert(jsval_json_parse(&region, (const uint8_t *)json_fail,
+			sizeof(json_fail) - 1, 8, &src_json) == 0);
+	errno = 0;
+	assert(jsval_object_copy_own(&region, tight_dst, src_json) < 0);
+	assert(errno == ENOBUFS);
+	assert_json(&region, tight_dst, "{\"keep\":true}");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_dst_text,
+			sizeof(json_dst_text) - 1, 8, &json_dst) == 0);
+	errno = 0;
+	assert(jsval_object_copy_own(&region, json_dst, src_json) < 0);
+	assert(errno == ENOTSUP);
+
+	errno = 0;
+	assert(jsval_object_copy_own(&region, jsval_number(1.0), src_json) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_object_copy_own(&region, dst, jsval_number(1.0)) < 0);
+	assert(errno == EINVAL);
+}
+
 static void test_policy_layer()
 {
 	static const char json[] = "{\"message\":\"hi\",\"items\":[1,true,null]}";
@@ -4151,6 +4254,7 @@ int main(void)
 	test_json_mutation_requires_promotion();
 	test_native_container_helpers();
 	test_json_container_helpers();
+	test_object_copy_own_helpers();
 	test_policy_layer();
 	test_method_bridge();
 	test_method_normalize_bridge();

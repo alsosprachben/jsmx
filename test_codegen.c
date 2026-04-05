@@ -2134,6 +2134,91 @@ static generated_status_t generated_smoke_jsval_object_value_order(char *detail,
 			sizeof(expected_json) - 1, detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_object_copy_own(char *detail,
+		size_t cap)
+{
+	static const uint8_t json_source[] = "{\"tail\":9,\"last\":10,\"drop\":11}";
+	static const uint8_t fail_source[] = "{\"a\":1,\"b\":2}";
+	static const uint8_t expected_json[] =
+		"{\"merged\":{\"keep\":true,\"drop\":11,\"items\":[],\"tail\":9,\"last\":10},\"unchanged\":{\"keep\":true}}";
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t output;
+	jsval_t merged;
+	jsval_t native_src;
+	jsval_t native_items;
+	jsval_t parsed_src;
+	jsval_t tight_dst;
+	jsval_t fail_src;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_object_new(&region, 2, &output) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(output)");
+	}
+	if (jsval_object_new(&region, 5, &merged) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(merged)");
+	}
+	if (jsval_object_new(&region, 2, &native_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(native_src)");
+	}
+	if (jsval_array_new(&region, 0, &native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(native_items)");
+	}
+	if (jsval_object_set_utf8(&region, merged, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) < 0
+			|| jsval_object_set_utf8(&region, merged,
+			(const uint8_t *)"drop", 4, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(merged)");
+	}
+	if (jsval_object_set_utf8(&region, native_src, (const uint8_t *)"drop", 4,
+			jsval_number(8.0)) < 0
+			|| jsval_object_set_utf8(&region, native_src,
+			(const uint8_t *)"items", 5, native_items) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(native_src)");
+	}
+	if (jsval_object_copy_own(&region, merged, native_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_copy_own(native)");
+	}
+	if (jsval_json_parse(&region, json_source, sizeof(json_source) - 1, 8,
+			&parsed_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(json_source)");
+	}
+	if (jsval_object_copy_own(&region, merged, parsed_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_copy_own(json)");
+	}
+
+	if (jsval_object_new(&region, 1, &tight_dst) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(tight_dst)");
+	}
+	if (jsval_object_set_utf8(&region, tight_dst, (const uint8_t *)"keep", 4,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(tight_dst)");
+	}
+	if (jsval_json_parse(&region, fail_source, sizeof(fail_source) - 1, 8,
+			&fail_src) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(fail_source)");
+	}
+	errno = 0;
+	if (jsval_object_copy_own(&region, tight_dst, fail_src) != -1) {
+		return generated_failf(detail, cap,
+				"expected copy into undersized destination to fail");
+	}
+	if (errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected ENOBUFS from undersized destination, got %d", errno);
+	}
+
+	if (jsval_object_set_utf8(&region, output, (const uint8_t *)"merged", 6,
+			merged) < 0
+			|| jsval_object_set_utf8(&region, output,
+			(const uint8_t *)"unchanged", 9, tight_dst) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(output)");
+	}
+
+	return generated_expect_json(&region, output, expected_json,
+			sizeof(expected_json) - 1, detail, cap);
+}
+
 static generated_status_t generated_smoke_jsval_dense_array_semantics(
 		char *detail, size_t cap)
 {
@@ -5871,6 +5956,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_lookup_capacity_contracts", generated_smoke_jsval_lookup_capacity_contracts},
 	{"smoke", "jsval_object_key_order", generated_smoke_jsval_object_key_order},
 	{"smoke", "jsval_object_value_order", generated_smoke_jsval_object_value_order},
+	{"smoke", "jsval_object_copy_own", generated_smoke_jsval_object_copy_own},
 	{"smoke", "jsval_dense_array_semantics", generated_smoke_jsval_dense_array_semantics},
 	{"smoke", "jsval_method_locale_upper", generated_smoke_jsval_method_locale_upper},
 	{"smoke", "jsval_method_normalize", generated_smoke_jsval_method_normalize},

@@ -3750,6 +3750,46 @@
       "notes": "Repo-authored idiomatic JSON-backed object fixture for ordered value access in parsed source order without implicit promotion."
     },
     {
+      "id": "jsmx-objects-object-copy-own-native",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-copy-own-native.js",
+      "generated": "compliance/generated/objects/jsmx/object-copy-own-native.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for shallow own-property copy through jsval_object_copy_own(), including overwrite-in-place plus append order."
+    },
+    {
+      "id": "jsmx-objects-object-copy-own-json-source",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-copy-own-json-source.js",
+      "generated": "compliance/generated/objects/jsmx/object-copy-own-json-source.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for shallow own-property copy from a JSON-backed source in parsed source order through jsval_object_copy_own()."
+    },
+    {
+      "id": "jsmx-objects-object-copy-own-multi-source-order",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-copy-own-multi-source-order.js",
+      "generated": "compliance/generated/objects/jsmx/object-copy-own-multi-source-order.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for repeated shallow own-property copy in Object.assign-style left-to-right source order through jsval_object_copy_own()."
+    },
+    {
+      "id": "jsmx-objects-object-copy-own-capacity-error",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-copy-own-capacity-error.js",
+      "generated": "compliance/generated/objects/jsmx/object-copy-own-capacity-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic object fixture for the all-or-nothing ENOBUFS capacity contract on jsval_object_copy_own(), leaving the native destination unchanged."
+    },
+    {
       "id": "jsmx-objects-array-push-length",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/array-push-length.js",
