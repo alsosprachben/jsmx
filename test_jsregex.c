@@ -105,6 +105,21 @@ test_regex_compile_exec(void)
 	assert(offsets[4] == 3 && offsets[5] == 4);
 	jsregex_release(&compiled);
 
+	assert(jsregex_compile_utf16_jit(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(jsregex_exec_utf16(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, sizeof(offsets) / sizeof(offsets[0]), &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 1);
+	assert(result.end == 4);
+	assert(result.slot_count == 3);
+	assert(offsets[0] == 1 && offsets[1] == 4);
+	assert(offsets[2] == 1 && offsets[3] == 3);
+	assert(offsets[4] == 3 && offsets[5] == 4);
+	jsregex_release(&compiled);
+
 	assert(jsregex_compile_utf16(sticky_pattern,
 			sizeof(sticky_pattern) / sizeof(sticky_pattern[0]),
 			flags_y, sizeof(flags_y) / sizeof(flags_y[0]), &compiled) == 0);
@@ -179,6 +194,16 @@ test_regex_named_groups(void)
 			&name_len) == -1);
 	assert(errno == ENOBUFS);
 
+	jsregex_release(&compiled);
+
+	assert(jsregex_compile_utf16_jit(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(compiled.named_group_count == 2);
+	assert(jsregex_named_group_utf16(&compiled, 0, &capture_index, NULL, 0,
+			&name_len) == 0);
+	assert(capture_index == 1);
+	assert(name_len == sizeof(digits_name) / sizeof(digits_name[0]));
 	jsregex_release(&compiled);
 }
 

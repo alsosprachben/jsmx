@@ -3953,7 +3953,7 @@ jsval_regexp_slot_key(size_t index, uint8_t *buf, size_t cap, size_t *len_ptr)
 static int
 jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 		size_t pattern_len, const uint16_t *flags, size_t flags_len,
-		jsval_t *value_ptr, jsmethod_error_t *error)
+		int use_jit, jsval_t *value_ptr, jsmethod_error_t *error)
 {
 	jsregex_compiled_t compiled;
 	jsval_native_regexp_t *regexp;
@@ -3969,8 +3969,11 @@ jsval_regexp_new_from_utf16(jsval_region_t *region, const uint16_t *pattern,
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsregex_compile_utf16(pattern, pattern_len, flags, flags_len,
-			&compiled) < 0) {
+	if ((use_jit
+			? jsregex_compile_utf16_jit(pattern, pattern_len, flags, flags_len,
+					&compiled)
+			: jsregex_compile_utf16(pattern, pattern_len, flags, flags_len,
+					&compiled)) < 0) {
 		if (error != NULL) {
 			error->kind = JSMETHOD_ERROR_SYNTAX;
 			error->message = errno == ENOTSUP
@@ -4925,10 +4928,10 @@ jsval_u_predefined_class_count_matches(const uint16_t *subject,
 	return 0;
 }
 
-int
-jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
+static int
+jsval_regexp_new_impl(jsval_region_t *region, jsval_t pattern_value,
 		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
-		jsmethod_error_t *error)
+		int use_jit, jsmethod_error_t *error)
 {
 	jsval_t pattern_string;
 	jsval_t flags_string = jsval_undefined();
@@ -5002,8 +5005,26 @@ jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
 				jsval_native_string_units(pattern_native), pattern_native->len,
 				flags_native != NULL ? jsval_native_string_units(flags_native) : NULL,
 				flags_native != NULL ? flags_native->len : 0,
-				value_ptr, error);
+				use_jit, value_ptr, error);
 	}
+}
+
+int
+jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_regexp_new_impl(region, pattern_value, have_flags,
+			flags_value, value_ptr, 0, error);
+}
+
+int
+jsval_regexp_new_jit(jsval_region_t *region, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	return jsval_regexp_new_impl(region, pattern_value, have_flags,
+			flags_value, value_ptr, 1, error);
 }
 
 int
@@ -5157,7 +5178,8 @@ jsval_method_string_match(jsval_region_t *region, jsval_t this_value,
 	if (!have_regexp || regexp_value.kind == JSVAL_KIND_UNDEFINED) {
 		uint16_t empty_pattern = 0;
 		(void)empty_pattern;
-		if (jsval_regexp_new_from_utf16(region, NULL, 0, NULL, 0, &regex_value,
+		if (jsval_regexp_new_from_utf16(region, NULL, 0, NULL, 0, 0,
+				&regex_value,
 				error) < 0) {
 			return -1;
 		}
@@ -5298,7 +5320,7 @@ jsval_regexp_clone_with_flags(jsval_region_t *region, jsval_t regexp_value,
 		}
 		if (jsval_regexp_new_from_utf16(region,
 				jsval_native_string_units(source_string), source_string->len,
-				flags_len > 0 ? flags_buf : NULL, flags_len, value_ptr,
+				flags_len > 0 ? flags_buf : NULL, flags_len, 0, value_ptr,
 				error) < 0) {
 			return -1;
 		}
@@ -5763,7 +5785,7 @@ jsval_method_string_match_all(jsval_region_t *region, jsval_t this_value,
 	if (!have_regexp || regexp_value.kind == JSVAL_KIND_UNDEFINED) {
 		static const uint16_t global_flag[] = {'g'};
 
-		if (jsval_regexp_new_from_utf16(region, NULL, 0, global_flag, 1,
+		if (jsval_regexp_new_from_utf16(region, NULL, 0, global_flag, 1, 0,
 				&regex_value, error) < 0) {
 			return -1;
 		}

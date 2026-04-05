@@ -53,7 +53,7 @@
       "generated": "bench/generated/regex/compile-once-exec-loop.c",
       "expected_stdout": "3040000\n",
       "required_features": ["regex"],
-      "notes": "Compile-once global exec loop that isolates repeated backend regex execution from jsval result-object work."
+      "notes": "Compile-once global exec loop using the explicit JIT constructor to isolate repeated backend regex execution from jsval result-object work."
     },
     {
       "id": "regex-exec-no-groups-loop",

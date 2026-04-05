@@ -2235,12 +2235,15 @@ test_regexp_named_groups(void)
 	jsval_t global_flags;
 	jsval_t regex;
 	jsval_t global_regex;
+	jsval_t jit_regex;
+	jsval_t jit_global_regex;
 	jsval_t subject;
 	jsval_t subject_without_tail;
 	jsval_t result;
 	jsval_t iterator;
 	jsmethod_error_t error;
 	int done;
+	size_t last_index = 0;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	assert(jsval_string_new_utf8(&region, pattern_utf8,
@@ -2251,12 +2254,24 @@ test_regexp_named_groups(void)
 			&error) == 0);
 	assert(jsval_regexp_new(&region, pattern, 1, global_flags, &global_regex,
 			&error) == 0);
+	assert(jsval_regexp_new_jit(&region, pattern, 0, jsval_undefined(),
+			&jit_regex, &error) == 0);
+	assert(jsval_regexp_new_jit(&region, pattern, 1, global_flags,
+			&jit_global_regex, &error) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
 			&subject) == 0);
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a2", 2,
 			&subject_without_tail) == 0);
 
 	assert(jsval_regexp_exec(&region, regex, subject, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert_object_string_prop(&region, result, "1", "1");
+	assert_object_string_prop(&region, result, "2", "b");
+	assert_object_groups_string_prop(&region, result, "digits", "1");
+	assert_object_groups_string_prop(&region, result, "tail", "b");
+
+	assert(jsval_regexp_exec(&region, jit_regex, subject, &result, &error) == 0);
 	assert(result.kind == JSVAL_KIND_OBJECT);
 	assert_object_string_prop(&region, result, "0", "1b");
 	assert_object_string_prop(&region, result, "1", "1");
@@ -2299,6 +2314,24 @@ test_regexp_named_groups(void)
 			&error) == 0);
 	assert(done == 1);
 	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_regexp_exec(&region, jit_global_regex, subject, &result,
+			&error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert(jsval_regexp_get_last_index(&region, jit_global_regex,
+			&last_index) == 0);
+	assert(last_index == 3);
+	assert(jsval_regexp_set_last_index(&region, jit_global_regex, 0) == 0);
+	assert(jsval_method_string_match_all(&region, subject, 1, jit_global_regex,
+			&iterator, &error) == 0);
+	assert(iterator.kind == JSVAL_KIND_MATCH_ITERATOR);
+	assert(jsval_match_iterator_next(&region, iterator, &done, &result,
+			&error) == 0);
+	assert(done == 0);
+	assert_object_string_prop(&region, result, "0", "1b");
+	assert_object_groups_string_prop(&region, result, "digits", "1");
+	assert_object_groups_string_prop(&region, result, "tail", "b");
 }
 
 static void

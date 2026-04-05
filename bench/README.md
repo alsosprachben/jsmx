@@ -64,9 +64,12 @@ and `JSMX_FEATURES=regex` setup used for the regex test matrix.
 
 The regex corpus is split into three lanes:
 
-- end-to-end named-groups `exec` through the high-level `jsval` path
-- compile-once repeated `exec` through the lower-level `jsregex` path
-- high-level `exec` without `groups` object reads
+- end-to-end named-groups `exec` through the default non-JIT high-level
+  `jsval` path
+- compile-once repeated `exec` through the lower-level explicit-JIT
+  `jsregex` path
+- high-level `exec` without `groups` object reads through the default
+  non-JIT `jsval` path
 
 That path is ignored in Git so local history can accumulate outside the
 committed corpus.

@@ -298,6 +298,9 @@ int jsval_method_string_ends_with(jsval_region_t *region, jsval_t this_value,
 int jsval_regexp_new(jsval_region_t *region, jsval_t pattern_value,
 		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
 		jsmethod_error_t *error);
+int jsval_regexp_new_jit(jsval_region_t *region, jsval_t pattern_value,
+		int have_flags, jsval_t flags_value, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_regexp_source(jsval_region_t *region, jsval_t regexp_value,
 		jsval_t *value_ptr);
 int jsval_regexp_global(jsval_region_t *region, jsval_t regexp_value,

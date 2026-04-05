@@ -39,10 +39,10 @@ main(void)
 	uint64_t checksum = 0;
 	size_t i;
 
-	if (jsregex_compile_utf16(pattern_utf16, BENCH_UTF16_LEN(pattern_utf16),
+	if (jsregex_compile_utf16_jit(pattern_utf16, BENCH_UTF16_LEN(pattern_utf16),
 			global_flags_utf16, BENCH_UTF16_LEN(global_flags_utf16),
 			&compiled) < 0) {
-		return bench_fail_errno("jsregex_compile_utf16");
+		return bench_fail_errno("jsregex_compile_utf16_jit");
 	}
 
 	for (i = 0; i < 20000u; i++) {

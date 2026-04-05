@@ -5283,6 +5283,67 @@ static generated_status_t generated_smoke_jsval_regexp_named_groups(
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_regexp_named_groups_jit(
+		char *detail, size_t cap)
+{
+	static const uint8_t pattern_utf8[] = "(?<digits>[0-9])(?<tail>[a-z])?";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t pattern;
+	jsval_t global_flags;
+	jsval_t regex;
+	jsval_t subject;
+	jsval_t result;
+	jsval_t groups;
+	size_t last_index = 0;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_string_new_utf8(&region, pattern_utf8,
+			sizeof(pattern_utf8) - 1, &pattern) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"a1b2", 4,
+				&subject) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(named groups jit args)");
+	}
+	if (jsval_regexp_new_jit(&region, pattern, 1, global_flags, &regex,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_new_jit(named groups) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_regexp_exec(&region, regex, subject, &result, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_regexp_exec(named groups jit) failed: errno=%d kind=%d",
+				errno, (int)error.kind);
+	}
+	if (jsval_object_get_utf8(&region, result, (const uint8_t *)"groups", 6,
+			&groups) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec jit groups)");
+	}
+	if (jsval_object_get_utf8(&region, groups, (const uint8_t *)"digits", 6,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(exec jit groups.digits)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"1", 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_regexp_get_last_index(&region, regex, &last_index) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_regexp_get_last_index(jit)");
+	}
+	if (last_index != 3) {
+		return generated_failf(detail, cap,
+				"expected jit lastIndex 3, got %zu", last_index);
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_u_literal_surrogate_rewrite(
 		char *detail, size_t cap)
 {
@@ -7459,6 +7520,8 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_regexp_exec_state", generated_smoke_jsval_regexp_exec_state},
 	{"smoke", "jsval_regexp_match_all", generated_smoke_jsval_regexp_match_all},
 	{"smoke", "jsval_regexp_named_groups", generated_smoke_jsval_regexp_named_groups},
+	{"smoke", "jsval_regexp_named_groups_jit",
+		generated_smoke_jsval_regexp_named_groups_jit},
 	{"smoke", "jsval_u_literal_surrogate_rewrite",
 		generated_smoke_jsval_u_literal_surrogate_rewrite},
 	{"smoke", "jsval_u_literal_sequence_rewrite",

@@ -19,6 +19,9 @@ Every regex-bearing fixture or emitted lowering should be classified as one of:
   - lower the original JS pattern and flags straight to
     `jsval_regexp_new(...)`
   - use this when the current runtime already models the JS behavior honestly
+  - for longer-lived direct-lowered regexes that will be reused across many
+    matches, the translator may choose `jsval_regexp_new_jit(...)` instead
+    of `jsval_regexp_new(...)`
 - `rewrite`
   - rewrite the JS pattern and/or flags before lowering to
     `jsval_regexp_new(...)`
@@ -53,6 +56,13 @@ Use direct lowering for the current supported subset:
 
 If a test depends only on those semantics, lower it directly and say so in the
 manifest `notes` using a `Direct-lowered:` prefix.
+
+JIT choice is not a semantic classification change. It is a translator-owned
+construction choice within the direct-lowered lane:
+
+- use `jsval_regexp_new(...)` for short-lived or compile-per-use regexes
+- use `jsval_regexp_new_jit(...)` when the transpilation can see the regex
+  will be reused long enough for JIT compile cost to pay back
 
 ## Current Rewrite Policy
 

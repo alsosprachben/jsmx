@@ -16,6 +16,11 @@ typedef struct jsregex_options_s {
 } jsregex_options_t;
 
 static int
+jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len, int use_jit,
+		jsregex_compiled_t *compiled_ptr);
+
+static int
 jsregex_is_high_surrogate(uint16_t unit)
 {
 	return unit >= 0xD800 && unit <= 0xDBFF;
@@ -321,9 +326,9 @@ jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 }
 
 int
-jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
+jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,
-		jsregex_compiled_t *compiled_ptr)
+		int use_jit, jsregex_compiled_t *compiled_ptr)
 {
 	jsregex_options_t options;
 	pcre2_code *code = NULL;
@@ -360,12 +365,37 @@ jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 		errno = EINVAL;
 		return -1;
 	}
+	if (use_jit) {
+		/* Treat JIT as an opportunistic backend optimization only. If the
+		 * linked PCRE2 does not support JIT for this pattern or target, keep
+		 * the compiled pattern and fall back to the normal pcre2_match path.
+		 */
+		(void)pcre2_jit_compile(code, PCRE2_JIT_COMPLETE);
+	}
 
 	compiled_ptr->backend_code = (uintptr_t)code;
 	compiled_ptr->flags = options.flags;
 	compiled_ptr->capture_count = capture_count;
 	compiled_ptr->named_group_count = named_group_count;
 	return 0;
+}
+
+int
+jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len,
+		jsregex_compiled_t *compiled_ptr)
+{
+	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+			0, compiled_ptr);
+}
+
+int
+jsregex_compile_utf16_jit(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len,
+		jsregex_compiled_t *compiled_ptr)
+{
+	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+			1, compiled_ptr);
 }
 
 void

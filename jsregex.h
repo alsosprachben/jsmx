@@ -49,6 +49,9 @@ typedef enum jsregex_u_predefined_class_kind_e {
 int jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,
 		jsregex_compiled_t *compiled_ptr);
+int jsregex_compile_utf16_jit(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len,
+		jsregex_compiled_t *compiled_ptr);
 void jsregex_release(jsregex_compiled_t *compiled_ptr);
 int jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		const uint16_t *subject, size_t subject_len, size_t start_index,
