@@ -64,6 +64,10 @@ If the program mutates `process.env` or depends on finer Node process semantics,
 
 These are allowed as explicit slow-path host bridges when the JS program is synchronous and text-oriented:
 
+- a static top-level `const fs = require("fs")` or
+  `const fs = require("node:fs")` binding is acceptable translator syntax
+  sugar for this narrow bridge; lower it directly to libc file I/O without
+  modeling the Node module loader
 - `fs.readFileSync(path, "utf8")`
   - `fopen` + `fread` into an explicit UTF-8 buffer
 - `fs.writeFileSync(path, text, "utf8")`
