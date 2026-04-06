@@ -7,6 +7,13 @@ This skill targets Node-invoked scripts, but it should bridge host behavior expl
 - Prefer direct host bridges over synthetic global-object emulation.
 - Build JS values only when the program actually needs JS-value behavior.
 - If a host surface is not covered below and cannot be mapped honestly, classify it as `manual_runtime_needed`.
+- When a host bridge is reusable across multiple transpiled programs, place it
+  under `runtime_modules/` rather than inside `example/` or a one-off program
+  directory.
+- Use shared implementations plus runtime profiles:
+  - `runtime_modules/shared/` for reusable host-backed C implementations
+  - `runtime_modules/node/` and `runtime_modules/wintertc/` for runtime-facing
+    wrappers and profile manifests
 
 ## `process.argv`
 
@@ -68,12 +75,26 @@ These are allowed as explicit slow-path host bridges when the JS program is sync
   `const fs = require("node:fs")` binding is acceptable translator syntax
   sugar for this narrow bridge; lower it directly to libc file I/O without
   modeling the Node module loader
+- a static local helper module that wraps only the blessed synchronous `fs`
+  subset is also acceptable when the transpiled C inlines or directly includes
+  that helper logic rather than modeling generic CommonJS loading
+- reusable wrappers for this subset should live under `runtime_modules/node/`
+  and point at shared host-backed C support under `runtime_modules/shared/`
 - `fs.readFileSync(path, "utf8")`
   - `fopen` + `fread` into an explicit UTF-8 buffer
+- `fs.readdirSync(path)`
+  - `opendir` + `readdir`
+- `fs.lstatSync(path)`
+  - `lstat(...)`
+- `fs.statSync(path)`
+  - `stat(...)`
+- `fs.realpathSync(path)`
+  - `realpath(...)`
 - `fs.writeFileSync(path, text, "utf8")`
   - `fopen` + `fwrite`
 
-Keep the encoding assumption explicit in comments. Binary buffers, streams, file descriptors, and async filesystem flows are out of scope for this skill.
+Keep the encoding assumption explicit in comments. Binary buffers, streams,
+file descriptors, and async filesystem flows are out of scope for this skill.
 
 ## Out Of Scope Host Surfaces
 

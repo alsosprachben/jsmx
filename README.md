@@ -148,6 +148,10 @@ That makes semantic correctness more important than surface familiarity:
   - local JSON timing output and manifest-driven pairing
 - `example/`
   - small example programs
+- `runtime_modules/`
+  - reusable host-module bridges for transpiled production programs
+  - shared implementations plus runtime-specific exposure profiles such as
+    Node and WinterTC
 - `test/` and `test_*.c`
   - parser tests
   - generated-C smoke tests

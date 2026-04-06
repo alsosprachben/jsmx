@@ -1,19 +1,24 @@
+#define _XOPEN_SOURCE 700
+#define _POSIX_C_SOURCE 200809L
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "runtime_modules/shared/fs_sync.h"
 #include "jsregex.h"
 #include "utf8.h"
 
 /*
  * Source JS: example/grep.js
- * Behavior: grep-like CLI over stdin and synchronous text files with JS regex
- * syntax, -F fixed mode, and common output-selection flags.
+ * Behavior: grep-like CLI over stdin, files, and recursive directories with JS
+ * regex syntax, -F fixed mode, and common output-selection flags.
  * Lowering: production_slow_path
- * Host assumptions: argv, stdin/stdout/stderr, and sync text file reads are
- * bridged directly through libc; regex matching uses the jsmx regex backend.
+ * Host assumptions: argv, stdin/stdout/stderr, and the reusable sync fs
+ * runtime module are bridged directly through libc; regex matching uses the
+ * jsmx regex backend.
  *
  * Local build example:
  * cc -I. -DJSMX_WITH_REGEX=1 -DJSMX_REGEX_BACKEND_PCRE2=1 \
@@ -39,6 +44,8 @@ typedef struct grep_options_s {
 	int no_filename;
 	int suppress_errors;
 	int line_regexp;
+	int recursive;
+	int recursive_follow;
 	size_t pattern_count;
 	const char **patterns;
 	size_t file_count;
@@ -54,24 +61,34 @@ typedef struct grep_source_result_s {
 	int quiet_match;
 } grep_source_result_t;
 
+typedef struct grep_source_s {
+	char *path;
+} grep_source_t;
+
+typedef struct grep_source_list_s {
+	grep_source_t *items;
+	size_t count;
+} grep_source_list_t;
+
+typedef struct grep_visited_realpaths_s {
+	char **items;
+	size_t count;
+} grep_visited_realpaths_t;
+
 static const char *STDIN_LABEL = "(standard input)";
+static const char *PROGRAM_LABEL = "grep.js";
 
 static const char *
 grep_prog_name(const char *path)
 {
-	const char *slash;
-
-	if (path == NULL) {
-		return "grep";
-	}
-	slash = strrchr(path, '/');
-	return slash != NULL ? slash + 1 : path;
+	(void)path;
+	return PROGRAM_LABEL;
 }
 
 static int
 grep_usage(FILE *stream, const char *prog)
 {
-	fprintf(stream, "usage: %s [-FivncqHhsx] [-e pattern] [pattern] [file ...]\n",
+	fprintf(stream, "usage: %s [-FivncqHhRrsx] [-e pattern] [pattern] [file ...]\n",
 			prog);
 	return 2;
 }
@@ -170,6 +187,13 @@ grep_parse_args(int argc, char **argv, grep_options_t *options,
 				case 'x':
 					options->line_regexp = 1;
 					break;
+				case 'r':
+					options->recursive = 1;
+					break;
+				case 'R':
+					options->recursive = 1;
+					options->recursive_follow = 1;
+					break;
 				default:
 					return grep_usage(stderr, prog);
 				}
@@ -192,22 +216,223 @@ grep_parse_args(int argc, char **argv, grep_options_t *options,
 	return 0;
 }
 
-static int
-grep_should_show_filename(const grep_options_t *options)
-{
-	if (options->no_filename) {
-		return 0;
-	}
-	if (options->force_filename) {
-		return 1;
-	}
-	return options->file_count > 1;
-}
-
 static const char *
 grep_source_label(const char *path)
 {
 	return strcmp(path, "-") == 0 ? STDIN_LABEL : path;
+}
+
+static int
+grep_source_list_append(grep_source_list_t *list, const char *path)
+{
+	grep_source_t *items;
+	size_t next = list->count;
+
+	items = realloc(list->items, sizeof(*items) * (next + 1u));
+	if (items == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	list->items = items;
+	list->items[next].path = NULL;
+	if (runtime_fs_strdup(path, &list->items[next].path) < 0) {
+		return -1;
+	}
+	list->count++;
+	return 0;
+}
+
+static void
+grep_source_list_free(grep_source_list_t *list)
+{
+	size_t i;
+
+	if (list == NULL) {
+		return;
+	}
+	for (i = 0; i < list->count; i++) {
+		free(list->items[i].path);
+	}
+	free(list->items);
+	list->items = NULL;
+	list->count = 0;
+}
+
+static int
+grep_visited_realpaths_add(grep_visited_realpaths_t *visited,
+		const char *realpath_value, int *added_ptr)
+{
+	char **items;
+	size_t i;
+
+	for (i = 0; i < visited->count; i++) {
+		if (strcmp(visited->items[i], realpath_value) == 0) {
+			*added_ptr = 0;
+			return 0;
+		}
+	}
+	items = realloc(visited->items, sizeof(*items) * (visited->count + 1u));
+	if (items == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	visited->items = items;
+	if (runtime_fs_strdup(realpath_value, &visited->items[visited->count]) < 0) {
+		return -1;
+	}
+	visited->count++;
+	*added_ptr = 1;
+	return 0;
+}
+
+static void
+grep_visited_realpaths_free(grep_visited_realpaths_t *visited)
+{
+	size_t i;
+
+	if (visited == NULL) {
+		return;
+	}
+	for (i = 0; i < visited->count; i++) {
+		free(visited->items[i]);
+	}
+	free(visited->items);
+	visited->items = NULL;
+	visited->count = 0;
+}
+
+static const char *
+grep_errno_text(int err)
+{
+	return strerror(err);
+}
+
+static int
+grep_report_path_error(const grep_options_t *options, const char *prog,
+		const char *path, int err)
+{
+	if (!options->suppress_errors) {
+		fprintf(stderr, "%s: %s: %s\n", prog, path, grep_errno_text(err));
+	}
+	return 0;
+}
+
+static int
+grep_expand_path(const grep_options_t *options, const char *prog,
+		const char *path, int nested, grep_source_list_t *sources,
+		grep_visited_realpaths_t *visited, int *had_error_ptr);
+
+static int
+grep_expand_directory(const grep_options_t *options, const char *prog,
+		const char *path, grep_source_list_t *sources,
+		grep_visited_realpaths_t *visited, int *had_error_ptr)
+{
+	runtime_fs_dir_list_t entries = {0};
+	size_t i;
+
+	if (runtime_fs_list_dir(path, &entries) < 0) {
+		*had_error_ptr = 1;
+		grep_report_path_error(options, prog, path, errno);
+		return 0;
+	}
+	for (i = 0; i < entries.count; i++) {
+		runtime_fs_dir_entry_t *entry = &entries.entries[i];
+		runtime_fs_kind_t effective_kind =
+			entry->is_symlink ? entry->target_kind : entry->kind;
+
+		if (effective_kind == RUNTIME_FS_KIND_DIRECTORY) {
+			if (entry->is_symlink && !options->recursive_follow) {
+				continue;
+			}
+			if (grep_expand_path(options, prog, entry->path, 1, sources, visited,
+					had_error_ptr) < 0) {
+				runtime_fs_dir_list_free(&entries);
+				return -1;
+			}
+		} else {
+			if (grep_source_list_append(sources, entry->path) < 0) {
+				runtime_fs_dir_list_free(&entries);
+				return -1;
+			}
+		}
+	}
+	runtime_fs_dir_list_free(&entries);
+	return 0;
+}
+
+static int
+grep_expand_path(const grep_options_t *options, const char *prog,
+		const char *path, int nested, grep_source_list_t *sources,
+		grep_visited_realpaths_t *visited, int *had_error_ptr)
+{
+	runtime_fs_path_info_t info;
+	runtime_fs_kind_t effective_kind;
+
+	if (strcmp(path, "-") == 0) {
+		return grep_source_list_append(sources, path);
+	}
+	if (runtime_fs_classify_path(path, &info) < 0) {
+		*had_error_ptr = 1;
+		grep_report_path_error(options, prog, path, errno);
+		return 0;
+	}
+
+	effective_kind = info.is_symlink ? info.target_kind : info.kind;
+	if (effective_kind == RUNTIME_FS_KIND_DIRECTORY) {
+		if (!options->recursive) {
+			*had_error_ptr = 1;
+			grep_report_path_error(options, prog, path, EISDIR);
+			return 0;
+		}
+		if (info.is_symlink && !options->recursive_follow) {
+			if (!nested) {
+				*had_error_ptr = 1;
+				grep_report_path_error(options, prog, path, EISDIR);
+			}
+			return 0;
+		}
+		if (options->recursive_follow) {
+			char *resolved = NULL;
+			int added = 0;
+
+			if (runtime_fs_realpath_copy(path, &resolved) < 0) {
+				*had_error_ptr = 1;
+				grep_report_path_error(options, prog, path, errno);
+				return 0;
+			}
+			if (grep_visited_realpaths_add(visited, resolved, &added) < 0) {
+				free(resolved);
+				return -1;
+			}
+			free(resolved);
+			if (!added) {
+				return 0;
+			}
+		}
+		return grep_expand_directory(options, prog, path, sources, visited,
+				had_error_ptr);
+	}
+
+	return grep_source_list_append(sources, path);
+}
+
+static int
+grep_expand_sources(const grep_options_t *options, const char *prog,
+		grep_source_list_t *sources, int *had_error_ptr)
+{
+	grep_visited_realpaths_t visited = {0};
+	size_t i;
+	int rc = 0;
+
+	for (i = 0; i < options->file_count; i++) {
+		if (grep_expand_path(options, prog, options->files[i], 0, sources,
+				&visited, had_error_ptr) < 0) {
+			rc = -1;
+			break;
+		}
+	}
+	grep_visited_realpaths_free(&visited);
+	return rc;
 }
 
 static int
@@ -251,20 +476,10 @@ grep_slurp_stream(FILE *stream, uint8_t **buf_ptr, size_t *len_ptr)
 static int
 grep_slurp_path(const char *path, uint8_t **buf_ptr, size_t *len_ptr)
 {
-	FILE *stream;
-	int rc;
-
 	if (strcmp(path, "-") == 0) {
 		return grep_slurp_stream(stdin, buf_ptr, len_ptr);
 	}
-
-	stream = fopen(path, "rb");
-	if (stream == NULL) {
-		return -1;
-	}
-	rc = grep_slurp_stream(stream, buf_ptr, len_ptr);
-	fclose(stream);
-	return rc;
+	return runtime_fs_read_text_file(path, buf_ptr, len_ptr);
 }
 
 static int
@@ -585,6 +800,7 @@ main(int argc, char **argv)
 {
 	const char *prog = grep_prog_name(argc > 0 ? argv[0] : NULL);
 	grep_options_t options;
+	grep_source_list_t sources = {0};
 	grep_matcher_t *matchers = NULL;
 	int show_filename;
 	int had_selected = 0;
@@ -604,9 +820,18 @@ main(int argc, char **argv)
 		return rc;
 	}
 
-	show_filename = grep_should_show_filename(&options);
-	for (i = 0; i < options.file_count; i++) {
-		const char *path = options.files[i];
+	if (grep_expand_sources(&options, prog, &sources, &had_error) < 0) {
+		fprintf(stderr, "%s: out of memory\n", prog);
+		grep_release_matchers(matchers, options.pattern_count);
+		grep_options_release(&options);
+		return 2;
+	}
+
+	show_filename = options.no_filename ? 0
+		: options.force_filename ? 1
+		: sources.count > 1;
+	for (i = 0; i < sources.count; i++) {
+		const char *path = sources.items[i].path;
 		uint8_t *text = NULL;
 		size_t text_len = 0;
 		grep_source_result_t source_result;
@@ -623,6 +848,7 @@ main(int argc, char **argv)
 			free(text);
 			fprintf(stderr, "%s: processing failed: %s\n", prog,
 					strerror(errno));
+			grep_source_list_free(&sources);
 			grep_release_matchers(matchers, options.pattern_count);
 			grep_options_release(&options);
 			return 2;
@@ -632,12 +858,14 @@ main(int argc, char **argv)
 			had_selected = 1;
 		}
 		if (source_result.quiet_match) {
+			grep_source_list_free(&sources);
 			grep_release_matchers(matchers, options.pattern_count);
 			grep_options_release(&options);
 			return 0;
 		}
 	}
 
+	grep_source_list_free(&sources);
 	grep_release_matchers(matchers, options.pattern_count);
 	grep_options_release(&options);
 	if (had_error) {

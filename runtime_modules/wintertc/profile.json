@@ -1,0 +1,10 @@
+{
+  "runtime": "wintertc",
+  "modules": {
+    "fs": {
+      "status": "not_profiled",
+      "shared_c_bridge": "runtime_modules/shared/fs_sync.h",
+      "notes": "The shared sync fs bridge is cataloged here to document overlap with future WinterTC-style profiles, but no WinterTC fs surface is claimed yet."
+    }
+  }
+}

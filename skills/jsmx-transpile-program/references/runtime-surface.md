@@ -2,6 +2,10 @@
 
 Use this reference to decide whether a JS entrypoint can become a production C program today.
 
+Reusable host/module bridges for production programs live under
+`runtime_modules/`, separate from core `jsmx` semantics and separate from
+`example/`.
+
 ## Outcome Classes
 
 - `production_flattened`
@@ -71,6 +75,11 @@ Use `production_slow_path` only when the contract is already clear. The main all
   - exit-code handling
   - environment and working-directory access through libc
   - synchronous UTF-8 text file reads and writes through libc
+  - synchronous directory enumeration and file-type inspection through
+    `opendir` / `readdir` / `lstat` / `stat`
+  - `realpath`-based visited tracking for recursive CLI tools
+  - reusable host-module wrappers surfaced through `runtime_modules/` runtime
+    profiles when the bridge contract is already clear
 - known semantic glue already established in the repo:
   - explicit receiver/argument coercion around string methods through `jsmethod`
   - repo-documented regex constructor choice and rewrite selection

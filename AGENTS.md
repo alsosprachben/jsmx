@@ -174,6 +174,11 @@ The same measure-then-execute pattern now also covers:
 ### Repository layout
 
 - examples live in `example/`
+- reusable host-module bridges for transpiled production programs live in
+  `runtime_modules/`
+  - shared implementations belong under `runtime_modules/shared/`
+  - runtime exposure profiles belong under paths such as
+    `runtime_modules/node/` and `runtime_modules/wintertc/`
 - parser regression tests live in
   [`test/tests.c`](/home/ben/repos/jsmx/test/tests.c)
 - feature-specific executables use files such as:

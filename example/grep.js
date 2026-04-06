@@ -1,4 +1,5 @@
 const fs = require("fs");
+const runtimeFs = require("../runtime_modules/node/fs_sync");
 
 const PROGRAM = process.argv[1]
   ? process.argv[1].split(/[\\/]/).pop()
@@ -7,14 +8,39 @@ const STDIN_LABEL = "(standard input)";
 
 function usage() {
   process.stderr.write(
-    `usage: ${PROGRAM} [-FivncqHhsx] [-e pattern] [pattern] [file ...]\n`,
+    `usage: ${PROGRAM} [-FivncqHhRrsx] [-e pattern] [pattern] [file ...]\n`,
   );
   process.exit(2);
 }
 
-function fail(message) {
+function fail(message, exitCode = 2) {
   process.stderr.write(`${PROGRAM}: ${message}\n`);
-  process.exit(2);
+  process.exit(exitCode);
+}
+
+function errorText(error) {
+  if (!error || typeof error !== "object") {
+    return "Unknown error";
+  }
+  switch (error.code) {
+    case "ENOENT":
+      return "No such file or directory";
+    case "EACCES":
+      return "Permission denied";
+    case "EISDIR":
+      return "Is a directory";
+    case "ENOTDIR":
+      return "Not a directory";
+    default:
+      return error.message || "Unknown error";
+  }
+}
+
+function makeError(code, message) {
+  const error = new Error(message);
+
+  error.code = code;
+  return error;
 }
 
 function escapeRegExp(text) {
@@ -31,14 +57,16 @@ function buildPatternSource(pattern, options) {
 
 function compileMatchers(options) {
   const flags = options.ignoreCase ? "i" : "";
+  const matchers = [];
 
-  try {
-    return options.patterns.map(
-      (pattern) => new RegExp(buildPatternSource(pattern, options), flags),
-    );
-  } catch (error) {
-    fail(`invalid regex: ${error.message}`);
+  for (const pattern of options.patterns) {
+    try {
+      matchers.push(new RegExp(buildPatternSource(pattern, options), flags));
+    } catch {
+      fail(`invalid regex '${pattern}': Invalid argument`);
+    }
   }
+  return matchers;
 }
 
 function parseArgs(argv) {
@@ -53,6 +81,8 @@ function parseArgs(argv) {
     noFilename: false,
     suppressErrors: false,
     lineRegexp: false,
+    recursive: false,
+    recursiveFollow: false,
     patterns: [],
     files: [],
   };
@@ -108,6 +138,11 @@ function parseArgs(argv) {
           options.suppressErrors = true;
         } else if (flag === "x") {
           options.lineRegexp = true;
+        } else if (flag === "r") {
+          options.recursive = true;
+        } else if (flag === "R") {
+          options.recursive = true;
+          options.recursiveFollow = true;
         } else {
           usage();
         }
@@ -134,7 +169,7 @@ function readSource(path) {
   if (path === "-") {
     return fs.readFileSync(0, "utf8");
   }
-  return fs.readFileSync(path, "utf8");
+  return runtimeFs.readTextFileSync(path);
 }
 
 function splitLines(text) {
@@ -157,14 +192,96 @@ function sourceLabel(path) {
   return path === "-" ? STDIN_LABEL : path;
 }
 
-function shouldShowFilename(options) {
-  if (options.noFilename) {
-    return false;
+function expandSources(options, onError) {
+  const sources = [];
+  const visitedRealpaths = new Set();
+
+  function report(path, error) {
+    if (onError) {
+      onError(path, error);
+    }
   }
-  if (options.forceFilename) {
-    return true;
+
+  function pushSource(path) {
+    sources.push(path);
   }
-  return options.files.length > 1;
+
+  function walk(path, nested) {
+    let info;
+
+    if (path === "-") {
+      pushSource(path);
+      return;
+    }
+
+    try {
+      info = runtimeFs.classifyPathSync(path);
+    } catch (error) {
+      report(path, error);
+      return;
+    }
+
+    const effectiveKind = info.isSymlink ? info.targetKind : info.kind;
+
+    if (effectiveKind === "directory") {
+      if (!options.recursive) {
+        report(path, makeError("EISDIR", "Is a directory"));
+        return;
+      }
+      if (info.isSymlink && !options.recursiveFollow) {
+        if (!nested) {
+          report(path, makeError("EISDIR", "Is a directory"));
+        }
+        return;
+      }
+
+      if (options.recursiveFollow) {
+        let resolved;
+
+        try {
+          resolved = runtimeFs.realpathSync(path);
+        } catch (error) {
+          report(path, error);
+          return;
+        }
+        if (visitedRealpaths.has(resolved)) {
+          return;
+        }
+        visitedRealpaths.add(resolved);
+      }
+
+      let entries;
+
+      try {
+        entries = runtimeFs.listDirSync(path);
+      } catch (error) {
+        report(path, error);
+        return;
+      }
+
+      for (const entry of entries) {
+        const entryKind = entry.isSymlink ? entry.targetKind : entry.kind;
+
+        if (entryKind === "directory") {
+          if (entry.isSymlink && !options.recursiveFollow) {
+            continue;
+          }
+          walk(entry.path, true);
+        } else {
+          pushSource(entry.path);
+        }
+      }
+      return;
+    }
+
+    pushSource(path);
+  }
+
+  for (const path of options.files) {
+    walk(path, false);
+  }
+
+  return sources;
 }
 
 function processText(text, label, showFilename, options, matchers) {
@@ -207,11 +324,18 @@ function processText(text, label, showFilename, options, matchers) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const matchers = compileMatchers(options);
-  const showFilename = shouldShowFilename(options);
   let hadSelected = false;
   let hadError = false;
+  const sources = expandSources(options, (path, error) => {
+    hadError = true;
+    if (!options.suppressErrors) {
+      process.stderr.write(`${PROGRAM}: ${path}: ${errorText(error)}\n`);
+    }
+  });
+  const showFilename =
+    options.noFilename ? false : options.forceFilename ? true : sources.length > 1;
 
-  for (const path of options.files) {
+  for (const path of sources) {
     let text;
 
     try {
@@ -219,7 +343,7 @@ function main() {
     } catch (error) {
       hadError = true;
       if (!options.suppressErrors) {
-        process.stderr.write(`${PROGRAM}: ${path}: ${error.message}\n`);
+        process.stderr.write(`${PROGRAM}: ${path}: ${errorText(error)}\n`);
       }
       continue;
     }

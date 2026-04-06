@@ -29,6 +29,8 @@ Read these references before generating or editing output:
    - `jsval` for JS values, arrays, objects, and control-flow-visible semantics
    - `jsmethod` for JS string built-ins with coercion
    - `jsregex` / `jsval` regex entrypoints for direct-lowered regexes
+   - `runtime_modules/` for reusable host-module bridges that should not be
+     embedded ad hoc inside an example or one-off generated program
 4. Generate one reviewable C file with `main(int argc, char **argv)` unless the user explicitly requests a larger scaffold.
 5. Include one explicit compile command and note any required feature flags such as regex support.
 6. Validate the generated binary against Node when the entrypoint stays inside the supported host/runtime contract.

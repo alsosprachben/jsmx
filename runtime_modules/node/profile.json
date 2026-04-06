@@ -1,0 +1,17 @@
+{
+  "runtime": "node",
+  "modules": {
+    "fs": {
+      "status": "available",
+      "js_wrapper": "runtime_modules/node/fs_sync.js",
+      "shared_c_bridge": "runtime_modules/shared/fs_sync.h",
+      "surface": [
+        "readFileSync(path, \"utf8\")",
+        "readdirSync(path)",
+        "lstatSync(path)",
+        "statSync(path)",
+        "realpathSync(path)"
+      ]
+    }
+  }
+}
