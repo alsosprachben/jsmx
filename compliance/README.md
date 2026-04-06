@@ -61,6 +61,7 @@ The committed suites currently cover:
   - deeper repeated `exec` / `test` / `match` state fidelity
   - named capture groups and `groups` objects on exec-shaped results
 - official and repo-authored `jsval` value semantics
+  - primitive `typeof`
   - test262 strict-equality
   - primitive abstract equality / inequality
   - logical-operator slices:

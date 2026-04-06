@@ -139,6 +139,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
 int jsval_to_int32(jsval_region_t *region, jsval_t value, int32_t *result_ptr);
 int jsval_to_uint32(jsval_region_t *region, jsval_t value,
 		uint32_t *result_ptr);
+int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr);
 int jsval_truthy(jsval_region_t *region, jsval_t value);
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right);
 int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,

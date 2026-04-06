@@ -85,7 +85,7 @@ That makes semantic correctness more important than surface familiarity:
     - shift
     - unshift
     - dense length writes
-  - primitive numeric, arithmetic, equality, and relational helpers for
+  - primitive `typeof`, numeric, arithmetic, equality, and relational helpers for
     flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,
     including regex named-group `groups` arguments
@@ -271,6 +271,7 @@ The committed corpus currently spans:
   - deeper repeated `exec` / `test` / `match` state fidelity
   - named capture groups and `groups` objects on exec-shaped results
 - official and repo-authored `jsval` value semantics
+  - primitive `typeof`
   - test262 strict-equality
   - primitive abstract equality / inequality
   - logical-operator slices:

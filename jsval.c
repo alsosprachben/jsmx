@@ -12040,6 +12040,49 @@ int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len
 	return 0;
 }
 
+int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
+{
+	const uint8_t *text;
+	size_t len;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	switch (value.kind) {
+	case JSVAL_KIND_UNDEFINED:
+		text = (const uint8_t *)"undefined";
+		len = 9;
+		break;
+	case JSVAL_KIND_NULL:
+	case JSVAL_KIND_OBJECT:
+	case JSVAL_KIND_ARRAY:
+	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
+		text = (const uint8_t *)"object";
+		len = 6;
+		break;
+	case JSVAL_KIND_BOOL:
+		text = (const uint8_t *)"boolean";
+		len = 7;
+		break;
+	case JSVAL_KIND_NUMBER:
+		text = (const uint8_t *)"number";
+		len = 6;
+		break;
+	case JSVAL_KIND_STRING:
+		text = (const uint8_t *)"string";
+		len = 6;
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_string_new_utf8(region, text, len, value_ptr);
+}
+
 int jsval_truthy(jsval_region_t *region, jsval_t value)
 {
 	jsval_json_doc_t *doc;

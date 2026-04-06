@@ -49,7 +49,8 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - shift
   - unshift
   - dense length writes
-- primitive numeric coercion plus:
+- primitive value helpers plus:
+  - `typeof`
   - arithmetic
   - integer coercion
   - bitwise operators
@@ -251,6 +252,7 @@ The same measure-then-execute pattern now also covers:
   - deeper repeated `exec` / `test` / `match` state fidelity
   - repo-authored parsed / native parity for the current regex core
 - values
+  - primitive `typeof`
   - official test262 strict-equality
   - primitive abstract equality / inequality
   - logical-operator slices:

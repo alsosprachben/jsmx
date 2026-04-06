@@ -4535,6 +4535,108 @@ static void test_value_semantics(void)
 	assert_string(&region, sum, "11");
 }
 
+static void test_typeof_semantics(void)
+{
+	static const char json[] =
+		"{\"flag\":true,\"num\":1,\"text\":\"x\",\"nothing\":null,\"obj\":{},\"arr\":[]}";
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t flag;
+	jsval_t num;
+	jsval_t text;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t arr;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t native_arr;
+	jsval_t result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	errno = 0;
+	assert(jsval_typeof(NULL, jsval_undefined(), &result) < 0);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_typeof(&region, jsval_undefined(), NULL) < 0);
+	assert(errno == EINVAL);
+
+	assert(jsval_typeof(&region, jsval_undefined(), &result) == 0);
+	assert_string(&region, result, "undefined");
+	assert(jsval_typeof(&region, jsval_null(), &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_typeof(&region, jsval_bool(1), &result) == 0);
+	assert_string(&region, result, "boolean");
+	assert(jsval_typeof(&region, jsval_number(1.0), &result) == 0);
+	assert_string(&region, result, "number");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1,
+			&native_text) == 0);
+	assert(jsval_typeof(&region, native_text, &result) == 0);
+	assert_string(&region, result, "string");
+	assert(jsval_object_new(&region, 0, &native_obj) == 0);
+	assert(jsval_typeof(&region, native_obj, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_array_new(&region, 0, &native_arr) == 0);
+	assert(jsval_typeof(&region, native_arr, &result) == 0);
+	assert_string(&region, result, "object");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) == 0);
+
+	assert(jsval_typeof(&region, flag, &result) == 0);
+	assert_string(&region, result, "boolean");
+	assert(jsval_typeof(&region, num, &result) == 0);
+	assert_string(&region, result, "number");
+	assert(jsval_typeof(&region, text, &result) == 0);
+	assert_string(&region, result, "string");
+	assert(jsval_typeof(&region, nothing, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_typeof(&region, obj, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_typeof(&region, arr, &result) == 0);
+	assert_string(&region, result, "object");
+
+#if JSMX_WITH_REGEX
+	{
+		jsmethod_error_t error;
+		jsval_t pattern;
+		jsval_t global_flags;
+		jsval_t regex;
+		jsval_t subject;
+		jsval_t iterator;
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&pattern) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&subject) == 0);
+		assert(jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+				&error) == 0);
+		assert(jsval_typeof(&region, regex, &result) == 0);
+		assert_string(&region, result, "object");
+		assert(jsval_method_string_match_all(&region, subject, 1, regex,
+				&iterator, &error) == 0);
+		assert(jsval_typeof(&region, iterator, &result) == 0);
+		assert_string(&region, result, "object");
+	}
+#endif
+}
+
 static void test_logical_not_semantics(void)
 {
 	uint8_t storage[2048];
@@ -5564,6 +5666,7 @@ int main(void)
 {
 	test_native_storage();
 	test_value_semantics();
+	test_typeof_semantics();
 	test_logical_not_semantics();
 	test_logical_and_or_semantics();
 	test_numeric_coercion_and_arithmetic();

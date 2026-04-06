@@ -3847,6 +3847,37 @@
       "notes": "Repo-authored idiomatic value-semantics fixture for object and array truthiness plus same-vs-different identity across native and JSON-backed containers."
     },
     {
+      "id": "jsmx-values-typeof-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/typeof-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/typeof-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for typeof on the current flattened primitive set across native and JSON-backed values."
+    },
+    {
+      "id": "jsmx-values-typeof-container-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/typeof-container-parity.js",
+      "generated": "compliance/generated/values/jsmx/typeof-container-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for typeof on objects and dense arrays across native and JSON-backed values."
+    },
+    {
+      "id": "jsmx-values-typeof-regexp-iterator-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/typeof-regexp-iterator-parity.js",
+      "generated": "compliance/generated/values/jsmx/typeof-regexp-iterator-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: Repo-authored idiomatic value-semantics fixture for typeof on regexp values and matchAll iterator results within the current flattened object model."
+    },
+    {
       "id": "jsmx-objects-json-promote-mutate-emit",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-promote-mutate-emit.js",

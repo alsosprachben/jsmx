@@ -755,6 +755,231 @@ static generated_status_t generated_smoke_jsval_values(char *detail, size_t cap)
 			detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_typeof(char *detail, size_t cap)
+{
+	static const uint8_t json[] =
+		"{\"flag\":true,\"num\":1,\"text\":\"x\",\"nothing\":null,\"obj\":{},\"arr\":[]}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t flag;
+	jsval_t num;
+	jsval_t text;
+	jsval_t nothing;
+	jsval_t obj;
+	jsval_t arr;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t native_arr;
+	jsval_t result;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_typeof(&region, jsval_undefined(), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(undefined)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"undefined", 9, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, jsval_null(), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(null)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, jsval_bool(1), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(bool)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"boolean", 7, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(number)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"number",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"x", 1,
+			&native_text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(x)");
+	}
+	if (jsval_object_new(&region, 0, &native_obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new");
+	}
+	if (jsval_array_new(&region, 0, &native_arr) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new");
+	}
+	if (jsval_typeof(&region, native_text, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(native string)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"string",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, native_obj, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(native object)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, native_arr, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(native array)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_json_parse(&region, json, sizeof(json) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(flag)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"num", 3,
+			&num) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(num)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(nothing)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(obj)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(arr)");
+	}
+
+	if (jsval_typeof(&region, flag, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed bool)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"boolean", 7, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, num, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed number)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"number",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, text, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed string)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"string",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, nothing, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed null)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, obj, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed object)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_typeof(&region, arr, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(parsed array)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+#if JSMX_WITH_REGEX
+	{
+		jsmethod_error_t error;
+		jsval_t pattern;
+		jsval_t global_flags;
+		jsval_t regex;
+		jsval_t subject;
+		jsval_t iterator;
+
+		if (jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&pattern) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_string_new_utf8(regex pattern)");
+		}
+		if (jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_string_new_utf8(regex flags)");
+		}
+		if (jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&subject) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_string_new_utf8(regex subject)");
+		}
+		if (jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+				&error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_regexp_new failed: errno=%d kind=%d", errno,
+					error.kind);
+		}
+		if (jsval_typeof(&region, regex, &result) < 0) {
+			return generated_fail_errno(detail, cap, "jsval_typeof(regex)");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"object", 6, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_method_string_match_all(&region, subject, 1, regex, &iterator,
+				&error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_method_string_match_all failed: errno=%d kind=%d",
+					errno, error.kind);
+		}
+		if (jsval_typeof(&region, iterator, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_typeof(matchAll iterator)");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"object", 6, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+	}
+#endif
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_strict_equality(char *detail,
 		size_t cap)
 {
@@ -7573,6 +7798,7 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
+	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
 	{"smoke", "jsval_strict_equality", generated_smoke_jsval_strict_equality},
 	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
 	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
