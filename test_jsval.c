@@ -4637,6 +4637,265 @@ static void test_typeof_semantics(void)
 #endif
 }
 
+static void test_nullish_and_selection_semantics(void)
+{
+	static const char json[] =
+		"{\"nothing\":null,\"flag\":false,\"zero\":0,\"empty\":\"\",\"text\":\"x\",\"obj\":{},\"arr\":[]}";
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t nothing;
+	jsval_t flag;
+	jsval_t zero;
+	jsval_t empty;
+	jsval_t text;
+	jsval_t obj;
+	jsval_t arr;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t other_obj;
+	jsval_t native_arr;
+	jsval_t other_arr;
+	jsval_t fallback;
+	jsval_t then_value;
+	jsval_t else_value;
+	jsval_t left;
+	jsval_t result;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_is_nullish(jsval_undefined()) == 1);
+	assert(jsval_is_nullish(jsval_null()) == 1);
+	assert(jsval_is_nullish(jsval_bool(0)) == 0);
+	assert(jsval_is_nullish(jsval_bool(1)) == 0);
+	assert(jsval_is_nullish(jsval_number(0.0)) == 0);
+	assert(jsval_is_nullish(jsval_number(-0.0)) == 0);
+	assert(jsval_is_nullish(jsval_number(NAN)) == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1,
+			&native_text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"fallback", 8,
+			&fallback) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"then", 4,
+			&then_value) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"else", 4,
+			&else_value) == 0);
+	assert(jsval_object_new(&region, 0, &native_obj) == 0);
+	assert(jsval_object_new(&region, 0, &other_obj) == 0);
+	assert(jsval_array_new(&region, 0, &native_arr) == 0);
+	assert(jsval_array_new(&region, 0, &other_arr) == 0);
+
+	assert(jsval_is_nullish(native_text) == 0);
+	assert(jsval_is_nullish(native_obj) == 0);
+	assert(jsval_is_nullish(native_arr) == 0);
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json, sizeof(json) - 1, 24,
+			&root) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"zero", 4,
+			&zero) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"empty", 5,
+			&empty) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) == 0);
+	assert(jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+			&arr) == 0);
+
+	assert(jsval_is_nullish(nothing) == 1);
+	assert(jsval_is_nullish(flag) == 0);
+	assert(jsval_is_nullish(zero) == 0);
+	assert(jsval_is_nullish(empty) == 0);
+	assert(jsval_is_nullish(text) == 0);
+	assert(jsval_is_nullish(obj) == 0);
+	assert(jsval_is_nullish(arr) == 0);
+
+	left = jsval_undefined();
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert_string(&region, result, "fallback");
+
+	left = jsval_null();
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert_string(&region, result, "fallback");
+
+	left = nothing;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert_string(&region, result, "fallback");
+
+	left = flag;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert(jsval_strict_eq(&region, result, jsval_bool(0)) == 1);
+
+	left = zero;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert(jsval_strict_eq(&region, result, jsval_number(0.0)) == 1);
+
+	left = empty;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	assert(jsval_strict_eq(&region, result, empty) == 1);
+
+	left = obj;
+	if (jsval_is_nullish(left)) {
+		result = other_obj;
+	} else {
+		result = left;
+	}
+	assert(jsval_strict_eq(&region, result, obj) == 1);
+
+	left = arr;
+	if (jsval_is_nullish(left)) {
+		result = other_arr;
+	} else {
+		result = left;
+	}
+	assert(jsval_strict_eq(&region, result, arr) == 1);
+
+	if (jsval_truthy(&region, jsval_undefined())) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "else");
+
+	if (jsval_truthy(&region, jsval_null())) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "else");
+
+	if (jsval_truthy(&region, flag)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "else");
+
+	if (jsval_truthy(&region, zero)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "else");
+
+	if (jsval_truthy(&region, empty)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "else");
+
+	if (jsval_truthy(&region, text)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "then");
+
+	if (jsval_truthy(&region, native_text)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	assert_string(&region, result, "then");
+
+	if (jsval_truthy(&region, obj)) {
+		result = obj;
+	} else {
+		result = other_obj;
+	}
+	assert(jsval_strict_eq(&region, result, obj) == 1);
+
+	if (jsval_truthy(&region, native_obj)) {
+		result = native_obj;
+	} else {
+		result = other_obj;
+	}
+	assert(jsval_strict_eq(&region, result, native_obj) == 1);
+
+	if (jsval_truthy(&region, arr)) {
+		result = arr;
+	} else {
+		result = other_arr;
+	}
+	assert(jsval_strict_eq(&region, result, arr) == 1);
+
+	if (jsval_truthy(&region, native_arr)) {
+		result = native_arr;
+	} else {
+		result = other_arr;
+	}
+	assert(jsval_strict_eq(&region, result, native_arr) == 1);
+
+#if JSMX_WITH_REGEX
+	{
+		jsmethod_error_t error;
+		jsval_t pattern;
+		jsval_t global_flags;
+		jsval_t regex;
+		jsval_t subject;
+		jsval_t iterator;
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&pattern) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"g", 1,
+				&global_flags) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+				&subject) == 0);
+		assert(jsval_regexp_new(&region, pattern, 1, global_flags, &regex,
+				&error) == 0);
+		assert(jsval_method_string_match_all(&region, subject, 1, regex,
+				&iterator, &error) == 0);
+
+		assert(jsval_is_nullish(regex) == 0);
+		assert(jsval_is_nullish(iterator) == 0);
+
+		left = regex;
+		if (jsval_is_nullish(left)) {
+			result = native_obj;
+		} else {
+			result = left;
+		}
+		assert(jsval_strict_eq(&region, result, regex) == 1);
+
+		if (jsval_truthy(&region, iterator)) {
+			result = iterator;
+		} else {
+			result = other_arr;
+		}
+		assert(jsval_strict_eq(&region, result, iterator) == 1);
+	}
+#endif
+}
+
 static void test_logical_not_semantics(void)
 {
 	uint8_t storage[2048];
@@ -5667,6 +5926,7 @@ int main(void)
 	test_native_storage();
 	test_value_semantics();
 	test_typeof_semantics();
+	test_nullish_and_selection_semantics();
 	test_logical_not_semantics();
 	test_logical_and_or_semantics();
 	test_numeric_coercion_and_arithmetic();

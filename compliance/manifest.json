@@ -3878,6 +3878,57 @@
       "notes": "Direct-lowered: Repo-authored idiomatic value-semantics fixture for typeof on regexp values and matchAll iterator results within the current flattened object model."
     },
     {
+      "id": "jsmx-values-nullish-coalescing-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/nullish-coalescing-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/nullish-coalescing-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for primitive nullish-coalescing behavior over undefined, null, and representative non-nullish primitives."
+    },
+    {
+      "id": "jsmx-values-nullish-coalescing-json-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/nullish-coalescing-json-parity.js",
+      "generated": "compliance/generated/values/jsmx/nullish-coalescing-json-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for parsed/native nullish-coalescing parity across null, falsy primitives, and object identity."
+    },
+    {
+      "id": "jsmx-values-ternary-truthiness-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/ternary-truthiness-parity.js",
+      "generated": "compliance/generated/values/jsmx/ternary-truthiness-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for ternary truthiness selection across representative falsy and truthy primitive values."
+    },
+    {
+      "id": "jsmx-values-ternary-container-identity-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/ternary-container-identity-parity.js",
+      "generated": "compliance/generated/values/jsmx/ternary-container-identity-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for ternary selection preserving object and array identity across native and JSON-backed containers."
+    },
+    {
+      "id": "jsmx-values-nullish-ternary-regexp-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/nullish-ternary-regexp-parity.js",
+      "generated": "compliance/generated/values/jsmx/nullish-ternary-regexp-parity.c",
+      "required_features": ["regex"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Direct-lowered: Repo-authored idiomatic value-semantics fixture for regexp and matchAll iterator values participating in nullish-coalescing and ternary selection."
+    },
+    {
       "id": "jsmx-objects-json-promote-mutate-emit",
       "suite": "objects",
       "source": "compliance/js/objects/jsmx/json-promote-mutate-emit.js",

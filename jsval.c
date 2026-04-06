@@ -12040,6 +12040,11 @@ int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len
 	return 0;
 }
 
+int jsval_is_nullish(jsval_t value)
+{
+	return value.kind == JSVAL_KIND_UNDEFINED || value.kind == JSVAL_KIND_NULL;
+}
+
 int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 {
 	const uint8_t *text;

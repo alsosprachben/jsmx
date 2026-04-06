@@ -980,6 +980,348 @@ static generated_status_t generated_smoke_jsval_typeof(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_nullish_coalescing(char *detail,
+		size_t cap)
+{
+	static const uint8_t json[] =
+		"{\"nothing\":null,\"flag\":false,\"zero\":0,\"empty\":\"\",\"text\":\"x\",\"obj\":{}}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t nothing;
+	jsval_t flag;
+	jsval_t zero;
+	jsval_t empty;
+	jsval_t text;
+	jsval_t obj;
+	jsval_t other_obj;
+	jsval_t fallback;
+	jsval_t left;
+	jsval_t result;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_is_nullish(jsval_undefined()) != 1
+			|| jsval_is_nullish(jsval_null()) != 1
+			|| jsval_is_nullish(jsval_bool(0)) != 0
+			|| jsval_is_nullish(jsval_number(0.0)) != 0
+			|| jsval_is_nullish(jsval_number(NAN)) != 0) {
+		return generated_failf(detail, cap,
+				"unexpected primitive jsval_is_nullish result");
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"fallback", 8,
+			&fallback) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(fallback)");
+	}
+	if (jsval_object_new(&region, 0, &other_obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new");
+	}
+
+	if (jsval_json_parse(&region, json, sizeof(json) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"nothing", 7,
+			&nothing) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(nothing)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(flag)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"zero", 4,
+			&zero) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(zero)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"empty", 5,
+			&empty) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(empty)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+			&text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(text)");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+			&obj) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8(obj)");
+	}
+
+	if (jsval_is_nullish(nothing) != 1 || jsval_is_nullish(flag) != 0
+			|| jsval_is_nullish(zero) != 0 || jsval_is_nullish(empty) != 0
+			|| jsval_is_nullish(text) != 0 || jsval_is_nullish(obj) != 0) {
+		return generated_failf(detail, cap,
+				"unexpected parsed jsval_is_nullish result");
+	}
+
+	left = jsval_undefined();
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"fallback", 8, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	left = nothing;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"fallback", 8, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	left = flag;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	if (jsval_strict_eq(&region, result, jsval_bool(0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected false to survive nullish coalescing");
+	}
+
+	left = zero;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	if (jsval_strict_eq(&region, result, jsval_number(0.0)) != 1) {
+		return generated_failf(detail, cap,
+				"expected 0 to survive nullish coalescing");
+	}
+
+	left = empty;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"", 0,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	left = text;
+	if (jsval_is_nullish(left)) {
+		result = fallback;
+	} else {
+		result = left;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"x", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	left = obj;
+	if (jsval_is_nullish(left)) {
+		result = other_obj;
+	} else {
+		result = left;
+	}
+	if (jsval_strict_eq(&region, result, obj) != 1) {
+		return generated_failf(detail, cap,
+				"expected object identity to survive nullish coalescing");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_ternary(char *detail,
+		size_t cap)
+{
+	static const uint8_t json[] =
+		"{\"flag\":false,\"zero\":0,\"empty\":\"\",\"text\":\"x\",\"obj\":{},\"arr\":[]}";
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t root;
+	jsval_t flag;
+	jsval_t zero;
+	jsval_t empty;
+	jsval_t text;
+	jsval_t obj;
+	jsval_t arr;
+	jsval_t native_text;
+	jsval_t native_obj;
+	jsval_t native_arr;
+	jsval_t other_obj;
+	jsval_t other_arr;
+	jsval_t then_value;
+	jsval_t else_value;
+	jsval_t result;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"x", 1,
+			&native_text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(x)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"then", 4,
+			&then_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(then)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"else", 4,
+			&else_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(else)");
+	}
+	if (jsval_object_new(&region, 0, &native_obj) < 0
+			|| jsval_object_new(&region, 0, &other_obj) < 0
+			|| jsval_array_new(&region, 0, &native_arr) < 0
+			|| jsval_array_new(&region, 0, &other_arr) < 0) {
+		return generated_fail_errno(detail, cap, "native container allocation");
+	}
+
+	if (jsval_json_parse(&region, json, sizeof(json) - 1, 24, &root) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse");
+	}
+	if (jsval_object_get_utf8(&region, root, (const uint8_t *)"flag", 4,
+			&flag) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"zero", 4,
+				&zero) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"empty", 5,
+				&empty) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"text", 4,
+				&text) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"obj", 3,
+				&obj) < 0
+			|| jsval_object_get_utf8(&region, root, (const uint8_t *)"arr", 3,
+				&arr) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_utf8");
+	}
+
+	if (jsval_truthy(&region, jsval_undefined())) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"else",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, jsval_null())) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"else",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, flag)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"else",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, zero)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"else",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, empty)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"else",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, text)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"then",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, native_text)) {
+		result = then_value;
+	} else {
+		result = else_value;
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"then",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_truthy(&region, obj)) {
+		result = obj;
+	} else {
+		result = other_obj;
+	}
+	if (jsval_strict_eq(&region, result, obj) != 1) {
+		return generated_failf(detail, cap,
+				"expected parsed object truthiness to select the then branch");
+	}
+
+	if (jsval_truthy(&region, native_obj)) {
+		result = native_obj;
+	} else {
+		result = other_obj;
+	}
+	if (jsval_strict_eq(&region, result, native_obj) != 1) {
+		return generated_failf(detail, cap,
+				"expected native object truthiness to select the then branch");
+	}
+
+	if (jsval_truthy(&region, arr)) {
+		result = arr;
+	} else {
+		result = other_arr;
+	}
+	if (jsval_strict_eq(&region, result, arr) != 1) {
+		return generated_failf(detail, cap,
+				"expected parsed array truthiness to select the then branch");
+	}
+
+	if (jsval_truthy(&region, native_arr)) {
+		result = native_arr;
+	} else {
+		result = other_arr;
+	}
+	if (jsval_strict_eq(&region, result, native_arr) != 1) {
+		return generated_failf(detail, cap,
+				"expected native array truthiness to select the then branch");
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_strict_equality(char *detail,
 		size_t cap)
 {
@@ -7799,6 +8141,9 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
+	{"smoke", "jsval_nullish_coalescing",
+		generated_smoke_jsval_nullish_coalescing},
+	{"smoke", "jsval_ternary", generated_smoke_jsval_ternary},
 	{"smoke", "jsval_strict_equality", generated_smoke_jsval_strict_equality},
 	{"smoke", "jsval_logical_not", generated_smoke_jsval_logical_not},
 	{"smoke", "jsval_logical_and_or", generated_smoke_jsval_logical_and_or},
