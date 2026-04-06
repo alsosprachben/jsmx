@@ -1,0 +1,4 @@
+interface:
+  display_name: "JSMX Program Transpile"
+  short_description: "Convert JS entrypoints into standalone C programs"
+  default_prompt: "Use $jsmx-transpile-program to turn a JavaScript entrypoint into a standalone C program built against jsmx."
