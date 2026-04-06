@@ -13,7 +13,12 @@
 typedef enum runtime_fs_kind_e {
 	RUNTIME_FS_KIND_FILE = 0,
 	RUNTIME_FS_KIND_DIRECTORY = 1,
-	RUNTIME_FS_KIND_OTHER = 2
+	RUNTIME_FS_KIND_SYMLINK = 2,
+	RUNTIME_FS_KIND_BLOCK_DEVICE = 3,
+	RUNTIME_FS_KIND_CHARACTER_DEVICE = 4,
+	RUNTIME_FS_KIND_FIFO = 5,
+	RUNTIME_FS_KIND_SOCKET = 6,
+	RUNTIME_FS_KIND_OTHER = 7
 } runtime_fs_kind_t;
 
 typedef struct runtime_fs_path_info_s {
@@ -73,6 +78,21 @@ runtime_fs_kind_from_stat(const struct stat *st)
 	}
 	if (S_ISREG(st->st_mode)) {
 		return RUNTIME_FS_KIND_FILE;
+	}
+	if (S_ISLNK(st->st_mode)) {
+		return RUNTIME_FS_KIND_SYMLINK;
+	}
+	if (S_ISBLK(st->st_mode)) {
+		return RUNTIME_FS_KIND_BLOCK_DEVICE;
+	}
+	if (S_ISCHR(st->st_mode)) {
+		return RUNTIME_FS_KIND_CHARACTER_DEVICE;
+	}
+	if (S_ISFIFO(st->st_mode)) {
+		return RUNTIME_FS_KIND_FIFO;
+	}
+	if (S_ISSOCK(st->st_mode)) {
+		return RUNTIME_FS_KIND_SOCKET;
 	}
 	return RUNTIME_FS_KIND_OTHER;
 }

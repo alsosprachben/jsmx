@@ -14,6 +14,21 @@ function kindFromStat(stat) {
   if (stat.isFile()) {
     return "file";
   }
+  if (stat.isSymbolicLink()) {
+    return "symlink";
+  }
+  if (stat.isBlockDevice()) {
+    return "blockDevice";
+  }
+  if (stat.isCharacterDevice()) {
+    return "characterDevice";
+  }
+  if (stat.isFIFO()) {
+    return "fifo";
+  }
+  if (stat.isSocket()) {
+    return "socket";
+  }
   return "other";
 }
 
@@ -65,4 +80,3 @@ module.exports = {
   readTextFileSync,
   realpathSync,
 };
-

@@ -46,11 +46,18 @@ typedef struct grep_options_s {
 	int line_regexp;
 	int recursive;
 	int recursive_follow;
+	int binary_files;
 	size_t pattern_count;
 	const char **patterns;
 	size_t file_count;
 	const char **files;
 } grep_options_t;
+
+typedef enum grep_binary_files_mode_e {
+	GREP_BINARY_FILES_BINARY = 0,
+	GREP_BINARY_FILES_TEXT = 1,
+	GREP_BINARY_FILES_WITHOUT_MATCH = 2
+} grep_binary_files_mode_t;
 
 typedef struct grep_matcher_s {
 	jsregex_compiled_t compiled;
@@ -88,7 +95,8 @@ grep_prog_name(const char *path)
 static int
 grep_usage(FILE *stream, const char *prog)
 {
-	fprintf(stream, "usage: %s [-FivncqHhRrsx] [-e pattern] [pattern] [file ...]\n",
+	fprintf(stream,
+			"usage: %s [-FIaivncqHhRrsx] [--binary-files=TYPE] [-e pattern] [pattern] [file ...]\n",
 			prog);
 	return 2;
 }
@@ -105,6 +113,24 @@ grep_options_release(grep_options_t *options)
 	free(options->patterns);
 	free(options->files);
 	memset(options, 0, sizeof(*options));
+}
+
+static int
+grep_parse_binary_files_value(const char *value, int *mode_ptr)
+{
+	if (strcmp(value, "binary") == 0) {
+		*mode_ptr = GREP_BINARY_FILES_BINARY;
+		return 0;
+	}
+	if (strcmp(value, "text") == 0) {
+		*mode_ptr = GREP_BINARY_FILES_TEXT;
+		return 0;
+	}
+	if (strcmp(value, "without-match") == 0) {
+		*mode_ptr = GREP_BINARY_FILES_WITHOUT_MATCH;
+		return 0;
+	}
+	return -1;
 }
 
 static int
@@ -133,6 +159,14 @@ grep_parse_args(int argc, char **argv, grep_options_t *options,
 		if (parse_options && arg[0] == '-' && arg[1] != '\0') {
 			size_t j;
 
+			if (strncmp(arg, "--binary-files=", 15) == 0) {
+				if (grep_parse_binary_files_value(arg + 15,
+						&options->binary_files) < 0) {
+					return grep_usage(stderr, prog);
+				}
+				continue;
+			}
+
 			if (strcmp(arg, "-e") == 0) {
 				i++;
 				if (i >= argc) {
@@ -159,6 +193,12 @@ grep_parse_args(int argc, char **argv, grep_options_t *options,
 				switch (flag) {
 				case 'F':
 					options->fixed = 1;
+					break;
+				case 'I':
+					options->binary_files = GREP_BINARY_FILES_WITHOUT_MATCH;
+					break;
+				case 'a':
+					options->binary_files = GREP_BINARY_FILES_TEXT;
 					break;
 				case 'i':
 					options->ignore_case = 1;
@@ -220,6 +260,12 @@ static const char *
 grep_source_label(const char *path)
 {
 	return strcmp(path, "-") == 0 ? STDIN_LABEL : path;
+}
+
+static int
+grep_kind_is_searchable(runtime_fs_kind_t kind)
+{
+	return kind == RUNTIME_FS_KIND_FILE;
 }
 
 static int
@@ -349,7 +395,7 @@ grep_expand_directory(const grep_options_t *options, const char *prog,
 				runtime_fs_dir_list_free(&entries);
 				return -1;
 			}
-		} else {
+		} else if (grep_kind_is_searchable(effective_kind)) {
 			if (grep_source_list_append(sources, entry->path) < 0) {
 				runtime_fs_dir_list_free(&entries);
 				return -1;
@@ -411,6 +457,13 @@ grep_expand_path(const grep_options_t *options, const char *prog,
 		}
 		return grep_expand_directory(options, prog, path, sources, visited,
 				had_error_ptr);
+	}
+	if (!grep_kind_is_searchable(effective_kind)) {
+		if (!nested) {
+			*had_error_ptr = 1;
+			grep_report_path_error(options, prog, path, EINVAL);
+		}
+		return 0;
 	}
 
 	return grep_source_list_append(sources, path);
@@ -743,9 +796,29 @@ grep_emit_count(const char *label, int show_filename, size_t count)
 }
 
 static int
+grep_emit_binary_match(const char *prog, const char *label)
+{
+	return fprintf(stderr, "%s: %s: binary file matches\n", prog, label) < 0
+		? -1 : 0;
+}
+
+static int
+grep_buffer_has_nul(const uint8_t *text, size_t text_len)
+{
+	size_t i;
+
+	for (i = 0; i < text_len; i++) {
+		if (text[i] == 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int
 grep_process_text(const grep_options_t *options, const grep_matcher_t *matchers,
 		const char *label, int show_filename, const uint8_t *text,
-		size_t text_len, grep_source_result_t *result_ptr)
+		size_t text_len, int emit_lines, grep_source_result_t *result_ptr)
 {
 	size_t start = 0;
 	size_t line_number = 1;
@@ -773,7 +846,7 @@ grep_process_text(const grep_options_t *options, const grep_matcher_t *matchers,
 					result_ptr->quiet_match = 1;
 					return 0;
 				}
-				if (!options->count_only &&
+				if (emit_lines && !options->count_only &&
 						grep_emit_line(label, show_filename,
 							options->line_numbers, line_number,
 							text + start, i - start) < 0) {
@@ -789,6 +862,37 @@ grep_process_text(const grep_options_t *options, const grep_matcher_t *matchers,
 	if (options->count_only && !options->quiet) {
 		if (grep_emit_count(label, show_filename,
 				result_ptr->selected_count) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int
+grep_process_source(const grep_options_t *options, const grep_matcher_t *matchers,
+		const char *prog, const char *label, int show_filename,
+		const uint8_t *text, size_t text_len, grep_source_result_t *result_ptr)
+{
+	int is_binary = grep_buffer_has_nul(text, text_len);
+
+	if (is_binary && options->binary_files == GREP_BINARY_FILES_WITHOUT_MATCH) {
+		memset(result_ptr, 0, sizeof(*result_ptr));
+		if (options->count_only && !options->quiet) {
+			if (grep_emit_count(label, show_filename, 0) < 0) {
+				return -1;
+			}
+		}
+		return 0;
+	}
+	if (grep_process_text(options, matchers, label, show_filename, text, text_len,
+			!is_binary || options->binary_files == GREP_BINARY_FILES_TEXT,
+			result_ptr) < 0) {
+		return -1;
+	}
+	if (is_binary && options->binary_files == GREP_BINARY_FILES_BINARY
+			&& result_ptr->selected_count > 0 && !options->quiet
+			&& !options->count_only) {
+		if (grep_emit_binary_match(prog, label) < 0) {
 			return -1;
 		}
 	}
@@ -843,8 +947,9 @@ main(int argc, char **argv)
 			}
 			continue;
 		}
-		if (grep_process_text(&options, matchers, grep_source_label(path),
-				show_filename, text, text_len, &source_result) < 0) {
+		if (grep_process_source(&options, matchers, prog,
+				grep_source_label(path), show_filename, text, text_len,
+				&source_result) < 0) {
 			free(text);
 			fprintf(stderr, "%s: processing failed: %s\n", prog,
 					strerror(errno));

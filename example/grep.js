@@ -8,7 +8,7 @@ const STDIN_LABEL = "(standard input)";
 
 function usage() {
   process.stderr.write(
-    `usage: ${PROGRAM} [-FivncqHhRrsx] [-e pattern] [pattern] [file ...]\n`,
+    `usage: ${PROGRAM} [-FIaivncqHhRrsx] [--binary-files=TYPE] [-e pattern] [pattern] [file ...]\n`,
   );
   process.exit(2);
 }
@@ -31,6 +31,8 @@ function errorText(error) {
       return "Is a directory";
     case "ENOTDIR":
       return "Not a directory";
+    case "EINVAL":
+      return "Invalid argument";
     default:
       return error.message || "Unknown error";
   }
@@ -69,6 +71,13 @@ function compileMatchers(options) {
   return matchers;
 }
 
+function parseBinaryFiles(value) {
+  if (value === "binary" || value === "text" || value === "without-match") {
+    return value;
+  }
+  usage();
+}
+
 function parseArgs(argv) {
   const options = {
     fixed: false,
@@ -83,6 +92,7 @@ function parseArgs(argv) {
     lineRegexp: false,
     recursive: false,
     recursiveFollow: false,
+    binaryFiles: "binary",
     patterns: [],
     files: [],
   };
@@ -96,6 +106,10 @@ function parseArgs(argv) {
       continue;
     }
     if (parseOptions && arg.startsWith("-") && arg !== "-") {
+      if (arg.startsWith("--binary-files=")) {
+        options.binaryFiles = parseBinaryFiles(arg.slice(15));
+        continue;
+      }
       if (arg === "-e") {
         i++;
         if (i >= argv.length) {
@@ -120,6 +134,10 @@ function parseArgs(argv) {
         }
         if (flag === "F") {
           options.fixed = true;
+        } else if (flag === "I") {
+          options.binaryFiles = "without-match";
+        } else if (flag === "a") {
+          options.binaryFiles = "text";
         } else if (flag === "i") {
           options.ignoreCase = true;
         } else if (flag === "v") {
@@ -186,6 +204,23 @@ function splitLines(text) {
     lines.push(text.slice(start));
   }
   return lines;
+}
+
+function isSearchableKind(kind) {
+  return kind === "file";
+}
+
+function isBinaryText(text) {
+  return text.includes("\0");
+}
+
+function emitCount(label, showFilename, count) {
+  const prefix = showFilename ? `${label}:` : "";
+  process.stdout.write(prefix + String(count) + "\n");
+}
+
+function emitBinaryMatch(label) {
+  process.stderr.write(`${PROGRAM}: ${label}: binary file matches\n`);
 }
 
 function sourceLabel(path) {
@@ -267,9 +302,16 @@ function expandSources(options, onError) {
             continue;
           }
           walk(entry.path, true);
-        } else {
+        } else if (isSearchableKind(entryKind)) {
           pushSource(entry.path);
         }
+      }
+      return;
+    }
+
+    if (!isSearchableKind(effectiveKind)) {
+      if (!nested) {
+        report(path, makeError("EINVAL", "Invalid argument"));
       }
       return;
     }
@@ -284,7 +326,7 @@ function expandSources(options, onError) {
   return sources;
 }
 
-function processText(text, label, showFilename, options, matchers) {
+function processText(text, label, showFilename, options, matchers, emitLines) {
   const lines = splitLines(text);
   let selectedCount = 0;
 
@@ -300,7 +342,7 @@ function processText(text, label, showFilename, options, matchers) {
     if (options.quiet) {
       return { selectedCount, quietMatch: true };
     }
-    if (!options.countOnly) {
+    if (emitLines && !options.countOnly) {
       let prefix = "";
 
       if (showFilename) {
@@ -314,11 +356,41 @@ function processText(text, label, showFilename, options, matchers) {
   }
 
   if (options.countOnly && !options.quiet) {
-    const prefix = showFilename ? `${label}:` : "";
-    process.stdout.write(prefix + String(selectedCount) + "\n");
+    emitCount(label, showFilename, selectedCount);
   }
 
   return { selectedCount, quietMatch: false };
+}
+
+function processSource(text, label, showFilename, options, matchers) {
+  const binary = isBinaryText(text);
+  let result;
+
+  if (binary && options.binaryFiles === "without-match") {
+    if (options.countOnly && !options.quiet) {
+      emitCount(label, showFilename, 0);
+    }
+    return { selectedCount: 0, quietMatch: false };
+  }
+
+  result = processText(
+    text,
+    label,
+    showFilename,
+    options,
+    matchers,
+    !binary || options.binaryFiles === "text",
+  );
+  if (
+    binary &&
+    options.binaryFiles === "binary" &&
+    result.selectedCount > 0 &&
+    !options.quiet &&
+    !options.countOnly
+  ) {
+    emitBinaryMatch(label);
+  }
+  return result;
 }
 
 function main() {
@@ -348,7 +420,7 @@ function main() {
       continue;
     }
 
-    const result = processText(
+    const result = processSource(
       text,
       sourceLabel(path),
       showFilename,
