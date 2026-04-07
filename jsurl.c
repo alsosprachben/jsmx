@@ -21,6 +21,8 @@ static int jsurl_search_params_requirements(jsstr8_t search, size_t *params_len_
 		size_t *storage_len_ptr);
 
 typedef int (*jsurl_parts_callback_t)(const jsurl_parts_t *parts, void *opaque);
+static int jsurl_resolve_with_base(jsstr8_t input, const jsurl_t *base,
+		jsurl_parts_callback_t callback, void *opaque);
 
 static jsstr8_t jsurl_slice(jsstr8_t src, size_t start_i, ssize_t stop_i)
 {
@@ -1415,6 +1417,31 @@ int jsurl_copy_sizes(const jsurl_view_t *view, jsurl_sizes_t *sizes_ptr)
 	}
 	jsurl_view_parts(view, &parts);
 	return jsurl_copy_sizes_from_parts(&parts, sizes_ptr);
+}
+
+typedef struct jsurl_copy_sizes_ctx_s {
+	jsurl_sizes_t *sizes_ptr;
+} jsurl_copy_sizes_ctx_t;
+
+static int jsurl_copy_sizes_parts_cb(const jsurl_parts_t *parts, void *opaque)
+{
+	jsurl_copy_sizes_ctx_t *ctx = (jsurl_copy_sizes_ctx_t *)opaque;
+
+	return jsurl_copy_sizes_from_parts(parts, ctx->sizes_ptr);
+}
+
+int jsurl_copy_sizes_with_base(jsstr8_t input, const jsurl_t *base,
+		jsurl_sizes_t *sizes_ptr)
+{
+	jsurl_copy_sizes_ctx_t ctx;
+
+	if (base == NULL || sizes_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	ctx.sizes_ptr = sizes_ptr;
+	return jsurl_resolve_with_base(input, base, jsurl_copy_sizes_parts_cb,
+			&ctx);
 }
 
 static void jsurl_region_string_init(jsstr8_t *value, uint8_t *buf, size_t cap)

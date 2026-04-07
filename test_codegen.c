@@ -980,6 +980,150 @@ static generated_status_t generated_smoke_jsval_typeof(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_url_core(char *detail,
+		size_t cap)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t input;
+	jsval_t url;
+	jsval_t params_a;
+	jsval_t params_b;
+	jsval_t result;
+	jsval_t detached;
+	jsval_t values;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://example.com/base?x=1#old",
+			sizeof("https://example.com/base?x=1#old") - 1,
+			&input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(url input)");
+	}
+	if (jsval_url_new(&region, input, 0, jsval_undefined(), &url) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_new");
+	}
+	if (url.kind != JSVAL_KIND_URL) {
+		return generated_failf(detail, cap, "expected URL result kind");
+	}
+	if (!jsval_truthy(&region, url)) {
+		return generated_failf(detail, cap, "expected URL to be truthy");
+	}
+	if (jsval_typeof(&region, url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(url)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"object", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_search_params(&region, url, &params_a) < 0
+			|| jsval_url_search_params(&region, url, &params_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_search_params");
+	}
+	if (jsval_strict_eq(&region, params_a, params_b) != 1) {
+		return generated_failf(detail, cap,
+				"expected stable searchParams identity");
+	}
+	if (!jsval_truthy(&region, params_a)) {
+		return generated_failf(detail, cap,
+				"expected URLSearchParams to be truthy");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"y", 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(name y)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"2", 1, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(value 2)");
+	}
+	if (jsval_url_search_params_append(&region, params_a, input, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_append(attached)");
+	}
+	if (jsval_url_href(&region, url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_href");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"https://example.com/base?x=1&y=2#old",
+			sizeof("https://example.com/base?x=1&y=2#old") - 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"?a=3", 4, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(search)");
+	}
+	if (jsval_url_set_search(&region, url, input) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_set_search");
+	}
+	if (jsval_url_search_params_to_string(&region, params_a, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_to_string(attached)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"a=3", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"?b=4", 4, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(detached input)");
+	}
+	if (jsval_url_search_params_new(&region, input, &detached) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_new");
+	}
+	if (detached.kind != JSVAL_KIND_URL_SEARCH_PARAMS) {
+		return generated_failf(detail, cap,
+				"expected detached URLSearchParams result kind");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"c", 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(name c)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"5", 1, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(value 5)");
+	}
+	if (jsval_url_search_params_append(&region, detached, input, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_append(detached)");
+	}
+	if (jsval_url_search_params_to_string(&region, detached, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_to_string(detached)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"b=4&c=5", 7, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"c", 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(getAll name)");
+	}
+	if (jsval_url_search_params_get_all(&region, detached, input, &values) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_get_all");
+	}
+	{
+		static const char *expected_values[] = {"5"};
+
+		status = generated_expect_string_array(&region, values,
+				expected_values, 1, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_nullish_coalescing(char *detail,
 		size_t cap)
 {
@@ -8141,6 +8285,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
+	{"smoke", "jsval_url_core", generated_smoke_jsval_url_core},
 	{"smoke", "jsval_nullish_coalescing",
 		generated_smoke_jsval_nullish_coalescing},
 	{"smoke", "jsval_ternary", generated_smoke_jsval_ternary},

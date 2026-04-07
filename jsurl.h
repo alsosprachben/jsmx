@@ -106,6 +106,8 @@ int jsurl_view_href_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_href_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
 jsstr8_t jsurl_view_to_json(const jsurl_view_t *view);
 int jsurl_copy_sizes(const jsurl_view_t *view, jsurl_sizes_t *sizes_ptr);
+int jsurl_copy_sizes_with_base(jsstr8_t input, const jsurl_t *base,
+		jsurl_sizes_t *sizes_ptr);
 
 void jsurl_search_params_view_init(jsurl_search_params_view_t *view,
 		jsstr8_t search);

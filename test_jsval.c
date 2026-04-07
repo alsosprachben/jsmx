@@ -4700,6 +4700,131 @@ static void test_typeof_semantics(void)
 #endif
 }
 
+static void test_url_object_semantics(void)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t input;
+	jsval_t url;
+	jsval_t params_a;
+	jsval_t params_b;
+	jsval_t result;
+	jsval_t rel_input;
+	jsval_t base_input;
+	jsval_t rel_url;
+	jsval_t detached;
+	jsval_t values;
+	jsval_t first;
+	jsval_t expected;
+	jsval_t name_x;
+	jsval_t name_y;
+	jsval_t name_a;
+	jsval_t name_b;
+	jsval_t name_c;
+	jsval_t value_2;
+	jsval_t value_5;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://example.com/base?x=1#old",
+			sizeof("https://example.com/base?x=1#old") - 1,
+			&input) == 0);
+	assert(jsval_url_new(&region, input, 0, jsval_undefined(), &url) == 0);
+	assert(url.kind == JSVAL_KIND_URL);
+	assert(jsval_truthy(&region, url) == 1);
+	assert(jsval_typeof(&region, url, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_url_href(&region, url, &result) == 0);
+	assert_string(&region, result, "https://example.com/base?x=1#old");
+	assert(jsval_url_to_string(&region, url, &result) == 0);
+	assert_string(&region, result, "https://example.com/base?x=1#old");
+	assert(jsval_url_to_json(&region, url, &result) == 0);
+	assert_string(&region, result, "https://example.com/base?x=1#old");
+
+	assert(jsval_url_search_params(&region, url, &params_a) == 0);
+	assert(jsval_url_search_params(&region, url, &params_b) == 0);
+	assert(params_a.kind == JSVAL_KIND_URL_SEARCH_PARAMS);
+	assert(jsval_strict_eq(&region, params_a, params_b) == 1);
+	assert(jsval_truthy(&region, params_a) == 1);
+	assert(jsval_typeof(&region, params_a, &result) == 0);
+	assert_string(&region, result, "object");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"x", 1, &name_x)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"y", 1, &name_y)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a", 1, &name_a)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"b", 1, &name_b)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"c", 1, &name_c)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"2", 1, &value_2)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"5", 1, &value_5)
+			== 0);
+
+	assert(jsval_url_search_params_append(&region, params_a, name_y, value_2)
+			== 0);
+	assert(jsval_url_search(&region, url, &result) == 0);
+	assert_string(&region, result, "?x=1&y=2");
+	assert(jsval_url_href(&region, url, &result) == 0);
+	assert_string(&region, result, "https://example.com/base?x=1&y=2#old");
+	assert(jsval_url_search_params_to_string(&region, params_a, &result) == 0);
+	assert_string(&region, result, "x=1&y=2");
+	assert(jsval_url_search_params_get(&region, params_a, name_x, &result) == 0);
+	assert_string(&region, result, "1");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"?a=3", 4,
+			&expected) == 0);
+	assert(jsval_url_set_search(&region, url, expected) == 0);
+	assert(jsval_url_search_params_to_string(&region, params_a, &result) == 0);
+	assert_string(&region, result, "a=3");
+	assert(jsval_url_search_params_get(&region, params_a, name_a, &result) == 0);
+	assert_string(&region, result, "3");
+	assert(jsval_url_search_params_size(&region, params_a, &result) == 0);
+	assert_number_value(result, 1.0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"../up?q=2", 9,
+			&rel_input) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://example.com/dir/sub/index.html?x=1#old",
+			sizeof("https://example.com/dir/sub/index.html?x=1#old") - 1,
+			&base_input) == 0);
+	assert(jsval_url_new(&region, rel_input, 1, base_input, &rel_url) == 0);
+	assert(jsval_url_href(&region, rel_url, &result) == 0);
+	assert_string(&region, result, "https://example.com/dir/up?q=2");
+	assert(jsval_strict_eq(&region, url, rel_url) == 0);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"?b=4", 4,
+			&input) == 0);
+	assert(jsval_url_search_params_new(&region, input, &detached) == 0);
+	assert(detached.kind == JSVAL_KIND_URL_SEARCH_PARAMS);
+	assert(jsval_strict_eq(&region, detached, params_a) == 0);
+	assert(jsval_truthy(&region, detached) == 1);
+	assert(jsval_typeof(&region, detached, &result) == 0);
+	assert_string(&region, result, "object");
+
+	assert(jsval_url_search_params_append(&region, detached, name_c, value_5)
+			== 0);
+	assert(jsval_url_search_params_get(&region, detached, name_b, &result) == 0);
+	assert_string(&region, result, "4");
+	assert(jsval_url_search_params_has(&region, detached, name_c, &result) == 0);
+	assert(result.kind == JSVAL_KIND_BOOL);
+	assert(result.as.boolean == 1);
+	assert(jsval_url_search_params_get_all(&region, detached, name_c, &values)
+			== 0);
+	assert(values.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, values) == 1);
+	assert(jsval_array_get(&region, values, 0, &first) == 0);
+	assert_string(&region, first, "5");
+	assert(jsval_url_search_params_size(&region, detached, &result) == 0);
+	assert_number_value(result, 2.0);
+	assert(jsval_url_search_params_to_string(&region, detached, &result) == 0);
+	assert_string(&region, result, "b=4&c=5");
+}
+
 static void test_nullish_and_selection_semantics(void)
 {
 	static const char json[] =
@@ -5990,6 +6115,7 @@ int main(void)
 	test_native_storage();
 	test_value_semantics();
 	test_typeof_semantics();
+	test_url_object_semantics();
 	test_nullish_and_selection_semantics();
 	test_logical_not_semantics();
 	test_logical_and_or_semantics();

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "jsnum.h"
+#include "jsurl.h"
 #include "jsregex.h"
 #include "utf8.h"
 
@@ -26,6 +27,38 @@ typedef struct jsval_native_array_s {
 	size_t len;
 	size_t cap;
 } jsval_native_array_t;
+
+typedef struct jsval_native_url_field_s {
+	jsval_off_t off;
+	size_t len;
+	size_t cap;
+} jsval_native_url_field_t;
+
+typedef struct jsval_native_url_s {
+	jsval_native_url_field_t protocol;
+	jsval_native_url_field_t username;
+	jsval_native_url_field_t password;
+	jsval_native_url_field_t hostname;
+	jsval_native_url_field_t port;
+	jsval_native_url_field_t pathname;
+	jsval_native_url_field_t search;
+	jsval_native_url_field_t hash;
+	jsval_native_url_field_t host;
+	jsval_native_url_field_t origin;
+	jsval_native_url_field_t href;
+	size_t search_params_cap;
+	jsval_t search_params_value;
+	uint8_t has_authority;
+	uint8_t reserved[7];
+} jsval_native_url_t;
+
+typedef struct jsval_native_url_search_params_s {
+	jsval_native_url_field_t body;
+	size_t params_cap;
+	jsval_off_t owner_off;
+	uint8_t attached;
+	uint8_t reserved[7];
+} jsval_native_url_search_params_t;
 
 typedef struct jsval_native_regexp_s {
 	jsval_off_t source_off;
@@ -93,6 +126,10 @@ typedef struct jsval_json_emit_state_s {
 	jsval_off_t stack[JSVAL_JSON_EMIT_MAX_DEPTH];
 	size_t depth;
 } jsval_json_emit_state_t;
+
+static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
+		int require_object_coercible, jsval_t *string_value_ptr,
+		jsmethod_error_t *error);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -218,6 +255,445 @@ static jsval_native_array_t *jsval_native_array(jsval_region_t *region, jsval_t 
 static jsval_t *jsval_native_array_values(jsval_native_array_t *array)
 {
 	return (jsval_t *)(array + 1);
+}
+
+static jsval_native_url_t *jsval_native_url(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_URL) {
+		return NULL;
+	}
+	return (jsval_native_url_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_url_search_params_t *
+jsval_native_url_search_params(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_URL_SEARCH_PARAMS) {
+		return NULL;
+	}
+	return (jsval_native_url_search_params_t *)jsval_region_ptr(region,
+			value.off);
+}
+
+static int jsval_kind_is_object_like(uint8_t kind)
+{
+	switch ((jsval_kind_t)kind) {
+	case JSVAL_KIND_OBJECT:
+	case JSVAL_KIND_ARRAY:
+	case JSVAL_KIND_REGEXP:
+	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static jsstr8_t
+jsval_url_field_storage(jsval_region_t *region,
+		const jsval_native_url_field_t *field)
+{
+	jsstr8_t value;
+	uint8_t *bytes;
+
+	jsstr8_init(&value);
+	if (field == NULL || field->cap == 0) {
+		return value;
+	}
+	bytes = (uint8_t *)jsval_region_ptr(region, field->off);
+	if (bytes == NULL) {
+		return value;
+	}
+	jsstr8_init_from_buf(&value, (const char *)bytes, field->cap);
+	return value;
+}
+
+static jsstr8_t
+jsval_url_field_value(jsval_region_t *region,
+		const jsval_native_url_field_t *field)
+{
+	jsstr8_t value = jsval_url_field_storage(region, field);
+
+	value.len = field != NULL ? field->len : 0;
+	if (value.len > value.cap) {
+		value.len = value.cap;
+	}
+	return value;
+}
+
+static jsstr8_t jsval_url_query_body(jsstr8_t search)
+{
+	if (search.len > 0 && search.bytes[0] == '?') {
+		jsstr8_t body;
+
+		jsstr8_init(&body);
+		body.bytes = search.bytes + 1;
+		body.len = search.len - 1;
+		body.cap = body.len;
+		return body;
+	}
+	return search;
+}
+
+static int jsval_url_field_alloc(jsval_region_t *region, size_t cap,
+		jsval_native_url_field_t *field)
+{
+	void *ptr = NULL;
+
+	if (field == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(field, 0, sizeof(*field));
+	if (cap == 0) {
+		return 0;
+	}
+	if (jsval_region_reserve(region, cap, 1, &field->off, &ptr) < 0) {
+		return -1;
+	}
+	field->cap = cap;
+	field->len = 0;
+	return 0;
+}
+
+static int jsval_url_cap_with_extra(size_t len, size_t extra, size_t min_cap,
+		size_t *cap_ptr)
+{
+	size_t cap;
+
+	if (cap_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (len > SIZE_MAX - extra) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	cap = len + extra;
+	if (cap < min_cap) {
+		cap = min_cap;
+	}
+	*cap_ptr = cap;
+	return 0;
+}
+
+static int jsval_url_apply_default_caps(const jsurl_sizes_t *exact,
+		jsurl_sizes_t *caps_ptr)
+{
+	if (exact == NULL || caps_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_cap_with_extra(exact->protocol_cap, 8, 8,
+			&caps_ptr->protocol_cap) < 0
+			|| jsval_url_cap_with_extra(exact->username_cap, 16, 16,
+				&caps_ptr->username_cap) < 0
+			|| jsval_url_cap_with_extra(exact->password_cap, 16, 16,
+				&caps_ptr->password_cap) < 0
+			|| jsval_url_cap_with_extra(exact->hostname_cap, 32, 64,
+				&caps_ptr->hostname_cap) < 0
+			|| jsval_url_cap_with_extra(exact->port_cap, 16, 16,
+				&caps_ptr->port_cap) < 0
+			|| jsval_url_cap_with_extra(exact->pathname_cap, 64, 64,
+				&caps_ptr->pathname_cap) < 0
+			|| jsval_url_cap_with_extra(exact->search_cap, 64, 64,
+				&caps_ptr->search_cap) < 0
+			|| jsval_url_cap_with_extra(exact->hash_cap, 32, 32,
+				&caps_ptr->hash_cap) < 0
+			|| jsval_url_cap_with_extra(exact->host_cap, 32, 64,
+				&caps_ptr->host_cap) < 0
+			|| jsval_url_cap_with_extra(exact->origin_cap, 32, 64,
+				&caps_ptr->origin_cap) < 0
+			|| jsval_url_cap_with_extra(exact->href_cap, 64, 128,
+				&caps_ptr->href_cap) < 0) {
+		return -1;
+	}
+	caps_ptr->search_params_storage_cap = 0;
+	if (exact->search_params_cap > SIZE_MAX - 4) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	caps_ptr->search_params_cap = exact->search_params_cap + 4;
+	if (caps_ptr->search_params_cap < 4) {
+		caps_ptr->search_params_cap = 4;
+	}
+	return 0;
+}
+
+static int jsval_url_search_params_default_caps(size_t body_len,
+		size_t params_len, size_t *body_cap_ptr, size_t *params_cap_ptr)
+{
+	if (body_cap_ptr == NULL || params_cap_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_cap_with_extra(body_len, 64, 64, body_cap_ptr) < 0) {
+		return -1;
+	}
+	if (params_len > SIZE_MAX - 4) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	*params_cap_ptr = params_len + 4;
+	if (*params_cap_ptr < 4) {
+		*params_cap_ptr = 4;
+	}
+	return 0;
+}
+
+static int jsval_url_init_storage(jsval_region_t *region,
+		jsval_native_url_t *native, jsurl_t *url, jsurl_param_t *params_buf,
+		uint8_t *storage_buf, size_t storage_cap)
+{
+	jsurl_storage_t storage;
+
+	if (region == NULL || native == NULL || url == NULL
+			|| (native->search_params_cap > 0 && params_buf == NULL)
+			|| (storage_cap > 0 && storage_buf == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(&storage, 0, sizeof(storage));
+	storage.protocol = jsval_url_field_storage(region, &native->protocol);
+	storage.username = jsval_url_field_storage(region, &native->username);
+	storage.password = jsval_url_field_storage(region, &native->password);
+	storage.hostname = jsval_url_field_storage(region, &native->hostname);
+	storage.port = jsval_url_field_storage(region, &native->port);
+	storage.pathname = jsval_url_field_storage(region, &native->pathname);
+	storage.search = jsval_url_field_storage(region, &native->search);
+	storage.hash = jsval_url_field_storage(region, &native->hash);
+	storage.host = jsval_url_field_storage(region, &native->host);
+	storage.origin = jsval_url_field_storage(region, &native->origin);
+	storage.href = jsval_url_field_storage(region, &native->href);
+	storage.search_params.params = native->search_params_cap > 0 ? params_buf : NULL;
+	storage.search_params.params_cap = native->search_params_cap;
+	jsstr8_init_from_buf(&storage.search_params.storage,
+			(const char *)storage_buf, storage_cap);
+	return jsurl_init(url, &storage);
+}
+
+static int jsval_url_load_current(jsval_region_t *region,
+		jsval_native_url_t *native, jsurl_t *url, jsurl_param_t *params_buf,
+		uint8_t *storage_buf, size_t storage_cap)
+{
+	jsurl_view_t view;
+
+	if (jsval_url_init_storage(region, native, url, params_buf, storage_buf,
+			storage_cap) < 0) {
+		return -1;
+	}
+	jsurl_view_clear(&view);
+	view.href = jsval_url_field_value(region, &native->href);
+	view.protocol = jsval_url_field_value(region, &native->protocol);
+	view.username = jsval_url_field_value(region, &native->username);
+	view.password = jsval_url_field_value(region, &native->password);
+	view.hostname = jsval_url_field_value(region, &native->hostname);
+	view.port = jsval_url_field_value(region, &native->port);
+	view.pathname = jsval_url_field_value(region, &native->pathname);
+	view.search = jsval_url_field_value(region, &native->search);
+	view.hash = jsval_url_field_value(region, &native->hash);
+	view.has_authority = native->has_authority != 0;
+	return jsurl_copy_from_view(url, &view);
+}
+
+static void jsval_url_sync_native(jsval_native_url_t *native, const jsurl_t *url)
+{
+	native->protocol.len = url->protocol.len;
+	native->username.len = url->username.len;
+	native->password.len = url->password.len;
+	native->hostname.len = url->hostname.len;
+	native->port.len = url->port.len;
+	native->pathname.len = url->pathname.len;
+	native->search.len = url->search.len;
+	native->hash.len = url->hash.len;
+	native->host.len = url->host.len;
+	native->origin.len = url->origin.len;
+	native->href.len = url->href.len;
+	native->has_authority = url->has_authority != 0;
+}
+
+static int jsval_url_field_make_string(jsval_region_t *region,
+		const jsval_native_url_field_t *field, jsval_t *value_ptr)
+{
+	jsstr8_t value = jsval_url_field_value(region, field);
+	static const uint8_t empty[1] = {0};
+
+	return jsval_string_new_utf8(region, value.len > 0 ? value.bytes : empty,
+			value.len, value_ptr);
+}
+
+static int jsval_url_stringify(jsval_region_t *region, jsval_t value,
+		jsval_t *value_ptr)
+{
+	jsmethod_error_t error;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(&error, 0, sizeof(error));
+	if (value.kind == JSVAL_KIND_URL) {
+		jsval_native_url_t *native = jsval_native_url(region, value);
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		return jsval_url_field_make_string(region, &native->href, value_ptr);
+	}
+	if (value.kind == JSVAL_KIND_URL_SEARCH_PARAMS) {
+		jsval_native_url_search_params_t *native =
+			jsval_native_url_search_params(region, value);
+		jsstr8_t body;
+		static const uint8_t empty[1] = {0};
+
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (native->attached) {
+			jsval_t owner_value = jsval_undefined();
+			jsval_native_url_t *owner_native;
+
+			owner_value.kind = JSVAL_KIND_URL;
+			owner_value.repr = JSVAL_REPR_NATIVE;
+			owner_value.off = native->owner_off;
+			owner_native = jsval_native_url(region, owner_value);
+			if (owner_native == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			body = jsval_url_query_body(jsval_url_field_value(region,
+					&owner_native->search));
+		} else {
+			body = jsval_url_field_value(region, &native->body);
+		}
+		return jsval_string_new_utf8(region, body.len > 0 ? body.bytes : empty,
+				body.len, value_ptr);
+	}
+	return jsval_stringify_value_to_native(region, value, 0, value_ptr, &error);
+}
+
+static int jsval_url_copy_string_utf8(jsval_region_t *region, jsval_t value,
+		size_t *len_ptr, uint8_t *buf, size_t cap)
+{
+	jsval_t string_value;
+
+	if (len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_stringify(region, value, &string_value) < 0) {
+		return -1;
+	}
+	return jsval_string_copy_utf8(region, string_value, buf, cap, len_ptr);
+}
+
+typedef int (*jsval_url_callback_fn)(const jsurl_t *url, void *opaque);
+
+static int jsval_url_with_temp_parsed(jsstr8_t input,
+		jsval_url_callback_fn callback, void *opaque)
+{
+	jsurl_view_t view;
+	jsurl_sizes_t sizes;
+
+	if (callback == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_view_parse(&view, input) < 0) {
+		return -1;
+	}
+	if (jsurl_copy_sizes(&view, &sizes) < 0) {
+		return -1;
+	}
+	{
+		uint8_t protocol_buf[sizes.protocol_cap > 0 ? sizes.protocol_cap : 1];
+		uint8_t username_buf[sizes.username_cap > 0 ? sizes.username_cap : 1];
+		uint8_t password_buf[sizes.password_cap > 0 ? sizes.password_cap : 1];
+		uint8_t hostname_buf[sizes.hostname_cap > 0 ? sizes.hostname_cap : 1];
+		uint8_t port_buf[sizes.port_cap > 0 ? sizes.port_cap : 1];
+		uint8_t pathname_buf[sizes.pathname_cap > 0 ? sizes.pathname_cap : 1];
+		uint8_t search_buf[sizes.search_cap > 0 ? sizes.search_cap : 1];
+		uint8_t hash_buf[sizes.hash_cap > 0 ? sizes.hash_cap : 1];
+		uint8_t host_buf[sizes.host_cap > 0 ? sizes.host_cap : 1];
+		uint8_t origin_buf[sizes.origin_cap > 0 ? sizes.origin_cap : 1];
+		uint8_t href_buf[sizes.href_cap > 0 ? sizes.href_cap : 1];
+		jsurl_param_t params_buf[sizes.search_params_cap > 0
+			? sizes.search_params_cap : 1];
+		uint8_t params_storage_buf[sizes.search_params_storage_cap > 0
+			? sizes.search_params_storage_cap : 1];
+		jsurl_storage_t storage;
+		jsurl_t url;
+
+		memset(&storage, 0, sizeof(storage));
+		jsstr8_init_from_buf(&storage.protocol, (const char *)protocol_buf,
+				sizeof(protocol_buf));
+		jsstr8_init_from_buf(&storage.username, (const char *)username_buf,
+				sizeof(username_buf));
+		jsstr8_init_from_buf(&storage.password, (const char *)password_buf,
+				sizeof(password_buf));
+		jsstr8_init_from_buf(&storage.hostname, (const char *)hostname_buf,
+				sizeof(hostname_buf));
+		jsstr8_init_from_buf(&storage.port, (const char *)port_buf,
+				sizeof(port_buf));
+		jsstr8_init_from_buf(&storage.pathname, (const char *)pathname_buf,
+				sizeof(pathname_buf));
+		jsstr8_init_from_buf(&storage.search, (const char *)search_buf,
+				sizeof(search_buf));
+		jsstr8_init_from_buf(&storage.hash, (const char *)hash_buf,
+				sizeof(hash_buf));
+		jsstr8_init_from_buf(&storage.host, (const char *)host_buf,
+				sizeof(host_buf));
+		jsstr8_init_from_buf(&storage.origin, (const char *)origin_buf,
+				sizeof(origin_buf));
+		jsstr8_init_from_buf(&storage.href, (const char *)href_buf,
+				sizeof(href_buf));
+		storage.search_params.params = sizes.search_params_cap > 0
+			? params_buf : NULL;
+		storage.search_params.params_cap = sizes.search_params_cap;
+		jsstr8_init_from_buf(&storage.search_params.storage,
+				(const char *)params_storage_buf, sizeof(params_storage_buf));
+		if (jsurl_init(&url, &storage) < 0) {
+			return -1;
+		}
+		if (jsurl_copy_from_view(&url, &view) < 0) {
+			return -1;
+		}
+		return callback(&url, opaque);
+	}
+}
+
+static int jsval_url_with_bound_native(jsval_region_t *region,
+		jsval_native_url_t *native, jsval_url_callback_fn callback,
+		void *opaque)
+{
+	size_t params_cap;
+	size_t storage_cap;
+	jsurl_param_t *params_buf;
+	uint8_t *storage_buf;
+	jsurl_t url;
+
+	if (region == NULL || native == NULL || callback == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	params_cap = native->search_params_cap > 0 ? native->search_params_cap : 1;
+	storage_cap = native->search.cap > 0 ? native->search.cap : 1;
+	{
+		jsurl_param_t params_vla[params_cap];
+		uint8_t storage_vla[storage_cap];
+
+		params_buf = params_vla;
+		storage_buf = storage_vla;
+		if (jsval_url_load_current(region, native, &url, params_buf, storage_buf,
+				storage_cap) < 0) {
+			return -1;
+		}
+		return callback(&url, opaque);
+	}
 }
 
 static jsval_native_regexp_t *jsval_native_regexp(jsval_region_t *region,
@@ -948,6 +1424,9 @@ static void jsval_json_emit_pop(jsval_json_emit_state_t *state, jsval_t value)
 }
 
 static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_json_emit_state_t *state);
+static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
+		int require_object_coercible, jsval_t *string_value_ptr,
+		jsmethod_error_t *error);
 
 static int jsval_json_emit_native_string(jsval_region_t *region, jsval_t value, jsval_json_emit_state_t *state)
 {
@@ -1174,6 +1653,8 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	}
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1303,6 +1784,8 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 		return jsval_ascii_copy_utf16(text, NULL, 0, len_ptr);
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1358,6 +1841,8 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 		return jsval_ascii_copy_utf16(text, buf, cap, len_ptr);
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1585,6 +2070,8 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -12052,6 +12539,1498 @@ int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len
 	return 0;
 }
 
+typedef int (*jsval_url_mutator_fn)(jsurl_t *url, void *opaque);
+typedef int (*jsval_url_search_params_mutator_fn)(jsurl_search_params_t *params,
+		void *opaque);
+
+typedef struct jsval_url_string_ctx_s {
+	jsstr8_t value;
+} jsval_url_string_ctx_t;
+
+typedef struct jsval_url_search_params_pair_ctx_s {
+	jsstr8_t name;
+	jsstr8_t value;
+} jsval_url_search_params_pair_ctx_t;
+
+typedef struct jsval_url_new_with_base_ctx_s {
+	jsval_region_t *region;
+	jsstr8_t input;
+	jsval_t *value_ptr;
+} jsval_url_new_with_base_ctx_t;
+
+static int jsval_url_jsstr_make_string(jsval_region_t *region, jsstr8_t value,
+		jsval_t *value_ptr)
+{
+	static const uint8_t empty[1] = {0};
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, value.len > 0 ? value.bytes : empty,
+			value.len, value_ptr);
+}
+
+static jsval_t jsval_native_make_value(jsval_region_t *region, void *ptr,
+		jsval_kind_t kind)
+{
+	jsval_t value = jsval_undefined();
+
+	if (region == NULL || ptr == NULL) {
+		return value;
+	}
+	value.kind = kind;
+	value.repr = JSVAL_REPR_NATIVE;
+	value.off = (jsval_off_t)((uint8_t *)ptr - region->base);
+	return value;
+}
+
+static int jsval_url_attach_search_params(jsval_region_t *region,
+		jsval_t url_value, jsval_native_url_t *native, jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *params_native;
+	jsval_t params_value;
+	void *ptr = NULL;
+
+	if (region == NULL || native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->search_params_value.kind == JSVAL_KIND_URL_SEARCH_PARAMS
+			&& native->search_params_value.repr == JSVAL_REPR_NATIVE) {
+		if (value_ptr != NULL) {
+			*value_ptr = native->search_params_value;
+		}
+		return 0;
+	}
+	if (jsval_region_alloc(region, sizeof(*params_native),
+			_Alignof(jsval_native_url_search_params_t), &ptr) < 0) {
+		return -1;
+	}
+	params_native = (jsval_native_url_search_params_t *)ptr;
+	memset(params_native, 0, sizeof(*params_native));
+	params_native->params_cap = native->search_params_cap;
+	params_native->owner_off = url_value.off;
+	params_native->attached = 1;
+	params_value = jsval_native_make_value(region, params_native,
+			JSVAL_KIND_URL_SEARCH_PARAMS);
+	native->search_params_value = params_value;
+	if (value_ptr != NULL) {
+		*value_ptr = params_value;
+	}
+	return 0;
+}
+
+static int jsval_url_alloc_native(jsval_region_t *region,
+		const jsurl_sizes_t *caps, jsval_t *value_ptr,
+		jsval_native_url_t **native_ptr)
+{
+	jsval_native_url_t *native;
+	void *ptr = NULL;
+	jsval_t value;
+
+	if (region == NULL || caps == NULL || value_ptr == NULL
+			|| native_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_url_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_url_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	if (jsval_url_field_alloc(region, caps->protocol_cap, &native->protocol) < 0
+			|| jsval_url_field_alloc(region, caps->username_cap,
+				&native->username) < 0
+			|| jsval_url_field_alloc(region, caps->password_cap,
+				&native->password) < 0
+			|| jsval_url_field_alloc(region, caps->hostname_cap,
+				&native->hostname) < 0
+			|| jsval_url_field_alloc(region, caps->port_cap, &native->port) < 0
+			|| jsval_url_field_alloc(region, caps->pathname_cap,
+				&native->pathname) < 0
+			|| jsval_url_field_alloc(region, caps->search_cap,
+				&native->search) < 0
+			|| jsval_url_field_alloc(region, caps->hash_cap, &native->hash) < 0
+			|| jsval_url_field_alloc(region, caps->host_cap, &native->host) < 0
+			|| jsval_url_field_alloc(region, caps->origin_cap,
+				&native->origin) < 0
+			|| jsval_url_field_alloc(region, caps->href_cap, &native->href) < 0) {
+		return -1;
+	}
+	native->search_params_cap = caps->search_params_cap;
+	native->search_params_value = jsval_undefined();
+	value = jsval_native_make_value(region, native, JSVAL_KIND_URL);
+	*value_ptr = value;
+	*native_ptr = native;
+	return 0;
+}
+
+static int jsval_url_search_params_alloc_detached(jsval_region_t *region,
+		size_t body_cap, size_t params_cap, jsval_t *value_ptr,
+		jsval_native_url_search_params_t **native_ptr)
+{
+	jsval_native_url_search_params_t *native;
+	void *ptr = NULL;
+	jsval_t value;
+
+	if (region == NULL || value_ptr == NULL || native_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_url_search_params_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_url_search_params_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	if (jsval_url_field_alloc(region, body_cap, &native->body) < 0) {
+		return -1;
+	}
+	native->params_cap = params_cap;
+	native->attached = 0;
+	value = jsval_native_make_value(region, native,
+			JSVAL_KIND_URL_SEARCH_PARAMS);
+	*value_ptr = value;
+	*native_ptr = native;
+	return 0;
+}
+
+static int jsval_url_search_params_current_body(jsval_region_t *region,
+		jsval_native_url_search_params_t *native, jsstr8_t *body_ptr,
+		jsval_native_url_t **owner_native_ptr)
+{
+	if (region == NULL || native == NULL || body_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->attached) {
+		jsval_t owner_value = jsval_undefined();
+		jsval_native_url_t *owner_native;
+
+		owner_value.kind = JSVAL_KIND_URL;
+		owner_value.repr = JSVAL_REPR_NATIVE;
+		owner_value.off = native->owner_off;
+		owner_native = jsval_native_url(region, owner_value);
+		if (owner_native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (owner_native_ptr != NULL) {
+			*owner_native_ptr = owner_native;
+		}
+		*body_ptr = jsval_url_query_body(jsval_url_field_value(region,
+				&owner_native->search));
+		return 0;
+	}
+	if (owner_native_ptr != NULL) {
+		*owner_native_ptr = NULL;
+	}
+	*body_ptr = jsval_url_field_value(region, &native->body);
+	return 0;
+}
+
+static int jsval_url_search_params_init_temp(jsurl_search_params_t *params,
+		jsurl_param_t *params_buf, size_t params_cap, uint8_t *storage_buf,
+		size_t storage_cap, jsstr8_t body)
+{
+	jsurl_search_params_storage_t storage;
+
+	if (params == NULL || (params_cap > 0 && params_buf == NULL)
+			|| (storage_cap > 0 && storage_buf == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(&storage, 0, sizeof(storage));
+	storage.params = params_cap > 0 ? params_buf : NULL;
+	storage.params_cap = params_cap;
+	jsstr8_init_from_buf(&storage.storage, (const char *)storage_buf,
+			storage_cap);
+	if (jsurl_search_params_init(params, &storage) < 0) {
+		return -1;
+	}
+	return jsurl_search_params_parse(params, body);
+}
+
+static int jsval_url_search_params_parse_current(jsval_region_t *region,
+		jsval_native_url_search_params_t *native, jsurl_search_params_t *params,
+		jsurl_param_t *params_buf, size_t params_cap, uint8_t *storage_buf,
+		size_t storage_cap)
+{
+	jsstr8_t body;
+
+	if (jsval_url_search_params_current_body(region, native, &body, NULL) < 0) {
+		return -1;
+	}
+	return jsval_url_search_params_init_temp(params, params_buf, params_cap,
+			storage_buf, storage_cap, body);
+}
+
+static int jsval_url_mutate(jsval_region_t *region, jsval_t url_value,
+		jsval_url_mutator_fn callback, void *opaque)
+{
+	jsval_native_url_t *native;
+	size_t params_cap;
+	size_t storage_cap;
+
+	if (region == NULL || callback == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_url(region, url_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	params_cap = native->search_params_cap > 0 ? native->search_params_cap : 1;
+	storage_cap = native->search.cap > 0 ? native->search.cap : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_t url;
+
+		if (jsval_url_load_current(region, native, &url, params_buf, storage_buf,
+				storage_cap) < 0) {
+			return -1;
+		}
+		if (callback(&url, opaque) < 0) {
+			return -1;
+		}
+		jsval_url_sync_native(native, &url);
+	}
+	return 0;
+}
+
+static int jsval_url_mutate_attached_search_params(jsval_region_t *region,
+		jsval_native_url_search_params_t *native,
+		jsval_url_search_params_mutator_fn callback, void *opaque)
+{
+	jsval_native_url_t *owner_native;
+	jsstr8_t body;
+	size_t params_cap;
+	size_t storage_cap;
+
+	if (region == NULL || native == NULL || callback == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body,
+			&owner_native) < 0) {
+		return -1;
+	}
+	(void)body;
+	if (owner_native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	params_cap = owner_native->search_params_cap > 0
+		? owner_native->search_params_cap : 1;
+	storage_cap = owner_native->search.cap > 0 ? owner_native->search.cap : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_t url;
+
+		if (jsval_url_load_current(region, owner_native, &url, params_buf,
+				storage_buf, storage_cap) < 0) {
+			return -1;
+		}
+		if (callback(&url.search_params, opaque) < 0) {
+			return -1;
+		}
+		jsval_url_sync_native(owner_native, &url);
+	}
+	return 0;
+}
+
+static int jsval_url_mutate_detached_search_params(jsval_region_t *region,
+		jsval_native_url_search_params_t *native,
+		jsval_url_search_params_mutator_fn callback, void *opaque)
+{
+	size_t params_cap;
+	size_t storage_cap;
+	jsstr8_t body_storage;
+
+	if (region == NULL || native == NULL || callback == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	params_cap = native->params_cap > 0 ? native->params_cap : 1;
+	storage_cap = native->body.cap > 0 ? native->body.cap : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_search_params_t params;
+
+		if (jsval_url_search_params_parse_current(region, native, &params,
+				params_buf, params_cap, storage_buf, storage_cap) < 0) {
+			return -1;
+		}
+		if (callback(&params, opaque) < 0) {
+			return -1;
+		}
+		body_storage = jsval_url_field_storage(region, &native->body);
+		body_storage.len = 0;
+		if (jsurl_search_params_serialize(&params, &body_storage) < 0) {
+			return -1;
+		}
+		native->body.len = body_storage.len;
+	}
+	return 0;
+}
+
+static int jsval_url_mutate_search_params(jsval_region_t *region,
+		jsval_native_url_search_params_t *native,
+		jsval_url_search_params_mutator_fn callback, void *opaque)
+{
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->attached) {
+		return jsval_url_mutate_attached_search_params(region, native,
+				callback, opaque);
+	}
+	return jsval_url_mutate_detached_search_params(region, native, callback,
+			opaque);
+}
+
+static int jsval_url_set_href_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_parse_copy_with_base(url, ctx->value, url);
+}
+
+static int jsval_url_set_protocol_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_protocol(url, ctx->value);
+}
+
+static int jsval_url_set_username_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_username(url, ctx->value);
+}
+
+static int jsval_url_set_password_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_password(url, ctx->value);
+}
+
+static int jsval_url_split_host(jsstr8_t host, jsstr8_t *hostname_ptr,
+		jsstr8_t *port_ptr)
+{
+	ssize_t last_colon = -1;
+	size_t i;
+
+	if (hostname_ptr == NULL || port_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*hostname_ptr = host;
+	*port_ptr = jsstr8_empty;
+	if (host.len == 0) {
+		return 0;
+	}
+	for (i = 0; i < host.len; i++) {
+		if (host.bytes[i] == ':') {
+			last_colon = (ssize_t)i;
+		}
+	}
+	if (last_colon < 0 || (size_t)last_colon + 1 >= host.len) {
+		return 0;
+	}
+	for (i = (size_t)last_colon + 1; i < host.len; i++) {
+		if (host.bytes[i] < '0' || host.bytes[i] > '9') {
+			return 0;
+		}
+	}
+	jsstr8_init(hostname_ptr);
+	hostname_ptr->bytes = host.bytes;
+	hostname_ptr->len = (size_t)last_colon;
+	hostname_ptr->cap = hostname_ptr->len;
+	jsstr8_init(port_ptr);
+	port_ptr->bytes = host.bytes + last_colon + 1;
+	port_ptr->len = host.len - ((size_t)last_colon + 1);
+	port_ptr->cap = port_ptr->len;
+	return 0;
+}
+
+static int jsval_url_set_host_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+	jsstr8_t hostname;
+	jsstr8_t port;
+
+	if (jsval_url_split_host(ctx->value, &hostname, &port) < 0) {
+		return -1;
+	}
+	if (jsurl_set_hostname(url, hostname) < 0) {
+		return -1;
+	}
+	return jsurl_set_port(url, port);
+}
+
+static int jsval_url_set_hostname_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_hostname(url, ctx->value);
+}
+
+static int jsval_url_set_port_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_port(url, ctx->value);
+}
+
+static int jsval_url_set_pathname_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_pathname(url, ctx->value);
+}
+
+static int jsval_url_set_search_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_search(url, ctx->value);
+}
+
+static int jsval_url_set_hash_cb(jsurl_t *url, void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_set_hash(url, ctx->value);
+}
+
+static int jsval_url_search_params_append_cb(jsurl_search_params_t *params,
+		void *opaque)
+{
+	const jsval_url_search_params_pair_ctx_t *ctx = opaque;
+
+	return jsurl_search_params_append(params, ctx->name, ctx->value);
+}
+
+static int jsval_url_search_params_delete_cb(jsurl_search_params_t *params,
+		void *opaque)
+{
+	const jsval_url_string_ctx_t *ctx = opaque;
+
+	return jsurl_search_params_delete(params, ctx->value);
+}
+
+static int jsval_url_search_params_set_cb(jsurl_search_params_t *params,
+		void *opaque)
+{
+	const jsval_url_search_params_pair_ctx_t *ctx = opaque;
+
+	return jsurl_search_params_set(params, ctx->name, ctx->value);
+}
+
+static int jsval_url_search_params_sort_cb(jsurl_search_params_t *params,
+		void *opaque)
+{
+	(void)opaque;
+	return jsurl_search_params_sort(params);
+}
+
+static int jsval_url_construct_from_view(jsval_region_t *region,
+		const jsurl_view_t *view, jsval_t *value_ptr)
+{
+	jsurl_sizes_t exact;
+	jsurl_sizes_t caps;
+	jsval_native_url_t *native;
+	jsval_t value;
+	size_t params_cap;
+	size_t storage_cap;
+
+	if (region == NULL || view == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_copy_sizes(view, &exact) < 0) {
+		return -1;
+	}
+	if (jsval_url_apply_default_caps(&exact, &caps) < 0) {
+		return -1;
+	}
+	if (jsval_url_alloc_native(region, &caps, &value, &native) < 0) {
+		return -1;
+	}
+	params_cap = native->search_params_cap > 0 ? native->search_params_cap : 1;
+	storage_cap = native->search.cap > 0 ? native->search.cap : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_t url;
+
+		if (jsval_url_init_storage(region, native, &url, params_buf, storage_buf,
+				storage_cap) < 0) {
+			return -1;
+		}
+		if (jsurl_copy_from_view(&url, view) < 0) {
+			return -1;
+		}
+		jsval_url_sync_native(native, &url);
+	}
+	if (jsval_url_attach_search_params(region, value, native, NULL) < 0) {
+		return -1;
+	}
+	*value_ptr = value;
+	return 0;
+}
+
+static int jsval_url_construct_from_base(jsval_region_t *region, jsstr8_t input,
+		const jsurl_t *base, jsval_t *value_ptr)
+{
+	jsurl_sizes_t exact;
+	jsurl_sizes_t caps;
+	jsval_native_url_t *native;
+	jsval_t value;
+	size_t params_cap;
+	size_t storage_cap;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_copy_sizes_with_base(input, base, &exact) < 0) {
+		return -1;
+	}
+	if (jsval_url_apply_default_caps(&exact, &caps) < 0) {
+		return -1;
+	}
+	if (jsval_url_alloc_native(region, &caps, &value, &native) < 0) {
+		return -1;
+	}
+	params_cap = native->search_params_cap > 0 ? native->search_params_cap : 1;
+	storage_cap = native->search.cap > 0 ? native->search.cap : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_t url;
+
+		if (jsval_url_init_storage(region, native, &url, params_buf, storage_buf,
+				storage_cap) < 0) {
+			return -1;
+		}
+		if (jsurl_parse_copy_with_base(&url, input, base) < 0) {
+			return -1;
+		}
+		jsval_url_sync_native(native, &url);
+	}
+	if (jsval_url_attach_search_params(region, value, native, NULL) < 0) {
+		return -1;
+	}
+	*value_ptr = value;
+	return 0;
+}
+
+static int jsval_url_new_with_base_cb(const jsurl_t *base, void *opaque)
+{
+	jsval_url_new_with_base_ctx_t *ctx = opaque;
+
+	if (ctx == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_construct_from_base(ctx->region, ctx->input, base,
+			ctx->value_ptr);
+}
+
+int jsval_url_new(jsval_region_t *region, jsval_t input_value, int have_base,
+		jsval_t base_value, jsval_t *value_ptr)
+{
+	size_t input_len = 0;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, input_value, &input_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t input_buf[input_len ? input_len : 1];
+		jsstr8_t input;
+
+		jsstr8_init_from_buf(&input, (const char *)input_buf,
+				sizeof(input_buf));
+		if (jsval_url_copy_string_utf8(region, input_value, &input.len, input_buf,
+				sizeof(input_buf)) < 0) {
+			return -1;
+		}
+		if (!have_base) {
+			jsurl_view_t view;
+
+			if (jsurl_view_parse(&view, input) < 0) {
+				return -1;
+			}
+			return jsval_url_construct_from_view(region, &view, value_ptr);
+		}
+		if (base_value.kind == JSVAL_KIND_URL) {
+			jsval_native_url_t *base_native = jsval_native_url(region, base_value);
+			jsval_url_new_with_base_ctx_t ctx;
+
+			if (base_native == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			ctx.region = region;
+			ctx.input = input;
+			ctx.value_ptr = value_ptr;
+			return jsval_url_with_bound_native(region, base_native,
+					jsval_url_new_with_base_cb, &ctx);
+		}
+		{
+			size_t base_len = 0;
+
+			if (jsval_url_copy_string_utf8(region, base_value, &base_len, NULL,
+					0) < 0) {
+				return -1;
+			}
+			{
+				uint8_t base_buf[base_len ? base_len : 1];
+				jsstr8_t base_input;
+				jsval_url_new_with_base_ctx_t ctx;
+
+				jsstr8_init_from_buf(&base_input, (const char *)base_buf,
+						sizeof(base_buf));
+				if (jsval_url_copy_string_utf8(region, base_value,
+						&base_input.len, base_buf,
+						sizeof(base_buf)) < 0) {
+					return -1;
+				}
+				ctx.region = region;
+				ctx.input = input;
+				ctx.value_ptr = value_ptr;
+				return jsval_url_with_temp_parsed(base_input,
+						jsval_url_new_with_base_cb, &ctx);
+			}
+		}
+	}
+}
+
+int jsval_url_href(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->href, value_ptr);
+}
+
+int jsval_url_origin(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->origin, value_ptr);
+}
+
+int jsval_url_protocol(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->protocol, value_ptr);
+}
+
+int jsval_url_username(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->username, value_ptr);
+}
+
+int jsval_url_password(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->password, value_ptr);
+}
+
+int jsval_url_host(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->host, value_ptr);
+}
+
+int jsval_url_hostname(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->hostname, value_ptr);
+}
+
+int jsval_url_port(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->port, value_ptr);
+}
+
+int jsval_url_pathname(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->pathname, value_ptr);
+}
+
+int jsval_url_search(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->search, value_ptr);
+}
+
+int jsval_url_hash(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_field_make_string(region, &native->hash, value_ptr);
+}
+
+int jsval_url_search_params(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_attach_search_params(region, url_value, native, value_ptr) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
+int jsval_url_set_href(jsval_region_t *region, jsval_t url_value,
+		jsval_t href_value)
+{
+	size_t href_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, href_value, &href_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t href_buf[href_len ? href_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)href_buf,
+				sizeof(href_buf));
+		if (jsval_url_copy_string_utf8(region, href_value, &ctx.value.len,
+				href_buf, sizeof(href_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_href_cb, &ctx);
+	}
+}
+
+int jsval_url_set_protocol(jsval_region_t *region, jsval_t url_value,
+		jsval_t protocol_value)
+{
+	size_t protocol_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, protocol_value, &protocol_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t protocol_buf[protocol_len ? protocol_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)protocol_buf,
+				sizeof(protocol_buf));
+		if (jsval_url_copy_string_utf8(region, protocol_value, &ctx.value.len,
+				protocol_buf, sizeof(protocol_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_protocol_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_username(jsval_region_t *region, jsval_t url_value,
+		jsval_t username_value)
+{
+	size_t username_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, username_value, &username_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t username_buf[username_len ? username_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)username_buf,
+				sizeof(username_buf));
+		if (jsval_url_copy_string_utf8(region, username_value, &ctx.value.len,
+				username_buf, sizeof(username_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_username_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_password(jsval_region_t *region, jsval_t url_value,
+		jsval_t password_value)
+{
+	size_t password_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, password_value, &password_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t password_buf[password_len ? password_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)password_buf,
+				sizeof(password_buf));
+		if (jsval_url_copy_string_utf8(region, password_value, &ctx.value.len,
+				password_buf, sizeof(password_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_password_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_host(jsval_region_t *region, jsval_t url_value,
+		jsval_t host_value)
+{
+	size_t host_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, host_value, &host_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t host_buf[host_len ? host_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)host_buf,
+				sizeof(host_buf));
+		if (jsval_url_copy_string_utf8(region, host_value, &ctx.value.len,
+				host_buf, sizeof(host_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_host_cb, &ctx);
+	}
+}
+
+int jsval_url_set_hostname(jsval_region_t *region, jsval_t url_value,
+		jsval_t hostname_value)
+{
+	size_t hostname_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, hostname_value, &hostname_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t hostname_buf[hostname_len ? hostname_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)hostname_buf,
+				sizeof(hostname_buf));
+		if (jsval_url_copy_string_utf8(region, hostname_value, &ctx.value.len,
+				hostname_buf, sizeof(hostname_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_hostname_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_port(jsval_region_t *region, jsval_t url_value,
+		jsval_t port_value)
+{
+	size_t port_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, port_value, &port_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t port_buf[port_len ? port_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)port_buf,
+				sizeof(port_buf));
+		if (jsval_url_copy_string_utf8(region, port_value, &ctx.value.len,
+				port_buf, sizeof(port_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_port_cb, &ctx);
+	}
+}
+
+int jsval_url_set_pathname(jsval_region_t *region, jsval_t url_value,
+		jsval_t pathname_value)
+{
+	size_t pathname_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, pathname_value, &pathname_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t pathname_buf[pathname_len ? pathname_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)pathname_buf,
+				sizeof(pathname_buf));
+		if (jsval_url_copy_string_utf8(region, pathname_value, &ctx.value.len,
+				pathname_buf, sizeof(pathname_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_pathname_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_search(jsval_region_t *region, jsval_t url_value,
+		jsval_t search_value)
+{
+	size_t search_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, search_value, &search_len, NULL, 0)
+			< 0) {
+		return -1;
+	}
+	{
+		uint8_t search_buf[search_len ? search_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)search_buf,
+				sizeof(search_buf));
+		if (jsval_url_copy_string_utf8(region, search_value, &ctx.value.len,
+				search_buf, sizeof(search_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_search_cb,
+				&ctx);
+	}
+}
+
+int jsval_url_set_hash(jsval_region_t *region, jsval_t url_value,
+		jsval_t hash_value)
+{
+	size_t hash_len = 0;
+
+	if (jsval_url_copy_string_utf8(region, hash_value, &hash_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t hash_buf[hash_len ? hash_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)hash_buf,
+				sizeof(hash_buf));
+		if (jsval_url_copy_string_utf8(region, hash_value, &ctx.value.len,
+				hash_buf, sizeof(hash_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate(region, url_value, jsval_url_set_hash_cb, &ctx);
+	}
+}
+
+int jsval_url_to_string(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	return jsval_url_href(region, url_value, value_ptr);
+}
+
+int jsval_url_to_json(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	return jsval_url_href(region, url_value, value_ptr);
+}
+
+int jsval_url_search_params_new(jsval_region_t *region, jsval_t init_value,
+		jsval_t *value_ptr)
+{
+	jsstr8_t input;
+	jsurl_search_params_view_t view;
+	size_t input_len = 0;
+	size_t temp_params_cap;
+	size_t temp_storage_cap;
+	size_t body_len;
+	size_t body_cap;
+	size_t params_cap;
+	jsval_native_url_search_params_t *native;
+	jsval_t value;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (init_value.kind == JSVAL_KIND_UNDEFINED) {
+		jsstr8_init(&input);
+		input_len = 0;
+	} else if (jsval_url_copy_string_utf8(region, init_value, &input_len, NULL,
+			0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t input_buf[input_len ? input_len : 1];
+
+		if (input_len > 0) {
+			jsstr8_init_from_buf(&input, (const char *)input_buf,
+					sizeof(input_buf));
+			if (jsval_url_copy_string_utf8(region, init_value, &input.len,
+					input_buf, sizeof(input_buf)) < 0) {
+				return -1;
+			}
+		}
+		jsurl_search_params_view_init(&view, input);
+		temp_params_cap = jsurl_search_params_view_size(&view);
+		temp_storage_cap = input.len > 0 ? input.len : 1;
+		{
+			jsurl_param_t params_buf[temp_params_cap > 0 ? temp_params_cap : 1];
+			uint8_t storage_buf[temp_storage_cap];
+			jsurl_search_params_t params;
+
+			if (jsval_url_search_params_init_temp(&params,
+					temp_params_cap > 0 ? params_buf : NULL,
+					temp_params_cap, storage_buf, sizeof(storage_buf), input) < 0) {
+				return -1;
+			}
+			if (jsurl_search_params_measure(&params, &body_len) < 0) {
+				return -1;
+			}
+			if (jsval_url_search_params_default_caps(body_len, params.len,
+					&body_cap, &params_cap) < 0) {
+				return -1;
+			}
+			if (jsval_url_search_params_alloc_detached(region, body_cap,
+					params_cap, &value, &native) < 0) {
+				return -1;
+			}
+			{
+				jsstr8_t body_storage = jsval_url_field_storage(region,
+						&native->body);
+
+				body_storage.len = 0;
+				if (jsurl_search_params_serialize(&params, &body_storage) < 0) {
+					return -1;
+				}
+				native->body.len = body_storage.len;
+			}
+		}
+	}
+	*value_ptr = value;
+	return 0;
+}
+
+int jsval_url_search_params_size(jsval_region_t *region, jsval_t params_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	jsstr8_t body;
+	jsurl_search_params_view_t view;
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body, NULL) < 0) {
+		return -1;
+	}
+	jsurl_search_params_view_init(&view, body);
+	*value_ptr = jsval_number((double)jsurl_search_params_view_size(&view));
+	return 0;
+}
+
+int jsval_url_search_params_append(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t value_value)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+	size_t value_len = 0;
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0
+			|| jsval_url_copy_string_utf8(region, value_value, &value_len, NULL,
+				0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		uint8_t value_buf[value_len ? value_len : 1];
+		jsval_url_search_params_pair_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.name, (const char *)name_buf,
+				sizeof(name_buf));
+		jsstr8_init_from_buf(&ctx.value, (const char *)value_buf,
+				sizeof(value_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &ctx.name.len,
+				name_buf, sizeof(name_buf)) < 0
+				|| jsval_url_copy_string_utf8(region, value_value,
+					&ctx.value.len, value_buf, sizeof(value_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate_search_params(region, native,
+				jsval_url_search_params_append_cb, &ctx);
+	}
+}
+
+int jsval_url_search_params_delete(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		jsval_url_string_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.value, (const char *)name_buf,
+				sizeof(name_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &ctx.value.len,
+				name_buf, sizeof(name_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate_search_params(region, native,
+				jsval_url_search_params_delete_cb, &ctx);
+	}
+}
+
+int jsval_url_search_params_get(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+	size_t params_cap;
+	size_t storage_cap;
+	jsstr8_t body;
+	jsval_native_url_t *owner_native = NULL;
+	int found;
+	jsval_t result;
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0) {
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body,
+			&owner_native) < 0) {
+		return -1;
+	}
+	params_cap = native->attached && owner_native != NULL
+		? owner_native->search_params_cap : native->params_cap;
+	storage_cap = native->attached && owner_native != NULL
+		? owner_native->search.cap : native->body.cap;
+	params_cap = params_cap > 0 ? params_cap : 1;
+	storage_cap = storage_cap > 0 ? storage_cap : 1;
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		jsstr8_t name;
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_search_params_t params;
+		jsstr8_t value;
+
+		jsstr8_init_from_buf(&name, (const char *)name_buf, sizeof(name_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &name.len, name_buf,
+				sizeof(name_buf)) < 0) {
+			return -1;
+		}
+		if (jsval_url_search_params_init_temp(&params, params_buf, params_cap,
+				storage_buf, storage_cap, body) < 0) {
+			return -1;
+		}
+		if (jsurl_search_params_get(&params, name, &value, &found) < 0) {
+			return -1;
+		}
+		if (found) {
+			if (jsval_url_jsstr_make_string(region, value, &result) < 0) {
+				return -1;
+			}
+		} else {
+			result = jsval_null();
+		}
+	}
+	*value_ptr = result;
+	return 0;
+}
+
+int jsval_url_search_params_get_all(jsval_region_t *region,
+		jsval_t params_value, jsval_t name_value, jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+	size_t params_cap;
+	size_t storage_cap;
+	jsstr8_t body;
+	jsval_native_url_t *owner_native = NULL;
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0) {
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body,
+			&owner_native) < 0) {
+		return -1;
+	}
+	params_cap = native->attached && owner_native != NULL
+		? owner_native->search_params_cap : native->params_cap;
+	storage_cap = native->attached && owner_native != NULL
+		? owner_native->search.cap : native->body.cap;
+	params_cap = params_cap > 0 ? params_cap : 1;
+	storage_cap = storage_cap > 0 ? storage_cap : 1;
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		jsstr8_t name;
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_search_params_t params;
+		size_t out_len;
+		size_t found_len;
+		jsval_t array;
+		size_t i;
+
+		jsstr8_init_from_buf(&name, (const char *)name_buf, sizeof(name_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &name.len, name_buf,
+				sizeof(name_buf)) < 0) {
+			return -1;
+		}
+		if (jsval_url_search_params_init_temp(&params, params_buf, params_cap,
+				storage_buf, storage_cap, body) < 0) {
+			return -1;
+		}
+		out_len = params.len;
+		{
+			jsstr8_t values[out_len > 0 ? out_len : 1];
+
+			if (jsurl_search_params_get_all(&params, name,
+					out_len > 0 ? values : NULL, &out_len, &found_len) < 0) {
+				return -1;
+			}
+			if (jsval_array_new(region, found_len, &array) < 0) {
+				return -1;
+			}
+			for (i = 0; i < found_len; i++) {
+				jsval_t entry;
+
+				if (jsval_url_jsstr_make_string(region, values[i], &entry) < 0) {
+					return -1;
+				}
+				if (jsval_array_push(region, array, entry) < 0) {
+					return -1;
+				}
+			}
+		}
+		*value_ptr = array;
+	}
+	return 0;
+}
+
+int jsval_url_search_params_has(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+	size_t params_cap;
+	size_t storage_cap;
+	jsstr8_t body;
+	jsval_native_url_t *owner_native = NULL;
+	int found = 0;
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0) {
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body,
+			&owner_native) < 0) {
+		return -1;
+	}
+	params_cap = native->attached && owner_native != NULL
+		? owner_native->search_params_cap : native->params_cap;
+	storage_cap = native->attached && owner_native != NULL
+		? owner_native->search.cap : native->body.cap;
+	params_cap = params_cap > 0 ? params_cap : 1;
+	storage_cap = storage_cap > 0 ? storage_cap : 1;
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		jsstr8_t name;
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_search_params_t params;
+
+		jsstr8_init_from_buf(&name, (const char *)name_buf, sizeof(name_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &name.len, name_buf,
+				sizeof(name_buf)) < 0) {
+			return -1;
+		}
+		if (jsval_url_search_params_init_temp(&params, params_buf, params_cap,
+				storage_buf, storage_cap, body) < 0) {
+			return -1;
+		}
+		if (jsurl_search_params_has(&params, name, &found) < 0) {
+			return -1;
+		}
+	}
+	*value_ptr = jsval_bool(found);
+	return 0;
+}
+
+int jsval_url_search_params_set(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t value_value)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	size_t name_len = 0;
+	size_t value_len = 0;
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_copy_string_utf8(region, name_value, &name_len, NULL, 0) < 0
+			|| jsval_url_copy_string_utf8(region, value_value, &value_len, NULL,
+				0) < 0) {
+		return -1;
+	}
+	{
+		uint8_t name_buf[name_len ? name_len : 1];
+		uint8_t value_buf[value_len ? value_len : 1];
+		jsval_url_search_params_pair_ctx_t ctx;
+
+		jsstr8_init_from_buf(&ctx.name, (const char *)name_buf,
+				sizeof(name_buf));
+		jsstr8_init_from_buf(&ctx.value, (const char *)value_buf,
+				sizeof(value_buf));
+		if (jsval_url_copy_string_utf8(region, name_value, &ctx.name.len,
+				name_buf, sizeof(name_buf)) < 0
+				|| jsval_url_copy_string_utf8(region, value_value,
+					&ctx.value.len, value_buf, sizeof(value_buf)) < 0) {
+			return -1;
+		}
+		return jsval_url_mutate_search_params(region, native,
+				jsval_url_search_params_set_cb, &ctx);
+	}
+}
+
+int jsval_url_search_params_sort(jsval_region_t *region, jsval_t params_value)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_url_mutate_search_params(region, native,
+			jsval_url_search_params_sort_cb, NULL);
+}
+
+int jsval_url_search_params_to_string(jsval_region_t *region,
+		jsval_t params_value, jsval_t *value_ptr)
+{
+	jsval_native_url_search_params_t *native =
+		jsval_native_url_search_params(region, params_value);
+	jsstr8_t body;
+
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body, NULL) < 0) {
+		return -1;
+	}
+	return jsval_url_jsstr_make_string(region, body, value_ptr);
+}
+
 int jsval_is_nullish(jsval_t value)
 {
 	return value.kind == JSVAL_KIND_UNDEFINED || value.kind == JSVAL_KIND_NULL;
@@ -12077,6 +14056,8 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -12143,6 +14124,8 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		return 1;
 	default:
 		return 0;
@@ -12201,6 +14184,8 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
+	case JSVAL_KIND_URL:
+	case JSVAL_KIND_URL_SEARCH_PARAMS:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -12226,10 +14211,14 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 	if (left.kind == JSVAL_KIND_OBJECT || left.kind == JSVAL_KIND_ARRAY
 			|| left.kind == JSVAL_KIND_REGEXP
 			|| left.kind == JSVAL_KIND_MATCH_ITERATOR
+			|| left.kind == JSVAL_KIND_URL
+			|| left.kind == JSVAL_KIND_URL_SEARCH_PARAMS
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
-			|| right.kind == JSVAL_KIND_MATCH_ITERATOR) {
+			|| right.kind == JSVAL_KIND_MATCH_ITERATOR
+			|| right.kind == JSVAL_KIND_URL
+			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS) {
 		errno = ENOTSUP;
 		return -1;
 	}

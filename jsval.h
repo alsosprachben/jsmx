@@ -28,7 +28,9 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_OBJECT = 5,
 	JSVAL_KIND_ARRAY = 6,
 	JSVAL_KIND_REGEXP = 7,
-	JSVAL_KIND_MATCH_ITERATOR = 8
+	JSVAL_KIND_MATCH_ITERATOR = 8,
+	JSVAL_KIND_URL = 9,
+	JSVAL_KIND_URL_SEARCH_PARAMS = 10
 } jsval_kind_t;
 
 typedef struct jsval_s {
@@ -138,6 +140,77 @@ int jsval_array_pop(jsval_region_t *region, jsval_t array, jsval_t *value_ptr);
 int jsval_array_shift(jsval_region_t *region, jsval_t array, jsval_t *value_ptr);
 int jsval_array_unshift(jsval_region_t *region, jsval_t array, jsval_t value);
 int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len);
+
+int jsval_url_new(jsval_region_t *region, jsval_t input_value, int have_base,
+		jsval_t base_value, jsval_t *value_ptr);
+int jsval_url_href(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_origin(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_protocol(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_username(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_password(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_host(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_hostname(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_port(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_pathname(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_search(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_hash(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_search_params(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_set_href(jsval_region_t *region, jsval_t url_value,
+		jsval_t href_value);
+int jsval_url_set_protocol(jsval_region_t *region, jsval_t url_value,
+		jsval_t protocol_value);
+int jsval_url_set_username(jsval_region_t *region, jsval_t url_value,
+		jsval_t username_value);
+int jsval_url_set_password(jsval_region_t *region, jsval_t url_value,
+		jsval_t password_value);
+int jsval_url_set_host(jsval_region_t *region, jsval_t url_value,
+		jsval_t host_value);
+int jsval_url_set_hostname(jsval_region_t *region, jsval_t url_value,
+		jsval_t hostname_value);
+int jsval_url_set_port(jsval_region_t *region, jsval_t url_value,
+		jsval_t port_value);
+int jsval_url_set_pathname(jsval_region_t *region, jsval_t url_value,
+		jsval_t pathname_value);
+int jsval_url_set_search(jsval_region_t *region, jsval_t url_value,
+		jsval_t search_value);
+int jsval_url_set_hash(jsval_region_t *region, jsval_t url_value,
+		jsval_t hash_value);
+int jsval_url_to_string(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_to_json(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+
+int jsval_url_search_params_new(jsval_region_t *region, jsval_t init_value,
+		jsval_t *value_ptr);
+int jsval_url_search_params_size(jsval_region_t *region, jsval_t params_value,
+		jsval_t *value_ptr);
+int jsval_url_search_params_append(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t value_value);
+int jsval_url_search_params_delete(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value);
+int jsval_url_search_params_get(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t *value_ptr);
+int jsval_url_search_params_get_all(jsval_region_t *region,
+		jsval_t params_value, jsval_t name_value, jsval_t *value_ptr);
+int jsval_url_search_params_has(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t *value_ptr);
+int jsval_url_search_params_set(jsval_region_t *region, jsval_t params_value,
+		jsval_t name_value, jsval_t value_value);
+int jsval_url_search_params_sort(jsval_region_t *region, jsval_t params_value);
+int jsval_url_search_params_to_string(jsval_region_t *region,
+		jsval_t params_value, jsval_t *value_ptr);
 
 int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr);
 int jsval_to_int32(jsval_region_t *region, jsval_t value, int32_t *result_ptr);

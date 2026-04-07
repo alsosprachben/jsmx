@@ -13,7 +13,7 @@ jsmn.o: jsmn.c jsmn.h
 
 jsnum.o: jsnum.c jsnum.h
 
-jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h utf8.h jsmx_config.h
+jsval.o: jsval.c jsval.h jsnum.h jsmethod.h jsmn.h jsurl.h utf8.h jsmx_config.h
 
 jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h jsregex.h jsmx_config.h
 
@@ -71,11 +71,11 @@ test_jsregex: test_jsregex.c jsregex.c jsregex.h jsmx_config.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_jsval: test_jsval.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_jsval: test_jsval.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsurl.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+test_codegen: test_codegen.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsurl.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
