@@ -133,7 +133,7 @@ That makes semantic correctness more important than surface familiarity:
   - generated Unicode databases
   - normalization-form parsing
   - lookup logic
-- `mnurl.c`, `mnurl.h`
+- `jsurl.c`, `jsurl.h`
   - URL utilities
 - `docs/flattening-boundary.md`
   - the contract between `jsmx`, the translator, and any future slow path
@@ -191,7 +191,7 @@ Use `make` for the standard workflow.
   - run the thin JS-method coercion and normalize tests
 - `make test_codegen`
   - run the generated-C smoke harness and formalized string compliance slices
-- `make test_jsstr`, `make test_unicode`, `make test_mnurl`,
+- `make test_jsstr`, `make test_unicode`, `make test_jsurl`,
   `make test_utf8`, `make test_collation`
   - run focused feature tests
 

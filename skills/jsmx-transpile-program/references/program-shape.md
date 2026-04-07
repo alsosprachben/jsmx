@@ -55,7 +55,7 @@ Non-regex default:
 
 ```sh
 cc -I. generated_program.c \
-  jsmn.c jsnum.c jsval.c jsmethod.c jsregex.c jsstr.c unicode.c mnurl.c utf8.c \
+  jsmn.c jsnum.c jsval.c jsmethod.c jsregex.c jsstr.c unicode.c jsurl.c utf8.c \
   -o generated_program
 ```
 
@@ -63,7 +63,7 @@ Regex-enabled variant:
 
 ```sh
 cc -I. -DJSMX_WITH_REGEX=1 -DJSMX_REGEX_BACKEND_PCRE2=1 generated_program.c \
-  jsmn.c jsnum.c jsval.c jsmethod.c jsregex.c jsstr.c unicode.c mnurl.c utf8.c \
+  jsmn.c jsnum.c jsval.c jsmethod.c jsregex.c jsstr.c unicode.c jsurl.c utf8.c \
   -lpcre2-16 \
   -o generated_program
 ```

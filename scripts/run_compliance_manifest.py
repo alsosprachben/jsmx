@@ -20,7 +20,7 @@ RUNTIME_SOURCES = [
     "jsstr.c",
     "unicode.c",
     "utf8.c",
-    "mnurl.c",
+    "jsurl.c",
 ]
 
 LOWERING_CLASSES = {

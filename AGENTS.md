@@ -18,7 +18,7 @@ This repository is a C runtime support library for transpiling JavaScript to C.
   - `jsmethod.c`
   - `jsstr.c`
   - `unicode.c`
-  - `mnurl.c`
+  - `jsurl.c`
   - `utf8.h`
 
 ### `jsval`
@@ -189,7 +189,7 @@ The same measure-then-execute pattern now also covers:
   - `test_codegen.c`
   - `test_jsstr.c`
   - `test_unicode.c`
-  - `test_mnurl.c`
+  - `test_jsurl.c`
 - real compliance sources and committed generated fixtures live under
   `compliance/`
   - suites:
@@ -322,7 +322,7 @@ Use `make` to build the library, examples, and all test binaries.
 - `make bench`
   - runs the dedicated benchmark corpus in `bench/` against both Node and
     compiled generated C, writing local JSON timing results by default
-- `make test_jsstr`, `make test_unicode`, `make test_mnurl`, `make test_utf8`,
+- `make test_jsstr`, `make test_unicode`, `make test_jsurl`, `make test_utf8`,
   `make test_collation`
   - build and run focused feature tests
 - `make clean`
