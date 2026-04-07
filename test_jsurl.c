@@ -207,6 +207,60 @@ static void test_jsurl_copy_and_relative_parse(void)
 	test_expect_jsstr(url.pathname, "/dir/sub/index.html");
 }
 
+static void test_jsurl_idna_hosts(void)
+{
+	jsurl_view_t view;
+	jsurl_t url;
+	test_url_buffers_t buffers;
+	uint8_t host_buf[128];
+	uint8_t origin_buf[256];
+	uint8_t href_buf[256];
+	jsstr8_t host;
+	jsstr8_t origin;
+	jsstr8_t href;
+	jsurl_sizes_t sizes;
+
+	test_url_init(&url, &buffers);
+	jsstr8_init_from_buf(&host, (const char *) host_buf, sizeof(host_buf));
+	jsstr8_init_from_buf(&origin, (const char *) origin_buf, sizeof(origin_buf));
+	jsstr8_init_from_buf(&href, (const char *) href_buf, sizeof(href_buf));
+
+	declare_jsstr8(input, "https://ma\xc3\xb1""ana.example/a?x=1#old");
+	assert(jsurl_view_parse(&view, input) == 0);
+	test_expect_jsstr(view.hostname, "ma\xc3\xb1""ana.example");
+	assert(jsurl_view_host_serialize(&view, &host) == 0);
+	assert(jsurl_view_origin_serialize(&view, &origin) == 0);
+	assert(jsurl_view_href_serialize(&view, &href) == 0);
+	test_expect_jsstr(host, "xn--maana-pta.example");
+	test_expect_jsstr(origin, "https://xn--maana-pta.example");
+	test_expect_jsstr(href, "https://xn--maana-pta.example/a?x=1#old");
+	assert(jsurl_copy_sizes(&view, &sizes) == 0);
+	assert(sizes.hostname_cap == strlen("xn--maana-pta.example"));
+	assert(sizes.origin_cap == strlen("https://xn--maana-pta.example"));
+	assert(sizes.href_cap
+		== strlen("https://xn--maana-pta.example/a?x=1#old"));
+
+	assert(jsurl_parse_copy(&url, input) == 0);
+	test_expect_jsstr(url.hostname, "xn--maana-pta.example");
+	test_expect_jsstr(url.host, "xn--maana-pta.example");
+	test_expect_jsstr(url.origin, "https://xn--maana-pta.example");
+	test_expect_jsstr(url.href, "https://xn--maana-pta.example/a?x=1#old");
+
+	declare_jsstr8(hostname, "b\xc3\xbc""cher.example");
+	assert(jsurl_set_hostname(&url, hostname) == 0);
+	test_expect_jsstr(url.hostname, "xn--bcher-kva.example");
+	test_expect_jsstr(url.host, "xn--bcher-kva.example");
+	test_expect_jsstr(url.origin, "https://xn--bcher-kva.example");
+	test_expect_jsstr(url.href, "https://xn--bcher-kva.example/a?x=1#old");
+
+	declare_jsstr8(ipv6_input, "https://[::1]:8080/a");
+	assert(jsurl_parse_copy(&url, ipv6_input) == 0);
+	test_expect_jsstr(url.hostname, "[::1]");
+	test_expect_jsstr(url.host, "[::1]:8080");
+	test_expect_jsstr(url.origin, "https://[::1]:8080");
+	test_expect_jsstr(url.href, "https://[::1]:8080/a");
+}
+
 static void test_jsurl_setters_and_sync(void)
 {
 	jsurl_t url;
@@ -241,10 +295,12 @@ static void test_jsurl_setters_and_sync(void)
 static void test_jsurl_errors(void)
 {
 	jsurl_t url;
+	jsurl_t roomy_url;
 	jsurl_view_t view;
 	jsurl_storage_t storage;
 	jsurl_search_params_t params;
 	jsurl_search_params_storage_t params_storage;
+	test_url_buffers_t roomy_buffers;
 	uint8_t protocol[16];
 	uint8_t username[16];
 	uint8_t password[16];
@@ -309,6 +365,16 @@ static void test_jsurl_errors(void)
 	errno = 0;
 	declare_jsstr8(relative, "../oops");
 	assert(jsurl_view_parse(&view, relative) == -1);
+	assert(errno == EINVAL);
+
+	test_url_init(&roomy_url, &roomy_buffers);
+	declare_jsstr8(invalid_host_url, "https://a..b/");
+	assert(jsurl_parse_copy(&roomy_url, invalid_host_url) == -1);
+	assert(errno == EINVAL);
+	declare_jsstr8(valid_url, "https://example.com/");
+	assert(jsurl_parse_copy(&roomy_url, valid_url) == 0);
+	declare_jsstr8(invalid_hostname, "a..b");
+	assert(jsurl_set_hostname(&roomy_url, invalid_hostname) == -1);
 	assert(errno == EINVAL);
 }
 
@@ -417,6 +483,7 @@ int main(void)
 	test_jsurl_view_parse();
 	test_jsurl_search_params_roundtrip();
 	test_jsurl_copy_and_relative_parse();
+	test_jsurl_idna_hosts();
 	test_jsurl_setters_and_sync();
 	test_jsurl_errors();
 	test_jsurl_region_copy();

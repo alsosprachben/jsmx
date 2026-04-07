@@ -987,6 +987,7 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	jsval_region_t region;
 	jsval_t input;
 	jsval_t url;
+	jsval_t idna_url;
 	jsval_t params_a;
 	jsval_t params_b;
 	jsval_t result;
@@ -1017,6 +1018,44 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	}
 	status = generated_expect_string(&region, result,
 			(const uint8_t *)"object", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://ma\xc3\xb1""ana.example/a?x=1#old",
+			sizeof("https://ma\xc3\xb1""ana.example/a?x=1#old") - 1,
+			&input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(idna input)");
+	}
+	if (jsval_url_new(&region, input, 0, jsval_undefined(), &idna_url) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_new(idna)");
+	}
+	if (jsval_url_hostname(&region, idna_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_hostname(idna)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"xn--maana-pta.example",
+			sizeof("xn--maana-pta.example") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"b\xc3\xbc""cher.example:8443",
+			sizeof("b\xc3\xbc""cher.example:8443") - 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(idna host)");
+	}
+	if (jsval_url_set_host(&region, idna_url, input) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_set_host(idna)");
+	}
+	if (jsval_url_href(&region, idna_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_href(idna)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"https://xn--bcher-kva.example:8443/a?x=1#old",
+			sizeof("https://xn--bcher-kva.example:8443/a?x=1#old") - 1,
+			detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
 	}

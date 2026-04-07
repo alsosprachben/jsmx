@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "jsurl.h"
+#include "unicode.h"
 #include "jsval.h"
 #include "utf8.h"
 
@@ -19,6 +20,16 @@ typedef struct jsurl_parts_s {
 
 static int jsurl_search_params_requirements(jsstr8_t search, size_t *params_len_ptr,
 		size_t *storage_len_ptr);
+
+#define JSURL_HOSTNAME_ASCII_MAX 253
+#define JSURL_HOSTNAME_LABEL_ASCII_MAX 63
+#define JSURL_PUNYCODE_BASE 36
+#define JSURL_PUNYCODE_TMIN 1
+#define JSURL_PUNYCODE_TMAX 26
+#define JSURL_PUNYCODE_SKEW 38
+#define JSURL_PUNYCODE_DAMP 700
+#define JSURL_PUNYCODE_INITIAL_BIAS 72
+#define JSURL_PUNYCODE_INITIAL_N 128
 
 typedef int (*jsurl_parts_callback_t)(const jsurl_parts_t *parts, void *opaque);
 static int jsurl_resolve_with_base(jsstr8_t input, const jsurl_t *base,
@@ -185,9 +196,25 @@ static int jsurl_is_alpha(uint8_t c)
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
+static int jsurl_is_ascii_upper(uint8_t c)
+{
+	return c >= 'A' && c <= 'Z';
+}
+
+static uint8_t jsurl_ascii_tolower(uint8_t c)
+{
+	return jsurl_is_ascii_upper(c) ? (uint8_t)(c - 'A' + 'a') : c;
+}
+
 static int jsurl_is_digit(uint8_t c)
 {
 	return c >= '0' && c <= '9';
+}
+
+static int jsurl_is_dns_ascii_char(uint8_t c)
+{
+	c = jsurl_ascii_tolower(c);
+	return jsurl_is_alpha(c) || jsurl_is_digit(c) || c == '-';
 }
 
 static int jsurl_is_scheme_char(uint8_t c)
@@ -283,9 +310,505 @@ static int jsurl_measure_derived(const jsurl_parts_t *parts, size_t *host_len_pt
 	return 0;
 }
 
+static int jsurl_validate_ascii_hostname_label_bytes(const uint8_t *bytes,
+		size_t len)
+{
+	size_t i;
+
+	if ((len > 0 && bytes == NULL) || len == 0
+			|| len > JSURL_HOSTNAME_LABEL_ASCII_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (bytes[0] == '-' || bytes[len - 1] == '-') {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < len; i++) {
+		if (!jsurl_is_dns_ascii_char(bytes[i])) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int jsurl_is_ipv6_literal_hostname(jsstr8_t hostname)
+{
+	return hostname.len >= 2 && hostname.bytes != NULL
+		&& hostname.bytes[0] == '['
+		&& hostname.bytes[hostname.len - 1] == ']';
+}
+
+static uint8_t jsurl_punycode_encode_digit(size_t d)
+{
+	return (uint8_t)(d < 26 ? ('a' + d) : ('0' + (d - 26)));
+}
+
+static size_t jsurl_punycode_adapt(size_t delta, size_t numpoints,
+		int first_time)
+{
+	size_t k = 0;
+
+	delta = first_time ? (delta / JSURL_PUNYCODE_DAMP) : (delta / 2);
+	delta += delta / numpoints;
+	while (delta > ((JSURL_PUNYCODE_BASE - JSURL_PUNYCODE_TMIN)
+			* JSURL_PUNYCODE_TMAX) / 2) {
+		delta /= JSURL_PUNYCODE_BASE - JSURL_PUNYCODE_TMIN;
+		k += JSURL_PUNYCODE_BASE;
+	}
+	return k + (((JSURL_PUNYCODE_BASE - JSURL_PUNYCODE_TMIN + 1) * delta)
+			/ (delta + JSURL_PUNYCODE_SKEW));
+}
+
+static int jsurl_punycode_encode_label(const uint32_t *src, size_t len,
+		uint8_t *dst, size_t dst_cap, size_t *dst_len_ptr)
+{
+	size_t out_len = 0;
+	size_t b = 0;
+	size_t h;
+	size_t delta = 0;
+	size_t bias = JSURL_PUNYCODE_INITIAL_BIAS;
+	uint32_t n = JSURL_PUNYCODE_INITIAL_N;
+	size_t i;
+
+	if (src == NULL || dst == NULL || dst_len_ptr == NULL || len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	for (i = 0; i < len; i++) {
+		if (src[i] < 0x80) {
+			if (out_len >= dst_cap) {
+				errno = EINVAL;
+				return -1;
+			}
+			dst[out_len++] = (uint8_t)src[i];
+			b++;
+		}
+	}
+	h = b;
+	if (b > 0 && h < len) {
+		if (out_len >= dst_cap) {
+			errno = EINVAL;
+			return -1;
+		}
+		dst[out_len++] = '-';
+	}
+
+	while (h < len) {
+		uint32_t m = UINT32_MAX;
+
+		for (i = 0; i < len; i++) {
+			if (src[i] >= n && src[i] < m) {
+				m = src[i];
+			}
+		}
+		if (m == UINT32_MAX) {
+			errno = EINVAL;
+			return -1;
+		}
+		if ((size_t)(m - n) > (SIZE_MAX - delta) / (h + 1)) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		delta += (size_t)(m - n) * (h + 1);
+		n = m;
+
+		for (i = 0; i < len; i++) {
+			size_t q;
+
+			if (src[i] < n) {
+				if (delta == SIZE_MAX) {
+					errno = EOVERFLOW;
+					return -1;
+				}
+				delta++;
+			}
+			if (src[i] != n) {
+				continue;
+			}
+
+			q = delta;
+			for (;;) {
+				size_t k;
+				size_t t;
+
+				k = JSURL_PUNYCODE_BASE;
+				while (1) {
+					t = k <= bias ? JSURL_PUNYCODE_TMIN
+						: k >= bias + JSURL_PUNYCODE_TMAX
+							? JSURL_PUNYCODE_TMAX
+							: k - bias;
+					if (q < t) {
+						break;
+					}
+					if (out_len >= dst_cap) {
+						errno = EINVAL;
+						return -1;
+					}
+					dst[out_len++] = jsurl_punycode_encode_digit(t
+						+ ((q - t) % (JSURL_PUNYCODE_BASE - t)));
+					q = (q - t) / (JSURL_PUNYCODE_BASE - t);
+					if (k > SIZE_MAX - JSURL_PUNYCODE_BASE) {
+						errno = EOVERFLOW;
+						return -1;
+					}
+					k += JSURL_PUNYCODE_BASE;
+				}
+				if (out_len >= dst_cap) {
+					errno = EINVAL;
+					return -1;
+				}
+				dst[out_len++] = jsurl_punycode_encode_digit(q);
+				break;
+			}
+			bias = jsurl_punycode_adapt(delta, h + 1, h == b);
+			delta = 0;
+			h++;
+		}
+
+		if (delta == SIZE_MAX || n == UINT32_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		delta++;
+		n++;
+	}
+
+	*dst_len_ptr = out_len;
+	return 0;
+}
+
+static int jsurl_normalize_hostname_label_copy(uint8_t *dst, size_t dst_cap,
+		jsstr8_t input, size_t *dst_len_ptr)
+{
+	size_t decoded_cap;
+	uint32_t cp;
+	int l;
+	const uint8_t *bc;
+	const uint8_t *bs;
+	size_t decoded_len = 0;
+	size_t workspace_cap;
+	size_t i;
+	int all_ascii = 1;
+
+	if (dst == NULL || dst_len_ptr == NULL || input.bytes == NULL
+			|| input.len == 0 || dst_cap == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	decoded_cap = input.len > 0 ? input.len : 1;
+	{
+		uint32_t decoded[decoded_cap];
+
+		bc = input.bytes;
+		bs = input.bytes + input.len;
+		while (bc < bs) {
+			UTF8_CHAR(bc, bs, &cp, &l);
+			if (l <= 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			decoded[decoded_len++] = cp;
+			bc += l;
+		}
+
+		if (unicode_normalize_form_workspace_len(decoded, decoded_len,
+				UNICODE_NORMALIZE_NFC, &workspace_cap) < 0) {
+			return -1;
+		}
+
+		{
+			uint32_t normalized[workspace_cap > 0 ? workspace_cap : 1];
+			size_t puny_len;
+			size_t normalized_len;
+
+			normalized_len = unicode_normalize_into_form(decoded, decoded_len,
+					normalized, workspace_cap,
+					UNICODE_NORMALIZE_NFC);
+			if (normalized_len > workspace_cap) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (normalized_len == 0) {
+				errno = EINVAL;
+				return -1;
+			}
+
+			for (i = 0; i < normalized_len; i++) {
+				uint32_t lower = unicode_tolower(normalized[i]);
+
+				normalized[i] = lower;
+				if (lower > 0x7f) {
+					all_ascii = 0;
+				} else if (!jsurl_is_dns_ascii_char((uint8_t)lower)) {
+					errno = EINVAL;
+					return -1;
+				}
+			}
+
+			if (all_ascii) {
+				if (normalized_len > dst_cap) {
+					errno = ENOBUFS;
+					return -1;
+				}
+				for (i = 0; i < normalized_len; i++) {
+					dst[i] = (uint8_t)normalized[i];
+				}
+				if (jsurl_validate_ascii_hostname_label_bytes(dst,
+						normalized_len) < 0) {
+					return -1;
+				}
+				*dst_len_ptr = normalized_len;
+				return 0;
+			}
+
+			if (dst_cap < 4) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			memcpy(dst, "xn--", 4);
+			if (jsurl_punycode_encode_label(normalized, normalized_len,
+					dst + 4, dst_cap - 4, &puny_len) < 0) {
+				return -1;
+			}
+			if (jsurl_validate_ascii_hostname_label_bytes(dst, 4 + puny_len) < 0) {
+				return -1;
+			}
+			*dst_len_ptr = 4 + puny_len;
+			return 0;
+		}
+	}
+}
+
+static int jsurl_normalize_hostname_copy(jsstr8_t *result_ptr, jsstr8_t input)
+{
+	size_t out_len = 0;
+	size_t start_i = 0;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (input.len == 0) {
+		result_ptr->len = 0;
+		return 0;
+	}
+	if (jsurl_is_ipv6_literal_hostname(input)) {
+		if (input.len > result_ptr->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		memmove(result_ptr->bytes, input.bytes, input.len);
+		result_ptr->len = input.len;
+		return 0;
+	}
+
+	while (start_i <= input.len && input.len > 0) {
+		ssize_t dot_i = jsurl_find_byte(input, '.', start_i);
+		size_t end_i = dot_i >= 0 ? (size_t)dot_i : input.len;
+		jsstr8_t label = jsurl_slice(input, start_i, (ssize_t)end_i);
+		uint8_t label_buf[JSURL_HOSTNAME_LABEL_ASCII_MAX];
+		size_t label_len;
+
+		if (label.len == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsurl_normalize_hostname_label_copy(label_buf, sizeof(label_buf),
+				label, &label_len) < 0) {
+			return -1;
+		}
+		if ((out_len > 0 && out_len == result_ptr->cap)
+				|| out_len + (out_len > 0 ? 1 : 0) + label_len > result_ptr->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		if (out_len > 0) {
+			result_ptr->bytes[out_len++] = '.';
+		}
+		memmove(result_ptr->bytes + out_len, label_buf, label_len);
+		out_len += label_len;
+		if (dot_i < 0) {
+			break;
+		}
+		start_i = (size_t)dot_i + 1;
+	}
+
+	if (out_len > JSURL_HOSTNAME_ASCII_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+	result_ptr->len = out_len;
+	return 0;
+}
+
+static int jsurl_normalize_parts_hostname(const jsurl_parts_t *parts,
+		jsurl_parts_t *normalized_parts, jsstr8_t *hostname_storage)
+{
+	if (parts == NULL || normalized_parts == NULL || hostname_storage == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*normalized_parts = *parts;
+	if (jsurl_normalize_hostname_copy(hostname_storage, parts->hostname) < 0) {
+		return -1;
+	}
+	normalized_parts->hostname = *hostname_storage;
+	return 0;
+}
+
+static int jsurl_serialize_host_parts(const jsurl_parts_t *parts,
+		jsstr8_t *result_ptr)
+{
+	size_t needed_len;
+
+	if (parts == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_measure_derived(parts, &needed_len, NULL, NULL) < 0) {
+		return -1;
+	}
+	if (needed_len > result_ptr->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	result_ptr->len = 0;
+	if (parts->hostname.len > 0) {
+		memmove(result_ptr->bytes, parts->hostname.bytes, parts->hostname.len);
+		result_ptr->len = parts->hostname.len;
+		if (parts->port.len > 0) {
+			result_ptr->bytes[result_ptr->len++] = ':';
+			memmove(result_ptr->bytes + result_ptr->len, parts->port.bytes,
+				parts->port.len);
+			result_ptr->len += parts->port.len;
+		}
+	}
+	return 0;
+}
+
+static int jsurl_serialize_origin_parts(const jsurl_parts_t *parts,
+		jsstr8_t *result_ptr)
+{
+	size_t needed_len;
+	size_t host_len;
+
+	if (parts == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_measure_derived(parts, &host_len, &needed_len, NULL) < 0) {
+		return -1;
+	}
+	if (needed_len > result_ptr->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsurl_protocol_is_special_origin(parts->protocol) && parts->has_authority) {
+		result_ptr->len = 0;
+		memmove(result_ptr->bytes, parts->protocol.bytes, parts->protocol.len);
+		result_ptr->len = parts->protocol.len;
+		result_ptr->bytes[result_ptr->len++] = '/';
+		result_ptr->bytes[result_ptr->len++] = '/';
+		if (host_len > 0) {
+			jsstr8_t host_out;
+
+			host_out.bytes = result_ptr->bytes + result_ptr->len;
+			host_out.len = 0;
+			host_out.cap = result_ptr->cap - result_ptr->len;
+			if (jsurl_serialize_host_parts(parts, &host_out) < 0) {
+				return -1;
+			}
+			result_ptr->len += host_out.len;
+		}
+		return 0;
+	}
+	return jsurl_buffer_copy_literal(result_ptr, "null");
+}
+
+static int jsurl_serialize_href_parts(const jsurl_parts_t *parts,
+		jsstr8_t *result_ptr)
+{
+	size_t needed_len;
+
+	if (parts == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_measure_derived(parts, NULL, NULL, &needed_len) < 0) {
+		return -1;
+	}
+	if (needed_len > result_ptr->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	result_ptr->len = 0;
+	if (parts->protocol.len > 0) {
+		memmove(result_ptr->bytes, parts->protocol.bytes, parts->protocol.len);
+		result_ptr->len += parts->protocol.len;
+	}
+	if (parts->has_authority) {
+		result_ptr->bytes[result_ptr->len++] = '/';
+		result_ptr->bytes[result_ptr->len++] = '/';
+		if (parts->username.len > 0 || parts->password.len > 0) {
+			if (parts->username.len > 0) {
+				memmove(result_ptr->bytes + result_ptr->len,
+					parts->username.bytes, parts->username.len);
+				result_ptr->len += parts->username.len;
+			}
+			if (parts->password.len > 0) {
+				result_ptr->bytes[result_ptr->len++] = ':';
+				memmove(result_ptr->bytes + result_ptr->len,
+					parts->password.bytes, parts->password.len);
+				result_ptr->len += parts->password.len;
+			}
+			result_ptr->bytes[result_ptr->len++] = '@';
+		}
+		if (parts->hostname.len > 0) {
+			jsstr8_t host_out;
+
+			host_out.bytes = result_ptr->bytes + result_ptr->len;
+			host_out.len = 0;
+			host_out.cap = result_ptr->cap - result_ptr->len;
+			if (jsurl_serialize_host_parts(parts, &host_out) < 0) {
+				return -1;
+			}
+			result_ptr->len += host_out.len;
+		}
+		if (parts->pathname.len > 0) {
+			memmove(result_ptr->bytes + result_ptr->len,
+				parts->pathname.bytes, parts->pathname.len);
+			result_ptr->len += parts->pathname.len;
+		} else {
+			result_ptr->bytes[result_ptr->len++] = '/';
+		}
+	} else if (parts->pathname.len > 0) {
+		memmove(result_ptr->bytes + result_ptr->len, parts->pathname.bytes,
+			parts->pathname.len);
+		result_ptr->len += parts->pathname.len;
+	}
+	if (parts->search.len > 0) {
+		memmove(result_ptr->bytes + result_ptr->len, parts->search.bytes,
+			parts->search.len);
+		result_ptr->len += parts->search.len;
+	}
+	if (parts->hash.len > 0) {
+		memmove(result_ptr->bytes + result_ptr->len, parts->hash.bytes,
+			parts->hash.len);
+		result_ptr->len += parts->hash.len;
+	}
+	return 0;
+}
+
 static int jsurl_copy_sizes_from_parts(const jsurl_parts_t *parts,
 		jsurl_sizes_t *sizes_ptr)
 {
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
+	jsurl_parts_t normalized_parts;
 	size_t params_need;
 	size_t storage_need;
 
@@ -293,22 +816,28 @@ static int jsurl_copy_sizes_from_parts(const jsurl_parts_t *parts,
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsurl_measure_derived(parts, &sizes_ptr->host_cap,
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	if (jsurl_measure_derived(&normalized_parts, &sizes_ptr->host_cap,
 			&sizes_ptr->origin_cap, &sizes_ptr->href_cap) < 0) {
 		return -1;
 	}
-	if (jsurl_search_params_requirements(parts->search, &params_need,
+	if (jsurl_search_params_requirements(normalized_parts.search, &params_need,
 			&storage_need) < 0) {
 		return -1;
 	}
-	sizes_ptr->protocol_cap = parts->protocol.len;
-	sizes_ptr->username_cap = parts->username.len;
-	sizes_ptr->password_cap = parts->password.len;
-	sizes_ptr->hostname_cap = parts->hostname.len;
-	sizes_ptr->port_cap = parts->port.len;
-	sizes_ptr->pathname_cap = parts->pathname.len;
-	sizes_ptr->search_cap = parts->search.len;
-	sizes_ptr->hash_cap = parts->hash.len;
+	sizes_ptr->protocol_cap = normalized_parts.protocol.len;
+	sizes_ptr->username_cap = normalized_parts.username.len;
+	sizes_ptr->password_cap = normalized_parts.password.len;
+	sizes_ptr->hostname_cap = normalized_parts.hostname.len;
+	sizes_ptr->port_cap = normalized_parts.port.len;
+	sizes_ptr->pathname_cap = normalized_parts.pathname.len;
+	sizes_ptr->search_cap = normalized_parts.search.len;
+	sizes_ptr->hash_cap = normalized_parts.hash.len;
 	sizes_ptr->search_params_cap = params_need;
 	sizes_ptr->search_params_storage_cap = storage_need;
 	return 0;
@@ -693,81 +1222,13 @@ static int jsurl_update_derived(jsurl_t *url)
 		errno = ENOBUFS;
 		return -1;
 	}
-
-	url->host.len = 0;
-	if (url->hostname.len > 0) {
-		jsurl_buffer_copy(&url->host, url->hostname);
-		if (url->port.len > 0) {
-			url->host.bytes[url->host.len++] = ':';
-			memmove(url->host.bytes + url->host.len, url->port.bytes, url->port.len);
-			url->host.len += url->port.len;
-		}
+	if (jsurl_serialize_host_parts(&parts, &url->host) < 0) {
+		return -1;
 	}
-
-	url->origin.len = 0;
-	if (jsurl_protocol_is_special_origin(url->protocol) && url->has_authority) {
-		jsurl_buffer_copy(&url->origin, url->protocol);
-		url->origin.bytes[url->origin.len++] = '/';
-		url->origin.bytes[url->origin.len++] = '/';
-		if (url->host.len > 0) {
-			memmove(url->origin.bytes + url->origin.len, url->host.bytes,
-				url->host.len);
-			url->origin.len += url->host.len;
-		}
-	} else {
-		jsurl_buffer_copy_literal(&url->origin, "null");
+	if (jsurl_serialize_origin_parts(&parts, &url->origin) < 0) {
+		return -1;
 	}
-
-	url->href.len = 0;
-	if (url->protocol.len > 0) {
-		memmove(url->href.bytes + url->href.len, url->protocol.bytes,
-			url->protocol.len);
-		url->href.len += url->protocol.len;
-	}
-	if (url->has_authority) {
-		url->href.bytes[url->href.len++] = '/';
-		url->href.bytes[url->href.len++] = '/';
-		if (url->username.len > 0 || url->password.len > 0) {
-			if (url->username.len > 0) {
-				memmove(url->href.bytes + url->href.len, url->username.bytes,
-					url->username.len);
-				url->href.len += url->username.len;
-			}
-			if (url->password.len > 0) {
-				url->href.bytes[url->href.len++] = ':';
-				memmove(url->href.bytes + url->href.len, url->password.bytes,
-					url->password.len);
-				url->href.len += url->password.len;
-			}
-			url->href.bytes[url->href.len++] = '@';
-		}
-		if (url->host.len > 0) {
-			memmove(url->href.bytes + url->href.len, url->host.bytes,
-				url->host.len);
-			url->href.len += url->host.len;
-		}
-		if (url->pathname.len > 0) {
-			memmove(url->href.bytes + url->href.len, url->pathname.bytes,
-				url->pathname.len);
-			url->href.len += url->pathname.len;
-		} else {
-			url->href.bytes[url->href.len++] = '/';
-		}
-	} else if (url->pathname.len > 0) {
-		memmove(url->href.bytes + url->href.len, url->pathname.bytes,
-			url->pathname.len);
-		url->href.len += url->pathname.len;
-	}
-	if (url->search.len > 0) {
-		memmove(url->href.bytes + url->href.len, url->search.bytes,
-			url->search.len);
-		url->href.len += url->search.len;
-	}
-	if (url->hash.len > 0) {
-		memmove(url->href.bytes + url->href.len, url->hash.bytes, url->hash.len);
-		url->href.len += url->hash.len;
-	}
-	return 0;
+	return jsurl_serialize_href_parts(&parts, &url->href);
 }
 
 static int jsurl_sync_search_from_params(jsurl_t *url)
@@ -1186,6 +1647,9 @@ static int jsurl_normalize_pathname_copy(jsstr8_t *result_ptr, jsstr8_t input,
 
 static int jsurl_commit_parts(jsurl_t *url, const jsurl_parts_t *parts)
 {
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
+	jsurl_parts_t normalized_parts;
 	size_t params_need;
 	size_t storage_need;
 	size_t host_len;
@@ -1196,18 +1660,24 @@ static int jsurl_commit_parts(jsurl_t *url, const jsurl_parts_t *parts)
 		errno = EINVAL;
 		return -1;
 	}
-	if (parts->protocol.len > url->protocol.cap
-			|| parts->username.len > url->username.cap
-			|| parts->password.len > url->password.cap
-			|| parts->hostname.len > url->hostname.cap
-			|| parts->port.len > url->port.cap
-			|| parts->pathname.len > url->pathname.cap
-			|| parts->search.len > url->search.cap
-			|| parts->hash.len > url->hash.cap) {
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	if (normalized_parts.protocol.len > url->protocol.cap
+			|| normalized_parts.username.len > url->username.cap
+			|| normalized_parts.password.len > url->password.cap
+			|| normalized_parts.hostname.len > url->hostname.cap
+			|| normalized_parts.port.len > url->port.cap
+			|| normalized_parts.pathname.len > url->pathname.cap
+			|| normalized_parts.search.len > url->search.cap
+			|| normalized_parts.hash.len > url->hash.cap) {
 		errno = ENOBUFS;
 		return -1;
 	}
-	if (jsurl_search_params_requirements(parts->search, &params_need,
+	if (jsurl_search_params_requirements(normalized_parts.search, &params_need,
 			&storage_need) < 0) {
 		return -1;
 	}
@@ -1216,7 +1686,8 @@ static int jsurl_commit_parts(jsurl_t *url, const jsurl_parts_t *parts)
 		errno = ENOBUFS;
 		return -1;
 	}
-	if (jsurl_measure_derived(parts, &host_len, &origin_len, &href_len) < 0) {
+	if (jsurl_measure_derived(&normalized_parts, &host_len, &origin_len,
+			&href_len) < 0) {
 		return -1;
 	}
 	if (host_len > url->host.cap || origin_len > url->origin.cap
@@ -1225,18 +1696,19 @@ static int jsurl_commit_parts(jsurl_t *url, const jsurl_parts_t *parts)
 		return -1;
 	}
 
-	jsurl_buffer_copy(&url->protocol, parts->protocol);
-	jsurl_buffer_copy(&url->username, parts->username);
-	jsurl_buffer_copy(&url->password, parts->password);
-	jsurl_buffer_copy(&url->hostname, parts->hostname);
-	jsurl_buffer_copy(&url->port, parts->port);
-	jsurl_buffer_copy(&url->pathname, parts->pathname);
-	jsurl_buffer_copy(&url->search, parts->search);
-	jsurl_buffer_copy(&url->hash, parts->hash);
-	url->has_authority = parts->has_authority;
+	jsurl_buffer_copy(&url->protocol, normalized_parts.protocol);
+	jsurl_buffer_copy(&url->username, normalized_parts.username);
+	jsurl_buffer_copy(&url->password, normalized_parts.password);
+	jsurl_buffer_copy(&url->hostname, normalized_parts.hostname);
+	jsurl_buffer_copy(&url->port, normalized_parts.port);
+	jsurl_buffer_copy(&url->pathname, normalized_parts.pathname);
+	jsurl_buffer_copy(&url->search, normalized_parts.search);
+	jsurl_buffer_copy(&url->hash, normalized_parts.hash);
+	url->has_authority = normalized_parts.has_authority;
 
 	jsurl_search_params_clear(&url->search_params);
-	if (jsurl_search_params_parse_no_sync(&url->search_params, parts->search) < 0) {
+	if (jsurl_search_params_parse_no_sync(&url->search_params,
+			normalized_parts.search) < 0) {
 		return -1;
 	}
 	return jsurl_update_derived(url);
@@ -1278,6 +1750,9 @@ int jsurl_view_parse(jsurl_view_t *view, jsstr8_t input)
 int jsurl_view_host_measure(const jsurl_view_t *view, size_t *len_ptr)
 {
 	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
 	size_t host_len;
 
 	if (view == NULL || len_ptr == NULL) {
@@ -1285,7 +1760,13 @@ int jsurl_view_host_measure(const jsurl_view_t *view, size_t *len_ptr)
 		return -1;
 	}
 	jsurl_view_parts(view, &parts);
-	if (jsurl_measure_derived(&parts, &host_len, NULL, NULL) < 0) {
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	if (jsurl_measure_derived(&normalized_parts, &host_len, NULL, NULL) < 0) {
 		return -1;
 	}
 	*len_ptr = host_len;
@@ -1294,36 +1775,31 @@ int jsurl_view_host_measure(const jsurl_view_t *view, size_t *len_ptr)
 
 int jsurl_view_host_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr)
 {
-	size_t needed_len;
+	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
 
 	if (view == NULL || result_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsurl_view_host_measure(view, &needed_len) < 0) {
+	jsurl_view_parts(view, &parts);
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
 		return -1;
 	}
-	if (needed_len > result_ptr->cap) {
-		errno = ENOBUFS;
-		return -1;
-	}
-	result_ptr->len = 0;
-	if (view->hostname.len > 0) {
-		memmove(result_ptr->bytes, view->hostname.bytes, view->hostname.len);
-		result_ptr->len = view->hostname.len;
-		if (view->port.len > 0) {
-			result_ptr->bytes[result_ptr->len++] = ':';
-			memmove(result_ptr->bytes + result_ptr->len, view->port.bytes,
-				view->port.len);
-			result_ptr->len += view->port.len;
-		}
-	}
-	return 0;
+	return jsurl_serialize_host_parts(&normalized_parts, result_ptr);
 }
 
 int jsurl_view_origin_measure(const jsurl_view_t *view, size_t *len_ptr)
 {
 	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
 	size_t origin_len;
 
 	if (view == NULL || len_ptr == NULL) {
@@ -1331,7 +1807,13 @@ int jsurl_view_origin_measure(const jsurl_view_t *view, size_t *len_ptr)
 		return -1;
 	}
 	jsurl_view_parts(view, &parts);
-	if (jsurl_measure_derived(&parts, NULL, &origin_len, NULL) < 0) {
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	if (jsurl_measure_derived(&normalized_parts, NULL, &origin_len, NULL) < 0) {
 		return -1;
 	}
 	*len_ptr = origin_len;
@@ -1340,63 +1822,70 @@ int jsurl_view_origin_measure(const jsurl_view_t *view, size_t *len_ptr)
 
 int jsurl_view_origin_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr)
 {
-	size_t needed_len;
+	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
 
 	if (view == NULL || result_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsurl_view_origin_measure(view, &needed_len) < 0) {
+	jsurl_view_parts(view, &parts);
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
 		return -1;
 	}
-	if (needed_len > result_ptr->cap) {
-		errno = ENOBUFS;
-		return -1;
-	}
-	if (jsurl_protocol_is_special_origin(view->protocol) && view->has_authority) {
-		size_t host_len;
-
-		if (jsurl_view_host_measure(view, &host_len) < 0) {
-			return -1;
-		}
-		result_ptr->len = 0;
-		memmove(result_ptr->bytes, view->protocol.bytes, view->protocol.len);
-		result_ptr->len = view->protocol.len;
-		result_ptr->bytes[result_ptr->len++] = '/';
-		result_ptr->bytes[result_ptr->len++] = '/';
-		if (host_len > 0) {
-			jsstr8_t host_out;
-
-			host_out.bytes = result_ptr->bytes + result_ptr->len;
-			host_out.len = 0;
-			host_out.cap = result_ptr->cap - result_ptr->len;
-			if (jsurl_view_host_serialize(view, &host_out) < 0) {
-				return -1;
-			}
-			result_ptr->len += host_out.len;
-		}
-		return 0;
-	}
-	return jsurl_buffer_copy_literal(result_ptr, "null");
+	return jsurl_serialize_origin_parts(&normalized_parts, result_ptr);
 }
 
 int jsurl_view_href_measure(const jsurl_view_t *view, size_t *len_ptr)
 {
+	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
+	size_t href_len;
+
 	if (view == NULL || len_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	*len_ptr = view->href.len;
+	jsurl_view_parts(view, &parts);
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	if (jsurl_measure_derived(&normalized_parts, NULL, NULL, &href_len) < 0) {
+		return -1;
+	}
+	*len_ptr = href_len;
 	return 0;
 }
 
 int jsurl_view_href_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr)
 {
+	jsurl_parts_t parts;
+	jsurl_parts_t normalized_parts;
+	uint8_t hostname_buf[JSURL_HOSTNAME_ASCII_MAX];
+	jsstr8_t normalized_hostname;
+
 	if (view == NULL || result_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	return jsurl_buffer_copy(result_ptr, view->href);
+	jsurl_view_parts(view, &parts);
+	jsstr8_init_from_buf(&normalized_hostname, (const char *)hostname_buf,
+		sizeof(hostname_buf));
+	if (jsurl_normalize_parts_hostname(&parts, &normalized_parts,
+			&normalized_hostname) < 0) {
+		return -1;
+	}
+	return jsurl_serialize_href_parts(&normalized_parts, result_ptr);
 }
 
 jsstr8_t jsurl_view_to_json(const jsurl_view_t *view)

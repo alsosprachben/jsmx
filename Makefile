@@ -19,7 +19,7 @@ jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h jsregex.h jsmx_confi
 
 jsregex.o: jsregex.c jsregex.h jsmx_config.h
 
-jsurl.o: jsurl.c jsurl.h jsval.h jsstr.h utf8.h
+jsurl.o: jsurl.c jsurl.h jsval.h jsstr.h unicode.h utf8.h
 
 libjsmndom.a: jsmndom.o
 
