@@ -8,7 +8,7 @@
 
 #if JSMX_REGEX_BACKEND_PCRE2
 
-#define PCRE2_CODE_UNIT_WIDTH 16
+#define PCRE2_CODE_UNIT_WIDTH 0
 #include <pcre2.h>
 
 typedef struct jsregex_options_s {
@@ -16,43 +16,89 @@ typedef struct jsregex_options_s {
 	uint32_t flags;
 } jsregex_options_t;
 
-typedef struct jsregex_backend_s {
-	pcre2_code *code;
-	pcre2_match_data *match_data;
+typedef struct jsregex8_backend_s {
+	pcre2_code_8 *code;
+	pcre2_match_data_8 *match_data;
 	uint8_t use_match_data_cache;
-} jsregex_backend_t;
+} jsregex8_backend_t;
+
+typedef struct jsregex16_backend_s {
+	pcre2_code_16 *code;
+	pcre2_match_data_16 *match_data;
+	uint8_t use_match_data_cache;
+} jsregex16_backend_t;
+
+static int
+jsregex8_compile_utf8_impl(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len, int use_jit,
+		jsregex8_compiled_t *compiled_ptr);
 
 static int
 jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len, int use_jit,
 		jsregex_compiled_t *compiled_ptr);
 
-static jsregex_backend_t *
-jsregex_backend(const jsregex_compiled_t *compiled)
+static jsregex8_backend_t *
+jsregex8_backend(const jsregex8_compiled_t *compiled)
 {
 	if (compiled == NULL || compiled->backend_code == 0) {
 		return NULL;
 	}
-	return (jsregex_backend_t *)(uintptr_t)compiled->backend_code;
+	return (jsregex8_backend_t *)(uintptr_t)compiled->backend_code;
 }
 
-static pcre2_code *
-jsregex_backend_code(const jsregex_compiled_t *compiled)
+static pcre2_code_8 *
+jsregex8_backend_code(const jsregex8_compiled_t *compiled)
 {
-	jsregex_backend_t *backend = jsregex_backend(compiled);
+	jsregex8_backend_t *backend = jsregex8_backend(compiled);
 
 	return backend != NULL ? backend->code : NULL;
 }
 
-static pcre2_match_data *
-jsregex_backend_match_data(jsregex_backend_t *backend)
+static pcre2_match_data_8 *
+jsregex8_backend_match_data(jsregex8_backend_t *backend)
 {
 	if (backend == NULL || backend->code == NULL) {
 		errno = EINVAL;
 		return NULL;
 	}
 	if (backend->match_data == NULL) {
-		backend->match_data = pcre2_match_data_create_from_pattern(
+		backend->match_data = pcre2_match_data_create_from_pattern_8(
+				backend->code, NULL);
+		if (backend->match_data == NULL) {
+			errno = ENOMEM;
+			return NULL;
+		}
+	}
+	return backend->match_data;
+}
+
+static jsregex16_backend_t *
+jsregex16_backend(const jsregex_compiled_t *compiled)
+{
+	if (compiled == NULL || compiled->backend_code == 0) {
+		return NULL;
+	}
+	return (jsregex16_backend_t *)(uintptr_t)compiled->backend_code;
+}
+
+static pcre2_code_16 *
+jsregex16_backend_code(const jsregex_compiled_t *compiled)
+{
+	jsregex16_backend_t *backend = jsregex16_backend(compiled);
+
+	return backend != NULL ? backend->code : NULL;
+}
+
+static pcre2_match_data_16 *
+jsregex16_backend_match_data(jsregex16_backend_t *backend)
+{
+	if (backend == NULL || backend->code == NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+	if (backend->match_data == NULL) {
+		backend->match_data = pcre2_match_data_create_from_pattern_16(
 				backend->code, NULL);
 		if (backend->match_data == NULL) {
 			errno = ENOMEM;
@@ -286,7 +332,7 @@ jsregex_u_predefined_class_match_at(const uint16_t *subject,
 }
 
 static int
-jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
+jsregex_parse_flags_utf16(const uint16_t *flags, size_t flags_len,
 		jsregex_options_t *options_ptr)
 {
 	jsregex_options_t options = {0};
@@ -367,14 +413,78 @@ jsregex_parse_flags(const uint16_t *flags, size_t flags_len,
 	return 0;
 }
 
-int
+static int
+jsregex8_compile_utf8_impl(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len, int use_jit,
+		jsregex8_compiled_t *compiled_ptr)
+{
+	jsregex_options_t options;
+	jsregex8_backend_t *backend = NULL;
+	pcre2_code_8 *code = NULL;
+	int error_code;
+	PCRE2_SIZE error_offset;
+	uint32_t capture_count = 0;
+	size_t i;
+
+	if ((pattern_len > 0 && pattern == NULL) || compiled_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(compiled_ptr, 0, sizeof(*compiled_ptr));
+	if (flags_len > 0) {
+		uint16_t utf16_flags[flags_len];
+
+		for (i = 0; i < flags_len; i++) {
+			utf16_flags[i] = flags[i];
+		}
+		if (jsregex_parse_flags_utf16(utf16_flags, flags_len, &options) < 0) {
+			return -1;
+		}
+	} else if (jsregex_parse_flags_utf16(NULL, 0, &options) < 0) {
+		return -1;
+	}
+
+	code = pcre2_compile_8((PCRE2_SPTR8)pattern, pattern_len,
+			options.compile_options, &error_code, &error_offset, NULL);
+	if (code == NULL) {
+		(void)error_code;
+		(void)error_offset;
+		errno = EINVAL;
+		return -1;
+	}
+	if (pcre2_pattern_info_8(code, PCRE2_INFO_CAPTURECOUNT, &capture_count) != 0) {
+		pcre2_code_free_8(code);
+		errno = EINVAL;
+		return -1;
+	}
+	if (use_jit) {
+		(void)pcre2_jit_compile_8(code, PCRE2_JIT_COMPLETE);
+	}
+
+	backend = (jsregex8_backend_t *)malloc(sizeof(*backend));
+	if (backend == NULL) {
+		pcre2_code_free_8(code);
+		errno = ENOMEM;
+		return -1;
+	}
+	backend->code = code;
+	backend->match_data = NULL;
+	backend->use_match_data_cache = use_jit ? 1u : 0u;
+
+	compiled_ptr->backend_code = (uintptr_t)backend;
+	compiled_ptr->flags = options.flags;
+	compiled_ptr->capture_count = capture_count;
+	return 0;
+}
+
+static int
 jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,
 		int use_jit, jsregex_compiled_t *compiled_ptr)
 {
 	jsregex_options_t options;
-	jsregex_backend_t *backend = NULL;
-	pcre2_code *code = NULL;
+	jsregex16_backend_t *backend = NULL;
+	pcre2_code_16 *code = NULL;
 	int error_code;
 	PCRE2_SIZE error_offset;
 	uint32_t capture_count = 0;
@@ -385,11 +495,11 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		return -1;
 	}
 	memset(compiled_ptr, 0, sizeof(*compiled_ptr));
-	if (jsregex_parse_flags(flags, flags_len, &options) < 0) {
+	if (jsregex_parse_flags_utf16(flags, flags_len, &options) < 0) {
 		return -1;
 	}
 
-	code = pcre2_compile((PCRE2_SPTR16)pattern, pattern_len,
+	code = pcre2_compile_16((PCRE2_SPTR16)pattern, pattern_len,
 			options.compile_options, &error_code, &error_offset, NULL);
 	if (code == NULL) {
 		(void)error_code;
@@ -397,14 +507,14 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		errno = EINVAL;
 		return -1;
 	}
-	if (pcre2_pattern_info(code, PCRE2_INFO_CAPTURECOUNT, &capture_count) != 0) {
-		pcre2_code_free(code);
+	if (pcre2_pattern_info_16(code, PCRE2_INFO_CAPTURECOUNT, &capture_count) != 0) {
+		pcre2_code_free_16(code);
 		errno = EINVAL;
 		return -1;
 	}
-	if (pcre2_pattern_info(code, PCRE2_INFO_NAMECOUNT,
+	if (pcre2_pattern_info_16(code, PCRE2_INFO_NAMECOUNT,
 			&named_group_count) != 0) {
-		pcre2_code_free(code);
+		pcre2_code_free_16(code);
 		errno = EINVAL;
 		return -1;
 	}
@@ -413,12 +523,12 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 		 * linked PCRE2 does not support JIT for this pattern or target, keep
 		 * the compiled pattern and fall back to the normal pcre2_match path.
 		 */
-		(void)pcre2_jit_compile(code, PCRE2_JIT_COMPLETE);
+		(void)pcre2_jit_compile_16(code, PCRE2_JIT_COMPLETE);
 	}
 
-	backend = (jsregex_backend_t *)malloc(sizeof(*backend));
+	backend = (jsregex16_backend_t *)malloc(sizeof(*backend));
 	if (backend == NULL) {
-		pcre2_code_free(code);
+		pcre2_code_free_16(code);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -434,56 +544,55 @@ jsregex_compile_utf16_impl(const uint16_t *pattern, size_t pattern_len,
 }
 
 int
-jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
-		const uint16_t *flags, size_t flags_len,
-		jsregex_compiled_t *compiled_ptr)
+jsregex8_compile_utf8(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_compiled_t *compiled_ptr)
 {
-	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+	return jsregex8_compile_utf8_impl(pattern, pattern_len, flags, flags_len,
 			0, compiled_ptr);
 }
 
 int
-jsregex_compile_utf16_jit(const uint16_t *pattern, size_t pattern_len,
-		const uint16_t *flags, size_t flags_len,
-		jsregex_compiled_t *compiled_ptr)
+jsregex8_compile_utf8_jit(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_compiled_t *compiled_ptr)
 {
-	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+	return jsregex8_compile_utf8_impl(pattern, pattern_len, flags, flags_len,
 			1, compiled_ptr);
 }
 
 void
-jsregex_release(jsregex_compiled_t *compiled_ptr)
+jsregex8_release(jsregex8_compiled_t *compiled_ptr)
 {
-	jsregex_backend_t *backend;
+	jsregex8_backend_t *backend;
 
 	if (compiled_ptr == NULL || compiled_ptr->backend_code == 0) {
 		return;
 	}
-	backend = jsregex_backend(compiled_ptr);
+	backend = jsregex8_backend(compiled_ptr);
 	if (backend != NULL) {
 		if (backend->match_data != NULL) {
-			pcre2_match_data_free(backend->match_data);
+			pcre2_match_data_free_8(backend->match_data);
 		}
 		if (backend->code != NULL) {
-			pcre2_code_free(backend->code);
+			pcre2_code_free_8(backend->code);
 		}
 		free(backend);
 	}
 	compiled_ptr->backend_code = 0;
 	compiled_ptr->flags = 0;
 	compiled_ptr->capture_count = 0;
-	compiled_ptr->named_group_count = 0;
 }
 
 int
-jsregex_exec_utf16(const jsregex_compiled_t *compiled,
-		const uint16_t *subject, size_t subject_len, size_t start_index,
+jsregex8_exec_utf8(const jsregex8_compiled_t *compiled,
+		const uint8_t *subject, size_t subject_len, size_t start_index,
 		size_t *offsets, size_t offsets_cap,
-		jsregex_exec_result_t *result_ptr)
+		jsregex8_exec_result_t *result_ptr)
 {
-	jsregex_backend_t *backend;
-	pcre2_code *code;
-	pcre2_match_data *match_data;
+	jsregex8_backend_t *backend;
+	pcre2_code_8 *code;
+	pcre2_match_data_8 *match_data;
 	PCRE2_SIZE *ovector;
 	uint32_t match_options = 0;
 	size_t slot_count;
@@ -510,8 +619,8 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		return -1;
 	}
 
-	backend = jsregex_backend(compiled);
-	code = jsregex_backend_code(compiled);
+	backend = jsregex8_backend(compiled);
+	code = jsregex8_backend_code(compiled);
 	if (code == NULL || backend == NULL) {
 		if (errno == 0) {
 			errno = EINVAL;
@@ -519,7 +628,7 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		return -1;
 	}
 	if (backend->use_match_data_cache) {
-		match_data = jsregex_backend_match_data(backend);
+		match_data = jsregex8_backend_match_data(backend);
 		if (match_data == NULL) {
 			if (errno == 0) {
 				errno = ENOMEM;
@@ -527,7 +636,7 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 			return -1;
 		}
 	} else {
-		match_data = pcre2_match_data_create_from_pattern(code, NULL);
+		match_data = pcre2_match_data_create_from_pattern_8(code, NULL);
 		if (match_data == NULL) {
 			errno = ENOMEM;
 			return -1;
@@ -537,7 +646,7 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		match_options |= PCRE2_ANCHORED;
 	}
 
-	rc = pcre2_match(code, (PCRE2_SPTR16)subject, subject_len, start_index,
+	rc = pcre2_match_8(code, (PCRE2_SPTR8)subject, subject_len, start_index,
 			match_options, match_data, NULL);
 	if (rc == PCRE2_ERROR_NOMATCH) {
 		result_ptr->matched = 0;
@@ -545,19 +654,19 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 		result_ptr->end = 0;
 		result_ptr->slot_count = 0;
 		if (!backend->use_match_data_cache) {
-			pcre2_match_data_free(match_data);
+			pcre2_match_data_free_8(match_data);
 		}
 		return 0;
 	}
 	if (rc < 0) {
 		if (!backend->use_match_data_cache) {
-			pcre2_match_data_free(match_data);
+			pcre2_match_data_free_8(match_data);
 		}
 		errno = EINVAL;
 		return -1;
 	}
 
-	ovector = pcre2_get_ovector_pointer(match_data);
+	ovector = pcre2_get_ovector_pointer_8(match_data);
 	for (i = 0; i < slot_count; i++) {
 		PCRE2_SIZE start = ovector[i * 2];
 		PCRE2_SIZE end = ovector[i * 2 + 1];
@@ -576,7 +685,155 @@ jsregex_exec_utf16(const jsregex_compiled_t *compiled,
 	result_ptr->end = offsets[1];
 	result_ptr->slot_count = slot_count;
 	if (!backend->use_match_data_cache) {
-		pcre2_match_data_free(match_data);
+		pcre2_match_data_free_8(match_data);
+	}
+	return 0;
+}
+
+int
+jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len,
+		jsregex_compiled_t *compiled_ptr)
+{
+	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+			0, compiled_ptr);
+}
+
+int
+jsregex_compile_utf16_jit(const uint16_t *pattern, size_t pattern_len,
+		const uint16_t *flags, size_t flags_len,
+		jsregex_compiled_t *compiled_ptr)
+{
+	return jsregex_compile_utf16_impl(pattern, pattern_len, flags, flags_len,
+			1, compiled_ptr);
+}
+
+void
+jsregex_release(jsregex_compiled_t *compiled_ptr)
+{
+	jsregex16_backend_t *backend;
+
+	if (compiled_ptr == NULL || compiled_ptr->backend_code == 0) {
+		return;
+	}
+	backend = jsregex16_backend(compiled_ptr);
+	if (backend != NULL) {
+		if (backend->match_data != NULL) {
+			pcre2_match_data_free_16(backend->match_data);
+		}
+		if (backend->code != NULL) {
+			pcre2_code_free_16(backend->code);
+		}
+		free(backend);
+	}
+	compiled_ptr->backend_code = 0;
+	compiled_ptr->flags = 0;
+	compiled_ptr->capture_count = 0;
+	compiled_ptr->named_group_count = 0;
+}
+
+int
+jsregex_exec_utf16(const jsregex_compiled_t *compiled,
+		const uint16_t *subject, size_t subject_len, size_t start_index,
+		size_t *offsets, size_t offsets_cap,
+		jsregex_exec_result_t *result_ptr)
+{
+	jsregex16_backend_t *backend;
+	pcre2_code_16 *code;
+	pcre2_match_data_16 *match_data;
+	PCRE2_SIZE *ovector;
+	uint32_t match_options = 0;
+	size_t slot_count;
+	size_t i;
+	int rc;
+
+	if (compiled == NULL || compiled->backend_code == 0
+			|| result_ptr == NULL
+			|| (subject_len > 0 && subject == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (start_index > subject_len) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		return 0;
+	}
+
+	slot_count = (size_t)compiled->capture_count + 1;
+	if (offsets == NULL || offsets_cap < slot_count * 2) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+	backend = jsregex16_backend(compiled);
+	code = jsregex16_backend_code(compiled);
+	if (code == NULL || backend == NULL) {
+		if (errno == 0) {
+			errno = EINVAL;
+		}
+		return -1;
+	}
+	if (backend->use_match_data_cache) {
+		match_data = jsregex16_backend_match_data(backend);
+		if (match_data == NULL) {
+			if (errno == 0) {
+				errno = ENOMEM;
+			}
+			return -1;
+		}
+	} else {
+		match_data = pcre2_match_data_create_from_pattern_16(code, NULL);
+		if (match_data == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+	}
+	if ((compiled->flags & JSREGEX_FLAG_STICKY) != 0) {
+		match_options |= PCRE2_ANCHORED;
+	}
+
+	rc = pcre2_match_16(code, (PCRE2_SPTR16)subject, subject_len, start_index,
+			match_options, match_data, NULL);
+	if (rc == PCRE2_ERROR_NOMATCH) {
+		result_ptr->matched = 0;
+		result_ptr->start = 0;
+		result_ptr->end = 0;
+		result_ptr->slot_count = 0;
+		if (!backend->use_match_data_cache) {
+			pcre2_match_data_free_16(match_data);
+		}
+		return 0;
+	}
+	if (rc < 0) {
+		if (!backend->use_match_data_cache) {
+			pcre2_match_data_free_16(match_data);
+		}
+		errno = EINVAL;
+		return -1;
+	}
+
+	ovector = pcre2_get_ovector_pointer_16(match_data);
+	for (i = 0; i < slot_count; i++) {
+		PCRE2_SIZE start = ovector[i * 2];
+		PCRE2_SIZE end = ovector[i * 2 + 1];
+
+		if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
+			offsets[i * 2] = SIZE_MAX;
+			offsets[i * 2 + 1] = SIZE_MAX;
+		} else {
+			offsets[i * 2] = (size_t)start;
+			offsets[i * 2 + 1] = (size_t)end;
+		}
+	}
+
+	result_ptr->matched = 1;
+	result_ptr->start = offsets[0];
+	result_ptr->end = offsets[1];
+	result_ptr->slot_count = slot_count;
+	if (!backend->use_match_data_cache) {
+		pcre2_match_data_free_16(match_data);
 	}
 	return 0;
 }
@@ -586,7 +843,7 @@ jsregex_named_group_utf16(const jsregex_compiled_t *compiled,
 		size_t index, uint32_t *capture_index_ptr, uint16_t *name_buf,
 		size_t name_cap, size_t *name_len_ptr)
 {
-	pcre2_code *code;
+	pcre2_code_16 *code;
 	uint32_t name_count = 0;
 	uint32_t name_entry_size = 0;
 	PCRE2_SPTR16 name_table = NULL;
@@ -602,15 +859,15 @@ jsregex_named_group_utf16(const jsregex_compiled_t *compiled,
 		return -1;
 	}
 
-	code = jsregex_backend_code(compiled);
+	code = jsregex16_backend_code(compiled);
 	if (code == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (pcre2_pattern_info(code, PCRE2_INFO_NAMECOUNT, &name_count) != 0
-			|| pcre2_pattern_info(code, PCRE2_INFO_NAMEENTRYSIZE,
+	if (pcre2_pattern_info_16(code, PCRE2_INFO_NAMECOUNT, &name_count) != 0
+			|| pcre2_pattern_info_16(code, PCRE2_INFO_NAMEENTRYSIZE,
 				&name_entry_size) != 0
-			|| pcre2_pattern_info(code, PCRE2_INFO_NAMETABLE,
+			|| pcre2_pattern_info_16(code, PCRE2_INFO_NAMETABLE,
 				&name_table) != 0) {
 		errno = EINVAL;
 		return -1;
@@ -1168,6 +1425,42 @@ jsregex_search_u_predefined_class_utf16(const uint16_t *subject,
 	result_ptr->matched = result.matched;
 	result_ptr->start = result.start;
 	result_ptr->end = result.end;
+	return 0;
+}
+
+int
+jsregex8_search_utf8(const uint8_t *subject, size_t subject_len,
+		const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_search_result_t *result_ptr)
+{
+	jsregex8_compiled_t compiled;
+	jsregex8_exec_result_t exec_result;
+	int rc;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsregex8_compile_utf8(pattern, pattern_len, flags, flags_len,
+			&compiled) < 0) {
+		return -1;
+	}
+	{
+		size_t slot_count = (size_t)compiled.capture_count + 1;
+		size_t slot_offsets[slot_count * 2];
+
+		rc = jsregex8_exec_utf8(&compiled, subject, subject_len, 0,
+				slot_offsets, slot_count * 2, &exec_result);
+		jsregex8_release(&compiled);
+		if (rc < 0) {
+			return -1;
+		}
+	}
+
+	result_ptr->matched = exec_result.matched;
+	result_ptr->start = exec_result.start;
+	result_ptr->end = exec_result.end;
 	return 0;
 }
 

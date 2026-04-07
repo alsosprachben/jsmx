@@ -45,6 +45,9 @@ That makes semantic correctness more important than surface familiarity:
 - `jsregex.c`, `jsregex.h`, `jsmx_config.h`
   - optional backend-gated regex layer
   - the first backend is PCRE2
+  - the JS-facing regex/runtime surface remains UTF-16-oriented
+  - a narrow `jsregex8_*` layer is available for UTF-8-oriented production
+    tools that only need low-level compile / exec / search
   - default regex construction stays non-JIT
   - explicit `jsregex_compile_utf16_jit(...)` and `jsval_regexp_new_jit(...)`
     entrypoints let generated code choose JIT for longer-lived regexes

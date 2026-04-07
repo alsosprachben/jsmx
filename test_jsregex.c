@@ -8,6 +8,111 @@
 #if JSMX_WITH_REGEX
 
 static void
+test_regex8_compile_exec(void)
+{
+	static const uint8_t subject[] = {'a','1','2','b'};
+	static const uint8_t pattern[] = {
+		'(','[','0','-','9',']','[','0','-','9',']',')',
+		'(','[','a','-','z',']',')','?'
+	};
+	static const uint8_t sticky_pattern[] = {'b'};
+	static const uint8_t search_subject[] = {'f','o','o','B','a','r'};
+	static const uint8_t pattern_bar[] = {'b','a','r'};
+	static const uint8_t flags_g[] = {'g'};
+	static const uint8_t flags_i[] = {'i'};
+	static const uint8_t flags_y[] = {'y'};
+	static const uint8_t grep_line[] = {
+		'G','E','T',' ','h','t','t','p',':','/','/','e','x','a','m','p','l','e'
+	};
+	static const uint8_t grep_pattern[] = {'h','t','t','p'};
+	jsregex8_compiled_t compiled;
+	jsregex8_exec_result_t result;
+	jsregex8_search_result_t search_result;
+	size_t offsets[6];
+
+	assert(jsregex8_compile_utf8(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(jsregex8_exec_utf8(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, sizeof(offsets) / sizeof(offsets[0]), &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 1);
+	assert(result.end == 4);
+	assert(result.slot_count == 3);
+	assert(offsets[0] == 1 && offsets[1] == 4);
+	assert(offsets[2] == 1 && offsets[3] == 3);
+	assert(offsets[4] == 3 && offsets[5] == 4);
+	jsregex8_release(&compiled);
+
+	assert(jsregex8_compile_utf8_jit(pattern,
+			sizeof(pattern) / sizeof(pattern[0]), NULL, 0, &compiled) == 0);
+	assert(compiled.capture_count == 2);
+	assert(jsregex8_exec_utf8(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, sizeof(offsets) / sizeof(offsets[0]), &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 1);
+	assert(result.end == 4);
+	assert(result.slot_count == 3);
+	jsregex8_release(&compiled);
+
+	assert(jsregex8_compile_utf8(sticky_pattern,
+			sizeof(sticky_pattern) / sizeof(sticky_pattern[0]),
+			flags_y, sizeof(flags_y) / sizeof(flags_y[0]), &compiled) == 0);
+	assert(jsregex8_exec_utf8(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 0);
+	assert(jsregex8_exec_utf8(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 3,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 3);
+	assert(result.end == 4);
+	jsregex8_release(&compiled);
+
+	assert(jsregex8_compile_utf8(sticky_pattern,
+			sizeof(sticky_pattern) / sizeof(sticky_pattern[0]),
+			flags_g, sizeof(flags_g) / sizeof(flags_g[0]), &compiled) == 0);
+	assert(jsregex8_exec_utf8(&compiled, subject,
+			sizeof(subject) / sizeof(subject[0]), 0,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 1);
+	jsregex8_release(&compiled);
+
+	assert(jsregex8_search_utf8(search_subject,
+			sizeof(search_subject) / sizeof(search_subject[0]),
+			pattern_bar, sizeof(pattern_bar) / sizeof(pattern_bar[0]),
+			flags_i, sizeof(flags_i) / sizeof(flags_i[0]), &search_result) == 0);
+	assert(search_result.matched == 1);
+	assert(search_result.start == 3);
+	assert(search_result.end == 6);
+
+	assert(jsregex8_search_utf8(search_subject,
+			sizeof(search_subject) / sizeof(search_subject[0]),
+			(const uint8_t[]){'['}, 1, NULL, 0, &search_result) == -1);
+	assert(errno == EINVAL);
+
+	assert(jsregex8_search_utf8(search_subject,
+			sizeof(search_subject) / sizeof(search_subject[0]),
+			pattern_bar, sizeof(pattern_bar) / sizeof(pattern_bar[0]),
+			(const uint8_t[]){'z'}, 1, &search_result) == -1);
+	assert(errno == ENOTSUP);
+
+	assert(jsregex8_compile_utf8_jit(grep_pattern,
+			sizeof(grep_pattern) / sizeof(grep_pattern[0]),
+			NULL, 0, &compiled) == 0);
+	assert(jsregex8_exec_utf8(&compiled, grep_line,
+			sizeof(grep_line) / sizeof(grep_line[0]), 0,
+			offsets, 2, &result) == 0);
+	assert(result.matched == 1);
+	assert(result.start == 4);
+	assert(result.end == 8);
+	jsregex8_release(&compiled);
+}
+
+static void
 test_regex_search(void)
 {
 	jsregex_search_result_t result;
@@ -702,6 +807,7 @@ test_u_predefined_class_exec(void)
 int
 main(void)
 {
+	test_regex8_compile_exec();
 	test_regex_search();
 	test_regex_compile_exec();
 	test_regex_named_groups();

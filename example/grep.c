@@ -9,7 +9,6 @@
 
 #include "runtime_modules/shared/fs_sync.h"
 #include "jsregex.h"
-#include "utf8.h"
 
 /*
  * Source JS: example/grep.js
@@ -23,7 +22,7 @@
  * Local build example:
  * cc -I. -DJSMX_WITH_REGEX=1 -DJSMX_REGEX_BACKEND_PCRE2=1 \
  *   example/grep.c jsregex.c \
- *   -lpcre2-16 \
+ *   -lpcre2-8 -lpcre2-16 \
  *   -o /tmp/jsmx-grep
  *
  * Add local PCRE2 include/library search paths as needed.
@@ -60,7 +59,7 @@ typedef enum grep_binary_files_mode_e {
 } grep_binary_files_mode_t;
 
 typedef struct grep_matcher_s {
-	jsregex_compiled_t compiled;
+	jsregex8_compiled_t compiled;
 } grep_matcher_t;
 
 typedef struct grep_source_result_s {
@@ -620,58 +619,16 @@ grep_build_pattern_source(const grep_options_t *options, const char *pattern,
 }
 
 static int
-grep_utf8_to_utf16(const uint8_t *src, size_t src_len, uint16_t **buf_ptr,
-		size_t *len_ptr)
-{
-	const uint8_t *cursor = src;
-	const uint8_t *stop = src + src_len;
-	uint16_t *buf;
-	uint16_t *out;
-
-	buf = malloc(sizeof(uint16_t) * (src_len ? src_len : 1u));
-	if (buf == NULL) {
-		errno = ENOMEM;
-		return -1;
-	}
-	out = buf;
-	while (cursor < stop) {
-		uint32_t codepoint = 0;
-		int width = 0;
-
-		UTF8_CHAR(cursor, stop, &codepoint, &width);
-		if (width == 0) {
-			codepoint = 0xFFFDu;
-			width = 1;
-		} else if (width < 0) {
-			codepoint = 0xFFFDu;
-			width = -width;
-		}
-		cursor += width;
-		if (codepoint < 0x10000u) {
-			*out++ = (uint16_t)codepoint;
-		} else {
-			codepoint -= 0x10000u;
-			*out++ = (uint16_t)(0xD800u | ((codepoint >> 10) & 0x3FFu));
-			*out++ = (uint16_t)(0xDC00u | (codepoint & 0x3FFu));
-		}
-	}
-
-	*buf_ptr = buf;
-	*len_ptr = (size_t)(out - buf);
-	return 0;
-}
-
-static int
 grep_compile_matchers(const grep_options_t *options, const char *prog,
 		grep_matcher_t **matchers_ptr)
 {
 	grep_matcher_t *matchers;
 	size_t i;
-	uint16_t flag_units[1];
+	uint8_t flag_units[1];
 	size_t flag_len = 0;
 
 	if (options->ignore_case) {
-		flag_units[0] = (uint16_t)'i';
+		flag_units[0] = (uint8_t)'i';
 		flag_len = 1;
 	}
 
@@ -684,31 +641,22 @@ grep_compile_matchers(const grep_options_t *options, const char *prog,
 	for (i = 0; i < options->pattern_count; i++) {
 		char *pattern_utf8 = NULL;
 		size_t pattern_utf8_len = 0;
-		uint16_t *pattern_utf16 = NULL;
-		size_t pattern_utf16_len = 0;
 
 		if (grep_build_pattern_source(options, options->patterns[i],
 				&pattern_utf8, &pattern_utf8_len) < 0) {
 			fprintf(stderr, "%s: out of memory\n", prog);
 			goto fail;
 		}
-		if (grep_utf8_to_utf16((const uint8_t *)pattern_utf8, pattern_utf8_len,
-				&pattern_utf16, &pattern_utf16_len) < 0) {
-			fprintf(stderr, "%s: out of memory\n", prog);
-			free(pattern_utf8);
-			goto fail;
-		}
-		if (jsregex_compile_utf16_jit(pattern_utf16, pattern_utf16_len,
+		if (jsregex8_compile_utf8_jit((const uint8_t *)pattern_utf8,
+				pattern_utf8_len,
 				flag_len > 0 ? flag_units : NULL, flag_len,
 				&matchers[i].compiled) < 0) {
 			fprintf(stderr, "%s: invalid regex '%s': %s\n", prog,
 					options->patterns[i], strerror(errno));
 			free(pattern_utf8);
-			free(pattern_utf16);
 			goto fail;
 		}
 		free(pattern_utf8);
-		free(pattern_utf16);
 	}
 
 	*matchers_ptr = matchers;
@@ -717,7 +665,7 @@ grep_compile_matchers(const grep_options_t *options, const char *prog,
 fail:
 	while (i > 0) {
 		i--;
-		jsregex_release(&matchers[i].compiled);
+		jsregex8_release(&matchers[i].compiled);
 	}
 	free(matchers);
 	return 2;
@@ -732,7 +680,7 @@ grep_release_matchers(grep_matcher_t *matchers, size_t pattern_count)
 		return;
 	}
 	for (i = 0; i < pattern_count; i++) {
-		jsregex_release(&matchers[i].compiled);
+		jsregex8_release(&matchers[i].compiled);
 	}
 	free(matchers);
 }
@@ -741,21 +689,15 @@ static int
 grep_line_matches(const grep_options_t *options, const grep_matcher_t *matchers,
 		const uint8_t *line, size_t line_len, int *matched_ptr)
 {
-	uint16_t *line_utf16 = NULL;
-	size_t line_utf16_len = 0;
 	size_t i;
 
-	if (grep_utf8_to_utf16(line, line_len, &line_utf16, &line_utf16_len) < 0) {
-		return -1;
-	}
 	*matched_ptr = 0;
 	for (i = 0; i < options->pattern_count; i++) {
-		jsregex_exec_result_t exec_result;
+		jsregex8_exec_result_t exec_result;
 		size_t offsets[2];
 
-		if (jsregex_exec_utf16(&matchers[i].compiled, line_utf16, line_utf16_len,
+		if (jsregex8_exec_utf8(&matchers[i].compiled, line, line_len,
 				0, offsets, 2, &exec_result) < 0) {
-			free(line_utf16);
 			return -1;
 		}
 		if (exec_result.matched) {
@@ -763,7 +705,6 @@ grep_line_matches(const grep_options_t *options, const grep_matcher_t *matchers,
 			break;
 		}
 	}
-	free(line_utf16);
 	return 0;
 }
 

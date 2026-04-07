@@ -17,6 +17,25 @@ typedef enum jsregex_flag_e {
 	JSREGEX_FLAG_STICKY = 1u << 5
 } jsregex_flag_t;
 
+typedef struct jsregex8_compiled_s {
+	uintptr_t backend_code;
+	uint32_t flags;
+	uint32_t capture_count;
+} jsregex8_compiled_t;
+
+typedef struct jsregex8_exec_result_s {
+	int matched;
+	size_t start;
+	size_t end;
+	size_t slot_count;
+} jsregex8_exec_result_t;
+
+typedef struct jsregex8_search_result_s {
+	int matched;
+	size_t start;
+	size_t end;
+} jsregex8_search_result_t;
+
 typedef struct jsregex_compiled_s {
 	uintptr_t backend_code;
 	uint32_t flags;
@@ -45,6 +64,22 @@ typedef enum jsregex_u_predefined_class_kind_e {
 	JSREGEX_U_PREDEFINED_CLASS_WORD = 4,
 	JSREGEX_U_PREDEFINED_CLASS_NOT_WORD = 5
 } jsregex_u_predefined_class_kind_t;
+
+int jsregex8_compile_utf8(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_compiled_t *compiled_ptr);
+int jsregex8_compile_utf8_jit(const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_compiled_t *compiled_ptr);
+void jsregex8_release(jsregex8_compiled_t *compiled_ptr);
+int jsregex8_exec_utf8(const jsregex8_compiled_t *compiled,
+		const uint8_t *subject, size_t subject_len, size_t start_index,
+		size_t *offsets, size_t offsets_cap,
+		jsregex8_exec_result_t *result_ptr);
+int jsregex8_search_utf8(const uint8_t *subject, size_t subject_len,
+		const uint8_t *pattern, size_t pattern_len,
+		const uint8_t *flags, size_t flags_len,
+		jsregex8_search_result_t *result_ptr);
 
 int jsregex_compile_utf16(const uint16_t *pattern, size_t pattern_len,
 		const uint16_t *flags, size_t flags_len,

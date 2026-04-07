@@ -84,6 +84,8 @@ When the program uses direct-lowered regex values:
 - use `jsval_regexp_new(...)` for short-lived or one-shot regexes
 - use `jsval_regexp_new_jit(...)` only when the regex is clearly hoisted and reused
 - keep rewrite-backed `/u` helper families explicit when the pattern matches the repo's documented rewrite lanes
+- for UTF-8-oriented production tools that only need low-level compile / exec /
+  search, prefer `jsregex8_*` over a UTF-16 transcode loop
 
 Do not emit backend-specific `pcre2_*` calls directly in the generated program.
 
