@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "jsval.h"
 #include "jsurl.h"
 
 typedef struct test_url_buffers_s {
@@ -311,6 +312,106 @@ static void test_jsurl_errors(void)
 	assert(errno == EINVAL);
 }
 
+static void test_jsurl_region_copy(void)
+{
+	declare_jsstr8(input,
+		"https://user:pass@example.com:8443/a/b?x=1&y=two+words#frag");
+	uint8_t measure_storage[4096];
+	jsval_region_t measure_region;
+	size_t bytes = 0;
+	size_t total_len;
+	jsurl_t url;
+
+	jsval_region_init(&measure_region, measure_storage, sizeof(measure_storage));
+	assert(jsurl_region_parse_copy_measure(&measure_region, input, &bytes) == 0);
+	assert(bytes > 0);
+
+	total_len = jsval_pages_head_size() + bytes;
+	{
+		uint8_t exact_storage[total_len > 0 ? total_len : 1];
+		jsval_region_t exact_region;
+
+		jsval_region_init(&exact_region, exact_storage, sizeof(exact_storage));
+		assert(jsurl_region_parse_copy(&exact_region, input, &url) == 0);
+		test_expect_jsstr(url.protocol, "https:");
+		test_expect_jsstr(url.username, "user");
+		test_expect_jsstr(url.password, "pass");
+		test_expect_jsstr(url.hostname, "example.com");
+		test_expect_jsstr(url.port, "8443");
+		test_expect_jsstr(url.pathname, "/a/b");
+		test_expect_jsstr(url.search, "?x=1&y=two+words");
+		test_expect_jsstr(url.hash, "#frag");
+		test_expect_jsstr(url.host, "example.com:8443");
+		test_expect_jsstr(url.origin, "https://example.com:8443");
+		test_expect_jsstr(url.href,
+			"https://user:pass@example.com:8443/a/b?x=1&y=two+words#frag");
+		assert(jsval_region_remaining(&exact_region) == 0);
+
+		declare_jsstr8(search, "?a=1");
+		declare_jsstr8(b_name, "b");
+		declare_jsstr8(b_value, "2");
+		declare_jsstr8(hash, "x");
+
+		assert(jsurl_set_search(&url, search) == 0);
+		assert(jsurl_search_params_append(&url.search_params, b_name, b_value) == 0);
+		assert(jsurl_set_hash(&url, hash) == 0);
+		test_expect_jsstr(url.search, "?a=1&b=2");
+		test_expect_jsstr(url.hash, "#x");
+		test_expect_jsstr(url.href,
+			"https://user:pass@example.com:8443/a/b?a=1&b=2#x");
+	}
+
+	{
+		uint8_t short_storage[total_len > 1 ? total_len - 1 : 1];
+		jsval_region_t short_region;
+
+		jsval_region_init(&short_region, short_storage, sizeof(short_storage));
+		errno = 0;
+		assert(jsurl_region_parse_copy(&short_region, input, &url) == -1);
+		assert(errno == ENOBUFS);
+	}
+}
+
+static void test_jsurl_region_copy_with_base(void)
+{
+	declare_jsstr8(base_input, "https://example.com/dir/sub/index.html?x=1#old");
+	declare_jsstr8(relative_input, "../up?q=2");
+	test_url_buffers_t base_buffers;
+	jsurl_t base;
+	uint8_t measure_storage[2048];
+	jsval_region_t measure_region;
+	size_t bytes = 0;
+	size_t total_len;
+	jsurl_t url;
+
+	test_url_init(&base, &base_buffers);
+	assert(jsurl_parse_copy(&base, base_input) == 0);
+
+	jsval_region_init(&measure_region, measure_storage, sizeof(measure_storage));
+	assert(jsurl_region_parse_copy_with_base_measure(&measure_region, relative_input,
+			&base, &bytes) == 0);
+	assert(bytes > 0);
+
+	total_len = jsval_pages_head_size() + bytes;
+	{
+		uint8_t exact_storage[total_len > 0 ? total_len : 1];
+		jsval_region_t exact_region;
+
+		jsval_region_init(&exact_region, exact_storage, sizeof(exact_storage));
+		assert(jsurl_region_parse_copy_with_base(&exact_region, relative_input,
+				&base, &url) == 0);
+		test_expect_jsstr(url.pathname, "/dir/up");
+		test_expect_jsstr(url.search, "?q=2");
+		assert(url.hash.len == 0);
+		test_expect_jsstr(url.href, "https://example.com/dir/up?q=2");
+		assert(jsval_region_remaining(&exact_region) == 0);
+
+		declare_jsstr8(search, "?p=3");
+		assert(jsurl_set_search(&url, search) == 0);
+		test_expect_jsstr(url.href, "https://example.com/dir/up?p=3");
+	}
+}
+
 int main(void)
 {
 	test_jsurl_view_parse();
@@ -318,6 +419,8 @@ int main(void)
 	test_jsurl_copy_and_relative_parse();
 	test_jsurl_setters_and_sync();
 	test_jsurl_errors();
+	test_jsurl_region_copy();
+	test_jsurl_region_copy_with_base();
 
 	printf("All tests passed.\n");
 	return 0;

@@ -83,6 +83,10 @@ typedef int (*jsval_replace_callback_fn)(jsval_region_t *region, void *ctx,
 void jsval_region_init(jsval_region_t *region, void *buf, size_t len);
 void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len);
 size_t jsval_region_remaining(jsval_region_t *region);
+int jsval_region_alloc(jsval_region_t *region, size_t len, size_t align,
+		void **ptr_ptr);
+int jsval_region_measure_alloc(const jsval_region_t *region, size_t *used_ptr,
+		size_t len, size_t align);
 size_t jsval_pages_head_size(void);
 const jsval_pages_t *jsval_region_pages(const jsval_region_t *region);
 int jsval_region_root(jsval_region_t *region, jsval_t *value_ptr);

@@ -6,6 +6,9 @@
 
 #include "jsstr.h"
 
+struct jsval_region_s;
+typedef struct jsval_region_s jsval_region_t;
+
 typedef struct jsurl_param_s {
 	jsstr8_t name;
 	jsstr8_t value;
@@ -141,6 +144,14 @@ void jsurl_clear(jsurl_t *url);
 int jsurl_copy_from_view(jsurl_t *url, const jsurl_view_t *view);
 int jsurl_parse_copy(jsurl_t *url, jsstr8_t input);
 int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base);
+int jsurl_region_parse_copy_measure(const jsval_region_t *region, jsstr8_t input,
+		size_t *bytes_ptr);
+int jsurl_region_parse_copy(jsval_region_t *region, jsstr8_t input,
+		jsurl_t *url_ptr);
+int jsurl_region_parse_copy_with_base_measure(const jsval_region_t *region,
+		jsstr8_t input, const jsurl_t *base, size_t *bytes_ptr);
+int jsurl_region_parse_copy_with_base(jsval_region_t *region, jsstr8_t input,
+		const jsurl_t *base, jsurl_t *url_ptr);
 int jsurl_parse(jsurl_t *url, jsstr8_t input);
 int jsurl_parse_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base);
 

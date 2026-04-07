@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "jsurl.h"
+#include "jsval.h"
 #include "utf8.h"
 
 typedef struct jsurl_parts_s {
@@ -18,6 +19,8 @@ typedef struct jsurl_parts_s {
 
 static int jsurl_search_params_requirements(jsstr8_t search, size_t *params_len_ptr,
 		size_t *storage_len_ptr);
+
+typedef int (*jsurl_parts_callback_t)(const jsurl_parts_t *parts, void *opaque);
 
 static jsstr8_t jsurl_slice(jsstr8_t src, size_t start_i, ssize_t stop_i)
 {
@@ -1414,6 +1417,190 @@ int jsurl_copy_sizes(const jsurl_view_t *view, jsurl_sizes_t *sizes_ptr)
 	return jsurl_copy_sizes_from_parts(&parts, sizes_ptr);
 }
 
+static void jsurl_region_string_init(jsstr8_t *value, uint8_t *buf, size_t cap)
+{
+	if (cap == 0) {
+		jsstr8_init(value);
+		return;
+	}
+	jsstr8_init_from_buf(value, (const char *)buf, cap);
+}
+
+static int jsurl_region_measure_sizes(const jsval_region_t *region,
+		size_t *used_ptr, const jsurl_sizes_t *sizes)
+{
+	if (region == NULL || used_ptr == NULL || sizes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (sizes->search_params_cap > 0
+			&& sizes->search_params_cap > SIZE_MAX / sizeof(jsurl_param_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	if (sizes->search_params_cap > 0
+			&& jsval_region_measure_alloc(region, used_ptr,
+				sizes->search_params_cap * sizeof(jsurl_param_t),
+				_Alignof(jsurl_param_t)) < 0) {
+		return -1;
+	}
+#define JSURL_MEASURE_FIELD(_field) \
+	do { \
+		if ((sizes->_field) > 0 \
+				&& jsval_region_measure_alloc(region, used_ptr, \
+					(sizes->_field), 1) < 0) { \
+			return -1; \
+		} \
+	} while (0)
+
+	JSURL_MEASURE_FIELD(protocol_cap);
+	JSURL_MEASURE_FIELD(username_cap);
+	JSURL_MEASURE_FIELD(password_cap);
+	JSURL_MEASURE_FIELD(hostname_cap);
+	JSURL_MEASURE_FIELD(port_cap);
+	JSURL_MEASURE_FIELD(pathname_cap);
+	JSURL_MEASURE_FIELD(search_cap);
+	JSURL_MEASURE_FIELD(hash_cap);
+	JSURL_MEASURE_FIELD(host_cap);
+	JSURL_MEASURE_FIELD(origin_cap);
+	JSURL_MEASURE_FIELD(href_cap);
+	JSURL_MEASURE_FIELD(search_params_storage_cap);
+#undef JSURL_MEASURE_FIELD
+	return 0;
+}
+
+static int jsurl_region_storage_alloc(jsval_region_t *region,
+		const jsurl_sizes_t *sizes, jsurl_storage_t *storage)
+{
+	jsurl_param_t *params = NULL;
+	uint8_t *buf = NULL;
+
+	if (region == NULL || sizes == NULL || storage == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(storage, 0, sizeof(*storage));
+
+	if (sizes->search_params_cap > 0) {
+		if (jsval_region_alloc(region,
+				sizes->search_params_cap * sizeof(jsurl_param_t),
+				_Alignof(jsurl_param_t), (void **)&params) < 0) {
+			return -1;
+		}
+	}
+	storage->search_params.params = params;
+	storage->search_params.params_cap = sizes->search_params_cap;
+
+#define JSURL_ALLOC_FIELD(_field, _capfield) \
+	do { \
+		buf = NULL; \
+		if ((sizes->_capfield) > 0 \
+				&& jsval_region_alloc(region, (sizes->_capfield), 1, \
+					(void **)&buf) < 0) { \
+			return -1; \
+		} \
+		jsurl_region_string_init(&storage->_field, buf, sizes->_capfield); \
+	} while (0)
+
+	JSURL_ALLOC_FIELD(protocol, protocol_cap);
+	JSURL_ALLOC_FIELD(username, username_cap);
+	JSURL_ALLOC_FIELD(password, password_cap);
+	JSURL_ALLOC_FIELD(hostname, hostname_cap);
+	JSURL_ALLOC_FIELD(port, port_cap);
+	JSURL_ALLOC_FIELD(pathname, pathname_cap);
+	JSURL_ALLOC_FIELD(search, search_cap);
+	JSURL_ALLOC_FIELD(hash, hash_cap);
+	JSURL_ALLOC_FIELD(host, host_cap);
+	JSURL_ALLOC_FIELD(origin, origin_cap);
+	JSURL_ALLOC_FIELD(href, href_cap);
+	JSURL_ALLOC_FIELD(search_params.storage, search_params_storage_cap);
+#undef JSURL_ALLOC_FIELD
+
+	return 0;
+}
+
+static int jsurl_region_copy_parts(jsval_region_t *region,
+		const jsurl_parts_t *parts, jsurl_t *url_ptr)
+{
+	jsurl_sizes_t sizes;
+	jsurl_storage_t storage;
+	size_t used;
+
+	if (region == NULL || parts == NULL || url_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_copy_sizes_from_parts(parts, &sizes) < 0) {
+		return -1;
+	}
+	used = region->used;
+	if (jsurl_region_measure_sizes(region, &used, &sizes) < 0) {
+		return -1;
+	}
+	if (jsurl_region_storage_alloc(region, &sizes, &storage) < 0) {
+		return -1;
+	}
+	if (jsurl_init(url_ptr, &storage) < 0) {
+		return -1;
+	}
+	return jsurl_commit_parts(url_ptr, parts);
+}
+
+static int jsurl_region_measure_parts(const jsval_region_t *region,
+		const jsurl_parts_t *parts, size_t *bytes_ptr)
+{
+	jsurl_sizes_t sizes;
+	size_t start_used;
+	size_t used;
+
+	if (region == NULL || parts == NULL || bytes_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_copy_sizes_from_parts(parts, &sizes) < 0) {
+		return -1;
+	}
+	start_used = region->used;
+	used = start_used;
+	if (jsurl_region_measure_sizes(region, &used, &sizes) < 0) {
+		return -1;
+	}
+	*bytes_ptr = used - start_used;
+	return 0;
+}
+
+static int jsurl_commit_parts_cb(const jsurl_parts_t *parts, void *opaque)
+{
+	jsurl_t *url = (jsurl_t *)opaque;
+
+	return jsurl_commit_parts(url, parts);
+}
+
+typedef struct jsurl_region_measure_ctx_s {
+	const jsval_region_t *region;
+	size_t *bytes_ptr;
+} jsurl_region_measure_ctx_t;
+
+static int jsurl_region_measure_parts_cb(const jsurl_parts_t *parts, void *opaque)
+{
+	jsurl_region_measure_ctx_t *ctx = (jsurl_region_measure_ctx_t *)opaque;
+
+	return jsurl_region_measure_parts(ctx->region, parts, ctx->bytes_ptr);
+}
+
+typedef struct jsurl_region_copy_ctx_s {
+	jsval_region_t *region;
+	jsurl_t *url_ptr;
+} jsurl_region_copy_ctx_t;
+
+static int jsurl_region_copy_parts_cb(const jsurl_parts_t *parts, void *opaque)
+{
+	jsurl_region_copy_ctx_t *ctx = (jsurl_region_copy_ctx_t *)opaque;
+
+	return jsurl_region_copy_parts(ctx->region, parts, ctx->url_ptr);
+}
+
 void jsurl_search_params_view_init(jsurl_search_params_view_t *view,
 		jsstr8_t search)
 {
@@ -1920,13 +2107,14 @@ int jsurl_parse_copy(jsurl_t *url, jsstr8_t input)
 	return jsurl_copy_from_view(url, &view);
 }
 
-int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base)
+static int jsurl_resolve_with_base(jsstr8_t input, const jsurl_t *base,
+		jsurl_parts_callback_t callback, void *opaque)
 {
 	jsurl_parts_t parts;
 	jsurl_parts_t base_parts;
 	ssize_t scheme_i = jsurl_find_scheme_end(input);
 
-	if (url == NULL) {
+	if (callback == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -1934,7 +2122,7 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 		if (jsurl_parse_absolute_parts(input, &parts) < 0) {
 			return -1;
 		}
-		return jsurl_commit_parts(url, &parts);
+		return callback(&parts, opaque);
 	}
 	if (base == NULL) {
 		errno = EINVAL;
@@ -1944,7 +2132,7 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 	jsurl_current_parts(base, &base_parts);
 	parts = base_parts;
 	if (input.len == 0) {
-		return jsurl_commit_parts(url, &parts);
+		return callback(&parts, opaque);
 	}
 	if (input.len >= 2 && input.bytes[0] == '/' && input.bytes[1] == '/') {
 		size_t abs_len = base->protocol.len + input.len;
@@ -1960,14 +2148,14 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 		if (jsurl_parse_absolute_parts(absolute, &parts) < 0) {
 			return -1;
 		}
-		return jsurl_commit_parts(url, &parts);
+		return callback(&parts, opaque);
 	}
 	if (input.bytes[0] == '?') {
 		jsstr8_t path_part;
 
 		jsurl_split_path_search_hash(input, &path_part, &parts.search, &parts.hash);
 		(void) path_part;
-		return jsurl_commit_parts(url, &parts);
+		return callback(&parts, opaque);
 	}
 	if (input.bytes[0] == '#') {
 		jsstr8_t path_part;
@@ -1976,7 +2164,7 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 		jsurl_split_path_search_hash(input, &path_part, &search_part, &parts.hash);
 		(void) path_part;
 		(void) search_part;
-		return jsurl_commit_parts(url, &parts);
+		return callback(&parts, opaque);
 	}
 	{
 		jsstr8_t path_part;
@@ -1997,7 +2185,7 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 				return -1;
 			}
 			parts.pathname = normalized_path;
-			return jsurl_commit_parts(url, &parts);
+			return callback(&parts, opaque);
 		}
 		{
 			size_t dir_len = jsurl_base_dir_len(base_parts.pathname,
@@ -2037,9 +2225,66 @@ int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base
 				return -1;
 			}
 			parts.pathname = normalized_path;
-			return jsurl_commit_parts(url, &parts);
+			return callback(&parts, opaque);
 		}
 	}
+}
+
+int jsurl_parse_copy_with_base(jsurl_t *url, jsstr8_t input, const jsurl_t *base)
+{
+	if (url == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsurl_resolve_with_base(input, base, jsurl_commit_parts_cb, url);
+}
+
+int jsurl_region_parse_copy_measure(const jsval_region_t *region, jsstr8_t input,
+		size_t *bytes_ptr)
+{
+	jsurl_view_t view;
+	jsurl_parts_t parts;
+
+	if (jsurl_view_parse(&view, input) < 0) {
+		return -1;
+	}
+	jsurl_view_parts(&view, &parts);
+	return jsurl_region_measure_parts(region, &parts, bytes_ptr);
+}
+
+int jsurl_region_parse_copy(jsval_region_t *region, jsstr8_t input,
+		jsurl_t *url_ptr)
+{
+	jsurl_view_t view;
+	jsurl_parts_t parts;
+
+	if (jsurl_view_parse(&view, input) < 0) {
+		return -1;
+	}
+	jsurl_view_parts(&view, &parts);
+	return jsurl_region_copy_parts(region, &parts, url_ptr);
+}
+
+int jsurl_region_parse_copy_with_base_measure(const jsval_region_t *region,
+		jsstr8_t input, const jsurl_t *base, size_t *bytes_ptr)
+{
+	jsurl_region_measure_ctx_t ctx;
+
+	ctx.region = region;
+	ctx.bytes_ptr = bytes_ptr;
+	return jsurl_resolve_with_base(input, base, jsurl_region_measure_parts_cb,
+			&ctx);
+}
+
+int jsurl_region_parse_copy_with_base(jsval_region_t *region, jsstr8_t input,
+		const jsurl_t *base, jsurl_t *url_ptr)
+{
+	jsurl_region_copy_ctx_t ctx;
+
+	ctx.region = region;
+	ctx.url_ptr = url_ptr;
+	return jsurl_resolve_with_base(input, base, jsurl_region_copy_parts_cb,
+			&ctx);
 }
 
 int jsurl_parse(jsurl_t *url, jsstr8_t input)

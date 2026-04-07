@@ -19,7 +19,7 @@ jsmethod.o: jsmethod.c jsmethod.h jsnum.h jsstr.h unicode.h jsregex.h jsmx_confi
 
 jsregex.o: jsregex.c jsregex.h jsmx_config.h
 
-jsurl.o: jsurl.c jsurl.h jsstr.h utf8.h
+jsurl.o: jsurl.c jsurl.h jsval.h jsstr.h utf8.h
 
 libjsmndom.a: jsmndom.o
 
@@ -59,8 +59,8 @@ test_jsmethod: test_jsmethod.c jsnum.c jsmethod.c jsregex.c jsstr.c unicode.c js
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_jsurl: test_jsurl.c jsurl.c jsstr.c unicode.c unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
-	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ -o $@
+test_jsurl: test_jsurl.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jsval.h jsmethod.h jsurl.h jsstr.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
+	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
 test_jsnum: test_jsnum.c jsnum.c jsnum.h

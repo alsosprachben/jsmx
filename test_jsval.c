@@ -243,6 +243,69 @@ static void assert_number_value(jsval_t value, double expected)
 	assert(value.as.number == expected);
 }
 
+static void test_region_alloc_helpers(void)
+{
+	uint8_t storage[256];
+	jsval_region_t region;
+	void *first = NULL;
+	void *second = NULL;
+	size_t measured_start;
+	size_t measured_used;
+	size_t need;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	measured_start = region.used;
+	measured_used = measured_start;
+	assert(jsval_region_measure_alloc(&region, &measured_used, 3, 1) == 0);
+	assert(jsval_region_measure_alloc(&region, &measured_used, sizeof(uint32_t),
+			_Alignof(uint32_t)) == 0);
+	need = measured_used - measured_start;
+	assert(need > 0);
+
+	assert(jsval_region_alloc(&region, 3, 1, &first) == 0);
+	assert(first != NULL);
+	assert(jsval_region_alloc(&region, sizeof(uint32_t), _Alignof(uint32_t),
+			&second) == 0);
+	assert(second != NULL);
+	assert(((uintptr_t)second % _Alignof(uint32_t)) == 0);
+	assert(region.used == measured_used);
+
+	{
+		size_t exact_total = jsval_pages_head_size() + need;
+		uint8_t exact_storage[exact_total > 0 ? exact_total : 1];
+		jsval_region_t exact_region;
+
+		jsval_region_init(&exact_region, exact_storage, sizeof(exact_storage));
+		assert(jsval_region_alloc(&exact_region, 3, 1, &first) == 0);
+		assert(jsval_region_alloc(&exact_region, sizeof(uint32_t),
+				_Alignof(uint32_t), &second) == 0);
+		assert(jsval_region_remaining(&exact_region) == 0);
+	}
+
+	{
+		size_t short_total = jsval_pages_head_size() + need - 1;
+		uint8_t short_storage[short_total > 0 ? short_total : 1];
+		jsval_region_t short_region;
+
+		jsval_region_init(&short_region, short_storage, sizeof(short_storage));
+		errno = 0;
+		assert(jsval_region_alloc(&short_region, 3, 1, &first) == 0);
+		assert(jsval_region_alloc(&short_region, sizeof(uint32_t),
+				_Alignof(uint32_t), &second) == -1);
+		assert(errno == ENOBUFS);
+	}
+
+	errno = 0;
+	assert(jsval_region_alloc(NULL, 1, 1, &first) == -1);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_region_measure_alloc(&region, NULL, 1, 1) == -1);
+	assert(errno == EINVAL);
+	errno = 0;
+	assert(jsval_region_measure_alloc(&region, &measured_used, 1, 0) == -1);
+	assert(errno == EINVAL);
+}
+
 static int
 test_replace_string_callback(jsval_region_t *region, void *opaque,
 		const jsval_replace_call_t *call, jsval_t *result_ptr,
@@ -5923,6 +5986,7 @@ static void test_dense_array_observable_behavior(void)
 
 int main(void)
 {
+	test_region_alloc_helpers();
 	test_native_storage();
 	test_value_semantics();
 	test_typeof_semantics();

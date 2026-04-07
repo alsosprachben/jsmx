@@ -3696,6 +3696,18 @@ size_t jsval_region_remaining(jsval_region_t *region)
 	return region->len - region->used;
 }
 
+int jsval_region_alloc(jsval_region_t *region, size_t len, size_t align,
+		void **ptr_ptr)
+{
+	return jsval_region_reserve(region, len, align, NULL, ptr_ptr);
+}
+
+int jsval_region_measure_alloc(const jsval_region_t *region, size_t *used_ptr,
+		size_t len, size_t align)
+{
+	return jsval_region_measure_reserve(region, used_ptr, len, align);
+}
+
 size_t jsval_pages_head_size(void)
 {
 	return jsval_pages_head_size_aligned();
