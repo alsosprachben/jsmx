@@ -31,7 +31,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_MATCH_ITERATOR = 8,
 	JSVAL_KIND_URL = 9,
 	JSVAL_KIND_URL_SEARCH_PARAMS = 10,
-	JSVAL_KIND_SET = 11
+	JSVAL_KIND_SET = 11,
+	JSVAL_KIND_MAP = 12
 } jsval_kind_t;
 
 typedef struct jsval_s {
@@ -142,6 +143,23 @@ int jsval_set_add(jsval_region_t *region, jsval_t set, jsval_t key);
 int jsval_set_delete(jsval_region_t *region, jsval_t set, jsval_t key,
 		int *deleted_ptr);
 int jsval_set_clear(jsval_region_t *region, jsval_t set);
+int jsval_map_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
+int jsval_map_clone(jsval_region_t *region, jsval_t src, size_t capacity,
+		jsval_t *value_ptr);
+int jsval_map_size(jsval_region_t *region, jsval_t map, size_t *size_ptr);
+int jsval_map_has(jsval_region_t *region, jsval_t map, jsval_t key,
+		int *has_ptr);
+int jsval_map_get(jsval_region_t *region, jsval_t map, jsval_t key,
+		jsval_t *value_ptr);
+int jsval_map_set(jsval_region_t *region, jsval_t map, jsval_t key,
+		jsval_t value);
+int jsval_map_delete(jsval_region_t *region, jsval_t map, jsval_t key,
+		int *deleted_ptr);
+int jsval_map_clear(jsval_region_t *region, jsval_t map);
+int jsval_map_key_at(jsval_region_t *region, jsval_t map, size_t index,
+		jsval_t *key_ptr);
+int jsval_map_value_at(jsval_region_t *region, jsval_t map, size_t index,
+		jsval_t *value_ptr);
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr);
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
 int jsval_array_clone_dense(jsval_region_t *region, jsval_t src, size_t capacity, jsval_t *value_ptr);

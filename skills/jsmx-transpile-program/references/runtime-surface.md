@@ -22,7 +22,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 - value kinds:
   - `undefined`, `null`, booleans, numbers, strings
   - native and JSON-backed objects and arrays
-  - native `Set` values
+  - native `Set` and `Map` values
   - dense arrays only
   - feature-gated regex values and match iterators
 - value operations:
@@ -47,6 +47,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
   - dense spread-style assembly already modeled in the corpus
   - capacity-bounded `Set` construction and membership mutation through
     `size` / `has` / `add` / `delete` / `clear`
+  - capacity-bounded `Map` construction and ordered membership mutation
+    through `size` / `has` / `get` / `set` / `delete` / `clear`
 - regex:
   - direct-lowered native regex values
   - translator-owned `/u` rewrite families already documented in the regex guidance
@@ -108,7 +110,7 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - prototype-chain-sensitive behavior
   - descriptors or accessors
   - sparse arrays or holes
-  - Set iterator / iterable-constructor semantics
+  - Map and Set iterator / iterable-constructor semantics
   - functions as values with closure semantics
 - host contracts with no clear current mapping:
   - exact `console.log` object formatting like Node `util.inspect`

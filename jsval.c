@@ -33,6 +33,16 @@ typedef struct jsval_native_set_s {
 	size_t cap;
 } jsval_native_set_t;
 
+typedef struct jsval_native_map_s {
+	size_t len;
+	size_t cap;
+} jsval_native_map_t;
+
+typedef struct jsval_native_map_entry_s {
+	jsval_t key;
+	jsval_t value;
+} jsval_native_map_entry_t;
+
 typedef struct jsval_native_url_field_s {
 	jsval_off_t off;
 	size_t len;
@@ -275,6 +285,19 @@ static jsval_t *jsval_native_set_values(jsval_native_set_t *set)
 	return (jsval_t *)(set + 1);
 }
 
+static jsval_native_map_t *jsval_native_map(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_MAP) {
+		return NULL;
+	}
+	return (jsval_native_map_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_map_entry_t *jsval_native_map_entries(jsval_native_map_t *map)
+{
+	return (jsval_native_map_entry_t *)(map + 1);
+}
+
 static jsval_native_url_t *jsval_native_url(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_URL) {
@@ -304,6 +327,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		return 1;
 	default:
 		return 0;
@@ -1722,6 +1746,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1854,6 +1879,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1912,6 +1938,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2142,6 +2169,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -4704,6 +4732,324 @@ int jsval_set_clear(jsval_region_t *region, jsval_t set)
 		values[i] = jsval_undefined();
 	}
 	native->len = 0;
+	return 0;
+}
+
+int jsval_map_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr)
+{
+	jsval_native_map_t *map;
+	jsval_off_t off;
+	size_t bytes_len = sizeof(*map) + cap * sizeof(jsval_native_map_entry_t);
+	size_t i;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&map) < 0) {
+		return -1;
+	}
+
+	map->len = 0;
+	map->cap = cap;
+	for (i = 0; i < cap; i++) {
+		jsval_native_map_entry_t *entry = &jsval_native_map_entries(map)[i];
+		entry->key = jsval_undefined();
+		entry->value = jsval_undefined();
+	}
+
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_MAP;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_map_clone(jsval_region_t *region, jsval_t src, size_t capacity,
+		jsval_t *value_ptr)
+{
+	jsval_native_map_t *native;
+	jsval_t out;
+	jsval_native_map_entry_t *src_entries;
+	jsval_native_map_entry_t *dst_entries;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL || src.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, src);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (capacity < native->len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_map_new(region, capacity, &out) < 0) {
+		return -1;
+	}
+
+	src_entries = jsval_native_map_entries(native);
+	dst_entries = jsval_native_map_entries(jsval_native_map(region, out));
+	for (i = 0; i < native->len; i++) {
+		dst_entries[i] = src_entries[i];
+	}
+	jsval_native_map(region, out)->len = native->len;
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_map_size(jsval_region_t *region, jsval_t map, size_t *size_ptr)
+{
+	jsval_native_map_t *native;
+
+	if (size_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*size_ptr = native->len;
+	return 0;
+}
+
+int jsval_map_has(jsval_region_t *region, jsval_t map, jsval_t key,
+		int *has_ptr)
+{
+	jsval_native_map_t *native;
+	jsval_native_map_entry_t *entries;
+	size_t i;
+
+	if (has_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_map_entries(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, entries[i].key, key)) {
+			*has_ptr = 1;
+			return 0;
+		}
+	}
+	*has_ptr = 0;
+	return 0;
+}
+
+int jsval_map_get(jsval_region_t *region, jsval_t map, jsval_t key,
+		jsval_t *value_ptr)
+{
+	jsval_native_map_t *native;
+	jsval_native_map_entry_t *entries;
+	size_t i;
+
+	if (value_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_map_entries(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, entries[i].key, key)) {
+			*value_ptr = entries[i].value;
+			return 0;
+		}
+	}
+	*value_ptr = jsval_undefined();
+	return 0;
+}
+
+int jsval_map_set(jsval_region_t *region, jsval_t map, jsval_t key,
+		jsval_t value)
+{
+	jsval_native_map_t *native;
+	jsval_native_map_entry_t *entries;
+	size_t i;
+
+	if (map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_map_entries(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, entries[i].key, key)) {
+			entries[i].value = value;
+			return 0;
+		}
+	}
+	if (native->len >= native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	entries[native->len].key = key;
+	entries[native->len].value = value;
+	native->len++;
+	return 0;
+}
+
+int jsval_map_delete(jsval_region_t *region, jsval_t map, jsval_t key,
+		int *deleted_ptr)
+{
+	jsval_native_map_t *native;
+	jsval_native_map_entry_t *entries;
+	size_t i;
+
+	if (deleted_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_map_entries(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, entries[i].key, key)) {
+			if (i + 1 < native->len) {
+				memmove(entries + i, entries + i + 1,
+						(native->len - i - 1) * sizeof(*entries));
+			}
+			native->len--;
+			entries[native->len].key = jsval_undefined();
+			entries[native->len].value = jsval_undefined();
+			*deleted_ptr = 1;
+			return 0;
+		}
+	}
+	*deleted_ptr = 0;
+	return 0;
+}
+
+int jsval_map_clear(jsval_region_t *region, jsval_t map)
+{
+	jsval_native_map_t *native;
+	jsval_native_map_entry_t *entries;
+	size_t i;
+
+	if (map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_map_entries(native);
+	for (i = 0; i < native->len; i++) {
+		entries[i].key = jsval_undefined();
+		entries[i].value = jsval_undefined();
+	}
+	native->len = 0;
+	return 0;
+}
+
+int jsval_map_key_at(jsval_region_t *region, jsval_t map, size_t index,
+		jsval_t *key_ptr)
+{
+	jsval_native_map_t *native;
+
+	if (key_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= native->len) {
+		*key_ptr = jsval_undefined();
+		return 0;
+	}
+	*key_ptr = jsval_native_map_entries(native)[index].key;
+	return 0;
+}
+
+int jsval_map_value_at(jsval_region_t *region, jsval_t map, size_t index,
+		jsval_t *value_ptr)
+{
+	jsval_native_map_t *native;
+
+	if (value_ptr == NULL || map.kind != JSVAL_KIND_MAP) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (map.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_map(region, map);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (index >= native->len) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+	*value_ptr = jsval_native_map_entries(native)[index].value;
 	return 0;
 }
 
@@ -14438,6 +14784,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -14507,6 +14854,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		return 1;
 	default:
 		return 0;
@@ -14568,6 +14916,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
+	case JSVAL_KIND_MAP:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -14596,13 +14945,15 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_URL
 			|| left.kind == JSVAL_KIND_URL_SEARCH_PARAMS
 			|| left.kind == JSVAL_KIND_SET
+			|| left.kind == JSVAL_KIND_MAP
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
 			|| right.kind == JSVAL_KIND_MATCH_ITERATOR
 			|| right.kind == JSVAL_KIND_URL
 			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS
-			|| right.kind == JSVAL_KIND_SET) {
+			|| right.kind == JSVAL_KIND_SET
+			|| right.kind == JSVAL_KIND_MAP) {
 		errno = ENOTSUP;
 		return -1;
 	}

@@ -1142,6 +1142,218 @@ static generated_status_t generated_smoke_jsval_set(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_map(char *detail, size_t cap)
+{
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t map;
+	jsval_t grown;
+	jsval_t string_a;
+	jsval_t string_b;
+	jsval_t object_a;
+	jsval_t object_b;
+	jsval_t result;
+	size_t size = 0;
+	int has = 0;
+	int deleted = 0;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_map_new(&region, 2, &map) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_new");
+	}
+	if (!jsval_truthy(&region, map)) {
+		return generated_failf(detail, cap, "expected map to be truthy");
+	}
+	if (jsval_typeof(&region, map, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(map)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_strict_eq(&region, map, map) != 1) {
+		return generated_failf(detail, cap,
+				"expected map identity to be strict-equal to itself");
+	}
+	if (jsval_map_get(&region, map, jsval_number(1.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(missing)");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected missing map get to return undefined");
+	}
+
+	if (jsval_map_set(&region, map, jsval_number(NAN), jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(NaN)");
+	}
+	if (jsval_map_has(&region, map, jsval_number(NAN), &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_has(NaN)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_get(&region, map, jsval_number(NAN), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(NaN)");
+	}
+	status = generated_expect_number(&region, result, 1.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_map_set(&region, map, jsval_number(-0.0), jsval_number(2.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(-0)");
+	}
+	if (jsval_map_has(&region, map, jsval_number(+0.0), &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_has(+0)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_size(&region, map, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_size(initial)");
+	}
+	if (size != 2) {
+		return generated_failf(detail, cap,
+				"expected initial map size 2, got %zu", size);
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(dup a)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(dup b)");
+	}
+	errno = 0;
+	if (jsval_map_set(&region, map, string_a, jsval_number(3.0)) != -1
+			|| errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected map set overflow to fail with ENOBUFS");
+	}
+	if (jsval_map_clone(&region, map, 4, &grown) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_clone");
+	}
+	if (jsval_strict_eq(&region, map, grown) != 0) {
+		return generated_failf(detail, cap,
+				"expected cloned map to have distinct identity");
+	}
+	map = grown;
+
+	if (jsval_map_set(&region, map, string_a, jsval_number(3.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(string_a)");
+	}
+	if (jsval_map_has(&region, map, string_b, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_has(string_b)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_get(&region, map, string_b, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(string_b)");
+	}
+	status = generated_expect_number(&region, result, 3.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_set(&region, map, string_b, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(string_b)");
+	}
+	if (jsval_map_size(&region, map, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_size(strings)");
+	}
+	if (size != 3) {
+		return generated_failf(detail, cap,
+				"expected deduped map size 3, got %zu", size);
+	}
+	if (jsval_map_key_at(&region, map, 2, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_key_at(2)");
+	}
+	if (jsval_strict_eq(&region, result, string_a) != 1) {
+		return generated_failf(detail, cap,
+				"expected overwrite to preserve original map key order");
+	}
+	if (jsval_map_value_at(&region, map, 2, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_value_at(2)");
+	}
+	status = generated_expect_number(&region, result, 4.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_object_new(&region, 0, &object_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(object_a)");
+	}
+	if (jsval_object_new(&region, 0, &object_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(object_b)");
+	}
+	if (jsval_map_set(&region, map, object_a, jsval_number(5.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(object_a)");
+	}
+	if (jsval_map_has(&region, map, object_a, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_has(object_a)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_has(&region, map, object_b, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_has(object_b)");
+	}
+	status = generated_expect_boolean_result(has, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_map_delete(&region, map, string_b, &deleted) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_delete(string_b)");
+	}
+	status = generated_expect_boolean_result(deleted, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_key_at(&region, map, 2, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_key_at(compacted)");
+	}
+	if (jsval_strict_eq(&region, result, object_a) != 1) {
+		return generated_failf(detail, cap,
+				"expected map delete compaction to preserve remaining order");
+	}
+	if (jsval_map_delete(&region, map, jsval_number(+0.0), &deleted) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_delete(+0)");
+	}
+	status = generated_expect_boolean_result(deleted, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_map_get(&region, map, jsval_number(-0.0), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(-0 after delete)");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected deleted numeric key to read back as undefined");
+	}
+
+	if (jsval_map_clear(&region, map) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_clear");
+	}
+	if (jsval_map_size(&region, map, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_size(clear)");
+	}
+	if (size != 0) {
+		return generated_failf(detail, cap,
+				"expected cleared map size 0, got %zu", size);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		size_t cap)
 {
@@ -8641,6 +8853,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
+	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_url_core", generated_smoke_jsval_url_core},
 	{"smoke", "jsval_nullish_coalescing",
 		generated_smoke_jsval_nullish_coalescing},

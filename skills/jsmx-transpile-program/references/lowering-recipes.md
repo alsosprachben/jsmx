@@ -49,7 +49,7 @@ Examples:
 
 Keep measure-then-execute APIs explicit when the generated program needs caller-managed output buffers.
 
-## Objects, Arrays, And Sets
+## Objects, Arrays, Sets, And Maps
 
 Prefer the direct helper surface already established in the corpus:
 
@@ -78,11 +78,24 @@ Prefer the direct helper surface already established in the corpus:
   - `jsval_set_clear(...)`
   - `jsval_set_clone(...)` when the translator intentionally grows a
     capacity-bounded set
+- maps:
+  - `jsval_map_new(...)`
+  - `jsval_map_size(...)`
+  - `jsval_map_has(...)`
+  - `jsval_map_get(...)`
+  - `jsval_map_set(...)`
+  - `jsval_map_delete(...)`
+  - `jsval_map_clear(...)`
+  - `jsval_map_key_at(...)`
+  - `jsval_map_value_at(...)`
+  - `jsval_map_clone(...)` when the translator intentionally grows a
+    capacity-bounded map
 
 Remember the current boundary:
 
 - arrays are dense and capacity-bounded
 - sets are insertion-ordered and capacity-bounded
+- maps are insertion-ordered and capacity-bounded
 - sparse arrays and holes are still out of scope
 - JSON-backed values are readable without implicit mutation
 - promotion remains explicit when mutation begins

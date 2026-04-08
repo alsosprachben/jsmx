@@ -70,7 +70,7 @@ That makes semantic correctness more important than surface familiarity:
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
-    `Set` values
+    `Set` and `Map` values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -97,6 +97,15 @@ That makes semantic correctness more important than surface familiarity:
     - `delete`
     - `clear`
     - clone-to-bigger repair when the translator chooses to grow a set
+  - capacity-bounded native `Map` helpers for:
+    - `size`
+    - `has`
+    - `get`
+    - `set`
+    - `delete`
+    - `clear`
+    - ordered key/value access
+    - clone-to-bigger repair when the translator chooses to grow a map
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,
