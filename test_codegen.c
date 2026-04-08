@@ -1354,6 +1354,229 @@ static generated_status_t generated_smoke_jsval_map(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_iterators(char *detail,
+		size_t cap)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t array;
+	jsval_t iterator;
+	jsval_t value;
+	jsval_t key;
+	jsval_t set;
+	jsval_t pairs;
+	jsval_t pair;
+	jsval_t map;
+	jsval_t string_a;
+	jsval_t string_b;
+	size_t size = 0;
+	int done = 0;
+	int has = 0;
+	double sum = 0.0;
+	generated_status_t status;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_array_new(&region, 4, &array) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(array)");
+	}
+	if (jsval_array_push(&region, array, jsval_number(1.0)) < 0
+			|| jsval_array_push(&region, array, jsval_number(2.0)) < 0
+			|| jsval_array_push(&region, array, jsval_number(3.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(array)");
+	}
+	if (jsval_get_iterator(&region, array, JSVAL_ITERATOR_SELECTOR_DEFAULT,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(array values) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (!jsval_truthy(&region, iterator)) {
+		return generated_failf(detail, cap, "expected iterator to be truthy");
+	}
+	if (jsval_typeof(&region, iterator, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(iterator)");
+	}
+	status = generated_expect_string(&region, value,
+			(const uint8_t *)"object", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	for (;;) {
+		if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_iterator_next(array values) failed: errno=%d kind=%d",
+					errno, error.kind);
+		}
+		if (done) {
+			break;
+		}
+		if (value.kind != JSVAL_KIND_NUMBER) {
+			return generated_failf(detail, cap,
+					"expected numeric array iterator value");
+		}
+		sum += value.as.number;
+	}
+	if (sum != 6.0) {
+		return generated_failf(detail, cap,
+				"expected array iterator sum 6, got %.17g", sum);
+	}
+
+	if (jsval_get_iterator(&region, array, JSVAL_ITERATOR_SELECTOR_ENTRIES,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(array entries) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	errno = 0;
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP from jsval_iterator_next(array entries)");
+	}
+	if (jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next_entry(array entries) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (done || key.kind != JSVAL_KIND_NUMBER || key.as.number != 0.0
+			|| value.kind != JSVAL_KIND_NUMBER || value.as.number != 1.0) {
+		return generated_failf(detail, cap,
+				"unexpected first array entry iterator result");
+	}
+
+	if (jsval_set_new(&region, 2, &set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_new(iterable)");
+	}
+	if (jsval_get_iterator(&region, array, JSVAL_ITERATOR_SELECTOR_VALUES,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(array for set) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	for (;;) {
+		if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_iterator_next(array for set) failed: errno=%d kind=%d",
+					errno, error.kind);
+		}
+		if (done) {
+			break;
+		}
+		if (value.kind == JSVAL_KIND_NUMBER && value.as.number == 3.0) {
+			value = jsval_number(2.0);
+		}
+		if (jsval_set_add(&region, set, value) < 0) {
+			return generated_fail_errno(detail, cap, "jsval_set_add(iterable)");
+		}
+	}
+	if (jsval_set_size(&region, set, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_size(iterable)");
+	}
+	if (size != 2) {
+		return generated_failf(detail, cap,
+				"expected Set(iterable) size 2, got %zu", size);
+	}
+	if (jsval_set_has(&region, set, jsval_number(2.0), &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(iterable)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"a", 1,
+			&string_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(a)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"b", 1,
+			&string_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(b)");
+	}
+	if (jsval_array_new(&region, 2, &pairs) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(pairs)");
+	}
+	if (jsval_array_new(&region, 2, &pair) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(pair a)");
+	}
+	if (jsval_array_push(&region, pair, string_a) < 0
+			|| jsval_array_push(&region, pair, jsval_number(5.0)) < 0
+			|| jsval_array_push(&region, pairs, pair) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(pair a)");
+	}
+	if (jsval_array_new(&region, 2, &pair) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(pair b)");
+	}
+	if (jsval_array_push(&region, pair, string_b) < 0
+			|| jsval_array_push(&region, pair, jsval_number(6.0)) < 0
+			|| jsval_array_push(&region, pairs, pair) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(pair b)");
+	}
+	if (jsval_map_new(&region, 2, &map) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_new(iterable)");
+	}
+	if (jsval_get_iterator(&region, pairs, JSVAL_ITERATOR_SELECTOR_VALUES,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(pairs) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	for (;;) {
+		jsval_t pair_key;
+		jsval_t pair_value;
+
+		if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_iterator_next(pairs) failed: errno=%d kind=%d",
+					errno, error.kind);
+		}
+		if (done) {
+			break;
+		}
+		if (jsval_array_get(&region, value, 0, &pair_key) < 0
+				|| jsval_array_get(&region, value, 1, &pair_value) < 0) {
+			return generated_fail_errno(detail, cap, "jsval_array_get(pair)");
+		}
+		if (jsval_map_set(&region, map, pair_key, pair_value) < 0) {
+			return generated_fail_errno(detail, cap, "jsval_map_set(iterable)");
+		}
+	}
+	if (jsval_map_get(&region, map, string_a, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(a)");
+	}
+	status = generated_expect_number(&region, value, 5.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_get_iterator(&region, map, JSVAL_ITERATOR_SELECTOR_DEFAULT,
+			&iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(map entries) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	errno = 0;
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP from jsval_iterator_next(map entries)");
+	}
+	if (jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next_entry(map entries) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (done || jsval_strict_eq(&region, key, string_a) != 1
+			|| value.kind != JSVAL_KIND_NUMBER || value.as.number != 5.0) {
+		return generated_failf(detail, cap,
+				"unexpected first map entry iterator result");
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		size_t cap)
 {
@@ -8854,6 +9077,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
+	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},
 	{"smoke", "jsval_url_core", generated_smoke_jsval_url_core},
 	{"smoke", "jsval_nullish_coalescing",
 		generated_smoke_jsval_nullish_coalescing},

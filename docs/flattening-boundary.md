@@ -43,6 +43,7 @@ caller-provided memory:
   - shift
   - unshift
   - explicit length writes
+  - explicit iterator production and stepping over values, keys, and entries
 - native, insertion-ordered, capacity-bounded `Set` semantics such as:
   - `size`
   - `has`
@@ -50,6 +51,7 @@ caller-provided memory:
   - `delete`
   - `clear`
   - clone-to-bigger repair when the translator intentionally grows a set
+  - explicit iterator production and stepping over values, keys, and entries
 - native, insertion-ordered, capacity-bounded `Map` semantics such as:
   - `size`
   - `has`
@@ -59,6 +61,7 @@ caller-provided memory:
   - `clear`
   - ordered key/value access
   - clone-to-bigger repair when the translator intentionally grows a map
+  - explicit iterator production and stepping over keys, values, and entries
 - deterministic JS-method helpers such as `String.prototype.normalize`
 
 ### Translator

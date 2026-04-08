@@ -32,8 +32,16 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_URL = 9,
 	JSVAL_KIND_URL_SEARCH_PARAMS = 10,
 	JSVAL_KIND_SET = 11,
-	JSVAL_KIND_MAP = 12
+	JSVAL_KIND_MAP = 12,
+	JSVAL_KIND_ITERATOR = 13
 } jsval_kind_t;
+
+typedef enum jsval_iterator_selector_e {
+	JSVAL_ITERATOR_SELECTOR_DEFAULT = 0,
+	JSVAL_ITERATOR_SELECTOR_KEYS = 1,
+	JSVAL_ITERATOR_SELECTOR_VALUES = 2,
+	JSVAL_ITERATOR_SELECTOR_ENTRIES = 3
+} jsval_iterator_selector_t;
 
 typedef struct jsval_s {
 	uint8_t kind;
@@ -160,6 +168,14 @@ int jsval_map_key_at(jsval_region_t *region, jsval_t map, size_t index,
 		jsval_t *key_ptr);
 int jsval_map_value_at(jsval_region_t *region, jsval_t map, size_t index,
 		jsval_t *value_ptr);
+int jsval_get_iterator(jsval_region_t *region, jsval_t iterable,
+		jsval_iterator_selector_t selector, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_iterator_next(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_iterator_next_entry(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *key_ptr, jsval_t *value_ptr,
+		jsmethod_error_t *error);
 int jsval_array_get(jsval_region_t *region, jsval_t array, size_t index, jsval_t *value_ptr);
 int jsval_array_set(jsval_region_t *region, jsval_t array, size_t index, jsval_t value);
 int jsval_array_clone_dense(jsval_region_t *region, jsval_t src, size_t capacity, jsval_t *value_ptr);

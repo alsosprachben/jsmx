@@ -90,12 +90,23 @@ Prefer the direct helper surface already established in the corpus:
   - `jsval_map_value_at(...)`
   - `jsval_map_clone(...)` when the translator intentionally grows a
     capacity-bounded map
+- iterators:
+  - `jsval_get_iterator(...)`
+  - `jsval_iterator_next(...)`
+  - `jsval_iterator_next_entry(...)`
+  - default iterator mapping is:
+    - arrays -> values
+    - sets -> values
+    - maps -> entries
+  - use `next_entry(...)` for entry iterators instead of allocating pair
+    arrays in the hot path
 
 Remember the current boundary:
 
 - arrays are dense and capacity-bounded
 - sets are insertion-ordered and capacity-bounded
 - maps are insertion-ordered and capacity-bounded
+- string iterators are still out of scope
 - sparse arrays and holes are still out of scope
 - JSON-backed values are readable without implicit mutation
 - promotion remains explicit when mutation begins

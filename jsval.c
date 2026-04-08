@@ -43,6 +43,26 @@ typedef struct jsval_native_map_entry_s {
 	jsval_t value;
 } jsval_native_map_entry_t;
 
+typedef enum jsval_iterator_mode_e {
+	JSVAL_ITERATOR_MODE_ARRAY_VALUES = 0,
+	JSVAL_ITERATOR_MODE_ARRAY_KEYS = 1,
+	JSVAL_ITERATOR_MODE_ARRAY_ENTRIES = 2,
+	JSVAL_ITERATOR_MODE_SET_VALUES = 3,
+	JSVAL_ITERATOR_MODE_SET_KEYS = 4,
+	JSVAL_ITERATOR_MODE_SET_ENTRIES = 5,
+	JSVAL_ITERATOR_MODE_MAP_KEYS = 6,
+	JSVAL_ITERATOR_MODE_MAP_VALUES = 7,
+	JSVAL_ITERATOR_MODE_MAP_ENTRIES = 8
+} jsval_iterator_mode_t;
+
+typedef struct jsval_native_iterator_s {
+	jsval_t source_value;
+	size_t cursor;
+	uint8_t mode;
+	uint8_t done;
+	uint8_t reserved[6];
+} jsval_native_iterator_t;
+
 typedef struct jsval_native_url_field_s {
 	jsval_off_t off;
 	size_t len;
@@ -298,6 +318,15 @@ static jsval_native_map_entry_t *jsval_native_map_entries(jsval_native_map_t *ma
 	return (jsval_native_map_entry_t *)(map + 1);
 }
 
+static jsval_native_iterator_t *jsval_native_iterator(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_ITERATOR) {
+		return NULL;
+	}
+	return (jsval_native_iterator_t *)jsval_region_ptr(region, value.off);
+}
+
 static jsval_native_url_t *jsval_native_url(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_URL) {
@@ -328,6 +357,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		return 1;
 	default:
 		return 0;
@@ -1747,6 +1777,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1880,6 +1911,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1939,6 +1971,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2170,6 +2203,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -5051,6 +5085,344 @@ int jsval_map_value_at(jsval_region_t *region, jsval_t map, size_t index,
 	}
 	*value_ptr = jsval_native_map_entries(native)[index].value;
 	return 0;
+}
+
+static int jsval_iterator_mode_is_entry(jsval_iterator_mode_t mode)
+{
+	return mode == JSVAL_ITERATOR_MODE_ARRAY_ENTRIES
+			|| mode == JSVAL_ITERATOR_MODE_SET_ENTRIES
+			|| mode == JSVAL_ITERATOR_MODE_MAP_ENTRIES;
+}
+
+static int jsval_iterator_new(jsval_region_t *region,
+		jsval_iterator_mode_t mode, jsval_t source_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_iterator_t *iterator;
+	jsval_off_t off;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*iterator), JSVAL_ALIGN, &off,
+			(void **)&iterator) < 0) {
+		return -1;
+	}
+	iterator->source_value = source_value;
+	iterator->cursor = 0;
+	iterator->mode = (uint8_t)mode;
+	iterator->done = 0;
+	memset(iterator->reserved, 0, sizeof(iterator->reserved));
+
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_ITERATOR;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_get_iterator(jsval_region_t *region, jsval_t iterable,
+		jsval_iterator_selector_t selector, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_iterator_mode_t mode;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+
+	switch (iterable.kind) {
+	case JSVAL_KIND_ARRAY:
+		switch (selector) {
+		case JSVAL_ITERATOR_SELECTOR_DEFAULT:
+		case JSVAL_ITERATOR_SELECTOR_VALUES:
+			mode = JSVAL_ITERATOR_MODE_ARRAY_VALUES;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_KEYS:
+			mode = JSVAL_ITERATOR_MODE_ARRAY_KEYS;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_ENTRIES:
+			mode = JSVAL_ITERATOR_MODE_ARRAY_ENTRIES;
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		return jsval_iterator_new(region, mode, iterable, value_ptr);
+	case JSVAL_KIND_SET:
+		if (iterable.repr != JSVAL_REPR_NATIVE
+				|| jsval_native_set(region, iterable) == NULL) {
+			errno = ENOTSUP;
+			return -1;
+		}
+		switch (selector) {
+		case JSVAL_ITERATOR_SELECTOR_DEFAULT:
+		case JSVAL_ITERATOR_SELECTOR_VALUES:
+			mode = JSVAL_ITERATOR_MODE_SET_VALUES;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_KEYS:
+			mode = JSVAL_ITERATOR_MODE_SET_KEYS;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_ENTRIES:
+			mode = JSVAL_ITERATOR_MODE_SET_ENTRIES;
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		return jsval_iterator_new(region, mode, iterable, value_ptr);
+	case JSVAL_KIND_MAP:
+		if (iterable.repr != JSVAL_REPR_NATIVE
+				|| jsval_native_map(region, iterable) == NULL) {
+			errno = ENOTSUP;
+			return -1;
+		}
+		switch (selector) {
+		case JSVAL_ITERATOR_SELECTOR_DEFAULT:
+		case JSVAL_ITERATOR_SELECTOR_ENTRIES:
+			mode = JSVAL_ITERATOR_MODE_MAP_ENTRIES;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_KEYS:
+			mode = JSVAL_ITERATOR_MODE_MAP_KEYS;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_VALUES:
+			mode = JSVAL_ITERATOR_MODE_MAP_VALUES;
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		return jsval_iterator_new(region, mode, iterable, value_ptr);
+	case JSVAL_KIND_MATCH_ITERATOR:
+		if (selector == JSVAL_ITERATOR_SELECTOR_DEFAULT
+				|| selector == JSVAL_ITERATOR_SELECTOR_VALUES) {
+			*value_ptr = iterable;
+			return 0;
+		}
+		errno = EINVAL;
+		return -1;
+	case JSVAL_KIND_ITERATOR:
+		if (selector == JSVAL_ITERATOR_SELECTOR_DEFAULT) {
+			*value_ptr = iterable;
+			return 0;
+		}
+		errno = EINVAL;
+		return -1;
+	default:
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "iterable required";
+		}
+		return -1;
+	}
+}
+
+static int jsval_iterator_next_native(jsval_region_t *region,
+		jsval_native_iterator_t *iterator, int want_entry, int *done_ptr,
+		jsval_t *key_ptr, jsval_t *value_ptr)
+{
+	jsval_iterator_mode_t mode;
+
+	if (region == NULL || iterator == NULL || done_ptr == NULL
+			|| value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	mode = (jsval_iterator_mode_t)iterator->mode;
+	if ((want_entry != 0) != jsval_iterator_mode_is_entry(mode)) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (iterator->done) {
+		*done_ptr = 1;
+		if (key_ptr != NULL) {
+			*key_ptr = jsval_undefined();
+		}
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+
+	switch (mode) {
+	case JSVAL_ITERATOR_MODE_ARRAY_VALUES:
+	case JSVAL_ITERATOR_MODE_ARRAY_KEYS:
+	case JSVAL_ITERATOR_MODE_ARRAY_ENTRIES:
+	{
+		size_t index = iterator->cursor;
+		size_t len = jsval_array_length(region, iterator->source_value);
+		jsval_t element;
+
+		if (index >= len) {
+			iterator->done = 1;
+			*done_ptr = 1;
+			if (key_ptr != NULL) {
+				*key_ptr = jsval_undefined();
+			}
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		if (mode != JSVAL_ITERATOR_MODE_ARRAY_KEYS
+				&& jsval_array_get(region, iterator->source_value, index,
+						&element) < 0) {
+			return -1;
+		}
+		iterator->cursor++;
+		*done_ptr = 0;
+		if (mode == JSVAL_ITERATOR_MODE_ARRAY_VALUES) {
+			*value_ptr = element;
+			return 0;
+		}
+		if (mode == JSVAL_ITERATOR_MODE_ARRAY_KEYS) {
+			*value_ptr = jsval_number((double)index);
+			return 0;
+		}
+		*key_ptr = jsval_number((double)index);
+		*value_ptr = element;
+		return 0;
+	}
+	case JSVAL_ITERATOR_MODE_SET_VALUES:
+	case JSVAL_ITERATOR_MODE_SET_KEYS:
+	case JSVAL_ITERATOR_MODE_SET_ENTRIES:
+	{
+		jsval_native_set_t *set = jsval_native_set(region,
+				iterator->source_value);
+		jsval_t *values;
+		jsval_t element;
+
+		if (set == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (iterator->cursor >= set->len) {
+			iterator->done = 1;
+			*done_ptr = 1;
+			if (key_ptr != NULL) {
+				*key_ptr = jsval_undefined();
+			}
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		values = jsval_native_set_values(set);
+		element = values[iterator->cursor++];
+		*done_ptr = 0;
+		if (mode == JSVAL_ITERATOR_MODE_SET_ENTRIES) {
+			*key_ptr = element;
+			*value_ptr = element;
+			return 0;
+		}
+		*value_ptr = element;
+		return 0;
+	}
+	case JSVAL_ITERATOR_MODE_MAP_KEYS:
+	case JSVAL_ITERATOR_MODE_MAP_VALUES:
+	case JSVAL_ITERATOR_MODE_MAP_ENTRIES:
+	{
+		jsval_native_map_t *map = jsval_native_map(region,
+				iterator->source_value);
+		jsval_native_map_entry_t *entries;
+		jsval_native_map_entry_t entry;
+
+		if (map == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (iterator->cursor >= map->len) {
+			iterator->done = 1;
+			*done_ptr = 1;
+			if (key_ptr != NULL) {
+				*key_ptr = jsval_undefined();
+			}
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		entries = jsval_native_map_entries(map);
+		entry = entries[iterator->cursor++];
+		*done_ptr = 0;
+		if (mode == JSVAL_ITERATOR_MODE_MAP_KEYS) {
+			*value_ptr = entry.key;
+			return 0;
+		}
+		if (mode == JSVAL_ITERATOR_MODE_MAP_VALUES) {
+			*value_ptr = entry.value;
+			return 0;
+		}
+		*key_ptr = entry.key;
+		*value_ptr = entry.value;
+		return 0;
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+int jsval_iterator_next(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_native_iterator_t *iterator;
+
+	if (iterator_value.kind == JSVAL_KIND_MATCH_ITERATOR) {
+#if JSMX_WITH_REGEX
+		return jsval_match_iterator_next(region, iterator_value, done_ptr,
+				value_ptr, error);
+#else
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "iterator required";
+		}
+		return -1;
+#endif
+	}
+	if (region == NULL || done_ptr == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	iterator = jsval_native_iterator(region, iterator_value);
+	if (iterator == NULL) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "iterator required";
+		}
+		return -1;
+	}
+	return jsval_iterator_next_native(region, iterator, 0, done_ptr, NULL,
+			value_ptr);
+}
+
+int jsval_iterator_next_entry(jsval_region_t *region, jsval_t iterator_value,
+		int *done_ptr, jsval_t *key_ptr, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	jsval_native_iterator_t *iterator;
+
+	if (region == NULL || done_ptr == NULL || key_ptr == NULL
+			|| value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (iterator_value.kind == JSVAL_KIND_MATCH_ITERATOR) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	iterator = jsval_native_iterator(region, iterator_value);
+	if (iterator == NULL) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "iterator required";
+		}
+		return -1;
+	}
+	return jsval_iterator_next_native(region, iterator, 1, done_ptr, key_ptr,
+			value_ptr);
 }
 
 #if JSMX_WITH_REGEX
@@ -14785,6 +15157,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -14855,6 +15228,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		return 1;
 	default:
 		return 0;
@@ -14917,6 +15291,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
+	case JSVAL_KIND_ITERATOR:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -14946,6 +15321,7 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_URL_SEARCH_PARAMS
 			|| left.kind == JSVAL_KIND_SET
 			|| left.kind == JSVAL_KIND_MAP
+			|| left.kind == JSVAL_KIND_ITERATOR
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
@@ -14953,7 +15329,8 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| right.kind == JSVAL_KIND_URL
 			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS
 			|| right.kind == JSVAL_KIND_SET
-			|| right.kind == JSVAL_KIND_MAP) {
+			|| right.kind == JSVAL_KIND_MAP
+			|| right.kind == JSVAL_KIND_ITERATOR) {
 		errno = ENOTSUP;
 		return -1;
 	}
