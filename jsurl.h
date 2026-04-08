@@ -102,6 +102,15 @@ int jsurl_view_host_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_host_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
 int jsurl_view_origin_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_origin_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
+int jsurl_view_pathname_wire_measure(const jsurl_view_t *view, size_t *len_ptr);
+int jsurl_view_pathname_wire_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
+int jsurl_view_search_wire_measure(const jsurl_view_t *view, size_t *len_ptr);
+int jsurl_view_search_wire_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
+int jsurl_view_hash_wire_measure(const jsurl_view_t *view, size_t *len_ptr);
+int jsurl_view_hash_wire_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
 int jsurl_view_href_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_href_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
 jsstr8_t jsurl_view_to_json(const jsurl_view_t *view);
@@ -166,6 +175,12 @@ int jsurl_set_pathname(jsurl_t *url, jsstr8_t pathname);
 int jsurl_set_search(jsurl_t *url, jsstr8_t search);
 int jsurl_set_hash(jsurl_t *url, jsstr8_t hash);
 
+int jsurl_pathname_wire_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_pathname_wire_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
+int jsurl_search_wire_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_search_wire_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
+int jsurl_hash_wire_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_hash_wire_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
 int jsurl_href_measure(const jsurl_t *url, size_t *len_ptr);
 int jsurl_href_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
 int jsurl_origin_measure(const jsurl_t *url, size_t *len_ptr);

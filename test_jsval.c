@@ -4715,6 +4715,7 @@ static void test_url_object_semantics(void)
 	jsval_t rel_input;
 	jsval_t base_input;
 	jsval_t rel_url;
+	jsval_t wire_url;
 	jsval_t detached;
 	jsval_t values;
 	jsval_t first;
@@ -4724,8 +4725,13 @@ static void test_url_object_semantics(void)
 	jsval_t name_a;
 	jsval_t name_b;
 	jsval_t name_c;
+	jsval_t name_plus;
+	jsval_t name_pair;
 	jsval_t value_2;
 	jsval_t value_5;
+	jsval_t value_words;
+	jsval_t value_plus;
+	jsval_t value_pair;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 
@@ -4838,6 +4844,67 @@ static void test_url_object_semantics(void)
 	assert(jsval_url_href(&region, rel_url, &result) == 0);
 	assert_string(&region, result, "https://example.com/dir/up?q=2");
 	assert(jsval_strict_eq(&region, url, rel_url) == 0);
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)
+			"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80",
+			sizeof("https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80") - 1,
+			&input) == 0);
+	assert(jsval_url_new(&region, input, 0, jsval_undefined(), &wire_url) == 0);
+	assert(jsval_url_pathname(&region, wire_url, &result) == 0);
+	assert_string(&region, result, "/a b/\xf0\x9f\x98\x80");
+	assert(jsval_url_search(&region, wire_url, &result) == 0);
+	assert_string(&region, result, "?q=two words&plus=%2B&pair=a%26b%3Dc");
+	assert(jsval_url_hash(&region, wire_url, &result) == 0);
+	assert_string(&region, result, "#frag \xf0\x9f\x98\x80");
+	assert(jsval_url_href(&region, wire_url, &result) == 0);
+	assert_string(&region, result,
+			"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80");
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"/emoji \xf0\x9f\x98\x80",
+			sizeof("/emoji \xf0\x9f\x98\x80") - 1, &input) == 0);
+	assert(jsval_url_set_pathname(&region, wire_url, input) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"?q=hello world&plus=%2B",
+			sizeof("?q=hello world&plus=%2B") - 1, &input) == 0);
+	assert(jsval_url_set_search(&region, wire_url, input) == 0);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"done \xf0\x9f\x98\x80",
+			sizeof("done \xf0\x9f\x98\x80") - 1, &input) == 0);
+	assert(jsval_url_set_hash(&region, wire_url, input) == 0);
+	assert(jsval_url_href(&region, wire_url, &result) == 0);
+	assert_string(&region, result,
+			"https://example.com/emoji%20%F0%9F%98%80?q=hello%20world&plus=%2B#done%20%F0%9F%98%80");
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://example.com/base",
+			sizeof("https://example.com/base") - 1, &input) == 0);
+	assert(jsval_url_new(&region, input, 0, jsval_undefined(), &wire_url) == 0);
+	assert(jsval_url_search_params(&region, wire_url, &params_b) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"plus", 4,
+			&name_plus) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"pair", 4,
+			&name_pair) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"two words", 9,
+			&value_words) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"+", 1,
+			&value_plus) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"a&b=c", 5,
+			&value_pair) == 0);
+	assert(jsval_url_search_params_append(&region, params_b, name_x, value_words)
+			== 0);
+	assert(jsval_url_search_params_append(&region, params_b, name_plus, value_plus)
+			== 0);
+	assert(jsval_url_search_params_append(&region, params_b, name_pair, value_pair)
+			== 0);
+	assert(jsval_url_search(&region, wire_url, &result) == 0);
+	assert_string(&region, result, "?x=two words&plus=%2B&pair=a%26b%3Dc");
+	assert(jsval_url_href(&region, wire_url, &result) == 0);
+	assert_string(&region, result,
+			"https://example.com/base?x=two%20words&plus=%2B&pair=a%26b%3Dc");
+	assert(jsval_url_search_params_to_string(&region, params_b, &result) == 0);
+	assert_string(&region, result, "x=two+words&plus=%2B&pair=a%26b%3Dc");
 
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"?b=4", 4,
 			&input) == 0);

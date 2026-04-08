@@ -988,6 +988,7 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	jsval_t input;
 	jsval_t url;
 	jsval_t idna_url;
+	jsval_t wire_url;
 	jsval_t params_a;
 	jsval_t params_b;
 	jsval_t result;
@@ -1131,6 +1132,94 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	}
 	status = generated_expect_string(&region, result,
 			(const uint8_t *)"a=3", 3, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)
+			"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80",
+			sizeof("https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80") - 1,
+			&input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(wire input)");
+	}
+	if (jsval_url_new(&region, input, 0, jsval_undefined(), &wire_url) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_new(wire)");
+	}
+	if (jsval_url_pathname(&region, wire_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_pathname(wire)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"/a b/\xf0\x9f\x98\x80",
+			sizeof("/a b/\xf0\x9f\x98\x80") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_search(&region, wire_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_search(wire)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"?q=two words&plus=%2B&pair=a%26b%3Dc",
+			sizeof("?q=two words&plus=%2B&pair=a%26b%3Dc") - 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_href(&region, wire_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_href(wire)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)
+			"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80",
+			sizeof("https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80") - 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"?q=hello world&plus=%2B",
+			sizeof("?q=hello world&plus=%2B") - 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(wire search)");
+	}
+	if (jsval_url_set_search(&region, wire_url, input) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_set_search(wire)");
+	}
+	if (jsval_url_search_params(&region, wire_url, &params_b) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params(wire)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"pair", 4, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(pair name)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"a&b=c", 5, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(pair value)");
+	}
+	if (jsval_url_search_params_append(&region, params_b, input, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_append(wire)");
+	}
+	if (jsval_url_search(&region, wire_url, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_search(sync)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"?q=hello world&plus=%2B&pair=a%26b%3Dc",
+			sizeof("?q=hello world&plus=%2B&pair=a%26b%3Dc") - 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_search_params_to_string(&region, params_b, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_search_params_to_string(wire)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"q=hello+world&plus=%2B&pair=a%26b%3Dc",
+			sizeof("q=hello+world&plus=%2B&pair=a%26b%3Dc") - 1,
+			detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
 	}

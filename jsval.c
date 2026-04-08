@@ -524,6 +524,9 @@ static int jsval_url_field_make_string(jsval_region_t *region,
 			value.len, value_ptr);
 }
 
+static int jsval_url_search_params_stringify(jsval_region_t *region,
+		jsval_native_url_search_params_t *native, jsval_t *value_ptr);
+
 static int jsval_url_stringify(jsval_region_t *region, jsval_t value,
 		jsval_t *value_ptr)
 {
@@ -546,32 +549,12 @@ static int jsval_url_stringify(jsval_region_t *region, jsval_t value,
 	if (value.kind == JSVAL_KIND_URL_SEARCH_PARAMS) {
 		jsval_native_url_search_params_t *native =
 			jsval_native_url_search_params(region, value);
-		jsstr8_t body;
-		static const uint8_t empty[1] = {0};
 
 		if (native == NULL) {
 			errno = EINVAL;
 			return -1;
 		}
-		if (native->attached) {
-			jsval_t owner_value = jsval_undefined();
-			jsval_native_url_t *owner_native;
-
-			owner_value.kind = JSVAL_KIND_URL;
-			owner_value.repr = JSVAL_REPR_NATIVE;
-			owner_value.off = native->owner_off;
-			owner_native = jsval_native_url(region, owner_value);
-			if (owner_native == NULL) {
-				errno = EINVAL;
-				return -1;
-			}
-			body = jsval_url_query_body(jsval_url_field_value(region,
-					&owner_native->search));
-		} else {
-			body = jsval_url_field_value(region, &native->body);
-		}
-		return jsval_string_new_utf8(region, body.len > 0 ? body.bytes : empty,
-				body.len, value_ptr);
+		return jsval_url_search_params_stringify(region, native, value_ptr);
 	}
 	return jsval_stringify_value_to_native(region, value, 0, value_ptr, &error);
 }
@@ -12767,6 +12750,50 @@ static int jsval_url_search_params_parse_current(jsval_region_t *region,
 			storage_buf, storage_cap, body);
 }
 
+static int jsval_url_search_params_stringify(jsval_region_t *region,
+		jsval_native_url_search_params_t *native, jsval_t *value_ptr)
+{
+	jsstr8_t body;
+	size_t params_cap;
+	size_t storage_cap;
+
+	if (region == NULL || native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_search_params_current_body(region, native, &body, NULL) < 0) {
+		return -1;
+	}
+	params_cap = body.len > 0 ? body.len + 1 : 1;
+	storage_cap = body.len > 0 ? body.len : 1;
+	{
+		jsurl_param_t params_buf[params_cap];
+		uint8_t storage_buf[storage_cap];
+		jsurl_search_params_t params;
+		size_t out_len = 0;
+		static const uint8_t empty[1] = {0};
+
+		if (jsval_url_search_params_init_temp(&params, params_buf, params_cap,
+				storage_buf, storage_cap, body) < 0) {
+			return -1;
+		}
+		if (jsurl_search_params_measure(&params, &out_len) < 0) {
+			return -1;
+		}
+		{
+			uint8_t out_buf[out_len > 0 ? out_len : 1];
+			jsstr8_t out;
+
+			jsstr8_init_from_buf(&out, (const char *)out_buf, sizeof(out_buf));
+			if (jsurl_search_params_serialize(&params, &out) < 0) {
+				return -1;
+			}
+			return jsval_string_new_utf8(region, out.len > 0 ? out.bytes : empty,
+					out.len, value_ptr);
+		}
+	}
+}
+
 static int jsval_url_mutate(jsval_region_t *region, jsval_t url_value,
 		jsval_url_mutator_fn callback, void *opaque)
 {
@@ -14019,16 +14046,12 @@ int jsval_url_search_params_to_string(jsval_region_t *region,
 {
 	jsval_native_url_search_params_t *native =
 		jsval_native_url_search_params(region, params_value);
-	jsstr8_t body;
 
 	if (native == NULL || value_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsval_url_search_params_current_body(region, native, &body, NULL) < 0) {
-		return -1;
-	}
-	return jsval_url_jsstr_make_string(region, body, value_ptr);
+	return jsval_url_search_params_stringify(region, native, value_ptr);
 }
 
 int jsval_is_nullish(jsval_t value)

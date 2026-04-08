@@ -298,6 +298,76 @@ static void test_jsurl_setters_and_sync(void)
 	test_expect_jsstr(url.href, "http://example.org/base?a=1&b=2&c=3#section");
 }
 
+static void test_jsurl_wire_lifecycle(void)
+{
+	jsurl_t url;
+	test_url_buffers_t buffers;
+	uint8_t pathname_wire_buf[256];
+	uint8_t search_wire_buf[256];
+	uint8_t hash_wire_buf[256];
+	jsstr8_t pathname_wire;
+	jsstr8_t search_wire;
+	jsstr8_t hash_wire;
+
+	test_url_init(&url, &buffers);
+	jsstr8_init_from_buf(&pathname_wire, (const char *)pathname_wire_buf,
+			sizeof(pathname_wire_buf));
+	jsstr8_init_from_buf(&search_wire, (const char *)search_wire_buf,
+			sizeof(search_wire_buf));
+	jsstr8_init_from_buf(&hash_wire, (const char *)hash_wire_buf,
+			sizeof(hash_wire_buf));
+
+	declare_jsstr8(encoded,
+		"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80");
+	assert(jsurl_parse_copy(&url, encoded) == 0);
+	test_expect_jsstr(url.pathname, "/a b/\xf0\x9f\x98\x80");
+	test_expect_jsstr(url.search, "?q=two words&plus=%2B&pair=a%26b%3Dc");
+	test_expect_jsstr(url.hash, "#frag \xf0\x9f\x98\x80");
+	test_expect_jsstr(url.href,
+		"https://example.com/a%20b/%F0%9F%98%80?q=two%20words&plus=%2B&pair=a%26b%3Dc#frag%20%F0%9F%98%80");
+
+	assert(jsurl_pathname_wire_serialize(&url, &pathname_wire) == 0);
+	assert(jsurl_search_wire_serialize(&url, &search_wire) == 0);
+	assert(jsurl_hash_wire_serialize(&url, &hash_wire) == 0);
+	test_expect_jsstr(pathname_wire, "/a%20b/%F0%9F%98%80");
+	test_expect_jsstr(search_wire, "?q=two%20words&plus=%2B&pair=a%26b%3Dc");
+	test_expect_jsstr(hash_wire, "#frag%20%F0%9F%98%80");
+
+	declare_jsstr8(pathname, "/emoji \xf0\x9f\x98\x80");
+	declare_jsstr8(search, "?q=hello world&plus=%2B");
+	declare_jsstr8(hash, "done \xf0\x9f\x98\x80");
+	assert(jsurl_set_pathname(&url, pathname) == 0);
+	assert(jsurl_set_search(&url, search) == 0);
+	assert(jsurl_set_hash(&url, hash) == 0);
+	test_expect_jsstr(url.pathname, "/emoji \xf0\x9f\x98\x80");
+	test_expect_jsstr(url.search, "?q=hello world&plus=%2B");
+	test_expect_jsstr(url.hash, "#done \xf0\x9f\x98\x80");
+	test_expect_jsstr(url.href,
+		"https://example.com/emoji%20%F0%9F%98%80?q=hello%20world&plus=%2B#done%20%F0%9F%98%80");
+
+	declare_jsstr8(base, "https://example.com/base");
+	assert(jsurl_parse_copy(&url, base) == 0);
+	declare_jsstr8(name_q, "q");
+	declare_jsstr8(name_plus, "plus");
+	declare_jsstr8(name_pair, "pair");
+	declare_jsstr8(value_words, "two words");
+	declare_jsstr8(value_plus, "+");
+	declare_jsstr8(value_pair, "a&b=c");
+	assert(jsurl_search_params_append(&url.search_params, name_q, value_words) == 0);
+	assert(jsurl_search_params_append(&url.search_params, name_plus, value_plus)
+			== 0);
+	assert(jsurl_search_params_append(&url.search_params, name_pair, value_pair)
+			== 0);
+	test_expect_jsstr(url.search, "?q=two words&plus=%2B&pair=a%26b%3Dc");
+	test_expect_jsstr(url.href,
+		"https://example.com/base?q=two%20words&plus=%2B&pair=a%26b%3Dc");
+
+	errno = 0;
+	declare_jsstr8(bad_percent, "https://example.com/%zz");
+	assert(jsurl_parse_copy(&url, bad_percent) == -1);
+	assert(errno == EINVAL);
+}
+
 static void test_jsurl_errors(void)
 {
 	jsurl_t url;
@@ -500,6 +570,7 @@ int main(void)
 	test_jsurl_copy_and_relative_parse();
 	test_jsurl_idna_hosts();
 	test_jsurl_setters_and_sync();
+	test_jsurl_wire_lifecycle();
 	test_jsurl_errors();
 	test_jsurl_region_copy();
 	test_jsurl_region_copy_with_base();
