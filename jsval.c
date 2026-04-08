@@ -52,7 +52,10 @@ typedef enum jsval_iterator_mode_e {
 	JSVAL_ITERATOR_MODE_SET_ENTRIES = 5,
 	JSVAL_ITERATOR_MODE_MAP_KEYS = 6,
 	JSVAL_ITERATOR_MODE_MAP_VALUES = 7,
-	JSVAL_ITERATOR_MODE_MAP_ENTRIES = 8
+	JSVAL_ITERATOR_MODE_MAP_ENTRIES = 8,
+	JSVAL_ITERATOR_MODE_STRING_VALUES = 9,
+	JSVAL_ITERATOR_MODE_STRING_KEYS = 10,
+	JSVAL_ITERATOR_MODE_STRING_ENTRIES = 11
 } jsval_iterator_mode_t;
 
 typedef struct jsval_native_iterator_s {
@@ -5091,7 +5094,41 @@ static int jsval_iterator_mode_is_entry(jsval_iterator_mode_t mode)
 {
 	return mode == JSVAL_ITERATOR_MODE_ARRAY_ENTRIES
 			|| mode == JSVAL_ITERATOR_MODE_SET_ENTRIES
-			|| mode == JSVAL_ITERATOR_MODE_MAP_ENTRIES;
+			|| mode == JSVAL_ITERATOR_MODE_MAP_ENTRIES
+			|| mode == JSVAL_ITERATOR_MODE_STRING_ENTRIES;
+}
+
+static int jsval_iterator_string_source(jsval_region_t *region,
+		jsval_t iterable, jsval_t *source_ptr)
+{
+	jsval_native_string_t *string;
+	jsval_t source_value;
+	size_t len;
+
+	if (region == NULL || source_ptr == NULL || iterable.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (iterable.repr == JSVAL_REPR_NATIVE) {
+		*source_ptr = iterable;
+		return 0;
+	}
+	if (iterable.repr != JSVAL_REPR_JSON) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_value_utf16_len(region, iterable, &len) < 0) {
+		return -1;
+	}
+	if (jsval_string_reserve_utf16(region, len, &source_value, &string) < 0) {
+		return -1;
+	}
+	if (jsval_value_copy_utf16(region, iterable, jsval_native_string_units(string),
+			string->cap, &string->len) < 0) {
+		return -1;
+	}
+	*source_ptr = source_value;
+	return 0;
 }
 
 static int jsval_iterator_new(jsval_region_t *region,
@@ -5135,6 +5172,26 @@ int jsval_get_iterator(jsval_region_t *region, jsval_t iterable,
 	jsmethod_error_clear(error);
 
 	switch (iterable.kind) {
+	case JSVAL_KIND_STRING:
+		if (jsval_iterator_string_source(region, iterable, &iterable) < 0) {
+			return -1;
+		}
+		switch (selector) {
+		case JSVAL_ITERATOR_SELECTOR_DEFAULT:
+		case JSVAL_ITERATOR_SELECTOR_VALUES:
+			mode = JSVAL_ITERATOR_MODE_STRING_VALUES;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_KEYS:
+			mode = JSVAL_ITERATOR_MODE_STRING_KEYS;
+			break;
+		case JSVAL_ITERATOR_SELECTOR_ENTRIES:
+			mode = JSVAL_ITERATOR_MODE_STRING_ENTRIES;
+			break;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+		return jsval_iterator_new(region, mode, iterable, value_ptr);
 	case JSVAL_KIND_ARRAY:
 		switch (selector) {
 		case JSVAL_ITERATOR_SELECTOR_DEFAULT:
@@ -5352,6 +5409,54 @@ static int jsval_iterator_next_native(jsval_region_t *region,
 		}
 		*key_ptr = entry.key;
 		*value_ptr = entry.value;
+		return 0;
+	}
+	case JSVAL_ITERATOR_MODE_STRING_VALUES:
+	case JSVAL_ITERATOR_MODE_STRING_KEYS:
+	case JSVAL_ITERATOR_MODE_STRING_ENTRIES:
+	{
+		jsval_native_string_t *string = jsval_native_string(region,
+				iterator->source_value);
+		jsstr16_t source;
+		uint16_t *units;
+		size_t index = iterator->cursor;
+		size_t step_len;
+
+		if (string == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		units = jsval_native_string_units(string);
+		jsstr16_init_from_buf(&source, (const char *)units,
+				string->len * sizeof(*units));
+		source.len = string->len;
+		if (index >= source.len) {
+			iterator->done = 1;
+			*done_ptr = 1;
+			if (key_ptr != NULL) {
+				*key_ptr = jsval_undefined();
+			}
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		step_len = jsstr16_u16_codepoint_at(&source, index, NULL);
+		if (step_len == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		iterator->cursor += step_len;
+		*done_ptr = 0;
+		if (mode == JSVAL_ITERATOR_MODE_STRING_KEYS) {
+			*value_ptr = jsval_number((double)index);
+			return 0;
+		}
+		if (jsval_string_new_utf16(region, units + index, step_len,
+				value_ptr) < 0) {
+			return -1;
+		}
+		if (mode == JSVAL_ITERATOR_MODE_STRING_ENTRIES) {
+			*key_ptr = jsval_number((double)index);
+		}
 		return 0;
 	}
 	default:

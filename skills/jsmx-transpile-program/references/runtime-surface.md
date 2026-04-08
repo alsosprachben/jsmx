@@ -23,8 +23,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
   - `undefined`, `null`, booleans, numbers, strings
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
-  - explicit iterator values over arrays, Sets, Maps, and feature-gated
-    regex matchAll iterators through the generic stepping helper
+  - explicit iterator values over strings, arrays, Sets, Maps, and
+    feature-gated regex matchAll iterators through the generic stepping helper
   - dense arrays only
   - feature-gated regex values and match iterators
 - value operations:
@@ -55,9 +55,11 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_get_iterator(...)`
     - `jsval_iterator_next(...)`
     - `jsval_iterator_next_entry(...)`
-  - translator-owned `for...of` lowerings over native arrays, Sets, and Maps
-  - translator-owned `new Set(iterable)` and `new Map(iterable)` lowerings
-    when the iterable stays inside the supported native iterator surface
+  - translator-owned `for...of` lowerings over strings, native arrays, Sets,
+    and Maps
+  - translator-owned `new Set(iterable)` lowerings over strings, arrays, and
+    Sets, plus `new Map(iterable)` lowerings when the iterable stays inside
+    the supported native entry-iterator surface
 - regex:
   - direct-lowered native regex values
   - translator-owned `/u` rewrite families already documented in the regex guidance
@@ -119,8 +121,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - prototype-chain-sensitive behavior
   - descriptors or accessors
   - sparse arrays or holes
-  - string iterator semantics
-  - generic `Symbol.iterator` and iterable duck typing
+  - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
+    protocol semantics and iterable duck typing
   - functions as values with closure semantics
 - host contracts with no clear current mapping:
   - exact `console.log` object formatting like Node `util.inspect`

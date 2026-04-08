@@ -106,10 +106,12 @@ That makes semantic correctness more important than surface familiarity:
     - `clear`
     - ordered key/value access
     - clone-to-bigger repair when the translator chooses to grow a map
-  - explicit iterator helpers for arrays, `Set`, and `Map`:
+  - explicit iterator helpers for strings, arrays, `Set`, and `Map`:
     - `jsval_get_iterator(...)`
     - `jsval_iterator_next(...)`
     - `jsval_iterator_next_entry(...)`
+    - JS string iterator stepping follows code-point grouping while key/entry
+      indices stay in UTF-16 code-unit offsets
     - insertion/index order preserved without snapshot arrays
     - entry stepping returned as separate key/value outputs to avoid per-step
       pair allocation in the page-resident model

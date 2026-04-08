@@ -1357,6 +1357,9 @@ static generated_status_t generated_smoke_jsval_map(char *detail, size_t cap)
 static generated_status_t generated_smoke_jsval_iterators(char *detail,
 		size_t cap)
 {
+	static const char json_string[] = "\"a\\ud834\\udf06b\"";
+	static const uint16_t astral_pair_units[] = {0xD834, 0xDF06, 'b'};
+	static const uint16_t lone_high_units[] = {0xD834};
 	uint8_t storage[16384];
 	jsval_region_t region;
 	jsval_t array;
@@ -1369,6 +1372,8 @@ static generated_status_t generated_smoke_jsval_iterators(char *detail,
 	jsval_t map;
 	jsval_t string_a;
 	jsval_t string_b;
+	jsval_t string_value;
+	jsval_t parsed_string;
 	size_t size = 0;
 	int done = 0;
 	int has = 0;
@@ -1572,6 +1577,199 @@ static generated_status_t generated_smoke_jsval_iterators(char *detail,
 			|| value.kind != JSVAL_KIND_NUMBER || value.as.number != 5.0) {
 		return generated_failf(detail, cap,
 				"unexpected first map entry iterator result");
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"abc", 3,
+			&string_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(abc)");
+	}
+	if (jsval_get_iterator(&region, string_value,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(string values) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(string first) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"a", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(string second) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"b", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(string third) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"c", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(string done) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (!done || value.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected string iterator exhaustion");
+	}
+
+	if (jsval_string_new_utf16(&region, astral_pair_units,
+			sizeof(astral_pair_units) / sizeof(astral_pair_units[0]),
+			&string_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf16(astral)");
+	}
+	if (jsval_get_iterator(&region, string_value,
+			JSVAL_ITERATOR_SELECTOR_ENTRIES, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(string entries) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	errno = 0;
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected ENOTSUP from jsval_iterator_next(string entries)");
+	}
+	if (jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next_entry(string first) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (done || key.kind != JSVAL_KIND_NUMBER || key.as.number != 0.0) {
+		return generated_failf(detail, cap,
+				"unexpected first string entry key");
+	}
+	status = generated_expect_utf16_string(&region, value, astral_pair_units, 2,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next_entry(string second) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (done || key.kind != JSVAL_KIND_NUMBER || key.as.number != 2.0) {
+		return generated_failf(detail, cap,
+				"unexpected second string entry key");
+	}
+	status = generated_expect_utf16_string(&region, value,
+			astral_pair_units + 2, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf16(&region, lone_high_units,
+			sizeof(lone_high_units) / sizeof(lone_high_units[0]),
+			&string_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf16(lone surrogate)");
+	}
+	if (jsval_get_iterator(&region, string_value,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(lone surrogate) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(lone surrogate) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_utf16_string(&region, value, lone_high_units, 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_json_parse(&region, (const uint8_t *)json_string,
+			sizeof(json_string) - 1, 16, &parsed_string) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_json_parse(string)");
+	}
+	if (jsval_get_iterator(&region, parsed_string,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(parsed string) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(parsed string first) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"a", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(parsed string second) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_utf16_string(&region, value, astral_pair_units, 2,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_iterator_next(parsed string third) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"b", 1,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_set_new(&region, 3, &set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_new(string iterable)");
+	}
+	if (jsval_get_iterator(&region, parsed_string,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) < 0) {
+		return generated_failf(detail, cap,
+				"jsval_get_iterator(parsed string for set) failed: errno=%d kind=%d",
+				errno, error.kind);
+	}
+	for (;;) {
+		if (jsval_iterator_next(&region, iterator, &done, &value, &error) < 0) {
+			return generated_failf(detail, cap,
+					"jsval_iterator_next(parsed string for set) failed: errno=%d kind=%d",
+					errno, error.kind);
+		}
+		if (done) {
+			break;
+		}
+		if (jsval_set_add(&region, set, value) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_set_add(string iterable)");
+		}
+	}
+	if (jsval_set_size(&region, set, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_size(string iterable)");
+	}
+	if (size != 3) {
+		return generated_failf(detail, cap,
+				"expected Set(string iterable) size 3, got %zu", size);
 	}
 
 	return GENERATED_PASS;

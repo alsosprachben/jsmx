@@ -63,6 +63,10 @@ caller-provided memory:
   - clone-to-bigger repair when the translator intentionally grows a map
   - explicit iterator production and stepping over keys, values, and entries
 - deterministic JS-method helpers such as `String.prototype.normalize`
+- explicit native string iterator production and stepping such as:
+  - values grouped by JS string iterator code-point semantics
+  - keys and entries reported in UTF-16 code-unit offsets
+  - no snapshot array materialization during stepping
 
 ### Translator
 

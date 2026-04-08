@@ -419,10 +419,15 @@ static void test_map_semantics(void)
 static void test_iterator_semantics(void)
 {
 	static const char json[] = "[3,4]";
+	static const char json_string[] = "\"a\\ud834\\udf06b\"";
+	static const uint16_t astral_pair_units[] = {0xD834, 0xDF06, 'b'};
+	static const uint16_t lone_high_units[] = {0xD834};
 	uint8_t storage[32768];
 	jsval_region_t region;
 	jsval_t array;
 	jsval_t parsed_array;
+	jsval_t native_string;
+	jsval_t parsed_string;
 	jsval_t set;
 	jsval_t map;
 	jsval_t iterator;
@@ -503,6 +508,99 @@ static void test_iterator_semantics(void)
 	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
 	assert(done == 0);
 	assert(jsval_strict_eq(&region, value, jsval_number(4.0)) == 1);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"abc", 3,
+			&native_string) == 0);
+	assert(jsval_get_iterator(&region, native_string,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) == 0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_string(&region, value, "a");
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_string(&region, value, "b");
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_string(&region, value, "c");
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_string_new_utf16(&region, astral_pair_units,
+			sizeof(astral_pair_units) / sizeof(astral_pair_units[0]),
+			&native_string) == 0);
+	assert(jsval_get_iterator(&region, native_string,
+			JSVAL_ITERATOR_SELECTOR_VALUES, &iterator, &error) == 0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_utf16_string(&region, value, astral_pair_units, 2);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_utf16_string(&region, value, astral_pair_units + 2, 1);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+
+	assert(jsval_get_iterator(&region, native_string,
+			JSVAL_ITERATOR_SELECTOR_KEYS, &iterator, &error) == 0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_number_value(value, 0.0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_number_value(value, 2.0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+
+	assert(jsval_get_iterator(&region, native_string,
+			JSVAL_ITERATOR_SELECTOR_ENTRIES, &iterator, &error) == 0);
+	errno = 0;
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) < 0);
+	assert(errno == ENOTSUP);
+	assert(jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) == 0);
+	assert(done == 0);
+	assert_number_value(key, 0.0);
+	assert_utf16_string(&region, value, astral_pair_units, 2);
+	assert(jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) == 0);
+	assert(done == 0);
+	assert_number_value(key, 2.0);
+	assert_utf16_string(&region, value, astral_pair_units + 2, 1);
+	assert(jsval_iterator_next_entry(&region, iterator, &done, &key, &value,
+			&error) == 0);
+	assert(done == 1);
+	assert(key.kind == JSVAL_KIND_UNDEFINED);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_string_new_utf16(&region, lone_high_units,
+			sizeof(lone_high_units) / sizeof(lone_high_units[0]),
+			&native_string) == 0);
+	assert(jsval_get_iterator(&region, native_string,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) == 0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_utf16_string(&region, value, lone_high_units, 1);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 1);
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_string,
+			sizeof(json_string) - 1, 16, &parsed_string) == 0);
+	assert(jsval_get_iterator(&region, parsed_string,
+			JSVAL_ITERATOR_SELECTOR_DEFAULT, &iterator, &error) == 0);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_string(&region, value, "a");
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_utf16_string(&region, value, astral_pair_units, 2);
+	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
+	assert(done == 0);
+	assert_string(&region, value, "b");
 	assert(jsval_iterator_next(&region, iterator, &done, &value, &error) == 0);
 	assert(done == 1);
 
