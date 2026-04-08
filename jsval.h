@@ -147,6 +147,8 @@ int jsval_url_href(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
 int jsval_url_origin(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
+int jsval_url_origin_display(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
 int jsval_url_protocol(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
 int jsval_url_username(jsval_region_t *region, jsval_t url_value,
@@ -155,7 +157,11 @@ int jsval_url_password(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
 int jsval_url_host(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
+int jsval_url_host_display(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
 int jsval_url_hostname(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr);
+int jsval_url_hostname_display(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
 int jsval_url_port(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);

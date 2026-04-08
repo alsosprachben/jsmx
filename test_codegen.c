@@ -1041,6 +1041,26 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	if (status != GENERATED_PASS) {
 		return status;
 	}
+	if (jsval_url_hostname_display(&region, idna_url, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_hostname_display(idna)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"ma\xc3\xb1""ana.example",
+			sizeof("ma\xc3\xb1""ana.example") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_origin_display(&region, idna_url, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_origin_display(idna)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"https://ma\xc3\xb1""ana.example",
+			sizeof("https://ma\xc3\xb1""ana.example") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
 	if (jsval_string_new_utf8(&region,
 			(const uint8_t *)"https://xn--maana-pta.example/a?x=1#old",
 			sizeof("https://xn--maana-pta.example/a?x=1#old") - 1,
@@ -1053,6 +1073,16 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 	}
 	if (result.kind != JSVAL_KIND_URL) {
 		return generated_failf(detail, cap, "expected ACE URL result kind");
+	}
+	if (jsval_url_hostname_display(&region, result, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_hostname_display(ace)");
+	}
+	status = generated_expect_string(&region, input,
+			(const uint8_t *)"ma\xc3\xb1""ana.example",
+			sizeof("ma\xc3\xb1""ana.example") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
 	}
 	if (jsval_string_new_utf8(&region,
 			(const uint8_t *)"b\xc3\xbc""cher\xef\xbc\x8e""example:8443",
@@ -1070,6 +1100,16 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 			(const uint8_t *)"https://xn--bcher-kva.example:8443/a?x=1#old",
 			sizeof("https://xn--bcher-kva.example:8443/a?x=1#old") - 1,
 			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_url_host_display(&region, idna_url, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_url_host_display(idna)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"b\xc3\xbc""cher.example:8443",
+			sizeof("b\xc3\xbc""cher.example:8443") - 1, detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
 	}

@@ -4759,10 +4759,16 @@ static void test_url_object_semantics(void)
 			&idna_url) == 0);
 	assert(jsval_url_hostname(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "xn--maana-pta.example");
+	assert(jsval_url_hostname_display(&region, idna_url, &result) == 0);
+	assert_string(&region, result, "ma\xc3\xb1""ana.example");
 	assert(jsval_url_host(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "xn--maana-pta.example");
+	assert(jsval_url_host_display(&region, idna_url, &result) == 0);
+	assert_string(&region, result, "ma\xc3\xb1""ana.example");
 	assert(jsval_url_origin(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "https://xn--maana-pta.example");
+	assert(jsval_url_origin_display(&region, idna_url, &result) == 0);
+	assert_string(&region, result, "https://ma\xc3\xb1""ana.example");
 	assert(jsval_url_href(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "https://xn--maana-pta.example/a?x=1#old");
 	assert(jsval_string_new_utf8(&region,
@@ -4772,6 +4778,10 @@ static void test_url_object_semantics(void)
 	assert(jsval_url_new(&region, ace_input, 0, jsval_undefined(),
 			&result) == 0);
 	assert(result.kind == JSVAL_KIND_URL);
+	assert(jsval_url_hostname_display(&region, result, &expected) == 0);
+	assert_string(&region, expected, "ma\xc3\xb1""ana.example");
+	assert(jsval_url_origin_display(&region, result, &expected) == 0);
+	assert_string(&region, expected, "https://ma\xc3\xb1""ana.example");
 	assert(jsval_string_new_utf8(&region,
 			(const uint8_t *)"b\xc3\xbc""cher\xef\xbc\x8e""example:8443",
 			sizeof("b\xc3\xbc""cher\xef\xbc\x8e""example:8443") - 1,
@@ -4779,6 +4789,10 @@ static void test_url_object_semantics(void)
 	assert(jsval_url_set_host(&region, idna_url, expected) == 0);
 	assert(jsval_url_host(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "xn--bcher-kva.example:8443");
+	assert(jsval_url_host_display(&region, idna_url, &result) == 0);
+	assert_string(&region, result, "b\xc3\xbc""cher.example:8443");
+	assert(jsval_url_origin_display(&region, idna_url, &result) == 0);
+	assert_string(&region, result, "https://b\xc3\xbc""cher.example:8443");
 	assert(jsval_url_href(&region, idna_url, &result) == 0);
 	assert_string(&region, result,
 			"https://xn--bcher-kva.example:8443/a?x=1#old");

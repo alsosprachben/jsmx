@@ -524,6 +524,50 @@ static int jsval_url_field_make_string(jsval_region_t *region,
 			value.len, value_ptr);
 }
 
+typedef int (*jsval_url_string_measure_fn)(const jsurl_t *url, size_t *len_ptr);
+typedef int (*jsval_url_string_serialize_fn)(const jsurl_t *url,
+		jsstr8_t *result_ptr);
+
+typedef struct jsval_url_serialized_string_ctx_s {
+	jsval_region_t *region;
+	jsval_t *value_ptr;
+	jsval_url_string_measure_fn measure;
+	jsval_url_string_serialize_fn serialize;
+} jsval_url_serialized_string_ctx_t;
+
+static int jsval_url_serialized_string_from_callback(const jsurl_t *url,
+		void *opaque)
+{
+	jsval_url_serialized_string_ctx_t *ctx =
+		(jsval_url_serialized_string_ctx_t *)opaque;
+	size_t len;
+	static const uint8_t empty[1] = {0};
+
+	if (url == NULL || ctx == NULL || ctx->region == NULL
+			|| ctx->value_ptr == NULL || ctx->measure == NULL
+			|| ctx->serialize == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (ctx->measure(url, &len) < 0) {
+		return -1;
+	}
+	if (len == 0) {
+		return jsval_string_new_utf8(ctx->region, empty, 0, ctx->value_ptr);
+	}
+	{
+		uint8_t buf[len];
+		jsstr8_t out;
+
+		jsstr8_init_from_buf(&out, (const char *)buf, sizeof(buf));
+		if (ctx->serialize(url, &out) < 0) {
+			return -1;
+		}
+		return jsval_string_new_utf8(ctx->region, out.bytes, out.len,
+				ctx->value_ptr);
+	}
+}
+
 static int jsval_url_search_params_stringify(jsval_region_t *region,
 		jsval_native_url_search_params_t *native, jsval_t *value_ptr);
 
@@ -677,6 +721,26 @@ static int jsval_url_with_bound_native(jsval_region_t *region,
 		}
 		return callback(&url, opaque);
 	}
+}
+
+static int jsval_url_make_callback_string(jsval_region_t *region,
+		jsval_t url_value, jsval_url_string_measure_fn measure,
+		jsval_url_string_serialize_fn serialize, jsval_t *value_ptr)
+{
+	jsval_native_url_t *native = jsval_native_url(region, url_value);
+	jsval_url_serialized_string_ctx_t ctx;
+
+	if (native == NULL || value_ptr == NULL || measure == NULL
+			|| serialize == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	ctx.region = region;
+	ctx.value_ptr = value_ptr;
+	ctx.measure = measure;
+	ctx.serialize = serialize;
+	return jsval_url_with_bound_native(region, native,
+			jsval_url_serialized_string_from_callback, &ctx);
 }
 
 static jsval_native_regexp_t *jsval_native_regexp(jsval_region_t *region,
@@ -13272,6 +13336,14 @@ int jsval_url_origin(jsval_region_t *region, jsval_t url_value,
 	return jsval_url_field_make_string(region, &native->origin, value_ptr);
 }
 
+int jsval_url_origin_display(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	return jsval_url_make_callback_string(region, url_value,
+			jsurl_origin_display_measure, jsurl_origin_display_serialize,
+			value_ptr);
+}
+
 int jsval_url_protocol(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr)
 {
@@ -13320,6 +13392,13 @@ int jsval_url_host(jsval_region_t *region, jsval_t url_value,
 	return jsval_url_field_make_string(region, &native->host, value_ptr);
 }
 
+int jsval_url_host_display(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	return jsval_url_make_callback_string(region, url_value,
+			jsurl_host_display_measure, jsurl_host_display_serialize, value_ptr);
+}
+
 int jsval_url_hostname(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr)
 {
@@ -13330,6 +13409,14 @@ int jsval_url_hostname(jsval_region_t *region, jsval_t url_value,
 		return -1;
 	}
 	return jsval_url_field_make_string(region, &native->hostname, value_ptr);
+}
+
+int jsval_url_hostname_display(jsval_region_t *region, jsval_t url_value,
+		jsval_t *value_ptr)
+{
+	return jsval_url_make_callback_string(region, url_value,
+			jsurl_hostname_display_measure,
+			jsurl_hostname_display_serialize, value_ptr);
 }
 
 int jsval_url_port(jsval_region_t *region, jsval_t url_value,

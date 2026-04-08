@@ -18,7 +18,7 @@ library for behavior that is awkward to lower into plain C alone:
 - JavaScript-oriented string handling with UTF-8 and UTF-32 interfaces
 - Unicode case mapping, normalization, and collation data
 - URL helpers that fit web-facing runtime behavior, including ASCII
-  hostname serialization for IDNs
+  hostname serialization for IDNs plus explicit Unicode display recovery
 
 ## Direction
 
@@ -137,8 +137,9 @@ That makes semantic correctness more important than surface familiarity:
 - `jsurl.c`, `jsurl.h`
   - URL utilities, including `URL` / `URLSearchParams` backing helpers and
     bounded IDNA punycode host serialization with ACE validation, common
-    dot-separator normalization, decoded mutable path/query/fragment storage,
-    and percent-encoded wire serialization for `href`
+    dot-separator normalization, explicit Unicode-display host/origin
+    serializers, decoded mutable path/query/fragment storage, and
+    percent-encoded wire serialization for `href`
 - `docs/flattening-boundary.md`
   - the contract between `jsmx`, the translator, and any future slow path
 - `compliance/`

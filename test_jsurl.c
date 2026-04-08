@@ -212,28 +212,46 @@ static void test_jsurl_idna_hosts(void)
 	jsurl_view_t view;
 	jsurl_t url;
 	test_url_buffers_t buffers;
+	uint8_t hostname_display_buf[128];
 	uint8_t host_buf[128];
+	uint8_t host_display_buf[128];
 	uint8_t origin_buf[256];
+	uint8_t origin_display_buf[256];
 	uint8_t href_buf[256];
+	jsstr8_t hostname_display;
 	jsstr8_t host;
+	jsstr8_t host_display;
 	jsstr8_t origin;
+	jsstr8_t origin_display;
 	jsstr8_t href;
 	jsurl_sizes_t sizes;
 
 	test_url_init(&url, &buffers);
+	jsstr8_init_from_buf(&hostname_display, (const char *)hostname_display_buf,
+			sizeof(hostname_display_buf));
 	jsstr8_init_from_buf(&host, (const char *) host_buf, sizeof(host_buf));
+	jsstr8_init_from_buf(&host_display, (const char *)host_display_buf,
+			sizeof(host_display_buf));
 	jsstr8_init_from_buf(&origin, (const char *) origin_buf, sizeof(origin_buf));
+	jsstr8_init_from_buf(&origin_display, (const char *)origin_display_buf,
+			sizeof(origin_display_buf));
 	jsstr8_init_from_buf(&href, (const char *) href_buf, sizeof(href_buf));
 
 	declare_jsstr8(input,
 		"https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old");
 	assert(jsurl_view_parse(&view, input) == 0);
 	test_expect_jsstr(view.hostname, "ma\xc3\xb1""ana\xe3\x80\x82""example");
+	assert(jsurl_view_hostname_display_serialize(&view, &hostname_display) == 0);
 	assert(jsurl_view_host_serialize(&view, &host) == 0);
+	assert(jsurl_view_host_display_serialize(&view, &host_display) == 0);
 	assert(jsurl_view_origin_serialize(&view, &origin) == 0);
+	assert(jsurl_view_origin_display_serialize(&view, &origin_display) == 0);
 	assert(jsurl_view_href_serialize(&view, &href) == 0);
+	test_expect_jsstr(hostname_display, "ma\xc3\xb1""ana.example");
 	test_expect_jsstr(host, "xn--maana-pta.example");
+	test_expect_jsstr(host_display, "ma\xc3\xb1""ana.example");
 	test_expect_jsstr(origin, "https://xn--maana-pta.example");
+	test_expect_jsstr(origin_display, "https://ma\xc3\xb1""ana.example");
 	test_expect_jsstr(href, "https://xn--maana-pta.example/a?x=1#old");
 	assert(jsurl_copy_sizes(&view, &sizes) == 0);
 	assert(sizes.hostname_cap == strlen("xn--maana-pta.example"));
@@ -246,11 +264,21 @@ static void test_jsurl_idna_hosts(void)
 	test_expect_jsstr(url.host, "xn--maana-pta.example");
 	test_expect_jsstr(url.origin, "https://xn--maana-pta.example");
 	test_expect_jsstr(url.href, "https://xn--maana-pta.example/a?x=1#old");
+	assert(jsurl_hostname_display_serialize(&url, &hostname_display) == 0);
+	assert(jsurl_host_display_serialize(&url, &host_display) == 0);
+	assert(jsurl_origin_display_serialize(&url, &origin_display) == 0);
+	test_expect_jsstr(hostname_display, "ma\xc3\xb1""ana.example");
+	test_expect_jsstr(host_display, "ma\xc3\xb1""ana.example");
+	test_expect_jsstr(origin_display, "https://ma\xc3\xb1""ana.example");
 
 	declare_jsstr8(ace_input, "https://xn--maana-pta.example/a?x=1#old");
 	assert(jsurl_parse_copy(&url, ace_input) == 0);
 	test_expect_jsstr(url.hostname, "xn--maana-pta.example");
 	test_expect_jsstr(url.href, "https://xn--maana-pta.example/a?x=1#old");
+	assert(jsurl_hostname_display_serialize(&url, &hostname_display) == 0);
+	assert(jsurl_origin_display_serialize(&url, &origin_display) == 0);
+	test_expect_jsstr(hostname_display, "ma\xc3\xb1""ana.example");
+	test_expect_jsstr(origin_display, "https://ma\xc3\xb1""ana.example");
 
 	declare_jsstr8(hostname, "b\xc3\xbc""cher\xef\xbc\x8e""example");
 	assert(jsurl_set_hostname(&url, hostname) == 0);
@@ -258,6 +286,10 @@ static void test_jsurl_idna_hosts(void)
 	test_expect_jsstr(url.host, "xn--bcher-kva.example");
 	test_expect_jsstr(url.origin, "https://xn--bcher-kva.example");
 	test_expect_jsstr(url.href, "https://xn--bcher-kva.example/a?x=1#old");
+	assert(jsurl_hostname_display_serialize(&url, &hostname_display) == 0);
+	assert(jsurl_origin_display_serialize(&url, &origin_display) == 0);
+	test_expect_jsstr(hostname_display, "b\xc3\xbc""cher.example");
+	test_expect_jsstr(origin_display, "https://b\xc3\xbc""cher.example");
 
 	declare_jsstr8(ipv6_input, "https://[::1]:8080/a");
 	assert(jsurl_parse_copy(&url, ipv6_input) == 0);
@@ -265,6 +297,12 @@ static void test_jsurl_idna_hosts(void)
 	test_expect_jsstr(url.host, "[::1]:8080");
 	test_expect_jsstr(url.origin, "https://[::1]:8080");
 	test_expect_jsstr(url.href, "https://[::1]:8080/a");
+	assert(jsurl_hostname_display_serialize(&url, &hostname_display) == 0);
+	assert(jsurl_host_display_serialize(&url, &host_display) == 0);
+	assert(jsurl_origin_display_serialize(&url, &origin_display) == 0);
+	test_expect_jsstr(hostname_display, "[::1]");
+	test_expect_jsstr(host_display, "[::1]:8080");
+	test_expect_jsstr(origin_display, "https://[::1]:8080");
 }
 
 static void test_jsurl_setters_and_sync(void)

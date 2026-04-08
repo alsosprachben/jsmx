@@ -98,10 +98,22 @@ typedef struct jsurl_s {
 
 void jsurl_view_clear(jsurl_view_t *view);
 int jsurl_view_parse(jsurl_view_t *view, jsstr8_t input);
+int jsurl_view_hostname_display_measure(const jsurl_view_t *view,
+		size_t *len_ptr);
+int jsurl_view_hostname_display_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
 int jsurl_view_host_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_host_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
+int jsurl_view_host_display_measure(const jsurl_view_t *view,
+		size_t *len_ptr);
+int jsurl_view_host_display_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
 int jsurl_view_origin_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_origin_serialize(const jsurl_view_t *view, jsstr8_t *result_ptr);
+int jsurl_view_origin_display_measure(const jsurl_view_t *view,
+		size_t *len_ptr);
+int jsurl_view_origin_display_serialize(const jsurl_view_t *view,
+		jsstr8_t *result_ptr);
 int jsurl_view_pathname_wire_measure(const jsurl_view_t *view, size_t *len_ptr);
 int jsurl_view_pathname_wire_serialize(const jsurl_view_t *view,
 		jsstr8_t *result_ptr);
@@ -183,8 +195,14 @@ int jsurl_hash_wire_measure(const jsurl_t *url, size_t *len_ptr);
 int jsurl_hash_wire_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
 int jsurl_href_measure(const jsurl_t *url, size_t *len_ptr);
 int jsurl_href_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
+int jsurl_hostname_display_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_hostname_display_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
+int jsurl_host_display_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_host_display_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
 int jsurl_origin_measure(const jsurl_t *url, size_t *len_ptr);
 int jsurl_origin_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
+int jsurl_origin_display_measure(const jsurl_t *url, size_t *len_ptr);
+int jsurl_origin_display_serialize(const jsurl_t *url, jsstr8_t *result_ptr);
 jsstr8_t jsurl_to_json(const jsurl_t *url);
 
 #endif
