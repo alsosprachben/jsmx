@@ -340,6 +340,14 @@ static int jsurl_is_ipv6_literal_hostname(jsstr8_t hostname)
 		&& hostname.bytes[hostname.len - 1] == ']';
 }
 
+static int jsurl_is_dot_separator(uint32_t cp)
+{
+	return cp == '.'
+		|| cp == 0x3002
+		|| cp == 0xff0e
+		|| cp == 0xff61;
+}
+
 static uint8_t jsurl_punycode_encode_digit(size_t d)
 {
 	return (uint8_t)(d < 26 ? ('a' + d) : ('0' + (d - 26)));
@@ -480,6 +488,245 @@ static int jsurl_punycode_encode_label(const uint32_t *src, size_t len,
 	return 0;
 }
 
+static int jsurl_punycode_decode_digit(uint8_t c, size_t *digit_ptr)
+{
+	if (digit_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	c = jsurl_ascii_tolower(c);
+	if (c >= 'a' && c <= 'z') {
+		*digit_ptr = (size_t)(c - 'a');
+		return 0;
+	}
+	if (c >= '0' && c <= '9') {
+		*digit_ptr = (size_t)(26 + c - '0');
+		return 0;
+	}
+	errno = EINVAL;
+	return -1;
+}
+
+static int jsurl_punycode_decode_label(const uint8_t *src, size_t len,
+		uint32_t *dst, size_t dst_cap, size_t *dst_len_ptr)
+{
+	size_t out_len = 0;
+	size_t bias = JSURL_PUNYCODE_INITIAL_BIAS;
+	uint32_t n = JSURL_PUNYCODE_INITIAL_N;
+	size_t i = 0;
+	size_t basic_len = 0;
+	size_t in_i;
+	size_t j;
+
+	if (src == NULL || dst == NULL || dst_len_ptr == NULL || len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	for (j = len; j > 0; j--) {
+		if (src[j - 1] == '-') {
+			basic_len = j - 1;
+			break;
+		}
+	}
+	for (j = 0; j < basic_len; j++) {
+		if (src[j] >= 0x80 || out_len >= dst_cap) {
+			errno = EINVAL;
+			return -1;
+		}
+		dst[out_len++] = src[j];
+	}
+	in_i = basic_len > 0 ? basic_len + 1 : 0;
+
+	while (in_i < len) {
+		size_t oldi = i;
+		size_t w = 1;
+		size_t k;
+
+		for (k = JSURL_PUNYCODE_BASE;; k += JSURL_PUNYCODE_BASE) {
+			size_t digit;
+			size_t t;
+
+			if (in_i >= len) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsurl_punycode_decode_digit(src[in_i++], &digit) < 0) {
+				return -1;
+			}
+			if (digit > (SIZE_MAX - i) / w) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			i += digit * w;
+			t = k <= bias ? JSURL_PUNYCODE_TMIN
+				: k >= bias + JSURL_PUNYCODE_TMAX
+					? JSURL_PUNYCODE_TMAX
+					: k - bias;
+			if (digit < t) {
+				break;
+			}
+			if (w > SIZE_MAX / (JSURL_PUNYCODE_BASE - t)) {
+				errno = EOVERFLOW;
+				return -1;
+			}
+			w *= JSURL_PUNYCODE_BASE - t;
+		}
+
+		bias = jsurl_punycode_adapt(i - oldi, out_len + 1, oldi == 0);
+		if (i / (out_len + 1) > UINT32_MAX - n) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		n += (uint32_t)(i / (out_len + 1));
+		i %= out_len + 1;
+		if (n > 0x10ffff || (n >= 0xd800 && n < 0xe000)
+				|| out_len >= dst_cap) {
+			errno = EINVAL;
+			return -1;
+		}
+		memmove(dst + i + 1, dst + i, (out_len - i) * sizeof(*dst));
+		dst[i] = n;
+		out_len++;
+		i++;
+	}
+
+	*dst_len_ptr = out_len;
+	return 0;
+}
+
+static int jsurl_validate_ace_hostname_label_bytes(const uint8_t *bytes,
+		size_t len)
+{
+	uint32_t decoded[JSURL_HOSTNAME_LABEL_ASCII_MAX];
+	uint8_t reencoded[JSURL_HOSTNAME_LABEL_ASCII_MAX];
+	size_t decoded_len;
+	size_t reencoded_len;
+	size_t i;
+	int saw_non_ascii = 0;
+
+	if (bytes == NULL || len <= 4) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_punycode_decode_label(bytes + 4, len - 4, decoded,
+			sizeof(decoded) / sizeof(decoded[0]), &decoded_len) < 0) {
+		return -1;
+	}
+	if (decoded_len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < decoded_len; i++) {
+		if (decoded[i] > 0x7f) {
+			saw_non_ascii = 1;
+			break;
+		}
+	}
+	if (!saw_non_ascii) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsurl_punycode_encode_label(decoded, decoded_len, reencoded,
+			sizeof(reencoded), &reencoded_len) < 0) {
+		return -1;
+	}
+	if (reencoded_len != len - 4
+			|| memcmp(bytes + 4, reencoded, reencoded_len) != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
+}
+
+static int jsurl_normalize_hostname_label_codepoints_copy(uint8_t *dst,
+		size_t dst_cap, const uint32_t *input, size_t input_len,
+		size_t *dst_len_ptr)
+{
+	size_t workspace_cap;
+	size_t i;
+	int all_ascii = 1;
+
+	if (dst == NULL || dst_len_ptr == NULL || input == NULL
+			|| input_len == 0 || dst_cap == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (unicode_normalize_form_workspace_len(input, input_len,
+			UNICODE_NORMALIZE_NFC, &workspace_cap) < 0) {
+		return -1;
+	}
+	{
+		uint32_t normalized[workspace_cap > 0 ? workspace_cap : 1];
+		size_t puny_len;
+		size_t normalized_len;
+
+		normalized_len = unicode_normalize_into_form(input, input_len,
+				normalized, workspace_cap, UNICODE_NORMALIZE_NFC);
+		if (normalized_len > workspace_cap) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (normalized_len == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		for (i = 0; i < normalized_len; i++) {
+			uint32_t lower = unicode_tolower(normalized[i]);
+
+			if (jsurl_is_dot_separator(lower)) {
+				errno = EINVAL;
+				return -1;
+			}
+			normalized[i] = lower;
+			if (lower > 0x7f) {
+				all_ascii = 0;
+			} else if (!jsurl_is_dns_ascii_char((uint8_t)lower)) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+
+		if (all_ascii) {
+			if (normalized_len > dst_cap) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			for (i = 0; i < normalized_len; i++) {
+				dst[i] = (uint8_t)normalized[i];
+			}
+			if (jsurl_validate_ascii_hostname_label_bytes(dst,
+					normalized_len) < 0) {
+				return -1;
+			}
+			if (normalized_len >= 4
+					&& memcmp(dst, "xn--", 4) == 0
+					&& jsurl_validate_ace_hostname_label_bytes(dst,
+						normalized_len) < 0) {
+				return -1;
+			}
+			*dst_len_ptr = normalized_len;
+			return 0;
+		}
+
+		if (dst_cap < 4) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(dst, "xn--", 4);
+		if (jsurl_punycode_encode_label(normalized, normalized_len,
+				dst + 4, dst_cap - 4, &puny_len) < 0) {
+			return -1;
+		}
+		if (jsurl_validate_ascii_hostname_label_bytes(dst, 4 + puny_len) < 0) {
+			return -1;
+		}
+		*dst_len_ptr = 4 + puny_len;
+		return 0;
+	}
+}
+
 static int jsurl_normalize_hostname_label_copy(uint8_t *dst, size_t dst_cap,
 		jsstr8_t input, size_t *dst_len_ptr)
 {
@@ -489,9 +736,6 @@ static int jsurl_normalize_hostname_label_copy(uint8_t *dst, size_t dst_cap,
 	const uint8_t *bc;
 	const uint8_t *bs;
 	size_t decoded_len = 0;
-	size_t workspace_cap;
-	size_t i;
-	int all_ascii = 1;
 
 	if (dst == NULL || dst_len_ptr == NULL || input.bytes == NULL
 			|| input.len == 0 || dst_cap == 0) {
@@ -514,79 +758,19 @@ static int jsurl_normalize_hostname_label_copy(uint8_t *dst, size_t dst_cap,
 			decoded[decoded_len++] = cp;
 			bc += l;
 		}
-
-		if (unicode_normalize_form_workspace_len(decoded, decoded_len,
-				UNICODE_NORMALIZE_NFC, &workspace_cap) < 0) {
-			return -1;
-		}
-
-		{
-			uint32_t normalized[workspace_cap > 0 ? workspace_cap : 1];
-			size_t puny_len;
-			size_t normalized_len;
-
-			normalized_len = unicode_normalize_into_form(decoded, decoded_len,
-					normalized, workspace_cap,
-					UNICODE_NORMALIZE_NFC);
-			if (normalized_len > workspace_cap) {
-				errno = EINVAL;
-				return -1;
-			}
-			if (normalized_len == 0) {
-				errno = EINVAL;
-				return -1;
-			}
-
-			for (i = 0; i < normalized_len; i++) {
-				uint32_t lower = unicode_tolower(normalized[i]);
-
-				normalized[i] = lower;
-				if (lower > 0x7f) {
-					all_ascii = 0;
-				} else if (!jsurl_is_dns_ascii_char((uint8_t)lower)) {
-					errno = EINVAL;
-					return -1;
-				}
-			}
-
-			if (all_ascii) {
-				if (normalized_len > dst_cap) {
-					errno = ENOBUFS;
-					return -1;
-				}
-				for (i = 0; i < normalized_len; i++) {
-					dst[i] = (uint8_t)normalized[i];
-				}
-				if (jsurl_validate_ascii_hostname_label_bytes(dst,
-						normalized_len) < 0) {
-					return -1;
-				}
-				*dst_len_ptr = normalized_len;
-				return 0;
-			}
-
-			if (dst_cap < 4) {
-				errno = ENOBUFS;
-				return -1;
-			}
-			memcpy(dst, "xn--", 4);
-			if (jsurl_punycode_encode_label(normalized, normalized_len,
-					dst + 4, dst_cap - 4, &puny_len) < 0) {
-				return -1;
-			}
-			if (jsurl_validate_ascii_hostname_label_bytes(dst, 4 + puny_len) < 0) {
-				return -1;
-			}
-			*dst_len_ptr = 4 + puny_len;
-			return 0;
-		}
+		return jsurl_normalize_hostname_label_codepoints_copy(dst, dst_cap,
+				decoded, decoded_len, dst_len_ptr);
 	}
 }
 
 static int jsurl_normalize_hostname_copy(jsstr8_t *result_ptr, jsstr8_t input)
 {
+	size_t decoded_cap;
+	uint32_t cp;
+	int l;
+	const uint8_t *bc;
+	const uint8_t *bs;
 	size_t out_len = 0;
-	size_t start_i = 0;
 
 	if (result_ptr == NULL) {
 		errno = EINVAL;
@@ -605,36 +789,75 @@ static int jsurl_normalize_hostname_copy(jsstr8_t *result_ptr, jsstr8_t input)
 		result_ptr->len = input.len;
 		return 0;
 	}
+	decoded_cap = input.len > 0 ? input.len : 1;
+	{
+		uint32_t label[decoded_cap];
+		size_t label_len = 0;
 
-	while (start_i <= input.len && input.len > 0) {
-		ssize_t dot_i = jsurl_find_byte(input, '.', start_i);
-		size_t end_i = dot_i >= 0 ? (size_t)dot_i : input.len;
-		jsstr8_t label = jsurl_slice(input, start_i, (ssize_t)end_i);
-		uint8_t label_buf[JSURL_HOSTNAME_LABEL_ASCII_MAX];
-		size_t label_len;
+		bc = input.bytes;
+		bs = input.bytes + input.len;
+		while (bc < bs) {
+			uint8_t label_buf[JSURL_HOSTNAME_LABEL_ASCII_MAX];
+			size_t ascii_label_len;
 
-		if (label.len == 0) {
+			UTF8_CHAR(bc, bs, &cp, &l);
+			if (l <= 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			bc += l;
+			if (jsurl_is_dot_separator(cp)) {
+				if (label_len == 0) {
+					errno = EINVAL;
+					return -1;
+				}
+				if (jsurl_normalize_hostname_label_codepoints_copy(label_buf,
+						sizeof(label_buf), label, label_len,
+						&ascii_label_len) < 0) {
+					return -1;
+				}
+				if ((out_len > 0 && out_len == result_ptr->cap)
+						|| out_len + (out_len > 0 ? 1 : 0) + ascii_label_len
+							> result_ptr->cap) {
+					errno = ENOBUFS;
+					return -1;
+				}
+				if (out_len > 0) {
+					result_ptr->bytes[out_len++] = '.';
+				}
+				memmove(result_ptr->bytes + out_len, label_buf, ascii_label_len);
+				out_len += ascii_label_len;
+				label_len = 0;
+				continue;
+			}
+			label[label_len++] = cp;
+		}
+
+		if (label_len == 0) {
 			errno = EINVAL;
 			return -1;
 		}
-		if (jsurl_normalize_hostname_label_copy(label_buf, sizeof(label_buf),
-				label, &label_len) < 0) {
-			return -1;
+		{
+			uint8_t label_buf[JSURL_HOSTNAME_LABEL_ASCII_MAX];
+			size_t ascii_label_len;
+
+			if (jsurl_normalize_hostname_label_codepoints_copy(label_buf,
+					sizeof(label_buf), label, label_len,
+					&ascii_label_len) < 0) {
+				return -1;
+			}
+			if ((out_len > 0 && out_len == result_ptr->cap)
+					|| out_len + (out_len > 0 ? 1 : 0) + ascii_label_len
+						> result_ptr->cap) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			if (out_len > 0) {
+				result_ptr->bytes[out_len++] = '.';
+			}
+			memmove(result_ptr->bytes + out_len, label_buf, ascii_label_len);
+			out_len += ascii_label_len;
 		}
-		if ((out_len > 0 && out_len == result_ptr->cap)
-				|| out_len + (out_len > 0 ? 1 : 0) + label_len > result_ptr->cap) {
-			errno = ENOBUFS;
-			return -1;
-		}
-		if (out_len > 0) {
-			result_ptr->bytes[out_len++] = '.';
-		}
-		memmove(result_ptr->bytes + out_len, label_buf, label_len);
-		out_len += label_len;
-		if (dot_i < 0) {
-			break;
-		}
-		start_i = (size_t)dot_i + 1;
 	}
 
 	if (out_len > JSURL_HOSTNAME_ASCII_MAX) {

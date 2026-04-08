@@ -136,7 +136,8 @@ That makes semantic correctness more important than surface familiarity:
   - lookup logic
 - `jsurl.c`, `jsurl.h`
   - URL utilities, including `URL` / `URLSearchParams` backing helpers and
-    bounded IDNA punycode host serialization
+    bounded IDNA punycode host serialization with ACE validation and common
+    dot-separator normalization
 - `docs/flattening-boundary.md`
   - the contract between `jsmx`, the translator, and any future slow path
 - `compliance/`

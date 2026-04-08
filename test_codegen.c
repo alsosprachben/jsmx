@@ -1022,8 +1022,8 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		return status;
 	}
 	if (jsval_string_new_utf8(&region,
-			(const uint8_t *)"https://ma\xc3\xb1""ana.example/a?x=1#old",
-			sizeof("https://ma\xc3\xb1""ana.example/a?x=1#old") - 1,
+			(const uint8_t *)"https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old",
+			sizeof("https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old") - 1,
 			&input) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_string_new_utf8(idna input)");
@@ -1041,8 +1041,21 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		return status;
 	}
 	if (jsval_string_new_utf8(&region,
-			(const uint8_t *)"b\xc3\xbc""cher.example:8443",
-			sizeof("b\xc3\xbc""cher.example:8443") - 1, &input) < 0) {
+			(const uint8_t *)"https://xn--maana-pta.example/a?x=1#old",
+			sizeof("https://xn--maana-pta.example/a?x=1#old") - 1,
+			&input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(ace input)");
+	}
+	if (jsval_url_new(&region, input, 0, jsval_undefined(), &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_url_new(ace)");
+	}
+	if (result.kind != JSVAL_KIND_URL) {
+		return generated_failf(detail, cap, "expected ACE URL result kind");
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"b\xc3\xbc""cher\xef\xbc\x8e""example:8443",
+			sizeof("b\xc3\xbc""cher\xef\xbc\x8e""example:8443") - 1, &input) < 0) {
 		return generated_fail_errno(detail, cap,
 				"jsval_string_new_utf8(idna host)");
 	}
@@ -1058,6 +1071,18 @@ static generated_status_t generated_smoke_jsval_url_core(char *detail,
 			detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
+	}
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://xn--.example/a",
+			sizeof("https://xn--.example/a") - 1, &input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(invalid ace)");
+	}
+	errno = 0;
+	if (jsval_url_new(&region, input, 0, jsval_undefined(), &result) >= 0
+			|| errno != EINVAL) {
+		return generated_failf(detail, cap,
+				"expected invalid ACE hostname rejection");
 	}
 	if (jsval_url_search_params(&region, url, &params_a) < 0
 			|| jsval_url_search_params(&region, url, &params_b) < 0) {

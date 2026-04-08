@@ -4706,6 +4706,7 @@ static void test_url_object_semantics(void)
 	jsval_region_t region;
 	jsval_t input;
 	jsval_t url;
+	jsval_t ace_input;
 	jsval_t idna_input;
 	jsval_t idna_url;
 	jsval_t params_a;
@@ -4745,8 +4746,8 @@ static void test_url_object_semantics(void)
 	assert_string(&region, result, "https://example.com/base?x=1#old");
 
 	assert(jsval_string_new_utf8(&region,
-			(const uint8_t *)"https://ma\xc3\xb1""ana.example/a?x=1#old",
-			sizeof("https://ma\xc3\xb1""ana.example/a?x=1#old") - 1,
+			(const uint8_t *)"https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old",
+			sizeof("https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old") - 1,
 			&idna_input) == 0);
 	assert(jsval_url_new(&region, idna_input, 0, jsval_undefined(),
 			&idna_url) == 0);
@@ -4759,8 +4760,15 @@ static void test_url_object_semantics(void)
 	assert(jsval_url_href(&region, idna_url, &result) == 0);
 	assert_string(&region, result, "https://xn--maana-pta.example/a?x=1#old");
 	assert(jsval_string_new_utf8(&region,
-			(const uint8_t *)"b\xc3\xbc""cher.example:8443",
-			sizeof("b\xc3\xbc""cher.example:8443") - 1,
+			(const uint8_t *)"https://xn--maana-pta.example/a?x=1#old",
+			sizeof("https://xn--maana-pta.example/a?x=1#old") - 1,
+			&ace_input) == 0);
+	assert(jsval_url_new(&region, ace_input, 0, jsval_undefined(),
+			&result) == 0);
+	assert(result.kind == JSVAL_KIND_URL);
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"b\xc3\xbc""cher\xef\xbc\x8e""example:8443",
+			sizeof("b\xc3\xbc""cher\xef\xbc\x8e""example:8443") - 1,
 			&expected) == 0);
 	assert(jsval_url_set_host(&region, idna_url, expected) == 0);
 	assert(jsval_url_host(&region, idna_url, &result) == 0);
@@ -4768,6 +4776,13 @@ static void test_url_object_semantics(void)
 	assert(jsval_url_href(&region, idna_url, &result) == 0);
 	assert_string(&region, result,
 			"https://xn--bcher-kva.example:8443/a?x=1#old");
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"https://xn--.example/a",
+			sizeof("https://xn--.example/a") - 1, &expected) == 0);
+	errno = 0;
+	assert(jsval_url_new(&region, expected, 0, jsval_undefined(),
+			&result) == -1);
+	assert(errno == EINVAL);
 
 	assert(jsval_url_search_params(&region, url, &params_a) == 0);
 	assert(jsval_url_search_params(&region, url, &params_b) == 0);

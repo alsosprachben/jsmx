@@ -225,9 +225,10 @@ static void test_jsurl_idna_hosts(void)
 	jsstr8_init_from_buf(&origin, (const char *) origin_buf, sizeof(origin_buf));
 	jsstr8_init_from_buf(&href, (const char *) href_buf, sizeof(href_buf));
 
-	declare_jsstr8(input, "https://ma\xc3\xb1""ana.example/a?x=1#old");
+	declare_jsstr8(input,
+		"https://ma\xc3\xb1""ana\xe3\x80\x82""example/a?x=1#old");
 	assert(jsurl_view_parse(&view, input) == 0);
-	test_expect_jsstr(view.hostname, "ma\xc3\xb1""ana.example");
+	test_expect_jsstr(view.hostname, "ma\xc3\xb1""ana\xe3\x80\x82""example");
 	assert(jsurl_view_host_serialize(&view, &host) == 0);
 	assert(jsurl_view_origin_serialize(&view, &origin) == 0);
 	assert(jsurl_view_href_serialize(&view, &href) == 0);
@@ -246,7 +247,12 @@ static void test_jsurl_idna_hosts(void)
 	test_expect_jsstr(url.origin, "https://xn--maana-pta.example");
 	test_expect_jsstr(url.href, "https://xn--maana-pta.example/a?x=1#old");
 
-	declare_jsstr8(hostname, "b\xc3\xbc""cher.example");
+	declare_jsstr8(ace_input, "https://xn--maana-pta.example/a?x=1#old");
+	assert(jsurl_parse_copy(&url, ace_input) == 0);
+	test_expect_jsstr(url.hostname, "xn--maana-pta.example");
+	test_expect_jsstr(url.href, "https://xn--maana-pta.example/a?x=1#old");
+
+	declare_jsstr8(hostname, "b\xc3\xbc""cher\xef\xbc\x8e""example");
 	assert(jsurl_set_hostname(&url, hostname) == 0);
 	test_expect_jsstr(url.hostname, "xn--bcher-kva.example");
 	test_expect_jsstr(url.host, "xn--bcher-kva.example");
@@ -371,10 +377,19 @@ static void test_jsurl_errors(void)
 	declare_jsstr8(invalid_host_url, "https://a..b/");
 	assert(jsurl_parse_copy(&roomy_url, invalid_host_url) == -1);
 	assert(errno == EINVAL);
+	declare_jsstr8(invalid_ace_url, "https://xn--.example/");
+	assert(jsurl_parse_copy(&roomy_url, invalid_ace_url) == -1);
+	assert(errno == EINVAL);
+	declare_jsstr8(trailing_dot_url, "https://example.com./");
+	assert(jsurl_parse_copy(&roomy_url, trailing_dot_url) == -1);
+	assert(errno == EINVAL);
 	declare_jsstr8(valid_url, "https://example.com/");
 	assert(jsurl_parse_copy(&roomy_url, valid_url) == 0);
 	declare_jsstr8(invalid_hostname, "a..b");
 	assert(jsurl_set_hostname(&roomy_url, invalid_hostname) == -1);
+	assert(errno == EINVAL);
+	declare_jsstr8(invalid_ace_hostname, "xn--");
+	assert(jsurl_set_hostname(&roomy_url, invalid_ace_hostname) == -1);
 	assert(errno == EINVAL);
 }
 
