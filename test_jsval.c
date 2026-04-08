@@ -217,6 +217,92 @@ static void assert_array_strings(jsval_region_t *region, jsval_t array,
 	}
 }
 
+static void test_set_semantics(void)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t set;
+	jsval_t grown;
+	jsval_t result;
+	jsval_t string_a;
+	jsval_t string_b;
+	jsval_t object_a;
+	jsval_t object_b;
+	size_t size = 0;
+	int has = 0;
+	int deleted = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_set_new(&region, 2, &set) == 0);
+	assert(set.kind == JSVAL_KIND_SET);
+	assert(jsval_truthy(&region, set) == 1);
+	assert(jsval_typeof(&region, set, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_strict_eq(&region, set, set) == 1);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 0);
+
+	assert(jsval_set_add(&region, set, jsval_number(NAN)) == 0);
+	assert(jsval_set_has(&region, set, jsval_number(NAN), &has) == 0);
+	assert(has == 1);
+	assert(jsval_set_add(&region, set, jsval_number(NAN)) == 0);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 1);
+
+	assert(jsval_set_add(&region, set, jsval_number(-0.0)) == 0);
+	assert(jsval_set_has(&region, set, jsval_number(+0.0), &has) == 0);
+	assert(has == 1);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 2);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_a) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_b) == 0);
+	errno = 0;
+	assert(jsval_set_add(&region, set, string_a) == -1);
+	assert(errno == ENOBUFS);
+	assert(jsval_set_clone(&region, set, 4, &grown) == 0);
+	assert(grown.kind == JSVAL_KIND_SET);
+	assert(jsval_strict_eq(&region, set, grown) == 0);
+	set = grown;
+
+	assert(jsval_set_add(&region, set, string_a) == 0);
+	assert(jsval_set_has(&region, set, string_b, &has) == 0);
+	assert(has == 1);
+	assert(jsval_set_add(&region, set, string_b) == 0);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 3);
+
+	assert(jsval_object_new(&region, 0, &object_a) == 0);
+	assert(jsval_object_new(&region, 0, &object_b) == 0);
+	assert(jsval_set_add(&region, set, object_a) == 0);
+	assert(jsval_set_has(&region, set, object_a, &has) == 0);
+	assert(has == 1);
+	assert(jsval_set_has(&region, set, object_b, &has) == 0);
+	assert(has == 0);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 4);
+
+	assert(jsval_set_delete(&region, set, string_b, &deleted) == 0);
+	assert(deleted == 1);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 3);
+	assert(jsval_set_delete(&region, set, string_b, &deleted) == 0);
+	assert(deleted == 0);
+	assert(jsval_set_delete(&region, set, jsval_number(+0.0), &deleted) == 0);
+	assert(deleted == 1);
+	assert(jsval_set_has(&region, set, jsval_number(-0.0), &has) == 0);
+	assert(has == 0);
+
+	assert(jsval_set_clear(&region, set) == 0);
+	assert(jsval_set_size(&region, set, &size) == 0);
+	assert(size == 0);
+	assert(jsval_set_has(&region, set, object_a, &has) == 0);
+	assert(has == 0);
+}
+
 static void assert_positive_zero(jsval_t value)
 {
 	assert(value.kind == JSVAL_KIND_NUMBER);
@@ -6237,6 +6323,7 @@ int main(void)
 	test_region_alloc_helpers();
 	test_native_storage();
 	test_value_semantics();
+	test_set_semantics();
 	test_typeof_semantics();
 	test_url_object_semantics();
 	test_nullish_and_selection_semantics();

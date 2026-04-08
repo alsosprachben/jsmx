@@ -980,6 +980,168 @@ static generated_status_t generated_smoke_jsval_typeof(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_set(char *detail, size_t cap)
+{
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t set;
+	jsval_t grown;
+	jsval_t string_a;
+	jsval_t string_b;
+	jsval_t object_a;
+	jsval_t object_b;
+	jsval_t result;
+	size_t size = 0;
+	int has = 0;
+	int deleted = 0;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_set_new(&region, 2, &set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_new");
+	}
+	if (!jsval_truthy(&region, set)) {
+		return generated_failf(detail, cap, "expected set to be truthy");
+	}
+	if (jsval_typeof(&region, set, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(set)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"object",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_strict_eq(&region, set, set) != 1) {
+		return generated_failf(detail, cap,
+				"expected set identity to be strict-equal to itself");
+	}
+
+	if (jsval_set_add(&region, set, jsval_number(NAN)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(NaN)");
+	}
+	if (jsval_set_has(&region, set, jsval_number(NAN), &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(NaN)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_add(&region, set, jsval_number(-0.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(-0)");
+	}
+	if (jsval_set_has(&region, set, jsval_number(+0.0), &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(+0)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_size(&region, set, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_size(initial)");
+	}
+	if (size != 2) {
+		return generated_failf(detail, cap,
+				"expected initial set size 2, got %zu", size);
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(dup a)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"dup", 3,
+			&string_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(dup b)");
+	}
+	errno = 0;
+	if (jsval_set_add(&region, set, string_a) != -1 || errno != ENOBUFS) {
+		return generated_failf(detail, cap,
+				"expected set add overflow to fail with ENOBUFS");
+	}
+	if (jsval_set_clone(&region, set, 4, &grown) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_clone");
+	}
+	if (jsval_strict_eq(&region, set, grown) != 0) {
+		return generated_failf(detail, cap,
+				"expected cloned set to have distinct identity");
+	}
+	set = grown;
+
+	if (jsval_set_add(&region, set, string_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(string_a)");
+	}
+	if (jsval_set_has(&region, set, string_b, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(string_b)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_add(&region, set, string_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(string_b)");
+	}
+	if (jsval_set_size(&region, set, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_size(strings)");
+	}
+	if (size != 3) {
+		return generated_failf(detail, cap,
+				"expected string-deduped set size 3, got %zu", size);
+	}
+
+	if (jsval_object_new(&region, 0, &object_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(object_a)");
+	}
+	if (jsval_object_new(&region, 0, &object_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(object_b)");
+	}
+	if (jsval_set_add(&region, set, object_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(object_a)");
+	}
+	if (jsval_set_has(&region, set, object_a, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(object_a)");
+	}
+	status = generated_expect_boolean_result(has, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_has(&region, set, object_b, &has) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(object_b)");
+	}
+	status = generated_expect_boolean_result(has, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_set_delete(&region, set, jsval_number(+0.0), &deleted) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_delete(+0)");
+	}
+	status = generated_expect_boolean_result(deleted, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_has(&region, set, jsval_number(-0.0), &has) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_set_has(-0 after delete)");
+	}
+	status = generated_expect_boolean_result(has, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_set_clear(&region, set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_clear");
+	}
+	if (jsval_set_size(&region, set, &size) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_size(clear)");
+	}
+	if (size != 0) {
+		return generated_failf(detail, cap,
+				"expected cleared set size 0, got %zu", size);
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		size_t cap)
 {
@@ -8478,6 +8640,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
+	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_url_core", generated_smoke_jsval_url_core},
 	{"smoke", "jsval_nullish_coalescing",
 		generated_smoke_jsval_nullish_coalescing},

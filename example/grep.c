@@ -9,6 +9,7 @@
 
 #include "runtime_modules/shared/fs_sync.h"
 #include "jsregex.h"
+#include "jsval.h"
 
 /*
  * Source JS: example/grep.js
@@ -21,7 +22,8 @@
  *
  * Local build example:
  * cc -I. -DJSMX_WITH_REGEX=1 -DJSMX_REGEX_BACKEND_PCRE2=1 \
- *   example/grep.c jsregex.c \
+ *   example/grep.c jsnum.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c \
+ *   jsstr.c unicode.c \
  *   -lpcre2-8 -lpcre2-16 \
  *   -o /tmp/jsmx-grep
  *
@@ -67,19 +69,13 @@ typedef struct grep_source_result_s {
 	int quiet_match;
 } grep_source_result_t;
 
-typedef struct grep_source_s {
-	char *path;
-} grep_source_t;
-
-typedef struct grep_source_list_s {
-	grep_source_t *items;
-	size_t count;
-} grep_source_list_t;
-
-typedef struct grep_visited_realpaths_s {
-	char **items;
-	size_t count;
-} grep_visited_realpaths_t;
+typedef struct grep_js_state_s {
+	uint8_t *buf;
+	size_t cap;
+	jsval_region_t region;
+	jsval_t sources;
+	jsval_t visited;
+} grep_js_state_t;
 
 static const char *STDIN_LABEL = "(standard input)";
 static const char *PROGRAM_LABEL = "grep.js";
@@ -268,82 +264,209 @@ grep_kind_is_searchable(runtime_fs_kind_t kind)
 }
 
 static int
-grep_source_list_append(grep_source_list_t *list, const char *path)
+grep_js_state_grow(grep_js_state_t *state)
 {
-	grep_source_t *items;
-	size_t next = list->count;
+	size_t new_cap;
+	uint8_t *new_buf;
 
-	items = realloc(list->items, sizeof(*items) * (next + 1u));
-	if (items == NULL) {
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	new_cap = state->cap == 0 ? 65536u : state->cap * 2u;
+	if (new_cap <= state->cap) {
 		errno = ENOMEM;
 		return -1;
 	}
-	list->items = items;
-	list->items[next].path = NULL;
-	if (runtime_fs_strdup(path, &list->items[next].path) < 0) {
+	new_buf = realloc(state->buf, new_cap);
+	if (new_buf == NULL) {
+		errno = ENOMEM;
 		return -1;
 	}
-	list->count++;
+	state->buf = new_buf;
+	state->cap = new_cap;
+	jsval_region_rebase(&state->region, state->buf, state->cap);
 	return 0;
-}
-
-static void
-grep_source_list_free(grep_source_list_t *list)
-{
-	size_t i;
-
-	if (list == NULL) {
-		return;
-	}
-	for (i = 0; i < list->count; i++) {
-		free(list->items[i].path);
-	}
-	free(list->items);
-	list->items = NULL;
-	list->count = 0;
 }
 
 static int
-grep_visited_realpaths_add(grep_visited_realpaths_t *visited,
-		const char *realpath_value, int *added_ptr)
+grep_js_state_init(grep_js_state_t *state, size_t source_cap,
+		size_t visited_cap)
 {
-	char **items;
-	size_t i;
+	size_t initial_cap = 65536u;
 
-	for (i = 0; i < visited->count; i++) {
-		if (strcmp(visited->items[i], realpath_value) == 0) {
-			*added_ptr = 0;
-			return 0;
-		}
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
 	}
-	items = realloc(visited->items, sizeof(*items) * (visited->count + 1u));
-	if (items == NULL) {
+	memset(state, 0, sizeof(*state));
+	state->buf = malloc(initial_cap);
+	if (state->buf == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
-	visited->items = items;
-	if (runtime_fs_strdup(realpath_value, &visited->items[visited->count]) < 0) {
-		return -1;
+	state->cap = initial_cap;
+	jsval_region_init(&state->region, state->buf, state->cap);
+	source_cap = source_cap > 0 ? source_cap : 4u;
+	visited_cap = visited_cap > 0 ? visited_cap : 4u;
+	for (;;) {
+		if (jsval_array_new(&state->region, source_cap, &state->sources) == 0) {
+			break;
+		}
+		if (errno != ENOBUFS || grep_js_state_grow(state) < 0) {
+			return -1;
+		}
 	}
-	visited->count++;
-	*added_ptr = 1;
+	for (;;) {
+		if (jsval_set_new(&state->region, visited_cap, &state->visited) == 0) {
+			break;
+		}
+		if (errno != ENOBUFS || grep_js_state_grow(state) < 0) {
+			return -1;
+		}
+	}
 	return 0;
 }
 
 static void
-grep_visited_realpaths_free(grep_visited_realpaths_t *visited)
+grep_js_state_free(grep_js_state_t *state)
 {
-	size_t i;
-
-	if (visited == NULL) {
+	if (state == NULL) {
 		return;
 	}
-	for (i = 0; i < visited->count; i++) {
-		free(visited->items[i]);
+	free(state->buf);
+	memset(state, 0, sizeof(*state));
+}
+
+static int
+grep_js_string_new(grep_js_state_t *state, const char *text, jsval_t *value_ptr)
+{
+	size_t len;
+
+	if (state == NULL || text == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
 	}
-	free(visited->items);
-	visited->items = NULL;
-	visited->count = 0;
+	len = strlen(text);
+	for (;;) {
+		if (jsval_string_new_utf8(&state->region, (const uint8_t *)text, len,
+				value_ptr) == 0) {
+			return 0;
+		}
+		if (errno != ENOBUFS || grep_js_state_grow(state) < 0) {
+			return -1;
+		}
+	}
+}
+
+static int
+grep_js_array_grow(grep_js_state_t *state, jsval_t *array_ptr)
+{
+	size_t len;
+	size_t new_cap;
+
+	if (state == NULL || array_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	len = jsval_array_length(&state->region, *array_ptr);
+	new_cap = len < 4 ? 4 : (len * 2);
+	if (new_cap <= len) {
+		new_cap = len + 1;
+	}
+	for (;;) {
+		jsval_t grown;
+
+		if (jsval_array_clone_dense(&state->region, *array_ptr, new_cap,
+				&grown) == 0) {
+			*array_ptr = grown;
+			return 0;
+		}
+		if (errno != ENOBUFS || grep_js_state_grow(state) < 0) {
+			return -1;
+		}
+	}
+}
+
+static int
+grep_js_set_grow(grep_js_state_t *state, jsval_t *set_ptr)
+{
+	size_t len;
+	size_t new_cap;
+
+	if (state == NULL || set_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_set_size(&state->region, *set_ptr, &len) < 0) {
+		return -1;
+	}
+	new_cap = len < 4 ? 4 : (len * 2);
+	if (new_cap <= len) {
+		new_cap = len + 1;
+	}
+	for (;;) {
+		jsval_t grown;
+
+		if (jsval_set_clone(&state->region, *set_ptr, new_cap, &grown) == 0) {
+			*set_ptr = grown;
+			return 0;
+		}
+		if (errno != ENOBUFS || grep_js_state_grow(state) < 0) {
+			return -1;
+		}
+	}
+}
+
+static int
+grep_js_sources_append(grep_js_state_t *state, const char *path)
+{
+	jsval_t value;
+
+	if (grep_js_string_new(state, path, &value) < 0) {
+		return -1;
+	}
+	for (;;) {
+		if (jsval_array_push(&state->region, state->sources, value) == 0) {
+			return 0;
+		}
+		if (errno != ENOBUFS || grep_js_array_grow(state, &state->sources) < 0) {
+			return -1;
+		}
+	}
+}
+
+static int
+grep_js_visited_add(grep_js_state_t *state, const char *realpath_value,
+		int *added_ptr)
+{
+	jsval_t value;
+	size_t before;
+	size_t after;
+
+	if (state == NULL || realpath_value == NULL || added_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (grep_js_string_new(state, realpath_value, &value) < 0) {
+		return -1;
+	}
+	if (jsval_set_size(&state->region, state->visited, &before) < 0) {
+		return -1;
+	}
+	for (;;) {
+		if (jsval_set_add(&state->region, state->visited, value) == 0) {
+			break;
+		}
+		if (errno != ENOBUFS || grep_js_set_grow(state, &state->visited) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_set_size(&state->region, state->visited, &after) < 0) {
+		return -1;
+	}
+	*added_ptr = after != before;
+	return 0;
 }
 
 static const char *
@@ -364,13 +487,12 @@ grep_report_path_error(const grep_options_t *options, const char *prog,
 
 static int
 grep_expand_path(const grep_options_t *options, const char *prog,
-		const char *path, int nested, grep_source_list_t *sources,
-		grep_visited_realpaths_t *visited, int *had_error_ptr);
+		const char *path, int nested, grep_js_state_t *state,
+		int *had_error_ptr);
 
 static int
 grep_expand_directory(const grep_options_t *options, const char *prog,
-		const char *path, grep_source_list_t *sources,
-		grep_visited_realpaths_t *visited, int *had_error_ptr)
+		const char *path, grep_js_state_t *state, int *had_error_ptr)
 {
 	runtime_fs_dir_list_t entries = {0};
 	size_t i;
@@ -389,13 +511,13 @@ grep_expand_directory(const grep_options_t *options, const char *prog,
 			if (entry->is_symlink && !options->recursive_follow) {
 				continue;
 			}
-			if (grep_expand_path(options, prog, entry->path, 1, sources, visited,
+			if (grep_expand_path(options, prog, entry->path, 1, state,
 					had_error_ptr) < 0) {
 				runtime_fs_dir_list_free(&entries);
 				return -1;
 			}
 		} else if (grep_kind_is_searchable(effective_kind)) {
-			if (grep_source_list_append(sources, entry->path) < 0) {
+			if (grep_js_sources_append(state, entry->path) < 0) {
 				runtime_fs_dir_list_free(&entries);
 				return -1;
 			}
@@ -407,14 +529,14 @@ grep_expand_directory(const grep_options_t *options, const char *prog,
 
 static int
 grep_expand_path(const grep_options_t *options, const char *prog,
-		const char *path, int nested, grep_source_list_t *sources,
-		grep_visited_realpaths_t *visited, int *had_error_ptr)
+		const char *path, int nested, grep_js_state_t *state,
+		int *had_error_ptr)
 {
 	runtime_fs_path_info_t info;
 	runtime_fs_kind_t effective_kind;
 
 	if (strcmp(path, "-") == 0) {
-		return grep_source_list_append(sources, path);
+		return grep_js_sources_append(state, path);
 	}
 	if (runtime_fs_classify_path(path, &info) < 0) {
 		*had_error_ptr = 1;
@@ -445,7 +567,7 @@ grep_expand_path(const grep_options_t *options, const char *prog,
 				grep_report_path_error(options, prog, path, errno);
 				return 0;
 			}
-			if (grep_visited_realpaths_add(visited, resolved, &added) < 0) {
+			if (grep_js_visited_add(state, resolved, &added) < 0) {
 				free(resolved);
 				return -1;
 			}
@@ -454,8 +576,7 @@ grep_expand_path(const grep_options_t *options, const char *prog,
 				return 0;
 			}
 		}
-		return grep_expand_directory(options, prog, path, sources, visited,
-				had_error_ptr);
+		return grep_expand_directory(options, prog, path, state, had_error_ptr);
 	}
 	if (!grep_kind_is_searchable(effective_kind)) {
 		if (!nested) {
@@ -465,25 +586,23 @@ grep_expand_path(const grep_options_t *options, const char *prog,
 		return 0;
 	}
 
-	return grep_source_list_append(sources, path);
+	return grep_js_sources_append(state, path);
 }
 
 static int
 grep_expand_sources(const grep_options_t *options, const char *prog,
-		grep_source_list_t *sources, int *had_error_ptr)
+		grep_js_state_t *state, int *had_error_ptr)
 {
-	grep_visited_realpaths_t visited = {0};
 	size_t i;
 	int rc = 0;
 
 	for (i = 0; i < options->file_count; i++) {
-		if (grep_expand_path(options, prog, options->files[i], 0, sources,
-				&visited, had_error_ptr) < 0) {
+		if (grep_expand_path(options, prog, options->files[i], 0, state,
+				had_error_ptr) < 0) {
 			rc = -1;
 			break;
 		}
 	}
-	grep_visited_realpaths_free(&visited);
 	return rc;
 }
 
@@ -845,7 +964,7 @@ main(int argc, char **argv)
 {
 	const char *prog = grep_prog_name(argc > 0 ? argv[0] : NULL);
 	grep_options_t options;
-	grep_source_list_t sources = {0};
+	grep_js_state_t js_state;
 	grep_matcher_t *matchers = NULL;
 	int show_filename;
 	int had_selected = 0;
@@ -859,60 +978,105 @@ main(int argc, char **argv)
 		grep_options_release(&options);
 		return rc;
 	}
+	if (grep_js_state_init(&js_state,
+			options.file_count > 0 ? options.file_count : 4u, 8u) < 0) {
+		fprintf(stderr, "%s: out of memory\n", prog);
+		grep_options_release(&options);
+		return 2;
+	}
 	rc = grep_compile_matchers(&options, prog, &matchers);
 	if (rc != 0) {
+		grep_js_state_free(&js_state);
 		grep_options_release(&options);
 		return rc;
 	}
 
-	if (grep_expand_sources(&options, prog, &sources, &had_error) < 0) {
+	if (grep_expand_sources(&options, prog, &js_state, &had_error) < 0) {
 		fprintf(stderr, "%s: out of memory\n", prog);
 		grep_release_matchers(matchers, options.pattern_count);
+		grep_js_state_free(&js_state);
 		grep_options_release(&options);
 		return 2;
 	}
 
 	show_filename = options.no_filename ? 0
 		: options.force_filename ? 1
-		: sources.count > 1;
-	for (i = 0; i < sources.count; i++) {
-		const char *path = sources.items[i].path;
+		: jsval_array_length(&js_state.region, js_state.sources) > 1;
+	for (i = 0; i < jsval_array_length(&js_state.region, js_state.sources); i++) {
+		jsval_t path_value;
+		size_t path_len = 0;
 		uint8_t *text = NULL;
 		size_t text_len = 0;
 		grep_source_result_t source_result;
 
-		if (grep_slurp_path(path, &text, &text_len) < 0) {
-			had_error = 1;
-			if (!options.suppress_errors) {
-				fprintf(stderr, "%s: %s: %s\n", prog, path, strerror(errno));
-			}
-			continue;
-		}
-		if (grep_process_source(&options, matchers, prog,
-				grep_source_label(path), show_filename, text, text_len,
-				&source_result) < 0) {
-			free(text);
+		if (jsval_array_get(&js_state.region, js_state.sources, i,
+				&path_value) < 0) {
 			fprintf(stderr, "%s: processing failed: %s\n", prog,
 					strerror(errno));
-			grep_source_list_free(&sources);
 			grep_release_matchers(matchers, options.pattern_count);
+			grep_js_state_free(&js_state);
 			grep_options_release(&options);
 			return 2;
 		}
-		free(text);
-		if (source_result.selected_count > 0) {
-			had_selected = 1;
-		}
-		if (source_result.quiet_match) {
-			grep_source_list_free(&sources);
+		if (jsval_string_copy_utf8(&js_state.region, path_value, NULL, 0,
+				&path_len) < 0) {
+			fprintf(stderr, "%s: processing failed: %s\n", prog,
+					strerror(errno));
 			grep_release_matchers(matchers, options.pattern_count);
+			grep_js_state_free(&js_state);
 			grep_options_release(&options);
-			return 0;
+			return 2;
+		}
+		{
+			uint8_t path_buf[path_len + 1u];
+			const char *path;
+
+			if (jsval_string_copy_utf8(&js_state.region, path_value, path_buf,
+					path_len, NULL) < 0) {
+				fprintf(stderr, "%s: processing failed: %s\n", prog,
+						strerror(errno));
+				grep_release_matchers(matchers, options.pattern_count);
+				grep_js_state_free(&js_state);
+				grep_options_release(&options);
+				return 2;
+			}
+			path_buf[path_len] = '\0';
+			path = (const char *)path_buf;
+
+			if (grep_slurp_path(path, &text, &text_len) < 0) {
+				had_error = 1;
+				if (!options.suppress_errors) {
+					fprintf(stderr, "%s: %s: %s\n", prog, path,
+							strerror(errno));
+				}
+				continue;
+			}
+			if (grep_process_source(&options, matchers, prog,
+					grep_source_label(path), show_filename, text, text_len,
+					&source_result) < 0) {
+				free(text);
+				fprintf(stderr, "%s: processing failed: %s\n", prog,
+						strerror(errno));
+				grep_release_matchers(matchers, options.pattern_count);
+				grep_js_state_free(&js_state);
+				grep_options_release(&options);
+				return 2;
+			}
+			free(text);
+			if (source_result.selected_count > 0) {
+				had_selected = 1;
+			}
+			if (source_result.quiet_match) {
+				grep_release_matchers(matchers, options.pattern_count);
+				grep_js_state_free(&js_state);
+				grep_options_release(&options);
+				return 0;
+			}
 		}
 	}
 
-	grep_source_list_free(&sources);
 	grep_release_matchers(matchers, options.pattern_count);
+	grep_js_state_free(&js_state);
 	grep_options_release(&options);
 	if (had_error) {
 		return 2;

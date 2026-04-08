@@ -43,6 +43,13 @@ caller-provided memory:
   - shift
   - unshift
   - explicit length writes
+- native, insertion-ordered, capacity-bounded `Set` semantics such as:
+  - `size`
+  - `has`
+  - `add`
+  - `delete`
+  - `clear`
+  - clone-to-bigger repair when the translator intentionally grows a set
 - deterministic JS-method helpers such as `String.prototype.normalize`
 
 ### Translator
@@ -54,7 +61,7 @@ It is responsible for:
 - choosing native vs JSON-backed storage
 - measuring and providing exact scratch/result storage
 - emitting explicit promotion on first semantic mutation
-- choosing final native object/array capacities up front rather than relying on clone-to-bigger repair paths
+- choosing final native object/array/set capacities up front rather than relying on clone-to-bigger repair paths
 - selecting specialized helpers when a direct lowering exists
 - routing non-flattenable behavior to a separate slow path
 

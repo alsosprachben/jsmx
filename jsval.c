@@ -28,6 +28,11 @@ typedef struct jsval_native_array_s {
 	size_t cap;
 } jsval_native_array_t;
 
+typedef struct jsval_native_set_s {
+	size_t len;
+	size_t cap;
+} jsval_native_set_t;
+
 typedef struct jsval_native_url_field_s {
 	jsval_off_t off;
 	size_t len;
@@ -257,6 +262,19 @@ static jsval_t *jsval_native_array_values(jsval_native_array_t *array)
 	return (jsval_t *)(array + 1);
 }
 
+static jsval_native_set_t *jsval_native_set(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_SET) {
+		return NULL;
+	}
+	return (jsval_native_set_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_t *jsval_native_set_values(jsval_native_set_t *set)
+{
+	return (jsval_t *)(set + 1);
+}
+
 static jsval_native_url_t *jsval_native_url(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_URL) {
@@ -285,6 +303,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		return 1;
 	default:
 		return 0;
@@ -1702,6 +1721,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1833,6 +1853,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -1890,6 +1911,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2119,6 +2141,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -4435,6 +4458,252 @@ int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr)
 	value_ptr->kind = JSVAL_KIND_ARRAY;
 	value_ptr->repr = JSVAL_REPR_NATIVE;
 	value_ptr->off = off;
+	return 0;
+}
+
+static int jsval_same_value_zero(jsval_region_t *region, jsval_t left,
+		jsval_t right)
+{
+	double left_number;
+	double right_number;
+
+	if (left.kind != right.kind) {
+		return 0;
+	}
+	if (left.kind == JSVAL_KIND_NUMBER) {
+		if (jsval_to_number(region, left, &left_number) < 0
+				|| jsval_to_number(region, right, &right_number) < 0) {
+			return 0;
+		}
+		if (left_number != left_number && right_number != right_number) {
+			return 1;
+		}
+		return left_number == right_number;
+	}
+	return jsval_strict_eq(region, left, right);
+}
+
+int jsval_set_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr)
+{
+	jsval_native_set_t *set;
+	jsval_off_t off;
+	size_t bytes_len = sizeof(*set) + cap * sizeof(jsval_t);
+	size_t i;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&set) < 0) {
+		return -1;
+	}
+
+	set->len = 0;
+	set->cap = cap;
+	for (i = 0; i < cap; i++) {
+		jsval_native_set_values(set)[i] = jsval_undefined();
+	}
+
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_SET;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_set_clone(jsval_region_t *region, jsval_t src, size_t capacity,
+		jsval_t *value_ptr)
+{
+	jsval_native_set_t *native;
+	jsval_t out;
+	jsval_t *src_values;
+	jsval_t *dst_values;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL || src.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, src);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (capacity < native->len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_set_new(region, capacity, &out) < 0) {
+		return -1;
+	}
+
+	src_values = jsval_native_set_values(native);
+	dst_values = jsval_native_set_values(jsval_native_set(region, out));
+	for (i = 0; i < native->len; i++) {
+		dst_values[i] = src_values[i];
+	}
+	jsval_native_set(region, out)->len = native->len;
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_set_size(jsval_region_t *region, jsval_t set, size_t *size_ptr)
+{
+	jsval_native_set_t *native;
+
+	if (size_ptr == NULL || set.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (set.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, set);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*size_ptr = native->len;
+	return 0;
+}
+
+int jsval_set_has(jsval_region_t *region, jsval_t set, jsval_t key,
+		int *has_ptr)
+{
+	jsval_native_set_t *native;
+	jsval_t *values;
+	size_t i;
+
+	if (has_ptr == NULL || set.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (set.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, set);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	values = jsval_native_set_values(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, values[i], key)) {
+			*has_ptr = 1;
+			return 0;
+		}
+	}
+	*has_ptr = 0;
+	return 0;
+}
+
+int jsval_set_add(jsval_region_t *region, jsval_t set, jsval_t key)
+{
+	jsval_native_set_t *native;
+	jsval_t *values;
+	size_t i;
+
+	if (set.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (set.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, set);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	values = jsval_native_set_values(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, values[i], key)) {
+			return 0;
+		}
+	}
+	if (native->len >= native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	values[native->len++] = key;
+	return 0;
+}
+
+int jsval_set_delete(jsval_region_t *region, jsval_t set, jsval_t key,
+		int *deleted_ptr)
+{
+	jsval_native_set_t *native;
+	jsval_t *values;
+	size_t i;
+
+	if (deleted_ptr == NULL || set.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (set.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, set);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	values = jsval_native_set_values(native);
+	for (i = 0; i < native->len; i++) {
+		if (jsval_same_value_zero(region, values[i], key)) {
+			if (i + 1 < native->len) {
+				memmove(values + i, values + i + 1,
+						(native->len - i - 1) * sizeof(*values));
+			}
+			native->len--;
+			values[native->len] = jsval_undefined();
+			*deleted_ptr = 1;
+			return 0;
+		}
+	}
+	*deleted_ptr = 0;
+	return 0;
+}
+
+int jsval_set_clear(jsval_region_t *region, jsval_t set)
+{
+	jsval_native_set_t *native;
+	jsval_t *values;
+	size_t i;
+
+	if (set.kind != JSVAL_KIND_SET) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (set.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_set(region, set);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	values = jsval_native_set_values(native);
+	for (i = 0; i < native->len; i++) {
+		values[i] = jsval_undefined();
+	}
+	native->len = 0;
 	return 0;
 }
 
@@ -14168,6 +14437,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -14236,6 +14506,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		return 1;
 	default:
 		return 0;
@@ -14296,6 +14567,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
 	case JSVAL_KIND_URL_SEARCH_PARAMS:
+	case JSVAL_KIND_SET:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -14323,12 +14595,14 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_MATCH_ITERATOR
 			|| left.kind == JSVAL_KIND_URL
 			|| left.kind == JSVAL_KIND_URL_SEARCH_PARAMS
+			|| left.kind == JSVAL_KIND_SET
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
 			|| right.kind == JSVAL_KIND_MATCH_ITERATOR
 			|| right.kind == JSVAL_KIND_URL
-			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS) {
+			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS
+			|| right.kind == JSVAL_KIND_SET) {
 		errno = ENOTSUP;
 		return -1;
 	}

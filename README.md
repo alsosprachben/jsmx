@@ -69,7 +69,8 @@ That makes semantic correctness more important than surface familiarity:
     `skills/jsmx-transpile-tests/`
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
-  - native and JSON-backed JS value/object/array representations
+  - native and JSON-backed JS value/object/array representations plus native
+    `Set` values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -89,6 +90,13 @@ That makes semantic correctness more important than surface familiarity:
     - shift
     - unshift
     - dense length writes
+  - capacity-bounded native `Set` helpers for:
+    - `size`
+    - `has`
+    - `add`
+    - `delete`
+    - `clear`
+    - clone-to-bigger repair when the translator chooses to grow a set
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,
