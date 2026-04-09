@@ -3857,6 +3857,16 @@
       "notes": "Repo-authored idiomatic value-semantics fixture for typeof on the current flattened primitive set across native and JSON-backed values."
     },
     {
+      "id": "jsmx-values-symbol-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/symbol-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/symbol-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for Symbol identity, typeof, abstract-equality, and description reads in the native flattened runtime."
+    },
+    {
       "id": "jsmx-values-typeof-container-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/typeof-container-parity.js",
@@ -3947,6 +3957,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic native object fixture for own-property checks and deletion through the explicit jsval object helpers."
+    },
+    {
+      "id": "jsmx-objects-object-symbol-key-parity",
+      "suite": "objects",
+      "source": "compliance/js/objects/jsmx/object-symbol-key-parity.js",
+      "generated": "compliance/generated/objects/jsmx/object-symbol-key-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic native object fixture for symbol-keyed own-property reads, ordered own-key access, shallow clone/copy, delete compaction, and JSON omission."
     },
     {
       "id": "jsmx-objects-object-key-order",

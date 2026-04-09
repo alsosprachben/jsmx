@@ -33,7 +33,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_URL_SEARCH_PARAMS = 10,
 	JSVAL_KIND_SET = 11,
 	JSVAL_KIND_MAP = 12,
-	JSVAL_KIND_ITERATOR = 13
+	JSVAL_KIND_ITERATOR = 13,
+	JSVAL_KIND_SYMBOL = 14
 } jsval_kind_t;
 
 typedef enum jsval_iterator_selector_e {
@@ -114,6 +115,10 @@ jsval_t jsval_number(double number);
 
 int jsval_string_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len, jsval_t *value_ptr);
 int jsval_string_new_utf16(jsval_region_t *region, const uint16_t *str, size_t len, jsval_t *value_ptr);
+int jsval_symbol_new(jsval_region_t *region, int have_description,
+		jsval_t description_value, jsval_t *value_ptr);
+int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
+		jsval_t *value_ptr);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 
@@ -137,6 +142,14 @@ int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object, const uint
 int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t *value_ptr);
 int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t value);
 int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, int *deleted_ptr);
+int jsval_object_has_own_key(jsval_region_t *region, jsval_t object,
+		jsval_t key, int *has_ptr);
+int jsval_object_get_key(jsval_region_t *region, jsval_t object, jsval_t key,
+		jsval_t *value_ptr);
+int jsval_object_set_key(jsval_region_t *region, jsval_t object, jsval_t key,
+		jsval_t value);
+int jsval_object_delete_key(jsval_region_t *region, jsval_t object,
+		jsval_t key, int *deleted_ptr);
 int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index, jsval_t *key_ptr);
 int jsval_object_value_at(jsval_region_t *region, jsval_t object, size_t index, jsval_t *value_ptr);
 int jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src);

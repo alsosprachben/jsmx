@@ -70,7 +70,7 @@ That makes semantic correctness more important than surface familiarity:
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
-    `Set`, `Map`, and explicit iterator values
+    `Symbol`, `Set`, `Map`, and explicit iterator values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -78,6 +78,7 @@ That makes semantic correctness more important than surface familiarity:
   - explicit native object/array helpers for:
     - own-property checks
     - ordered key/value access
+    - string and symbol own-property keys on native objects
     - shallow own-property copy
     - fresh own-property clone into a new native object
     - fresh dense-array clone into a new native array
@@ -115,6 +116,10 @@ That makes semantic correctness more important than surface familiarity:
     - insertion/index order preserved without snapshot arrays
     - entry stepping returned as separate key/value outputs to avoid per-step
       pair allocation in the page-resident model
+  - native `Symbol` helpers for:
+    - unique identity-bearing values with optional descriptions
+    - symbol-keyed native object own properties through explicit key helpers
+    - ordered copy/clone/spread preservation plus JSON omission of symbol keys
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,

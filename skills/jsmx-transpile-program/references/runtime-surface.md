@@ -20,7 +20,7 @@ Reusable host/module bridges for production programs live under
 Treat these as direct-lowerable when the entrypoint stays inside the current flattened boundary:
 
 - value kinds:
-  - `undefined`, `null`, booleans, numbers, strings
+  - `undefined`, `null`, booleans, numbers, strings, symbols
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
   - explicit iterator values over strings, arrays, Sets, Maps, and
@@ -44,6 +44,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 - object and array operations:
   - own-property get/set/delete
   - ordered key/value reads
+  - symbol-keyed own-property get/set/delete on native objects
   - own-property copy and clone
   - dense-array push/pop/shift/unshift/clone/splice
   - dense spread-style assembly already modeled in the corpus
@@ -116,7 +117,6 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - streams with async callbacks
   - networking
 - unsupported JS categories:
-  - symbols
   - bigint
   - prototype-chain-sensitive behavior
   - descriptors or accessors

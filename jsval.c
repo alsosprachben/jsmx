@@ -18,6 +18,10 @@ typedef struct jsval_native_string_s {
 	size_t cap;
 } jsval_native_string_t;
 
+typedef struct jsval_native_symbol_s {
+	jsval_t description;
+} jsval_native_symbol_t;
+
 typedef struct jsval_native_object_s {
 	size_t len;
 	size_t cap;
@@ -135,7 +139,7 @@ typedef struct jsval_native_match_iterator_s {
 } jsval_native_match_iterator_t;
 
 typedef struct jsval_native_prop_s {
-	jsval_off_t name_off;
+	jsval_t name;
 	jsval_t value;
 } jsval_native_prop_t;
 
@@ -143,7 +147,7 @@ typedef struct jsval_object_copy_action_s {
 	jsval_t key;
 	jsval_t value;
 	size_t index;
-	jsval_off_t name_off;
+	jsval_t name;
 	uint8_t append;
 	uint8_t reserved[7];
 } jsval_object_copy_action_t;
@@ -269,6 +273,25 @@ static uint16_t *jsval_native_string_units(jsval_native_string_t *string)
 	return (uint16_t *)(string + 1);
 }
 
+static jsval_t jsval_native_string_value(jsval_off_t off)
+{
+	jsval_t value = jsval_undefined();
+
+	value.kind = JSVAL_KIND_STRING;
+	value.repr = JSVAL_REPR_NATIVE;
+	value.off = off;
+	return value;
+}
+
+static jsval_native_symbol_t *jsval_native_symbol(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_SYMBOL) {
+		return NULL;
+	}
+	return (jsval_native_symbol_t *)jsval_region_ptr(region, value.off);
+}
+
 static jsval_native_object_t *jsval_native_object(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_OBJECT) {
@@ -365,6 +388,11 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	default:
 		return 0;
 	}
+}
+
+static int jsval_key_is_property_name(jsval_t key)
+{
+	return key.kind == JSVAL_KIND_STRING || key.kind == JSVAL_KIND_SYMBOL;
 }
 
 static jsstr8_t
@@ -839,12 +867,13 @@ static jsval_native_named_group_t *jsval_native_regexp_named_groups(
 }
 
 static int jsval_object_append_native_prop(jsval_region_t *region, jsval_t object,
-		jsval_off_t name_off, jsval_t value)
+		jsval_t name, jsval_t value)
 {
 	jsval_native_object_t *native = jsval_native_object(region, object);
 	jsval_native_prop_t *props;
 
-	if (native == NULL) {
+	if (native == NULL || !jsval_key_is_property_name(name)
+			|| name.repr != JSVAL_REPR_NATIVE) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -853,7 +882,7 @@ static int jsval_object_append_native_prop(jsval_region_t *region, jsval_t objec
 		return -1;
 	}
 	props = jsval_native_object_props(native);
-	props[native->len].name_off = name_off;
+	props[native->len].name = name;
 	props[native->len].value = value;
 	native->len++;
 	return 0;
@@ -1732,6 +1761,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	{
 		jsval_native_object_t *object = jsval_native_object(region, value);
 		jsval_native_prop_t *props;
+		int emitted = 0;
 
 		if (object == NULL) {
 			errno = EINVAL;
@@ -1747,16 +1777,20 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 
 		props = jsval_native_object_props(object);
 		for (i = 0; i < object->len; i++) {
-			jsval_t name = jsval_undefined();
+			jsval_t name = props[i].name;
 
-			if (i > 0 && jsval_json_emit_byte(state, ',') < 0) {
+			if (name.kind == JSVAL_KIND_SYMBOL) {
+				continue;
+			}
+			if (name.kind != JSVAL_KIND_STRING) {
+				jsval_json_emit_pop(state, value);
+				errno = EINVAL;
+				return -1;
+			}
+			if (emitted > 0 && jsval_json_emit_byte(state, ',') < 0) {
 				jsval_json_emit_pop(state, value);
 				return -1;
 			}
-
-			name.kind = JSVAL_KIND_STRING;
-			name.repr = JSVAL_REPR_NATIVE;
-			name.off = props[i].name_off;
 			if (jsval_json_emit_native_string(region, name, state) < 0) {
 				jsval_json_emit_pop(state, value);
 				return -1;
@@ -1769,6 +1803,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 				jsval_json_emit_pop(state, value);
 				return -1;
 			}
+			emitted++;
 		}
 
 		jsval_json_emit_pop(state, value);
@@ -1908,6 +1943,9 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 		}
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, NULL, 0, len_ptr);
+	case JSVAL_KIND_SYMBOL:
+		*len_ptr = 0;
+		return 0;
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
@@ -1968,6 +2006,9 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 		}
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, buf, cap, len_ptr);
+	case JSVAL_KIND_SYMBOL:
+		errno = ENOTSUP;
+		return -1;
 	case JSVAL_KIND_REGEXP:
 	case JSVAL_KIND_MATCH_ITERATOR:
 	case JSVAL_KIND_URL:
@@ -2061,6 +2102,9 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 		}
 		*number_ptr = value.as.number;
 		return 0;
+	case JSVAL_KIND_SYMBOL:
+		errno = ENOTSUP;
+		return -1;
 	case JSVAL_KIND_STRING:
 		return jsval_string_to_number(region, value, number_ptr);
 	default:
@@ -2164,6 +2208,9 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 			return 0;
 		}
 		*method_value_ptr = jsmethod_value_number(value.as.number);
+		return 0;
+	case JSVAL_KIND_SYMBOL:
+		*method_value_ptr = jsmethod_value_symbol();
 		return 0;
 	case JSVAL_KIND_STRING:
 		if (value.repr == JSVAL_REPR_NATIVE) {
@@ -4476,6 +4523,58 @@ int jsval_string_new_utf16(jsval_region_t *region, const uint16_t *str, size_t l
 	return 0;
 }
 
+int jsval_symbol_new(jsval_region_t *region, int have_description,
+		jsval_t description_value, jsval_t *value_ptr)
+{
+	jsval_native_symbol_t *symbol;
+	jsmethod_error_t error;
+	jsval_t description = jsval_undefined();
+	jsval_off_t off;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (have_description && description_value.kind != JSVAL_KIND_UNDEFINED) {
+		memset(&error, 0, sizeof(error));
+		if (description_value.kind == JSVAL_KIND_STRING
+				&& description_value.repr == JSVAL_REPR_NATIVE) {
+			description = description_value;
+		} else if (jsval_stringify_value_to_native(region, description_value, 0,
+				&description, &error) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_region_reserve(region, sizeof(*symbol), JSVAL_ALIGN, &off,
+			(void **)&symbol) < 0) {
+		return -1;
+	}
+	symbol->description = description;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_SYMBOL;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
+		jsval_t *value_ptr)
+{
+	jsval_native_symbol_t *native;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_symbol(region, symbol);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->description;
+	return 0;
+}
+
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr)
 {
 	jsval_native_object_t *object;
@@ -4491,7 +4590,7 @@ int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr)
 	object->cap = cap;
 	for (i = 0; i < cap; i++) {
 		jsval_native_prop_t *prop = &jsval_native_object_props(object)[i];
-		prop->name_off = 0;
+		prop->name = jsval_undefined();
 		prop->value = jsval_undefined();
 	}
 
@@ -5983,7 +6082,8 @@ jsval_regexp_groups_object(jsval_region_t *region,
 			capture_value = capture_values[capture_index];
 		}
 		if (jsval_object_append_native_prop(region, groups,
-				named_groups[i].name_off, capture_value) < 0) {
+				jsval_native_string_value(named_groups[i].name_off),
+				capture_value) < 0) {
 			return -1;
 		}
 	}
@@ -6029,8 +6129,8 @@ jsval_regexp_exec_result_object(jsval_region_t *region,
 					&key_off) < 0) {
 				return -1;
 			}
-			if (jsval_object_append_native_prop(region, object, key_off,
-					capture_values[i]) < 0) {
+			if (jsval_object_append_native_prop(region, object,
+					jsval_native_string_value(key_off), capture_values[i]) < 0) {
 				return -1;
 			}
 		}
@@ -6050,11 +6150,14 @@ jsval_regexp_exec_result_object(jsval_region_t *region,
 						(const uint8_t *)"groups", 6, &groups_key_off) < 0) {
 				return -1;
 			}
-			if (jsval_object_append_native_prop(region, object, length_key_off,
+			if (jsval_object_append_native_prop(region, object,
+					jsval_native_string_value(length_key_off),
 					jsval_number((double)slot_count)) < 0
-					|| jsval_object_append_native_prop(region, object, index_key_off,
+					|| jsval_object_append_native_prop(region, object,
+						jsval_native_string_value(index_key_off),
 						jsval_number((double)match_index)) < 0
-					|| jsval_object_append_native_prop(region, object, input_key_off,
+					|| jsval_object_append_native_prop(region, object,
+						jsval_native_string_value(input_key_off),
 						input_value) < 0) {
 				return -1;
 			}
@@ -6062,8 +6165,8 @@ jsval_regexp_exec_result_object(jsval_region_t *region,
 					slot_count, &groups) < 0) {
 				return -1;
 			}
-			if (jsval_object_append_native_prop(region, object, groups_key_off,
-					groups) < 0) {
+			if (jsval_object_append_native_prop(region, object,
+					jsval_native_string_value(groups_key_off), groups) < 0) {
 				return -1;
 			}
 		}
@@ -12739,11 +12842,11 @@ static int jsval_native_object_find_utf8(jsval_region_t *region,
 
 	props = jsval_native_object_props(native);
 	for (i = 0; i < native->len; i++) {
-		jsval_t name = jsval_undefined();
+		jsval_t name = props[i].name;
 
-		name.kind = JSVAL_KIND_STRING;
-		name.repr = JSVAL_REPR_NATIVE;
-		name.off = props[i].name_off;
+		if (name.kind != JSVAL_KIND_STRING) {
+			continue;
+		}
 		if (jsval_native_string_eq_utf8(region, name, key, key_len)) {
 			if (index_ptr != NULL) {
 				*index_ptr = i;
@@ -12762,19 +12865,14 @@ jsval_native_object_find_key(jsval_region_t *region, jsval_native_object_t *nati
 	size_t i;
 	jsval_native_prop_t *props;
 
-	if (native == NULL || key.kind != JSVAL_KIND_STRING) {
+	if (native == NULL || !jsval_key_is_property_name(key)) {
 		errno = EINVAL;
 		return -1;
 	}
 
 	props = jsval_native_object_props(native);
 	for (i = 0; i < native->len; i++) {
-		jsval_t name = jsval_undefined();
-
-		name.kind = JSVAL_KIND_STRING;
-		name.repr = JSVAL_REPR_NATIVE;
-		name.off = props[i].name_off;
-		if (jsval_strict_eq(region, name, key) == 1) {
+		if (jsval_strict_eq(region, props[i].name, key) == 1) {
 			if (index_ptr != NULL) {
 				*index_ptr = i;
 			}
@@ -12792,7 +12890,7 @@ jsval_object_copy_find_planned_key(jsval_region_t *region,
 {
 	size_t i;
 
-	if (key.kind != JSVAL_KIND_STRING) {
+	if (!jsval_key_is_property_name(key)) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -12810,6 +12908,50 @@ jsval_object_copy_find_planned_key(jsval_region_t *region,
 	}
 
 	return 0;
+}
+
+static int
+jsval_object_key_to_native(jsval_region_t *region, jsval_t key,
+		jsval_t *name_ptr)
+{
+	if (region == NULL || name_ptr == NULL || !jsval_key_is_property_name(key)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key.kind == JSVAL_KIND_SYMBOL) {
+		if (key.repr != JSVAL_REPR_NATIVE || jsval_native_symbol(region, key) == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		*name_ptr = key;
+		return 0;
+	}
+	if (key.repr == JSVAL_REPR_NATIVE) {
+		*name_ptr = key;
+		return 0;
+	}
+
+	{
+		size_t key_len = 0;
+		jsval_t name;
+
+		if (jsval_string_copy_utf8(region, key, NULL, 0, &key_len) < 0) {
+			return -1;
+		}
+		{
+			uint8_t key_buf[key_len ? key_len : 1];
+
+			if (key_len > 0 && jsval_string_copy_utf8(region, key, key_buf,
+					key_len, NULL) < 0) {
+				return -1;
+			}
+			if (jsval_string_new_utf8(region, key_buf, key_len, &name) < 0) {
+				return -1;
+			}
+		}
+		*name_ptr = name;
+		return 0;
+	}
 }
 
 int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object,
@@ -12869,6 +13011,10 @@ int jsval_object_has_own_utf8(jsval_region_t *region, jsval_t object,
 
 int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t *key, size_t key_len, jsval_t *value_ptr)
 {
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
 	if (object.kind != JSVAL_KIND_OBJECT) {
 		errno = EINVAL;
 		return -1;
@@ -12925,6 +13071,118 @@ int jsval_object_get_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 	return -1;
 }
 
+int jsval_object_has_own_key(jsval_region_t *region, jsval_t object,
+		jsval_t key, int *has_ptr)
+{
+	if (region == NULL || has_ptr == NULL || !jsval_key_is_property_name(key)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+		int found = jsval_native_object_find_key(region, native, key, NULL);
+
+		if (found < 0) {
+			return -1;
+		}
+		*has_ptr = found;
+		return 0;
+	}
+
+	if (object.repr == JSVAL_REPR_JSON) {
+		if (key.kind == JSVAL_KIND_SYMBOL) {
+			*has_ptr = 0;
+			return 0;
+		}
+
+		{
+			size_t key_len = 0;
+
+			if (jsval_string_copy_utf8(region, key, NULL, 0, &key_len) < 0) {
+				return -1;
+			}
+			{
+				uint8_t key_buf[key_len ? key_len : 1];
+
+				if (key_len > 0 && jsval_string_copy_utf8(region, key, key_buf,
+						key_len, NULL) < 0) {
+					return -1;
+				}
+				return jsval_object_has_own_utf8(region, object,
+						key_len > 0 ? key_buf : NULL, key_len, has_ptr);
+			}
+		}
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
+int jsval_object_get_key(jsval_region_t *region, jsval_t object, jsval_t key,
+		jsval_t *value_ptr)
+{
+	if (region == NULL || value_ptr == NULL || !jsval_key_is_property_name(key)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (object.repr == JSVAL_REPR_NATIVE) {
+		jsval_native_object_t *native = jsval_native_object(region, object);
+		jsval_native_prop_t *props;
+		size_t index;
+		int found;
+
+		found = jsval_native_object_find_key(region, native, key, &index);
+		if (found < 0) {
+			return -1;
+		}
+		if (!found) {
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+		props = jsval_native_object_props(native);
+		*value_ptr = props[index].value;
+		return 0;
+	}
+
+	if (object.repr == JSVAL_REPR_JSON) {
+		if (key.kind == JSVAL_KIND_SYMBOL) {
+			*value_ptr = jsval_undefined();
+			return 0;
+		}
+
+		{
+			size_t key_len = 0;
+
+			if (jsval_string_copy_utf8(region, key, NULL, 0, &key_len) < 0) {
+				return -1;
+			}
+			{
+				uint8_t key_buf[key_len ? key_len : 1];
+
+				if (key_len > 0 && jsval_string_copy_utf8(region, key, key_buf,
+						key_len, NULL) < 0) {
+					return -1;
+				}
+				return jsval_object_get_utf8(region, object,
+						key_len > 0 ? key_buf : NULL, key_len, value_ptr);
+			}
+		}
+	}
+
+	errno = EINVAL;
+	return -1;
+}
+
 int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index,
 		jsval_t *key_ptr)
 {
@@ -12951,9 +13209,7 @@ int jsval_object_key_at(jsval_region_t *region, jsval_t object, size_t index,
 			return 0;
 		}
 		props = jsval_native_object_props(native);
-		key.kind = JSVAL_KIND_STRING;
-		key.repr = JSVAL_REPR_NATIVE;
-		key.off = props[index].name_off;
+		key = props[index].name;
 		*key_ptr = key;
 		return 0;
 	}
@@ -13103,7 +13359,7 @@ jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src)
 				|| jsval_object_value_at(region, src, i, &value) < 0) {
 			return -1;
 		}
-		if (key.kind != JSVAL_KIND_STRING) {
+		if (!jsval_key_is_property_name(key)) {
 			errno = EINVAL;
 			return -1;
 		}
@@ -13128,7 +13384,7 @@ jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src)
 		actions[i].key = key;
 		actions[i].value = value;
 		actions[i].index = index;
-		actions[i].name_off = 0;
+		actions[i].name = jsval_undefined();
 	}
 
 	if (dst_len + append_count > dst_native->cap) {
@@ -13140,42 +13396,16 @@ jsval_object_copy_own(jsval_region_t *region, jsval_t dst, jsval_t src)
 		if (!actions[i].append) {
 			continue;
 		}
-		if (actions[i].key.repr == JSVAL_REPR_NATIVE) {
-			actions[i].name_off = actions[i].key.off;
-			continue;
-		}
-
-		{
-			size_t key_len = 0;
-			jsval_t name;
-
-			if (jsval_string_copy_utf8(region, actions[i].key, NULL, 0,
-					&key_len) < 0) {
-				return -1;
-			}
-			{
-				uint8_t key_buf[key_len ? key_len : 1];
-
-				if (key_len > 0 && jsval_string_copy_utf8(region,
-						actions[i].key, key_buf, key_len, NULL) < 0) {
-					return -1;
-				}
-				if (jsval_string_new_utf8(region, key_buf, key_len, &name) < 0) {
-					return -1;
-				}
-			}
-			if (name.kind != JSVAL_KIND_STRING || name.repr != JSVAL_REPR_NATIVE) {
-				errno = EINVAL;
-				return -1;
-			}
-			actions[i].name_off = name.off;
+		if (jsval_object_key_to_native(region, actions[i].key,
+				&actions[i].name) < 0) {
+			return -1;
 		}
 	}
 
 	dst_props = jsval_native_object_props(dst_native);
 	for (i = 0; i < src_len; i++) {
 		if (actions[i].append) {
-			dst_props[actions[i].index].name_off = actions[i].name_off;
+			dst_props[actions[i].index].name = actions[i].name;
 		}
 		dst_props[actions[i].index].value = actions[i].value;
 	}
@@ -13213,6 +13443,53 @@ jsval_object_clone_own(jsval_region_t *region, jsval_t src, size_t capacity,
 	}
 
 	*value_ptr = clone;
+	return 0;
+}
+
+int jsval_object_set_key(jsval_region_t *region, jsval_t object, jsval_t key,
+		jsval_t value)
+{
+	size_t index;
+	jsval_native_object_t *native;
+	jsval_native_prop_t *props;
+	jsval_t name;
+	int found;
+
+	if (region == NULL || !jsval_key_is_property_name(key)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT || object.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_object(region, object);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	props = jsval_native_object_props(native);
+	found = jsval_native_object_find_key(region, native, key, &index);
+	if (found < 0) {
+		return -1;
+	}
+	if (found) {
+		props[index].value = value;
+		return 0;
+	}
+
+	if (native->len >= native->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_object_key_to_native(region, key, &name) < 0) {
+		return -1;
+	}
+	props[native->len].name = name;
+	props[native->len].value = value;
+	native->len++;
 	return 0;
 }
 
@@ -13254,11 +13531,67 @@ int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 		if (jsval_string_new_utf8(region, key, key_len, &name) < 0) {
 			return -1;
 		}
-		props[native->len].name_off = name.off;
+		props[native->len].name = name;
 		props[native->len].value = value;
 		native->len++;
 	}
 
+	return 0;
+}
+
+int jsval_object_delete_key(jsval_region_t *region, jsval_t object,
+		jsval_t key, int *deleted_ptr)
+{
+	jsval_native_object_t *native;
+	jsval_native_prop_t *props;
+	size_t index;
+	size_t i;
+	int found;
+
+	if (region == NULL || deleted_ptr == NULL || !jsval_key_is_property_name(key)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (object.repr == JSVAL_REPR_JSON) {
+		if (key.kind == JSVAL_KIND_SYMBOL) {
+			*deleted_ptr = 0;
+			return 0;
+		}
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (object.repr != JSVAL_REPR_NATIVE) {
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	native = jsval_native_object(region, object);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	found = jsval_native_object_find_key(region, native, key, &index);
+	if (found < 0) {
+		return -1;
+	}
+	if (!found) {
+		*deleted_ptr = 0;
+		return 0;
+	}
+
+	props = jsval_native_object_props(native);
+	for (i = index + 1; i < native->len; i++) {
+		props[i - 1] = props[i];
+	}
+	props[native->len - 1].name = jsval_undefined();
+	props[native->len - 1].value = jsval_undefined();
+	native->len--;
+	*deleted_ptr = 1;
 	return 0;
 }
 
@@ -13303,7 +13636,7 @@ int jsval_object_delete_utf8(jsval_region_t *region, jsval_t object,
 	for (i = index + 1; i < native->len; i++) {
 		props[i - 1] = props[i];
 	}
-	props[native->len - 1].name_off = 0;
+	props[native->len - 1].name = jsval_undefined();
 	props[native->len - 1].value = jsval_undefined();
 	native->len--;
 	*deleted_ptr = 1;
@@ -15278,6 +15611,10 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 		text = (const uint8_t *)"string";
 		len = 6;
 		break;
+	case JSVAL_KIND_SYMBOL:
+		text = (const uint8_t *)"symbol";
+		len = 6;
+		break;
 	default:
 		errno = EINVAL;
 		return -1;
@@ -15325,6 +15662,8 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 			return 0;
 		}
 		return len > 0;
+	case JSVAL_KIND_SYMBOL:
+		return 1;
 	case JSVAL_KIND_OBJECT:
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
@@ -15388,6 +15727,11 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 			return memcmp(left_buf, right_buf, left_len * sizeof(uint16_t)) == 0;
 		}
 	}
+	case JSVAL_KIND_SYMBOL:
+		if (left.repr != JSVAL_REPR_NATIVE || right.repr != JSVAL_REPR_NATIVE) {
+			return 0;
+		}
+		return left.off == right.off;
 	case JSVAL_KIND_OBJECT:
 	case JSVAL_KIND_ARRAY:
 	case JSVAL_KIND_REGEXP:
@@ -15441,6 +15785,10 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 	}
 	if (left.kind == right.kind) {
 		*result_ptr = jsval_strict_eq(region, left, right);
+		return 0;
+	}
+	if (left.kind == JSVAL_KIND_SYMBOL || right.kind == JSVAL_KIND_SYMBOL) {
+		*result_ptr = 0;
 		return 0;
 	}
 	if ((left.kind == JSVAL_KIND_UNDEFINED && right.kind == JSVAL_KIND_NULL)

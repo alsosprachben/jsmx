@@ -171,6 +171,16 @@ static void assert_object_key_at(jsval_region_t *region, jsval_t object,
 	assert_string(region, value, expected);
 }
 
+static void
+assert_object_symbol_key_at(jsval_region_t *region, jsval_t object,
+		size_t index, jsval_t expected)
+{
+	jsval_t value;
+
+	assert(jsval_object_key_at(region, object, index, &value) == 0);
+	assert(jsval_strict_eq(region, value, expected) == 1);
+}
+
 static void assert_object_key_undefined_at(jsval_region_t *region,
 		jsval_t object, size_t index)
 {
@@ -414,6 +424,118 @@ static void test_map_semantics(void)
 	assert(got.kind == JSVAL_KIND_UNDEFINED);
 	assert(jsval_map_value_at(&region, map, 0, &got) == 0);
 	assert(got.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void test_symbol_semantics(void)
+{
+	static const char json_text[] = "{\"plain\":1}";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t description;
+	jsval_t symbol_a;
+	jsval_t symbol_b;
+	jsval_t symbol_none;
+	jsval_t result;
+	jsval_t object;
+	jsval_t clone;
+	jsval_t copied;
+	jsval_t json_object;
+	jsval_t value;
+	jsmethod_error_t error;
+	double number = 0.0;
+	int has = 0;
+	int deleted = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"token", 5,
+			&description) == 0);
+	assert(jsval_symbol_new(&region, 1, description, &symbol_a) == 0);
+	assert(jsval_symbol_new(&region, 1, description, &symbol_b) == 0);
+	assert(jsval_symbol_new(&region, 0, jsval_undefined(), &symbol_none) == 0);
+
+	assert(symbol_a.kind == JSVAL_KIND_SYMBOL);
+	assert(jsval_truthy(&region, symbol_a) == 1);
+	assert(jsval_typeof(&region, symbol_a, &result) == 0);
+	assert_string(&region, result, "symbol");
+	assert(jsval_strict_eq(&region, symbol_a, symbol_a) == 1);
+	assert(jsval_strict_eq(&region, symbol_a, symbol_b) == 0);
+	assert(jsval_abstract_eq(&region, symbol_a, symbol_a, &has) == 0);
+	assert(has == 1);
+	assert(jsval_abstract_eq(&region, symbol_a, symbol_b, &has) == 0);
+	assert(has == 0);
+	assert(jsval_abstract_eq(&region, symbol_a, description, &has) == 0);
+	assert(has == 0);
+	assert(jsval_symbol_description(&region, symbol_a, &result) == 0);
+	assert_string(&region, result, "token");
+	assert(jsval_symbol_description(&region, symbol_none, &result) == 0);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+
+	errno = 0;
+	assert(jsval_to_number(&region, symbol_a, &number) < 0);
+	assert(errno == ENOTSUP);
+
+	memset(&error, 0, sizeof(error));
+	assert(jsval_method_string_index_of(&region, symbol_a, description, 0,
+			jsval_undefined(), &result, &error) < 0);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+
+	assert(jsval_object_new(&region, 3, &object) == 0);
+	assert(jsval_object_set_key(&region, object, symbol_a,
+			jsval_number(7.0)) == 0);
+	assert(jsval_object_set_utf8(&region, object,
+			(const uint8_t *)"plain", 5, jsval_bool(1)) == 0);
+	assert(jsval_object_set_key(&region, object, symbol_b,
+			jsval_number(9.0)) == 0);
+
+	assert(jsval_object_has_own_key(&region, object, symbol_a, &has) == 0);
+	assert(has == 1);
+	assert(jsval_object_get_key(&region, object, symbol_a, &value) == 0);
+	assert_number_value(value, 7.0);
+	assert(jsval_object_get_key(&region, object, symbol_b, &value) == 0);
+	assert_number_value(value, 9.0);
+	assert(jsval_object_get_utf8(&region, object, (const uint8_t *)"plain", 5,
+			&value) == 0);
+	assert(value.kind == JSVAL_KIND_BOOL);
+	assert(value.as.boolean == 1);
+	assert_object_symbol_key_at(&region, object, 0, symbol_a);
+	assert_object_key_at(&region, object, 1, "plain");
+	assert_object_symbol_key_at(&region, object, 2, symbol_b);
+	assert_json(&region, object, "{\"plain\":true}");
+
+	assert(jsval_object_clone_own(&region, object, 3, &clone) == 0);
+	assert(jsval_object_get_key(&region, clone, symbol_a, &value) == 0);
+	assert_number_value(value, 7.0);
+	assert_object_symbol_key_at(&region, clone, 0, symbol_a);
+	assert_object_key_at(&region, clone, 1, "plain");
+	assert_object_symbol_key_at(&region, clone, 2, symbol_b);
+	assert_json(&region, clone, "{\"plain\":true}");
+
+	assert(jsval_object_new(&region, 3, &copied) == 0);
+	assert(jsval_object_copy_own(&region, copied, object) == 0);
+	assert(jsval_object_get_key(&region, copied, symbol_b, &value) == 0);
+	assert_number_value(value, 9.0);
+	assert_object_symbol_key_at(&region, copied, 0, symbol_a);
+	assert_object_key_at(&region, copied, 1, "plain");
+	assert_object_symbol_key_at(&region, copied, 2, symbol_b);
+	assert_json(&region, copied, "{\"plain\":true}");
+
+	assert(jsval_object_delete_key(&region, object, symbol_a, &deleted) == 0);
+	assert(deleted == 1);
+	assert(jsval_object_has_own_key(&region, object, symbol_a, &has) == 0);
+	assert(has == 0);
+	assert(jsval_object_delete_key(&region, object, symbol_a, &deleted) == 0);
+	assert(deleted == 0);
+	assert_object_key_at(&region, object, 0, "plain");
+	assert_object_symbol_key_at(&region, object, 1, symbol_b);
+	assert_json(&region, object, "{\"plain\":true}");
+
+	assert(jsval_json_parse(&region, (const uint8_t *)json_text,
+			sizeof(json_text) - 1, 8, &json_object) == 0);
+	assert(jsval_object_has_own_key(&region, json_object, symbol_a, &has) == 0);
+	assert(has == 0);
+	assert(jsval_object_get_key(&region, json_object, symbol_a, &value) == 0);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
 }
 
 static void test_iterator_semantics(void)
@@ -6780,6 +6902,7 @@ int main(void)
 	test_region_alloc_helpers();
 	test_native_storage();
 	test_value_semantics();
+	test_symbol_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

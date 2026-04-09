@@ -1354,6 +1354,194 @@ static generated_status_t generated_smoke_jsval_map(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_symbol(char *detail,
+		size_t cap)
+{
+	uint8_t storage[8192];
+	jsval_region_t region;
+	jsval_t description;
+	jsval_t symbol_a;
+	jsval_t symbol_b;
+	jsval_t symbol_none;
+	jsval_t object;
+	jsval_t clone;
+	jsval_t copied;
+	jsval_t result;
+	jsval_t value;
+	jsmethod_error_t error;
+	int boolean = 0;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"token", 5,
+			&description) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(symbol description)");
+	}
+	if (jsval_symbol_new(&region, 1, description, &symbol_a) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_symbol_new(symbol_a)");
+	}
+	if (jsval_symbol_new(&region, 1, description, &symbol_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_symbol_new(symbol_b)");
+	}
+	if (jsval_symbol_new(&region, 0, jsval_undefined(), &symbol_none) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_symbol_new(symbol_none)");
+	}
+	if (!jsval_truthy(&region, symbol_a)) {
+		return generated_failf(detail, cap, "expected symbol to be truthy");
+	}
+	if (jsval_typeof(&region, symbol_a, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(symbol)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"symbol",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_strict_eq(&region, symbol_a, symbol_a) != 1) {
+		return generated_failf(detail, cap,
+				"expected symbol identity to be strict-equal to itself");
+	}
+	if (jsval_strict_eq(&region, symbol_a, symbol_b) != 0) {
+		return generated_failf(detail, cap,
+				"expected distinct symbols with the same description to differ");
+	}
+	if (jsval_abstract_eq(&region, symbol_a, symbol_b, &boolean) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_abstract_eq(symbols)");
+	}
+	status = generated_expect_boolean_result(boolean, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_symbol_description(&region, symbol_a, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_symbol_description(a)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"token",
+			5, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_symbol_description(&region, symbol_none, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_symbol_description(undefined)");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected symbol without description to report undefined");
+	}
+
+	memset(&error, 0, sizeof(error));
+	if (jsval_method_string_index_of(&region, symbol_a, description, 0,
+			jsval_undefined(), &result, &error) != -1
+			|| error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected symbol string coercion to fail with a type error");
+	}
+
+	if (jsval_object_new(&region, 3, &object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(symbol object)");
+	}
+	if (jsval_object_set_key(&region, object, symbol_a, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_key(symbol_a)");
+	}
+	if (jsval_object_set_utf8(&region, object, (const uint8_t *)"plain", 5,
+			jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_utf8(plain)");
+	}
+	if (jsval_object_set_key(&region, object, symbol_b, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_set_key(symbol_b)");
+	}
+	if (jsval_object_has_own_key(&region, object, symbol_a, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_has_own_key(symbol_a)");
+	}
+	status = generated_expect_boolean_result(boolean, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_get_key(&region, object, symbol_a, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_get_key(symbol_a)");
+	}
+	status = generated_expect_number(&region, value, 7.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_key_at(&region, object, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(0)");
+	}
+	if (jsval_strict_eq(&region, value, symbol_a) != 1) {
+		return generated_failf(detail, cap,
+				"expected first own key to be the first symbol");
+	}
+	if (jsval_object_key_at(&region, object, 1, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(1)");
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"plain",
+			5, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_key_at(&region, object, 2, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_key_at(2)");
+	}
+	if (jsval_strict_eq(&region, value, symbol_b) != 1) {
+		return generated_failf(detail, cap,
+				"expected third own key to be the second symbol");
+	}
+	status = generated_expect_json(&region, object,
+			(const uint8_t *)"{\"plain\":true}", 14, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_object_clone_own(&region, object, 3, &clone) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_clone_own(symbol)");
+	}
+	if (jsval_object_get_key(&region, clone, symbol_b, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_key(clone symbol_b)");
+	}
+	status = generated_expect_number(&region, value, 9.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_object_new(&region, 3, &copied) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(copied)");
+	}
+	if (jsval_object_copy_own(&region, copied, object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_copy_own(symbol)");
+	}
+	if (jsval_object_get_key(&region, copied, symbol_a, &value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_key(copied symbol_a)");
+	}
+	status = generated_expect_number(&region, value, 7.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_object_delete_key(&region, object, symbol_a, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_delete_key(symbol_a)");
+	}
+	status = generated_expect_boolean_result(boolean, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_object_has_own_key(&region, object, symbol_a, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_has_own_key(after delete)");
+	}
+	status = generated_expect_boolean_result(boolean, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_iterators(char *detail,
 		size_t cap)
 {
@@ -9273,6 +9461,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
+	{"smoke", "jsval_symbol", generated_smoke_jsval_symbol},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

@@ -95,7 +95,7 @@ Examples:
 
 - prototype chain semantics
 - descriptors or accessors
-- symbols
+- `Symbol.for`, `Symbol.keyFor`, and well-known symbol protocols
 - functions or closures
 - promises
 - sparse-array behavior

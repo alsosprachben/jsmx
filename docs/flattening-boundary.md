@@ -22,13 +22,15 @@ The design target is:
 caller-provided memory:
 
 - strings, Unicode, casing, normalization, and well-formedness
-- page-resident values, objects, arrays, and JSON-backed reads
+- page-resident values, objects, arrays, Symbols, and JSON-backed reads
 - explicit promotion from JSON-backed storage to native storage
 - deterministic ordered object key / value access
   - over current stored or parsed order
+  - including symbol-keyed native own properties in insertion order
 - shallow own-property copy
   - from native or JSON-backed source objects
   - into pre-capacity-planned native destinations
+  - preserving symbol-keyed native own properties when present
 - fresh own-property clone
   - from native or JSON-backed source objects
   - into a newly allocated pre-capacity-planned native destination
