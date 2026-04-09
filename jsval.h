@@ -34,7 +34,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_SET = 11,
 	JSVAL_KIND_MAP = 12,
 	JSVAL_KIND_ITERATOR = 13,
-	JSVAL_KIND_SYMBOL = 14
+	JSVAL_KIND_SYMBOL = 14,
+	JSVAL_KIND_BIGINT = 15
 } jsval_kind_t;
 
 typedef enum jsval_iterator_selector_e {
@@ -119,6 +120,16 @@ int jsval_symbol_new(jsval_region_t *region, int have_description,
 		jsval_t description_value, jsval_t *value_ptr);
 int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
 		jsval_t *value_ptr);
+int jsval_bigint_new_i64(jsval_region_t *region, int64_t value,
+		jsval_t *value_ptr);
+int jsval_bigint_new_u64(jsval_region_t *region, uint64_t value,
+		jsval_t *value_ptr);
+int jsval_bigint_new_utf8(jsval_region_t *region, const uint8_t *str,
+		size_t len, jsval_t *value_ptr);
+int jsval_bigint_copy_utf8(jsval_region_t *region, jsval_t value,
+		uint8_t *buf, size_t cap, size_t *len_ptr);
+int jsval_bigint_compare(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 

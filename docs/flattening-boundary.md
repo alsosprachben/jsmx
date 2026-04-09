@@ -22,7 +22,8 @@ The design target is:
 caller-provided memory:
 
 - strings, Unicode, casing, normalization, and well-formedness
-- page-resident values, objects, arrays, Symbols, and JSON-backed reads
+- page-resident values, objects, arrays, Symbols, BigInts, and JSON-backed
+  reads
 - explicit promotion from JSON-backed storage to native storage
 - deterministic ordered object key / value access
   - over current stored or parsed order
@@ -65,6 +66,13 @@ caller-provided memory:
   - clone-to-bigger repair when the translator intentionally grows a map
   - explicit iterator production and stepping over keys, values, and entries
 - deterministic JS-method helpers such as `String.prototype.normalize`
+- native `BigInt` numeric core such as:
+  - explicit construction from signed/unsigned integers and decimal UTF-8
+  - exact decimal stringify / compare helpers
+  - value-based strict and abstract equality
+  - relational ordering against bigint, string, and numeric operands
+  - page-resident `+`, `-`, `*`, and unary `-`
+  - explicit mixed Number/BigInt rejection rather than hidden coercion
 - explicit native string iterator production and stepping such as:
   - values grouped by JS string iterator code-point semantics
   - keys and entries reported in UTF-16 code-unit offsets
@@ -93,6 +101,8 @@ Examples:
 - prototype-sensitive method dispatch
 - accessors and descriptor-heavy semantics
 - `Symbol.toPrimitive` or custom coercion hooks
+- JS-visible `BigInt()` constructor semantics beyond the explicit helper layer
+- bigint division, remainder, bitwise, and shift semantics
 - proxies, `eval`, `with`, and similar dynamic escape hatches
 
 ## Capability Classes

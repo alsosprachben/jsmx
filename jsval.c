@@ -22,6 +22,13 @@ typedef struct jsval_native_symbol_s {
 	jsval_t description;
 } jsval_native_symbol_t;
 
+typedef struct jsval_native_bigint_s {
+	size_t len;
+	size_t cap;
+	uint8_t negative;
+	uint8_t reserved[7];
+} jsval_native_bigint_t;
+
 typedef struct jsval_native_object_s {
 	size_t len;
 	size_t cap;
@@ -169,9 +176,28 @@ typedef struct jsval_json_emit_state_s {
 	size_t depth;
 } jsval_json_emit_state_t;
 
+typedef struct jsval_bigint_words_s {
+	size_t len;
+	size_t cap;
+	uint32_t *limbs;
+	int negative;
+} jsval_bigint_words_t;
+
+typedef struct jsval_bigint_parse_s {
+	int negative;
+	const uint8_t *digits;
+	size_t digit_len;
+	size_t limb_count;
+} jsval_bigint_parse_t;
+
+#define JSVAL_BIGINT_LIMB_BASE 1000000000u
+#define JSVAL_BIGINT_LIMB_DIGITS 9u
+#define JSVAL_BIGINT_SHIFT_CHUNK_BITS 29u
+
 static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
 		int require_object_coercible, jsval_t *string_value_ptr,
 		jsmethod_error_t *error);
+static int jsval_ascii_space(uint8_t ch);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -290,6 +316,698 @@ static jsval_native_symbol_t *jsval_native_symbol(jsval_region_t *region,
 		return NULL;
 	}
 	return (jsval_native_symbol_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_bigint_t *jsval_native_bigint(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_BIGINT) {
+		return NULL;
+	}
+	return (jsval_native_bigint_t *)jsval_region_ptr(region, value.off);
+}
+
+static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
+{
+	return (uint32_t *)(bigint + 1);
+}
+
+static void jsval_bigint_words_bind(jsval_bigint_words_t *words,
+		uint32_t *limbs, size_t cap)
+{
+	if (words == NULL) {
+		return;
+	}
+	words->len = 0;
+	words->cap = cap;
+	words->limbs = limbs;
+	words->negative = 0;
+}
+
+static void jsval_bigint_words_normalize(jsval_bigint_words_t *words)
+{
+	if (words == NULL) {
+		return;
+	}
+	while (words->len > 0 && words->limbs[words->len - 1] == 0) {
+		words->len--;
+	}
+	if (words->len == 0) {
+		words->negative = 0;
+	}
+}
+
+static int jsval_bigint_words_is_zero(const jsval_bigint_words_t *words)
+{
+	return words == NULL || words->len == 0;
+}
+
+static int jsval_bigint_native_words(jsval_region_t *region, jsval_t value,
+		jsval_bigint_words_t *words)
+{
+	jsval_native_bigint_t *native = jsval_native_bigint(region, value);
+
+	if (native == NULL || words == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsval_bigint_words_bind(words, jsval_native_bigint_limbs(native),
+			native->cap);
+	words->len = native->len;
+	words->negative = native->negative != 0;
+	jsval_bigint_words_normalize(words);
+	return 0;
+}
+
+static int jsval_bigint_compare_abs_words(const jsval_bigint_words_t *left,
+		const jsval_bigint_words_t *right)
+{
+	size_t i;
+
+	if (left->len < right->len) {
+		return -1;
+	}
+	if (left->len > right->len) {
+		return 1;
+	}
+	for (i = left->len; i > 0; i--) {
+		uint32_t left_limb = left->limbs[i - 1];
+		uint32_t right_limb = right->limbs[i - 1];
+
+		if (left_limb < right_limb) {
+			return -1;
+		}
+		if (left_limb > right_limb) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int jsval_bigint_compare_words(const jsval_bigint_words_t *left,
+		const jsval_bigint_words_t *right)
+{
+	int cmp;
+
+	if (jsval_bigint_words_is_zero(left) && jsval_bigint_words_is_zero(right)) {
+		return 0;
+	}
+	if (left->negative != right->negative) {
+		return left->negative ? -1 : 1;
+	}
+	cmp = jsval_bigint_compare_abs_words(left, right);
+	return left->negative ? -cmp : cmp;
+}
+
+static int jsval_bigint_set_u64(jsval_bigint_words_t *words, uint64_t value)
+{
+	size_t len = 0;
+
+	if (words == NULL || words->limbs == NULL
+			|| (words->cap == 0 && value != 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (value == 0) {
+		words->len = 0;
+		words->negative = 0;
+		if (words->cap > 0) {
+			words->limbs[0] = 0;
+		}
+		return 0;
+	}
+	while (value > 0) {
+		if (len >= words->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		words->limbs[len++] = (uint32_t)(value % JSVAL_BIGINT_LIMB_BASE);
+		value /= JSVAL_BIGINT_LIMB_BASE;
+	}
+	words->len = len;
+	words->negative = 0;
+	return 0;
+}
+
+static int jsval_bigint_add_small(jsval_bigint_words_t *words, uint32_t value)
+{
+	uint64_t carry = value;
+	size_t i = 0;
+
+	if (words == NULL || words->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (carry > 0) {
+		uint64_t sum;
+
+		if (i >= words->len) {
+			if (words->len >= words->cap) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			words->limbs[words->len++] = 0;
+		}
+		sum = (uint64_t)words->limbs[i] + carry;
+		words->limbs[i] = (uint32_t)(sum % JSVAL_BIGINT_LIMB_BASE);
+		carry = sum / JSVAL_BIGINT_LIMB_BASE;
+		i++;
+	}
+	return 0;
+}
+
+static int jsval_bigint_mul_small(jsval_bigint_words_t *words, uint32_t value)
+{
+	uint64_t carry = 0;
+	size_t i;
+
+	if (words == NULL || words->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (words->len == 0 || value == 1) {
+		return 0;
+	}
+	if (value == 0) {
+		words->len = 0;
+		words->negative = 0;
+		if (words->cap > 0) {
+			words->limbs[0] = 0;
+		}
+		return 0;
+	}
+	for (i = 0; i < words->len; i++) {
+		uint64_t product = (uint64_t)words->limbs[i] * value + carry;
+
+		words->limbs[i] = (uint32_t)(product % JSVAL_BIGINT_LIMB_BASE);
+		carry = product / JSVAL_BIGINT_LIMB_BASE;
+	}
+	while (carry > 0) {
+		if (words->len >= words->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		words->limbs[words->len++] = (uint32_t)(carry % JSVAL_BIGINT_LIMB_BASE);
+		carry /= JSVAL_BIGINT_LIMB_BASE;
+	}
+	return 0;
+}
+
+static int jsval_bigint_mul_pow2(jsval_bigint_words_t *words,
+		unsigned int shift_bits)
+{
+	while (shift_bits > 0) {
+		unsigned int chunk = shift_bits > JSVAL_BIGINT_SHIFT_CHUNK_BITS
+				? JSVAL_BIGINT_SHIFT_CHUNK_BITS : shift_bits;
+
+		if (jsval_bigint_mul_small(words, (uint32_t)(1u << chunk)) < 0) {
+			return -1;
+		}
+		shift_bits -= chunk;
+	}
+	return 0;
+}
+
+static int jsval_bigint_add_abs_words(jsval_bigint_words_t *dst,
+		const jsval_bigint_words_t *left, const jsval_bigint_words_t *right)
+{
+	size_t max_len;
+	uint64_t carry = 0;
+	size_t i;
+
+	if (dst == NULL || left == NULL || right == NULL || dst->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	max_len = left->len > right->len ? left->len : right->len;
+	if (dst->cap < max_len + 1) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	for (i = 0; i < max_len; i++) {
+		uint64_t sum = carry;
+
+		if (i < left->len) {
+			sum += left->limbs[i];
+		}
+		if (i < right->len) {
+			sum += right->limbs[i];
+		}
+		dst->limbs[i] = (uint32_t)(sum % JSVAL_BIGINT_LIMB_BASE);
+		carry = sum / JSVAL_BIGINT_LIMB_BASE;
+	}
+	dst->len = max_len;
+	if (carry > 0) {
+		dst->limbs[dst->len++] = (uint32_t)carry;
+	}
+	dst->negative = 0;
+	jsval_bigint_words_normalize(dst);
+	return 0;
+}
+
+static int jsval_bigint_sub_abs_words(jsval_bigint_words_t *dst,
+		const jsval_bigint_words_t *left, const jsval_bigint_words_t *right)
+{
+	int64_t borrow = 0;
+	size_t i;
+
+	if (dst == NULL || left == NULL || right == NULL || dst->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_compare_abs_words(left, right) < 0 || dst->cap < left->len) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < left->len; i++) {
+		int64_t diff = (int64_t)left->limbs[i] - borrow;
+
+		if (i < right->len) {
+			diff -= (int64_t)right->limbs[i];
+		}
+		if (diff < 0) {
+			diff += JSVAL_BIGINT_LIMB_BASE;
+			borrow = 1;
+		} else {
+			borrow = 0;
+		}
+		dst->limbs[i] = (uint32_t)diff;
+	}
+	dst->len = left->len;
+	dst->negative = 0;
+	jsval_bigint_words_normalize(dst);
+	return 0;
+}
+
+static int jsval_bigint_mul_abs_words(jsval_bigint_words_t *dst,
+		const jsval_bigint_words_t *left, const jsval_bigint_words_t *right)
+{
+	size_t i;
+	size_t j;
+
+	if (dst == NULL || left == NULL || right == NULL || dst->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (left->len == 0 || right->len == 0) {
+		dst->len = 0;
+		dst->negative = 0;
+		if (dst->cap > 0) {
+			dst->limbs[0] = 0;
+		}
+		return 0;
+	}
+	if (dst->cap < left->len + right->len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	memset(dst->limbs, 0, (left->len + right->len) * sizeof(uint32_t));
+	for (i = 0; i < left->len; i++) {
+		uint64_t carry = 0;
+
+		for (j = 0; j < right->len; j++) {
+			uint64_t product = (uint64_t)left->limbs[i] * right->limbs[j]
+					+ dst->limbs[i + j] + carry;
+
+			dst->limbs[i + j] =
+					(uint32_t)(product % JSVAL_BIGINT_LIMB_BASE);
+			carry = product / JSVAL_BIGINT_LIMB_BASE;
+		}
+		j = i + right->len;
+		while (carry > 0) {
+			uint64_t sum = dst->limbs[j] + carry;
+
+			dst->limbs[j] = (uint32_t)(sum % JSVAL_BIGINT_LIMB_BASE);
+			carry = sum / JSVAL_BIGINT_LIMB_BASE;
+			j++;
+		}
+	}
+	dst->len = left->len + right->len;
+	dst->negative = 0;
+	jsval_bigint_words_normalize(dst);
+	return 0;
+}
+
+static int jsval_bigint_prepare_utf8(const uint8_t *str, size_t len,
+		jsval_bigint_parse_t *parse)
+{
+	size_t start = 0;
+	size_t stop = len;
+
+	if (parse == NULL || (len > 0 && str == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (start < stop && jsval_ascii_space(str[start])) {
+		start++;
+	}
+	while (stop > start && jsval_ascii_space(str[stop - 1])) {
+		stop--;
+	}
+	parse->negative = 0;
+	parse->digits = str + start;
+	parse->digit_len = 0;
+	parse->limb_count = 0;
+	if (start == stop) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (str[start] == '+' || str[start] == '-') {
+		parse->negative = str[start] == '-';
+		start++;
+	}
+	if (start == stop) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (start < stop && str[start] == '0') {
+		start++;
+	}
+	if (start == stop) {
+		parse->negative = 0;
+		parse->digits = str + stop;
+		parse->digit_len = 0;
+		parse->limb_count = 0;
+		return 0;
+	}
+	for (size_t i = start; i < stop; i++) {
+		if (str[i] < '0' || str[i] > '9') {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+	parse->digits = str + start;
+	parse->digit_len = stop - start;
+	parse->limb_count = (parse->digit_len + JSVAL_BIGINT_LIMB_DIGITS - 1)
+			/ JSVAL_BIGINT_LIMB_DIGITS;
+	return 0;
+}
+
+static int jsval_bigint_parse_digits(const jsval_bigint_parse_t *parse,
+		jsval_bigint_words_t *words)
+{
+	size_t stop;
+	size_t limb = 0;
+
+	if (parse == NULL || words == NULL || words->limbs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (parse->limb_count > words->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (parse->limb_count == 0) {
+		words->len = 0;
+		words->negative = 0;
+		if (words->cap > 0) {
+			words->limbs[0] = 0;
+		}
+		return 0;
+	}
+	stop = parse->digit_len;
+	while (stop > 0) {
+		size_t start = stop > JSVAL_BIGINT_LIMB_DIGITS
+				? stop - JSVAL_BIGINT_LIMB_DIGITS : 0;
+		uint32_t chunk = 0;
+
+		for (size_t i = start; i < stop; i++) {
+			chunk = chunk * 10u + (uint32_t)(parse->digits[i] - '0');
+		}
+		words->limbs[limb++] = chunk;
+		stop = start;
+	}
+	words->len = limb;
+	words->negative = parse->negative;
+	jsval_bigint_words_normalize(words);
+	return 0;
+}
+
+static size_t jsval_bigint_u32_digits(uint32_t value)
+{
+	size_t digits = 1;
+
+	while (value >= 10u) {
+		value /= 10u;
+		digits++;
+	}
+	return digits;
+}
+
+static size_t jsval_bigint_decimal_len_words(const jsval_bigint_words_t *words)
+{
+	size_t len;
+
+	if (jsval_bigint_words_is_zero(words)) {
+		return 1;
+	}
+	len = words->negative ? 1 : 0;
+	len += jsval_bigint_u32_digits(words->limbs[words->len - 1]);
+	if (words->len > 1) {
+		len += (words->len - 1) * JSVAL_BIGINT_LIMB_DIGITS;
+	}
+	return len;
+}
+
+static void jsval_bigint_write_u32_utf8(uint8_t *buf, uint32_t value,
+		size_t digits)
+{
+	for (size_t i = 0; i < digits; i++) {
+		buf[digits - 1 - i] = (uint8_t)('0' + (value % 10u));
+		value /= 10u;
+	}
+}
+
+static void jsval_bigint_write_u32_utf16(uint16_t *buf, uint32_t value,
+		size_t digits)
+{
+	for (size_t i = 0; i < digits; i++) {
+		buf[digits - 1 - i] = (uint16_t)('0' + (value % 10u));
+		value /= 10u;
+	}
+}
+
+static int jsval_bigint_copy_utf8_words(const jsval_bigint_words_t *words,
+		uint8_t *buf, size_t cap, size_t *len_ptr)
+{
+	size_t len = jsval_bigint_decimal_len_words(words);
+	size_t cursor = 0;
+	size_t i;
+
+	if (len_ptr != NULL) {
+		*len_ptr = len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_bigint_words_is_zero(words)) {
+		buf[0] = '0';
+		return 0;
+	}
+	if (words->negative) {
+		buf[cursor++] = '-';
+	}
+	jsval_bigint_write_u32_utf8(buf + cursor, words->limbs[words->len - 1],
+			jsval_bigint_u32_digits(words->limbs[words->len - 1]));
+	cursor += jsval_bigint_u32_digits(words->limbs[words->len - 1]);
+	for (i = words->len - 1; i > 0; i--) {
+		jsval_bigint_write_u32_utf8(buf + cursor, words->limbs[i - 1],
+				JSVAL_BIGINT_LIMB_DIGITS);
+		cursor += JSVAL_BIGINT_LIMB_DIGITS;
+	}
+	return 0;
+}
+
+static int jsval_bigint_copy_utf16_words(const jsval_bigint_words_t *words,
+		uint16_t *buf, size_t cap, size_t *len_ptr)
+{
+	size_t len = jsval_bigint_decimal_len_words(words);
+	size_t cursor = 0;
+	size_t i;
+
+	if (len_ptr != NULL) {
+		*len_ptr = len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_bigint_words_is_zero(words)) {
+		buf[0] = '0';
+		return 0;
+	}
+	if (words->negative) {
+		buf[cursor++] = '-';
+	}
+	jsval_bigint_write_u32_utf16(buf + cursor, words->limbs[words->len - 1],
+			jsval_bigint_u32_digits(words->limbs[words->len - 1]));
+	cursor += jsval_bigint_u32_digits(words->limbs[words->len - 1]);
+	for (i = words->len - 1; i > 0; i--) {
+		jsval_bigint_write_u32_utf16(buf + cursor, words->limbs[i - 1],
+				JSVAL_BIGINT_LIMB_DIGITS);
+		cursor += JSVAL_BIGINT_LIMB_DIGITS;
+	}
+	return 0;
+}
+
+static int jsval_bigint_new_with_words(jsval_region_t *region,
+		const jsval_bigint_words_t *words, jsval_t *value_ptr)
+{
+	jsval_native_bigint_t *bigint;
+	jsval_off_t off;
+	size_t cap;
+	size_t bytes_len;
+
+	if (region == NULL || words == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	cap = words->len > 0 ? words->len : 1;
+	bytes_len = sizeof(*bigint) + cap * sizeof(uint32_t);
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&bigint) < 0) {
+		return -1;
+	}
+	bigint->len = words->len;
+	bigint->cap = cap;
+	bigint->negative = (uint8_t)(words->negative != 0 && words->len > 0);
+	memset(jsval_native_bigint_limbs(bigint), 0, cap * sizeof(uint32_t));
+	if (words->len > 0) {
+		memcpy(jsval_native_bigint_limbs(bigint), words->limbs,
+				words->len * sizeof(uint32_t));
+	}
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_BIGINT;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+static int jsval_bigint_from_trunc_double(double number,
+		jsval_bigint_words_t *words, int *fraction_ptr)
+{
+	uint64_t bits = 0;
+	uint64_t exponent;
+	uint64_t fraction;
+	uint64_t significand;
+	int shift;
+	int negative;
+	unsigned int right_shift;
+	int had_fraction = 0;
+
+	if (words == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!isfinite(number)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (fraction_ptr != NULL) {
+		*fraction_ptr = 0;
+	}
+	if (number == 0) {
+		return jsval_bigint_set_u64(words, 0);
+	}
+	memcpy(&bits, &number, sizeof(bits));
+	negative = (bits >> 63) != 0;
+	exponent = (bits >> 52) & 0x7ffu;
+	fraction = bits & ((1ULL << 52) - 1);
+	if (exponent == 0) {
+		if (jsval_bigint_set_u64(words, 0) < 0) {
+			return -1;
+		}
+		had_fraction = fraction != 0;
+		if (fraction_ptr != NULL) {
+			*fraction_ptr = had_fraction;
+		}
+		return 0;
+	}
+	significand = fraction | (1ULL << 52);
+	shift = (int)exponent - 1023 - 52;
+	if (shift >= 0) {
+		if (jsval_bigint_set_u64(words, significand) < 0
+				|| jsval_bigint_mul_pow2(words, (unsigned int)shift) < 0) {
+			return -1;
+		}
+	} else {
+		right_shift = (unsigned int)(-shift);
+		if (right_shift >= 64) {
+			had_fraction = significand != 0;
+			if (jsval_bigint_set_u64(words, 0) < 0) {
+				return -1;
+			}
+		} else {
+			had_fraction = (significand & ((1ULL << right_shift) - 1)) != 0;
+			if (jsval_bigint_set_u64(words, significand >> right_shift) < 0) {
+				return -1;
+			}
+		}
+	}
+	if (!jsval_bigint_words_is_zero(words)) {
+		words->negative = negative;
+	}
+	if (fraction_ptr != NULL) {
+		*fraction_ptr = had_fraction;
+	}
+	return 0;
+}
+
+static int jsval_bigint_from_integral_double(double number,
+		jsval_bigint_words_t *words)
+{
+	int had_fraction = 0;
+
+	if (jsval_bigint_from_trunc_double(number, words, &had_fraction) < 0) {
+		return -1;
+	}
+	if (had_fraction) {
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
+}
+
+static int jsval_bigint_compare_double(const jsval_bigint_words_t *bigint,
+		double number, int *cmp_ptr, int *ordered_ptr)
+{
+	uint32_t limbs[40];
+	jsval_bigint_words_t temp;
+	int cmp;
+	int had_fraction = 0;
+
+	if (bigint == NULL || cmp_ptr == NULL || ordered_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*cmp_ptr = 0;
+	*ordered_ptr = 1;
+	if (number != number) {
+		*ordered_ptr = 0;
+		return 0;
+	}
+	if (!isfinite(number)) {
+		*cmp_ptr = number > 0 ? -1 : 1;
+		return 0;
+	}
+	jsval_bigint_words_bind(&temp, limbs, sizeof(limbs) / sizeof(limbs[0]));
+	if (jsval_bigint_from_trunc_double(number, &temp, &had_fraction) < 0) {
+		return -1;
+	}
+	cmp = jsval_bigint_compare_words(bigint, &temp);
+	if (!had_fraction || cmp != 0) {
+		*cmp_ptr = cmp;
+		return 0;
+	}
+	*cmp_ptr = number < 0 ? 1 : -1;
+	return 0;
 }
 
 static jsval_native_object_t *jsval_native_object(jsval_region_t *region, jsval_t value)
@@ -1816,6 +2534,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -1912,6 +2631,7 @@ static int jsval_string_measure_utf16(const jsval_region_t *region,
 static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *len_ptr)
 {
 	jsval_json_doc_t *doc;
+	jsval_bigint_words_t bigint;
 	char numbuf[64];
 	const char *text;
 
@@ -1943,6 +2663,11 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 		}
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, NULL, 0, len_ptr);
+	case JSVAL_KIND_BIGINT:
+		if (jsval_bigint_native_words(region, value, &bigint) < 0) {
+			return -1;
+		}
+		return jsval_bigint_copy_utf16_words(&bigint, NULL, 0, len_ptr);
 	case JSVAL_KIND_SYMBOL:
 		*len_ptr = 0;
 		return 0;
@@ -1966,6 +2691,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 
 static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_t *buf, size_t cap, size_t *len_ptr)
 {
+	jsval_bigint_words_t bigint;
 	jsval_json_doc_t *doc;
 	double number;
 	char numbuf[64];
@@ -2006,6 +2732,11 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 		}
 		text = jsval_number_text(value.as.number, numbuf);
 		return jsval_ascii_copy_utf16(text, buf, cap, len_ptr);
+	case JSVAL_KIND_BIGINT:
+		if (jsval_bigint_native_words(region, value, &bigint) < 0) {
+			return -1;
+		}
+		return jsval_bigint_copy_utf16_words(&bigint, buf, cap, len_ptr);
 	case JSVAL_KIND_SYMBOL:
 		errno = ENOTSUP;
 		return -1;
@@ -2102,6 +2833,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 		}
 		*number_ptr = value.as.number;
 		return 0;
+	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_SYMBOL:
 		errno = ENOTSUP;
 		return -1;
@@ -2169,6 +2901,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 		uint16_t *string_storage, size_t string_storage_cap,
 		jsmethod_value_t *method_value_ptr)
 {
+	jsval_bigint_words_t bigint;
 	jsval_json_doc_t *doc;
 	jsval_native_string_t *string;
 	double number;
@@ -2208,6 +2941,20 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 			return 0;
 		}
 		*method_value_ptr = jsmethod_value_number(value.as.number);
+		return 0;
+	case JSVAL_KIND_BIGINT:
+		if (jsval_bigint_native_words(region, value, &bigint) < 0) {
+			return -1;
+		}
+		if (string_storage == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_bigint_copy_utf16_words(&bigint, string_storage,
+				string_storage_cap, &len) < 0) {
+			return -1;
+		}
+		*method_value_ptr = jsmethod_value_string_utf16(string_storage, len);
 		return 0;
 	case JSVAL_KIND_SYMBOL:
 		*method_value_ptr = jsmethod_value_symbol();
@@ -4572,6 +5319,104 @@ int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
 		return -1;
 	}
 	*value_ptr = native->description;
+	return 0;
+}
+
+int jsval_bigint_new_i64(jsval_region_t *region, int64_t value,
+		jsval_t *value_ptr)
+{
+	uint32_t limbs[3];
+	jsval_bigint_words_t words;
+	uint64_t magnitude;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsval_bigint_words_bind(&words, limbs, sizeof(limbs) / sizeof(limbs[0]));
+	magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1u : (uint64_t)value;
+	if (jsval_bigint_set_u64(&words, magnitude) < 0) {
+		return -1;
+	}
+	if (!jsval_bigint_words_is_zero(&words)) {
+		words.negative = value < 0;
+	}
+	return jsval_bigint_new_with_words(region, &words, value_ptr);
+}
+
+int jsval_bigint_new_u64(jsval_region_t *region, uint64_t value,
+		jsval_t *value_ptr)
+{
+	uint32_t limbs[3];
+	jsval_bigint_words_t words;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsval_bigint_words_bind(&words, limbs, sizeof(limbs) / sizeof(limbs[0]));
+	if (jsval_bigint_set_u64(&words, value) < 0) {
+		return -1;
+	}
+	return jsval_bigint_new_with_words(region, &words, value_ptr);
+}
+
+int jsval_bigint_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len,
+		jsval_t *value_ptr)
+{
+	jsval_bigint_parse_t parse;
+	jsval_bigint_words_t words;
+
+	if (region == NULL || value_ptr == NULL || (len > 0 && str == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_prepare_utf8(str, len, &parse) < 0) {
+		return -1;
+	}
+	{
+		uint32_t storage[parse.limb_count ? parse.limb_count : 1];
+
+		jsval_bigint_words_bind(&words, storage,
+				sizeof(storage) / sizeof(storage[0]));
+		if (jsval_bigint_parse_digits(&parse, &words) < 0) {
+			return -1;
+		}
+		return jsval_bigint_new_with_words(region, &words, value_ptr);
+	}
+}
+
+int jsval_bigint_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf,
+		size_t cap, size_t *len_ptr)
+{
+	jsval_bigint_words_t words;
+
+	if (value.kind != JSVAL_KIND_BIGINT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_native_words(region, value, &words) < 0) {
+		return -1;
+	}
+	return jsval_bigint_copy_utf8_words(&words, buf, cap, len_ptr);
+}
+
+int jsval_bigint_compare(jsval_region_t *region, jsval_t left, jsval_t right,
+		int *result_ptr)
+{
+	jsval_bigint_words_t left_words;
+	jsval_bigint_words_t right_words;
+
+	if (result_ptr == NULL || left.kind != JSVAL_KIND_BIGINT
+			|| right.kind != JSVAL_KIND_BIGINT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_native_words(region, left, &left_words) < 0
+			|| jsval_bigint_native_words(region, right, &right_words) < 0) {
+		return -1;
+	}
+	*result_ptr = jsval_bigint_compare_words(&left_words, &right_words);
 	return 0;
 }
 
@@ -15566,6 +16411,79 @@ int jsval_url_search_params_to_string(jsval_region_t *region,
 	return jsval_url_search_params_stringify(region, native, value_ptr);
 }
 
+static int jsval_bigint_equal_number(const jsval_bigint_words_t *bigint,
+		double number, int *result_ptr)
+{
+	uint32_t limbs[40];
+	jsval_bigint_words_t temp;
+	int had_fraction = 0;
+
+	if (bigint == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*result_ptr = 0;
+	if (!isfinite(number)) {
+		return 0;
+	}
+	jsval_bigint_words_bind(&temp, limbs, sizeof(limbs) / sizeof(limbs[0]));
+	if (jsval_bigint_from_trunc_double(number, &temp, &had_fraction) < 0) {
+		return -1;
+	}
+	if (had_fraction) {
+		return 0;
+	}
+	*result_ptr = jsval_bigint_compare_words(bigint, &temp) == 0;
+	return 0;
+}
+
+static int jsval_bigint_compare_string_value(jsval_region_t *region,
+		const jsval_bigint_words_t *bigint, jsval_t string_value,
+		int *cmp_ptr, int *parsed_ptr)
+{
+	size_t len = 0;
+	jsval_bigint_parse_t parse;
+
+	if (region == NULL || bigint == NULL || cmp_ptr == NULL || parsed_ptr == NULL
+			|| string_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, string_value, NULL, 0, &len) < 0) {
+		return -1;
+	}
+	{
+		uint8_t bytes[len ? len : 1];
+
+		if (len > 0 && jsval_string_copy_utf8(region, string_value, bytes, len,
+				NULL) < 0) {
+			return -1;
+		}
+		if (jsval_bigint_prepare_utf8(bytes, len, &parse) < 0) {
+			if (errno == EINVAL) {
+				errno = 0;
+				*parsed_ptr = 0;
+				*cmp_ptr = 0;
+				return 0;
+			}
+			return -1;
+		}
+		{
+			uint32_t limbs[parse.limb_count ? parse.limb_count : 1];
+			jsval_bigint_words_t other;
+
+			jsval_bigint_words_bind(&other, limbs,
+					sizeof(limbs) / sizeof(limbs[0]));
+			if (jsval_bigint_parse_digits(&parse, &other) < 0) {
+				return -1;
+			}
+			*parsed_ptr = 1;
+			*cmp_ptr = jsval_bigint_compare_words(bigint, &other);
+			return 0;
+		}
+	}
+}
+
 int jsval_is_nullish(jsval_t value)
 {
 	return value.kind == JSVAL_KIND_UNDEFINED || value.kind == JSVAL_KIND_NULL;
@@ -15605,6 +16523,10 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 		break;
 	case JSVAL_KIND_NUMBER:
 		text = (const uint8_t *)"number";
+		len = 6;
+		break;
+	case JSVAL_KIND_BIGINT:
+		text = (const uint8_t *)"bigint";
 		len = 6;
 		break;
 	case JSVAL_KIND_STRING:
@@ -15652,6 +16574,13 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 			return number != 0 && number == number;
 		}
 		return value.as.number != 0 && value.as.number == value.as.number;
+	case JSVAL_KIND_BIGINT:
+	{
+		jsval_bigint_words_t bigint;
+
+		return jsval_bigint_native_words(region, value, &bigint) == 0
+				&& !jsval_bigint_words_is_zero(&bigint);
+	}
 	case JSVAL_KIND_STRING:
 		if (value.repr == JSVAL_REPR_NATIVE) {
 			jsval_native_string_t *string = jsval_native_string(region, value);
@@ -15691,6 +16620,17 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 		return 1;
 	case JSVAL_KIND_BOOL:
 		return jsval_truthy(region, left) == jsval_truthy(region, right);
+	case JSVAL_KIND_BIGINT:
+	{
+		jsval_bigint_words_t left_words;
+		jsval_bigint_words_t right_words;
+
+		if (jsval_bigint_native_words(region, left, &left_words) < 0
+				|| jsval_bigint_native_words(region, right, &right_words) < 0) {
+			return 0;
+		}
+		return jsval_bigint_compare_words(&left_words, &right_words) == 0;
+	}
 	case JSVAL_KIND_NUMBER:
 	{
 		double left_number;
@@ -15786,6 +16726,46 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 	if (left.kind == right.kind) {
 		*result_ptr = jsval_strict_eq(region, left, right);
 		return 0;
+	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		jsval_t bigint_value = left.kind == JSVAL_KIND_BIGINT ? left : right;
+		jsval_t other = left.kind == JSVAL_KIND_BIGINT ? right : left;
+		jsval_bigint_words_t bigint;
+
+		if (jsval_bigint_native_words(region, bigint_value, &bigint) < 0) {
+			return -1;
+		}
+		switch (other.kind) {
+		case JSVAL_KIND_STRING:
+		{
+			int cmp = 0;
+			int parsed = 0;
+
+			if (jsval_bigint_compare_string_value(region, &bigint, other, &cmp,
+					&parsed) < 0) {
+				return -1;
+			}
+			*result_ptr = parsed && cmp == 0;
+			return 0;
+		}
+		case JSVAL_KIND_BOOL:
+		case JSVAL_KIND_NUMBER:
+		{
+			double other_number;
+
+			if (jsval_to_number(region, other, &other_number) < 0) {
+				return -1;
+			}
+			return jsval_bigint_equal_number(&bigint, other_number, result_ptr);
+		}
+		case JSVAL_KIND_NULL:
+		case JSVAL_KIND_UNDEFINED:
+			*result_ptr = 0;
+			return 0;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
 	}
 	if (left.kind == JSVAL_KIND_SYMBOL || right.kind == JSVAL_KIND_SYMBOL) {
 		*result_ptr = 0;
@@ -15937,6 +16917,77 @@ jsval_relop(jsval_region_t *region, jsval_t left, jsval_t right,
 			return -1;
 		}
 	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		int cmp = 0;
+		int ordered = 1;
+
+		if (left.kind == JSVAL_KIND_BIGINT && right.kind == JSVAL_KIND_BIGINT) {
+			jsval_bigint_words_t left_bigint;
+			jsval_bigint_words_t right_bigint;
+
+			if (jsval_bigint_native_words(region, left, &left_bigint) < 0
+					|| jsval_bigint_native_words(region, right, &right_bigint)
+						< 0) {
+				return -1;
+			}
+			cmp = jsval_bigint_compare_words(&left_bigint, &right_bigint);
+		} else if (left.kind == JSVAL_KIND_STRING
+				|| right.kind == JSVAL_KIND_STRING) {
+			jsval_t bigint_value = left.kind == JSVAL_KIND_BIGINT ? left : right;
+			jsval_t string_value = left.kind == JSVAL_KIND_STRING ? left : right;
+			jsval_bigint_words_t bigint;
+			int parsed = 0;
+
+			if (jsval_bigint_native_words(region, bigint_value, &bigint) < 0
+					|| jsval_bigint_compare_string_value(region, &bigint,
+						string_value, &cmp, &parsed) < 0) {
+				return -1;
+			}
+			if (!parsed) {
+				*result_ptr = 0;
+				return 0;
+			}
+			if (right.kind == JSVAL_KIND_BIGINT) {
+				cmp = -cmp;
+			}
+		} else {
+			jsval_t bigint_value = left.kind == JSVAL_KIND_BIGINT ? left : right;
+			jsval_t other = left.kind == JSVAL_KIND_BIGINT ? right : left;
+			jsval_bigint_words_t bigint;
+			double other_number;
+
+			if (jsval_bigint_native_words(region, bigint_value, &bigint) < 0
+					|| jsval_to_number(region, other, &other_number) < 0
+					|| jsval_bigint_compare_double(&bigint, other_number, &cmp,
+						&ordered) < 0) {
+				return -1;
+			}
+			if (!ordered) {
+				*result_ptr = 0;
+				return 0;
+			}
+			if (right.kind == JSVAL_KIND_BIGINT) {
+				cmp = -cmp;
+			}
+		}
+		switch (op) {
+		case JSVAL_RELOP_LT:
+			*result_ptr = cmp < 0;
+			return 0;
+		case JSVAL_RELOP_LE:
+			*result_ptr = cmp <= 0;
+			return 0;
+		case JSVAL_RELOP_GT:
+			*result_ptr = cmp > 0;
+			return 0;
+		case JSVAL_RELOP_GE:
+			*result_ptr = cmp >= 0;
+			return 0;
+		default:
+			errno = EINVAL;
+			return -1;
+		}
+	}
 	if (jsval_to_number(region, left, &left_number) < 0
 			|| jsval_to_number(region, right, &right_number) < 0) {
 		return -1;
@@ -15989,6 +17040,100 @@ int jsval_greater_equal(jsval_region_t *region, jsval_t left, jsval_t right,
 	return jsval_relop(region, left, right, JSVAL_RELOP_GE, result_ptr);
 }
 
+static int jsval_bigint_add_or_subtract(jsval_region_t *region, jsval_t left,
+		jsval_t right, int negate_right, jsval_t *value_ptr)
+{
+	jsval_bigint_words_t left_words;
+	jsval_bigint_words_t right_words;
+	int cmp;
+	size_t cap;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_native_words(region, left, &left_words) < 0
+			|| jsval_bigint_native_words(region, right, &right_words) < 0) {
+		return -1;
+	}
+	if (negate_right && right_words.len > 0) {
+		right_words.negative = !right_words.negative;
+	}
+	cap = left_words.len > right_words.len ? left_words.len + 1
+			: right_words.len + 1;
+	{
+		uint32_t limbs[cap ? cap : 1];
+		jsval_bigint_words_t result;
+
+		jsval_bigint_words_bind(&result, limbs,
+				sizeof(limbs) / sizeof(limbs[0]));
+		if (left_words.negative == right_words.negative) {
+			if (jsval_bigint_add_abs_words(&result, &left_words, &right_words)
+					< 0) {
+				return -1;
+			}
+			result.negative = left_words.negative;
+		} else {
+			cmp = jsval_bigint_compare_abs_words(&left_words, &right_words);
+			if (cmp == 0) {
+				result.len = 0;
+				result.negative = 0;
+				result.limbs[0] = 0;
+			} else if (cmp > 0) {
+				if (jsval_bigint_sub_abs_words(&result, &left_words, &right_words)
+						< 0) {
+					return -1;
+				}
+				result.negative = left_words.negative;
+			} else {
+				if (jsval_bigint_sub_abs_words(&result, &right_words, &left_words)
+						< 0) {
+					return -1;
+				}
+				result.negative = right_words.negative;
+			}
+		}
+		jsval_bigint_words_normalize(&result);
+		return jsval_bigint_new_with_words(region, &result, value_ptr);
+	}
+}
+
+static int jsval_bigint_multiply_values(jsval_region_t *region, jsval_t left,
+		jsval_t right, jsval_t *value_ptr)
+{
+	jsval_bigint_words_t left_words;
+	jsval_bigint_words_t right_words;
+	size_t cap;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_bigint_native_words(region, left, &left_words) < 0
+			|| jsval_bigint_native_words(region, right, &right_words) < 0) {
+		return -1;
+	}
+	cap = left_words.len + right_words.len;
+	if (cap == 0) {
+		cap = 1;
+	}
+	{
+		uint32_t limbs[cap];
+		jsval_bigint_words_t result;
+
+		jsval_bigint_words_bind(&result, limbs,
+				sizeof(limbs) / sizeof(limbs[0]));
+		if (jsval_bigint_mul_abs_words(&result, &left_words, &right_words) < 0) {
+			return -1;
+		}
+		if (!jsval_bigint_words_is_zero(&result)) {
+			result.negative = left_words.negative != right_words.negative;
+		}
+		jsval_bigint_words_normalize(&result);
+		return jsval_bigint_new_with_words(region, &result, value_ptr);
+	}
+}
+
 int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *value_ptr)
 {
 	if (left.kind == JSVAL_KIND_STRING || right.kind == JSVAL_KIND_STRING) {
@@ -16024,6 +17169,13 @@ int jsval_add(jsval_region_t *region, jsval_t left, jsval_t right, jsval_t *valu
 		value_ptr->off = off;
 		return 0;
 	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		if (left.kind != JSVAL_KIND_BIGINT || right.kind != JSVAL_KIND_BIGINT) {
+			errno = ENOTSUP;
+			return -1;
+		}
+		return jsval_bigint_add_or_subtract(region, left, right, 0, value_ptr);
+	}
 
 	{
 		double left_number;
@@ -16046,6 +17198,10 @@ int jsval_unary_plus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 		errno = EINVAL;
 		return -1;
 	}
+	if (value.kind == JSVAL_KIND_BIGINT) {
+		errno = ENOTSUP;
+		return -1;
+	}
 	if (jsval_to_number(region, value, &number) < 0) {
 		return -1;
 	}
@@ -16061,6 +17217,17 @@ int jsval_unary_minus(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	if (value_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+	if (value.kind == JSVAL_KIND_BIGINT) {
+		jsval_bigint_words_t words;
+
+		if (jsval_bigint_native_words(region, value, &words) < 0) {
+			return -1;
+		}
+		if (!jsval_bigint_words_is_zero(&words)) {
+			words.negative = !words.negative;
+		}
+		return jsval_bigint_new_with_words(region, &words, value_ptr);
 	}
 	if (jsval_to_number(region, value, &number) < 0) {
 		return -1;
@@ -16196,6 +17363,13 @@ int jsval_subtract(jsval_region_t *region, jsval_t left, jsval_t right,
 		errno = EINVAL;
 		return -1;
 	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		if (left.kind != JSVAL_KIND_BIGINT || right.kind != JSVAL_KIND_BIGINT) {
+			errno = ENOTSUP;
+			return -1;
+		}
+		return jsval_bigint_add_or_subtract(region, left, right, 1, value_ptr);
+	}
 	if (jsval_to_number(region, left, &left_number) < 0
 			|| jsval_to_number(region, right, &right_number) < 0) {
 		return -1;
@@ -16252,6 +17426,13 @@ int jsval_multiply(jsval_region_t *region, jsval_t left, jsval_t right,
 		errno = EINVAL;
 		return -1;
 	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		if (left.kind != JSVAL_KIND_BIGINT || right.kind != JSVAL_KIND_BIGINT) {
+			errno = ENOTSUP;
+			return -1;
+		}
+		return jsval_bigint_multiply_values(region, left, right, value_ptr);
+	}
 	if (jsval_to_number(region, left, &left_number) < 0
 			|| jsval_to_number(region, right, &right_number) < 0) {
 		return -1;
@@ -16271,6 +17452,10 @@ int jsval_divide(jsval_region_t *region, jsval_t left, jsval_t right,
 		errno = EINVAL;
 		return -1;
 	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		errno = ENOTSUP;
+		return -1;
+	}
 	if (jsval_to_number(region, left, &left_number) < 0
 			|| jsval_to_number(region, right, &right_number) < 0) {
 		return -1;
@@ -16288,6 +17473,10 @@ int jsval_remainder(jsval_region_t *region, jsval_t left, jsval_t right,
 
 	if (value_ptr == NULL) {
 		errno = EINVAL;
+		return -1;
+	}
+	if (left.kind == JSVAL_KIND_BIGINT || right.kind == JSVAL_KIND_BIGINT) {
+		errno = ENOTSUP;
 		return -1;
 	}
 	if (jsval_to_number(region, left, &left_number) < 0

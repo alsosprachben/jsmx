@@ -116,6 +116,14 @@ Every manifest entry should declare one `lowering_class`:
 
 `expected_status` is the runtime outcome for the current fixture. `lowering_class` explains where that fixture belongs relative to the flattening boundary.
 
+BigInt-specific note:
+
+- bigint literals plus the current explicit helper surface for bigint
+  construction, `+`, `-`, `*`, unary `-`, equality, and relational comparison
+  fit `static_pass`
+- JS-visible `BigInt()` constructor semantics and bigint division / remainder /
+  bitwise / shift behavior do not fit the current flattened surface
+
 Every manifest entry should also declare one `translation_mode`:
 
 - `idiomatic_flattened`

@@ -65,6 +65,20 @@ static void assert_string(jsval_region_t *region, jsval_t value, const char *exp
 	assert(memcmp(buf, expected, expected_len) == 0);
 }
 
+static void assert_bigint_string(jsval_region_t *region, jsval_t value,
+		const char *expected)
+{
+	size_t expected_len = strlen(expected);
+	size_t actual_len = 0;
+	uint8_t buf[expected_len ? expected_len : 1];
+
+	assert(value.kind == JSVAL_KIND_BIGINT);
+	assert(jsval_bigint_copy_utf8(region, value, NULL, 0, &actual_len) == 0);
+	assert(actual_len == expected_len);
+	assert(jsval_bigint_copy_utf8(region, value, buf, actual_len, NULL) == 0);
+	assert(memcmp(buf, expected, expected_len) == 0);
+}
+
 static void
 assert_utf16_string(jsval_region_t *region, jsval_t value,
 		const uint16_t *expected, size_t expected_len)
@@ -536,6 +550,118 @@ static void test_symbol_semantics(void)
 	assert(has == 0);
 	assert(jsval_object_get_key(&region, json_object, symbol_a, &value) == 0);
 	assert(value.kind == JSVAL_KIND_UNDEFINED);
+}
+
+static void test_bigint_semantics(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t zero;
+	jsval_t zero_text;
+	jsval_t forty_two;
+	jsval_t forty_two_text;
+	jsval_t forty_two_point_five;
+	jsval_t one_hundred_text;
+	jsval_t left_big;
+	jsval_t right_big;
+	jsval_t suffix;
+	jsval_t result;
+	jsval_t value;
+	jsval_t set;
+	jsval_t map;
+	double number = 0.0;
+	int equal = 0;
+	int cmp = 0;
+	int has = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_bigint_new_i64(&region, 0, &zero) == 0);
+	assert(jsval_bigint_new_utf8(&region, (const uint8_t *)"-0000", 5,
+			&zero_text) == 0);
+	assert(zero.kind == JSVAL_KIND_BIGINT);
+	assert(jsval_truthy(&region, zero) == 0);
+	assert(jsval_strict_eq(&region, zero, zero_text) == 1);
+	assert_bigint_string(&region, zero, "0");
+	assert(jsval_typeof(&region, zero, &result) == 0);
+	assert_string(&region, result, "bigint");
+
+	errno = 0;
+	assert(jsval_to_number(&region, zero, &number) < 0);
+	assert(errno == ENOTSUP);
+
+	assert(jsval_bigint_new_i64(&region, 42, &forty_two) == 0);
+	assert(jsval_bigint_new_utf8(&region, (const uint8_t *)"42", 2,
+			&forty_two_text) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"42.5", 4,
+			&forty_two_point_five) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"100", 3,
+			&one_hundred_text) == 0);
+	assert(jsval_strict_eq(&region, forty_two, forty_two_text) == 1);
+	assert(jsval_bigint_compare(&region, zero, forty_two, &cmp) == 0);
+	assert(cmp < 0);
+	assert(jsval_abstract_eq(&region, forty_two, jsval_number(42.0), &equal)
+			== 0);
+	assert(equal == 1);
+	assert(jsval_abstract_eq(&region, forty_two, jsval_number(42.5), &equal)
+			== 0);
+	assert(equal == 0);
+	assert(jsval_abstract_eq(&region, forty_two, forty_two_text, &equal) == 0);
+	assert(equal == 1);
+	assert(jsval_abstract_eq(&region, forty_two, forty_two_point_five, &equal)
+			== 0);
+	assert(equal == 0);
+
+	assert(jsval_less_than(&region, forty_two, jsval_number(42.5), &cmp) == 0);
+	assert(cmp == 1);
+	assert(jsval_greater_than(&region, one_hundred_text, forty_two, &cmp) == 0);
+	assert(cmp == 1);
+	assert(jsval_less_equal(&region, forty_two, forty_two_text, &cmp) == 0);
+	assert(cmp == 1);
+
+	assert(jsval_bigint_new_utf8(&region,
+			(const uint8_t *)"12345678901234567890", 20, &left_big) == 0);
+	assert(jsval_bigint_new_utf8(&region, (const uint8_t *)"9876543210", 10,
+			&right_big) == 0);
+	assert(jsval_add(&region, left_big, right_big, &result) == 0);
+	assert_bigint_string(&region, result, "12345678911111111100");
+	assert(jsval_subtract(&region, left_big, right_big, &result) == 0);
+	assert_bigint_string(&region, result, "12345678891358024680");
+	assert(jsval_multiply(&region, left_big, right_big, &result) == 0);
+	assert_bigint_string(&region, result, "121932631124828532111263526900");
+	assert(jsval_unary_minus(&region, left_big, &result) == 0);
+	assert_bigint_string(&region, result, "-12345678901234567890");
+	assert(jsval_unary_minus(&region, zero, &result) == 0);
+	assert_bigint_string(&region, result, "0");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)" apples", 7,
+			&suffix) == 0);
+	assert(jsval_add(&region, forty_two, suffix, &result) == 0);
+	assert_string(&region, result, "42 apples");
+
+	errno = 0;
+	assert(jsval_add(&region, forty_two, jsval_number(1.0), &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_subtract(&region, forty_two, jsval_number(1.0), &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_multiply(&region, forty_two, jsval_number(2.0), &result) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_unary_plus(&region, forty_two, &result) < 0);
+	assert(errno == ENOTSUP);
+
+	assert(jsval_set_new(&region, 1, &set) == 0);
+	assert(jsval_set_add(&region, set, forty_two) == 0);
+	assert(jsval_set_has(&region, set, forty_two_text, &has) == 0);
+	assert(has == 1);
+
+	assert(jsval_map_new(&region, 1, &map) == 0);
+	assert(jsval_map_set(&region, map, forty_two, jsval_bool(1)) == 0);
+	assert(jsval_map_get(&region, map, forty_two_text, &value) == 0);
+	assert(value.kind == JSVAL_KIND_BOOL);
+	assert(value.as.boolean == 1);
 }
 
 static void test_iterator_semantics(void)
@@ -6903,6 +7029,7 @@ int main(void)
 	test_native_storage();
 	test_value_semantics();
 	test_symbol_semantics();
+	test_bigint_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

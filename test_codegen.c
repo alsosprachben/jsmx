@@ -122,6 +122,34 @@ static generated_status_t generated_expect_string(jsval_region_t *region,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_bigint(jsval_region_t *region,
+		jsval_t value, const uint8_t *expected, size_t expected_len,
+		char *detail, size_t cap)
+{
+	size_t actual_len = 0;
+	uint8_t actual_buf[expected_len ? expected_len : 1];
+
+	if (value.kind != JSVAL_KIND_BIGINT) {
+		return generated_failf(detail, cap, "expected bigint result");
+	}
+	if (jsval_bigint_copy_utf8(region, value, NULL, 0, &actual_len) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bigint_copy_utf8(length)");
+	}
+	if (actual_len != expected_len) {
+		return generated_failf(detail, cap,
+				"expected %zu bigint bytes, got %zu",
+				expected_len, actual_len);
+	}
+	if (jsval_bigint_copy_utf8(region, value, actual_buf, actual_len, NULL) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bigint_copy_utf8(copy)");
+	}
+	if (memcmp(actual_buf, expected, expected_len) != 0) {
+		return generated_failf(detail, cap,
+				"bigint bytes did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t
 generated_expect_utf16_string(jsval_region_t *region, jsval_t value,
 		const uint16_t *expected, size_t expected_len,
@@ -1537,6 +1565,162 @@ static generated_status_t generated_smoke_jsval_symbol(char *detail,
 	status = generated_expect_boolean_result(boolean, 0, detail, cap);
 	if (status != GENERATED_PASS) {
 		return status;
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_bigint(char *detail,
+		size_t cap)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t zero;
+	jsval_t forty_two;
+	jsval_t forty_two_text;
+	jsval_t decimal_text;
+	jsval_t left_big;
+	jsval_t right_big;
+	jsval_t value;
+	jsval_t set;
+	jsval_t map;
+	int boolean = 0;
+	int cmp = 0;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_bigint_new_i64(&region, 0, &zero) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bigint_new_i64(zero)");
+	}
+	if (jsval_truthy(&region, zero)) {
+		return generated_failf(detail, cap, "expected 0n to be falsy");
+	}
+	if (jsval_typeof(&region, zero, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(bigint)");
+	}
+	status = generated_expect_string(&region, value, (const uint8_t *)"bigint",
+			6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_bigint_new_i64(&region, 42, &forty_two) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_bigint_new_i64(forty_two)");
+	}
+	if (jsval_bigint_new_utf8(&region, (const uint8_t *)"42", 2,
+			&forty_two_text) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_bigint_new_utf8(forty_two_text)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"42", 2,
+			&decimal_text) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(42)");
+	}
+	if (jsval_strict_eq(&region, forty_two, forty_two_text) != 1) {
+		return generated_failf(detail, cap,
+				"expected equal bigint values to be strict-equal");
+	}
+	if (jsval_abstract_eq(&region, forty_two, decimal_text, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(bigint,string)");
+	}
+	status = generated_expect_boolean_result(boolean, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_bigint_new_utf8(&region, (const uint8_t *)"12345678901234567890",
+			20, &left_big) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_bigint_new_utf8(left_big)");
+	}
+	if (jsval_bigint_new_utf8(&region, (const uint8_t *)"9876543210", 10,
+			&right_big) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_bigint_new_utf8(right_big)");
+	}
+	if (jsval_add(&region, left_big, right_big, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_add(bigint)");
+	}
+	status = generated_expect_bigint(&region, value,
+			(const uint8_t *)"12345678911111111100", 20, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_subtract(&region, left_big, right_big, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_subtract(bigint)");
+	}
+	status = generated_expect_bigint(&region, value,
+			(const uint8_t *)"12345678891358024680", 20, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_multiply(&region, left_big, right_big, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_multiply(bigint)");
+	}
+	status = generated_expect_bigint(&region, value,
+			(const uint8_t *)"121932631124828532111263526900", 30,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_unary_minus(&region, forty_two, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_unary_minus(bigint)");
+	}
+	status = generated_expect_bigint(&region, value, (const uint8_t *)"-42", 3,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_bigint_compare(&region, left_big, right_big, &cmp) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_bigint_compare");
+	}
+	if (cmp <= 0) {
+		return generated_failf(detail, cap,
+				"expected left_big to compare greater than right_big");
+	}
+
+	errno = 0;
+	if (jsval_add(&region, forty_two, jsval_number(1.0), &value) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected mixed Number/BigInt add to fail with ENOTSUP");
+	}
+	errno = 0;
+	if (jsval_unary_plus(&region, forty_two, &value) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected unary plus on bigint to fail with ENOTSUP");
+	}
+
+	if (jsval_set_new(&region, 1, &set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_new(bigint)");
+	}
+	if (jsval_set_add(&region, set, forty_two) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(bigint)");
+	}
+	if (jsval_set_has(&region, set, forty_two_text, &boolean) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(bigint)");
+	}
+	status = generated_expect_boolean_result(boolean, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_map_new(&region, 1, &map) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_new(bigint)");
+	}
+	if (jsval_map_set(&region, map, forty_two, jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(bigint)");
+	}
+	if (jsval_map_get(&region, map, forty_two_text, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(bigint)");
+	}
+	if (value.kind != JSVAL_KIND_BOOL || value.as.boolean != 1) {
+		return generated_failf(detail, cap,
+				"expected bigint-keyed map lookup to return true");
 	}
 
 	return GENERATED_PASS;
@@ -9462,6 +9646,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
 	{"smoke", "jsval_symbol", generated_smoke_jsval_symbol},
+	{"smoke", "jsval_bigint", generated_smoke_jsval_bigint},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

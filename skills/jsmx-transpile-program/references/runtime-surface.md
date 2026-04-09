@@ -20,7 +20,7 @@ Reusable host/module bridges for production programs live under
 Treat these as direct-lowerable when the entrypoint stays inside the current flattened boundary:
 
 - value kinds:
-  - `undefined`, `null`, booleans, numbers, strings, symbols
+  - `undefined`, `null`, booleans, numbers, strings, symbols, bigints
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
   - explicit iterator values over strings, arrays, Sets, Maps, and
@@ -30,7 +30,10 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 - value operations:
   - truthiness
   - strict and abstract equality
-  - arithmetic, integer coercion, bitwise ops, shifts
+  - number arithmetic, integer coercion, bitwise ops, and shifts
+  - explicit bigint construction plus bigint `+`, `-`, `*`, unary `-`,
+    equality, and relational comparison
+  - explicit mixed Number/BigInt rejection
   - relational comparison
   - `typeof`
   - nullish detection and explicit `??` / ternary lowering patterns
@@ -117,10 +120,11 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - streams with async callbacks
   - networking
 - unsupported JS categories:
-  - bigint
   - prototype-chain-sensitive behavior
   - descriptors or accessors
   - sparse arrays or holes
+  - JS-visible `BigInt()` constructor semantics
+  - bigint division, remainder, bitwise, or shift operators
   - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
     protocol semantics and iterable duck typing
   - functions as values with closure semantics

@@ -3867,6 +3867,36 @@
       "notes": "Repo-authored idiomatic value-semantics fixture for Symbol identity, typeof, abstract-equality, and description reads in the native flattened runtime."
     },
     {
+      "id": "jsmx-values-bigint-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/bigint-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/bigint-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native BigInt typeof, truthiness, strict equality, and abstract equality against integral decimal strings."
+    },
+    {
+      "id": "jsmx-values-bigint-arithmetic-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/bigint-arithmetic-parity.js",
+      "generated": "compliance/generated/values/jsmx/bigint-arithmetic-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for direct-lowered BigInt addition, subtraction, multiplication, unary negation, and mixed Number/BigInt rejection."
+    },
+    {
+      "id": "jsmx-values-bigint-equality-relational-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/bigint-equality-relational-parity.js",
+      "generated": "compliance/generated/values/jsmx/bigint-equality-relational-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for BigInt equality against exact integral numbers and relational ordering against numeric and decimal-string operands."
+    },
+    {
       "id": "jsmx-values-typeof-container-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/typeof-container-parity.js",
