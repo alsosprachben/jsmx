@@ -4601,6 +4601,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC sync-crypto fixture for `TypeMismatchError` and `QuotaExceededError` getRandomValues rejections."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-digest-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-digest-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-digest-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC digest fixture for Promise-returning `crypto.subtle.digest(...)` over string and `{ name }` algorithm forms."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-digest-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-digest-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-digest-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC digest rejection fixture for unsupported algorithms and invalid BufferSource inputs."
     }
   ]
 }

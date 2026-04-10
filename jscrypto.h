@@ -6,7 +6,20 @@
 
 #include "jsmx_config.h"
 
+typedef enum jscrypto_digest_algorithm_e {
+	JSCRYPTO_DIGEST_SHA1 = 0,
+	JSCRYPTO_DIGEST_SHA256 = 1,
+	JSCRYPTO_DIGEST_SHA384 = 2,
+	JSCRYPTO_DIGEST_SHA512 = 3
+} jscrypto_digest_algorithm_t;
+
 int jscrypto_random_bytes(uint8_t *buf, size_t len);
 int jscrypto_random_uuid(uint8_t *buf, size_t cap, size_t *len_ptr);
+int jscrypto_digest_algorithm_parse(const uint8_t *name, size_t len,
+		jscrypto_digest_algorithm_t *algorithm_ptr);
+int jscrypto_digest_length(jscrypto_digest_algorithm_t algorithm,
+		size_t *len_ptr);
+int jscrypto_digest(jscrypto_digest_algorithm_t algorithm, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr);
 
 #endif

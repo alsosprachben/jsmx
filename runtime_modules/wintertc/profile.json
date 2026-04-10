@@ -13,9 +13,10 @@
         "globalThis.crypto",
         "crypto.randomUUID()",
         "crypto.getRandomValues(typedArray)",
-        "crypto.subtle"
+        "crypto.subtle",
+        "crypto.subtle.digest()"
       ],
-      "notes": "The current WinterTC crypto profile covers randomUUID, getRandomValues, and stable subtle object identity. The generic Promise substrate now exists in jsmx, but Promise-backed subtle algorithms remain pending until a later digest slice."
+      "notes": "The current WinterTC crypto profile covers randomUUID, getRandomValues, stable subtle object identity, and Promise-backed subtle.digest over the SHA digest family. Other subtle algorithms remain pending."
     }
   }
 }

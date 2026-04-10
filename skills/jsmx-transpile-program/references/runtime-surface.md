@@ -28,7 +28,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `ArrayBuffer`
     - typed arrays
     - `Crypto`
-    - `SubtleCrypto` object identity only
+    - `SubtleCrypto`, including Promise-backed `digest(...)`
     - `CryptoKey` groundwork values
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
@@ -73,6 +73,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
   - optional feature-gated WinterTC sync crypto through:
     - `jsval_crypto_new(...)`
     - `jsval_crypto_subtle(...)`
+    - `jsval_subtle_crypto_digest(...)`
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`
@@ -169,7 +170,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - bigint division, remainder, bitwise, or shift operators
   - broad legacy Date-string parsing or host-independent timezone policy
     beyond the bounded ISO + libc-local Date helpers
-  - Promise-backed `SubtleCrypto` methods such as `subtle.digest(...)`
+  - `SubtleCrypto` methods beyond `digest(...)`, including key
+    generation/import/export, sign/verify, encrypt/decrypt, and deriveBits
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

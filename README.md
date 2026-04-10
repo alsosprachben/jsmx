@@ -70,8 +70,9 @@ That makes semantic correctness more important than surface familiarity:
 - `jscrypto.c`, `jscrypto.h`, `jsmx_config.h`
   - optional backend-gated crypto layer
   - the first backend is OpenSSL
-  - current helpers cover random bytes plus RFC 4122 v4 UUID assembly for
-    WinterTC-style sync crypto surfaces
+  - current helpers cover random bytes, RFC 4122 v4 UUID assembly, and
+    one-shot SHA-1 / SHA-256 / SHA-384 / SHA-512 digests for WinterTC-style
+    crypto surfaces
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
@@ -152,8 +153,10 @@ That makes semantic correctness more important than surface familiarity:
       families used by `crypto.getRandomValues(...)`
     - stable `Crypto` / `SubtleCrypto` object identity
     - `crypto.randomUUID()` and `crypto.getRandomValues(...)`
+    - Promise-backed `crypto.subtle.digest(...)` for `SHA-1`, `SHA-256`,
+      `SHA-384`, and `SHA-512`
     - `CryptoKey` and `DOMException` groundwork for later async
-      `SubtleCrypto` slices
+      `SubtleCrypto` slices beyond digest
   - native Promise helpers for:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
@@ -518,10 +521,11 @@ Current WinterTC-oriented crypto coverage is:
 - `crypto.randomUUID()`
 - `crypto.getRandomValues(...)`
 - stable `crypto.subtle` identity
+- Promise-backed `crypto.subtle.digest(...)` for `SHA-1`, `SHA-256`,
+  `SHA-384`, and `SHA-512`
 
 The Promise substrate needed for later async WebCrypto methods now exists in
-`jsval`, but Promise-backed `SubtleCrypto` algorithms such as
-`subtle.digest(...)` are still a later slice.
+`jsval`. Other `SubtleCrypto` algorithms beyond digest are still later slices.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

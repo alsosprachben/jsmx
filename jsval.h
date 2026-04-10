@@ -320,6 +320,8 @@ int jsval_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
 int jsval_subtle_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
 int jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr);
+int jsval_subtle_crypto_digest(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t data_value, jsval_t *promise_ptr);
 int jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr);
 int jsval_crypto_get_random_values(jsval_region_t *region,

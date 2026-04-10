@@ -219,7 +219,8 @@ typedef struct jsval_native_match_iterator_s {
 
 typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_FUNCTION_CALL = 0,
-	JSVAL_MICROTASK_KIND_PROMISE_REACTION = 1
+	JSVAL_MICROTASK_KIND_PROMISE_REACTION = 1,
+	JSVAL_MICROTASK_KIND_SUBTLE_DIGEST = 2
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -239,6 +240,14 @@ typedef struct jsval_native_microtask_promise_reaction_s {
 	jsval_off_t promise_off;
 	jsval_off_t reaction_off;
 } jsval_native_microtask_promise_reaction_t;
+
+typedef struct jsval_native_microtask_subtle_digest_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	size_t input_len;
+	uint8_t algorithm;
+	uint8_t reserved[7];
+} jsval_native_microtask_subtle_digest_t;
 
 typedef struct jsval_native_prop_s {
 	jsval_t name;
@@ -322,6 +331,9 @@ static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value
 static int jsval_ascii_space(uint8_t ch);
 static jsval_t jsval_native_make_value(jsval_region_t *region, void *ptr,
 		jsval_kind_t kind);
+static jsval_t jsval_promise_value(jsval_off_t off);
+static int jsval_microtask_push(jsval_region_t *region, jsval_off_t task_off,
+		jsval_native_microtask_t *task);
 static int jsval_promise_schedule_reactions(jsval_region_t *region,
 		jsval_t promise_value);
 
@@ -565,6 +577,12 @@ static jsval_t *jsval_native_microtask_call_args(
 		jsval_native_microtask_call_t *task)
 {
 	return (jsval_t *)(task + 1);
+}
+
+static uint8_t *jsval_native_microtask_subtle_digest_input(
+		jsval_native_microtask_subtle_digest_t *task)
+{
+	return (uint8_t *)(task + 1);
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -7786,6 +7804,30 @@ jsval_dom_exception_message(jsval_region_t *region, jsval_t exception_value,
 	return 0;
 }
 
+static int
+jsval_dom_exception_new_utf8(jsval_region_t *region, const char *name,
+		const char *message, jsval_t *value_ptr)
+{
+	jsval_t name_value;
+	jsval_t message_value;
+
+	if (region == NULL || name == NULL || message == NULL
+			|| value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)name, strlen(name),
+			&name_value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)message,
+			strlen(message), &message_value) < 0) {
+		return -1;
+	}
+	return jsval_dom_exception_new(region, name_value, message_value,
+			value_ptr);
+}
+
 int
 jsval_subtle_crypto_new(jsval_region_t *region, jsval_t *value_ptr)
 {
@@ -7855,6 +7897,233 @@ jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
 	native->subtle_value = subtle_value;
 	*value_ptr = subtle_value;
 	return 0;
+}
+
+static int
+jsval_subtle_crypto_digest_parse_name(jsval_region_t *region,
+		jsval_t name_value, jscrypto_digest_algorithm_t *algorithm_ptr)
+{
+	uint8_t name_buf[16];
+	size_t len = 0;
+
+	if (region == NULL || algorithm_ptr == NULL
+			|| name_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, name_value, NULL, 0, &len) < 0) {
+		return -1;
+	}
+	if (len == 0 || len > sizeof(name_buf)) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, name_value, name_buf, len, NULL) < 0) {
+		return -1;
+	}
+	return jscrypto_digest_algorithm_parse(name_buf, len, algorithm_ptr);
+}
+
+static int
+jsval_subtle_crypto_digest_parse_algorithm(jsval_region_t *region,
+		jsval_t algorithm_value, jscrypto_digest_algorithm_t *algorithm_ptr)
+{
+	jsval_t name_value;
+
+	if (region == NULL || algorithm_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (algorithm_value.kind == JSVAL_KIND_STRING) {
+		return jsval_subtle_crypto_digest_parse_name(region, algorithm_value,
+				algorithm_ptr);
+	}
+	if (algorithm_value.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_get_utf8(region, algorithm_value, (const uint8_t *)"name",
+			4, &name_value) < 0) {
+		return -1;
+	}
+	if (name_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_subtle_crypto_digest_parse_name(region, name_value,
+			algorithm_ptr);
+}
+
+static int
+jsval_buffer_source_bytes(jsval_region_t *region, jsval_t value,
+		const uint8_t **bytes_ptr, size_t *len_ptr)
+{
+	jsval_native_array_buffer_t *buffer;
+	uint8_t *typed_bytes = NULL;
+	size_t typed_len = 0;
+
+	if (bytes_ptr == NULL || len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (value.kind == JSVAL_KIND_ARRAY_BUFFER) {
+		buffer = jsval_native_array_buffer(region, value);
+		if (buffer == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		*bytes_ptr = jsval_native_array_buffer_bytes(buffer);
+		*len_ptr = buffer->byte_length;
+		return 0;
+	}
+	if (value.kind == JSVAL_KIND_TYPED_ARRAY) {
+		if (jsval_typed_array_bytes(region, value, &typed_bytes, &typed_len,
+				NULL) < 0) {
+			return -1;
+		}
+		*bytes_ptr = typed_bytes;
+		*len_ptr = typed_len;
+		return 0;
+	}
+	errno = EINVAL;
+	return -1;
+}
+
+static int
+jsval_subtle_crypto_enqueue_digest(jsval_region_t *region,
+		jsval_t promise_value, jscrypto_digest_algorithm_t algorithm,
+		const uint8_t *input, size_t input_len)
+{
+	jsval_native_microtask_subtle_digest_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| (input == NULL && input_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + input_len;
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_SUBTLE_DIGEST;
+	task->promise_off = promise_value.off;
+	task->input_len = input_len;
+	task->algorithm = (uint8_t)algorithm;
+	if (input_len > 0) {
+		memcpy(jsval_native_microtask_subtle_digest_input(task), input,
+				input_len);
+	}
+	return jsval_microtask_push(region, off, &task->base);
+}
+
+static int
+jsval_subtle_crypto_run_digest(jsval_region_t *region,
+		jsval_native_microtask_subtle_digest_t *task)
+{
+	static const char operation_error_name[] = "OperationError";
+	static const char operation_error_message[] = "digest operation failed";
+	jsval_t promise_value;
+	jsval_t result_buffer;
+	jsval_t reason;
+	jsval_native_array_buffer_t *buffer;
+	uint8_t *output;
+	size_t output_len = 0;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	if (jscrypto_digest_length((jscrypto_digest_algorithm_t)task->algorithm,
+			&output_len) < 0) {
+		if (jsval_dom_exception_new_utf8(region, operation_error_name,
+				operation_error_message, &reason) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, reason);
+	}
+	if (jsval_array_buffer_new(region, output_len, &result_buffer) < 0) {
+		return -1;
+	}
+	buffer = jsval_native_array_buffer(region, result_buffer);
+	if (buffer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	output = jsval_native_array_buffer_bytes(buffer);
+	if (jscrypto_digest((jscrypto_digest_algorithm_t)task->algorithm,
+			jsval_native_microtask_subtle_digest_input(task), task->input_len,
+			output, output_len, NULL) < 0) {
+		if (jsval_dom_exception_new_utf8(region, operation_error_name,
+				operation_error_message, &reason) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, reason);
+	}
+	return jsval_promise_resolve(region, promise_value, result_buffer);
+}
+
+int
+jsval_subtle_crypto_digest(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t data_value, jsval_t *promise_ptr)
+{
+	static const char type_error_name[] = "TypeError";
+	static const char invalid_algorithm_message[] =
+		"expected algorithm identifier";
+	static const char invalid_data_message[] = "expected BufferSource input";
+	static const char not_supported_name[] = "NotSupportedError";
+	static const char not_supported_message[] =
+		"unsupported digest algorithm";
+	jscrypto_digest_algorithm_t algorithm;
+	jsval_t promise_value;
+	jsval_t reason;
+	const uint8_t *input = NULL;
+	size_t input_len = 0;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm_value;
+	(void)data_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_digest_parse_algorithm(region, algorithm_value,
+			&algorithm) < 0) {
+		if (errno == ENOTSUP) {
+			if (jsval_dom_exception_new_utf8(region, not_supported_name,
+					not_supported_message, &reason) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_dom_exception_new_utf8(region, type_error_name,
+					invalid_algorithm_message, &reason) < 0) {
+				return -1;
+			}
+		}
+		return jsval_promise_reject(region, promise_value, reason);
+	}
+	if (jsval_buffer_source_bytes(region, data_value, &input, &input_len) < 0) {
+		if (jsval_dom_exception_new_utf8(region, type_error_name,
+				invalid_data_message, &reason) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, reason);
+	}
+	return jsval_subtle_crypto_enqueue_digest(region, promise_value, algorithm,
+			input, input_len);
+#endif
 }
 
 int
@@ -8515,6 +8784,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 
 			if (jsval_promise_run_reaction(region, promise_value,
 					reaction_task->reaction_off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_SUBTLE_DIGEST:
+		{
+			jsval_native_microtask_subtle_digest_t *digest_task =
+				(jsval_native_microtask_subtle_digest_t *)task;
+
+			if (jsval_subtle_crypto_run_digest(region, digest_task) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}

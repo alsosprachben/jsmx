@@ -247,6 +247,21 @@ static void assert_dom_exception(jsval_region_t *region, jsval_t value,
 	assert_string(region, result, expected_message);
 }
 
+static void assert_array_buffer_bytes(jsval_region_t *region, jsval_t value,
+		const uint8_t *expected, size_t expected_len)
+{
+	size_t actual_len = 0;
+	uint8_t buf[expected_len ? expected_len : 1];
+
+	assert(value.kind == JSVAL_KIND_ARRAY_BUFFER);
+	assert(jsval_array_buffer_copy_bytes(region, value, NULL, 0, &actual_len)
+			== 0);
+	assert(actual_len == expected_len);
+	assert(jsval_array_buffer_copy_bytes(region, value, buf, actual_len, NULL)
+			== 0);
+	assert(memcmp(buf, expected, expected_len) == 0);
+}
+
 static void assert_bigint_string(jsval_region_t *region, jsval_t value,
 		const char *expected)
 {
@@ -725,6 +740,17 @@ static void test_date_semantics(void)
 
 static void test_crypto_semantics(void)
 {
+	static const uint8_t sha1_zeros_16[] = {
+		0xe1, 0x29, 0xf2, 0x7c, 0x51, 0x03, 0xbc, 0x5c,
+		0xc4, 0x4b, 0xcd, 0xf0, 0xa1, 0x5e, 0x16, 0x0d,
+		0x44, 0x50, 0x66, 0xff
+	};
+	static const uint8_t sha256_zeros_16[] = {
+		0x37, 0x47, 0x08, 0xff, 0xf7, 0x71, 0x9d, 0xd5,
+		0x97, 0x9e, 0xc8, 0x75, 0xd5, 0x6c, 0xd2, 0x28,
+		0x6f, 0x6d, 0x3c, 0xf7, 0xec, 0x31, 0x7a, 0x3b,
+		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
+	};
 	uint8_t storage[65536];
 	jsval_region_t region;
 	jsval_t buffer;
@@ -734,6 +760,13 @@ static void test_crypto_semantics(void)
 	jsval_t crypto;
 	jsval_t subtle_a;
 	jsval_t subtle_b;
+	jsval_t digest_input;
+	jsval_t digest_input_buffer;
+	jsval_t digest_algorithm_object;
+	jsval_t digest_promise;
+	jsval_t digest_dict_promise;
+	jsval_t invalid_algorithm_promise;
+	jsval_t invalid_data_promise;
 	jsval_t uuid;
 	jsval_t key;
 	jsval_t dom_exception;
@@ -743,6 +776,7 @@ static void test_crypto_semantics(void)
 	uint32_t usages = 0;
 	int extractable = 0;
 	jsval_typed_array_kind_t typed_kind;
+	jsval_promise_state_t promise_state;
 	jsmethod_error_t error;
 	uint8_t before[16];
 	uint8_t after[16];
@@ -790,6 +824,12 @@ static void test_crypto_semantics(void)
 	assert(jsval_crypto_subtle(&region, crypto, &subtle_b) == 0);
 	assert(subtle_a.kind == JSVAL_KIND_SUBTLE_CRYPTO);
 	assert(jsval_strict_eq(&region, subtle_a, subtle_b) == 1);
+	assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+			&digest_input) == 0);
+	assert(jsval_typed_array_buffer(&region, digest_input, &digest_input_buffer)
+			== 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+			&algorithm_name) == 0);
 
 #if JSMX_WITH_CRYPTO
 	assert(jsval_typed_array_copy_bytes(&region, typed_u8, before,
@@ -822,6 +862,64 @@ static void test_crypto_semantics(void)
 	assert(uuid_buf[14] == '4');
 	assert(uuid_buf[19] == '8' || uuid_buf[19] == '9'
 			|| uuid_buf[19] == 'a' || uuid_buf[19] == 'b');
+
+	assert(jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			digest_input, &digest_promise) == 0);
+	assert(digest_promise.kind == JSVAL_KIND_PROMISE);
+	assert(jsval_promise_state(&region, digest_promise, &promise_state) == 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_microtask_pending(&region) == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+	assert(jsval_promise_state(&region, digest_promise, &promise_state) == 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, digest_promise, &result) == 0);
+	assert(jsval_strict_eq(&region, result, digest_input_buffer) == 0);
+	assert_array_buffer_bytes(&region, result, sha256_zeros_16,
+			sizeof(sha256_zeros_16));
+
+	assert(jsval_object_new(&region, 1, &digest_algorithm_object) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-1", 5,
+			&result) == 0);
+	assert(jsval_object_set_utf8(&region, digest_algorithm_object,
+			(const uint8_t *)"name", 4, result) == 0);
+	assert(jsval_subtle_crypto_digest(&region, subtle_a,
+			digest_algorithm_object, digest_input_buffer,
+			&digest_dict_promise) == 0);
+	assert(jsval_promise_state(&region, digest_dict_promise, &promise_state)
+			== 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+	assert(jsval_promise_state(&region, digest_dict_promise, &promise_state)
+			== 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, digest_dict_promise, &result) == 0);
+	assert_array_buffer_bytes(&region, result, sha1_zeros_16,
+			sizeof(sha1_zeros_16));
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-999", 7,
+			&result) == 0);
+	assert(jsval_subtle_crypto_digest(&region, subtle_a, result, digest_input,
+			&invalid_algorithm_promise) == 0);
+	assert(jsval_promise_state(&region, invalid_algorithm_promise,
+			&promise_state) == 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, invalid_algorithm_promise, &result)
+			== 0);
+	assert_dom_exception(&region, result, "NotSupportedError",
+			"unsupported digest algorithm");
+
+	assert(jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			jsval_number(5.0), &invalid_data_promise) == 0);
+	assert(jsval_promise_state(&region, invalid_data_promise, &promise_state)
+			== 0);
+	assert(promise_state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, invalid_data_promise, &result) == 0);
+	assert_dom_exception(&region, result, "TypeError",
+			"expected BufferSource input");
 #else
 	memset(&error, 0, sizeof(error));
 	errno = 0;
@@ -831,10 +929,12 @@ static void test_crypto_semantics(void)
 	errno = 0;
 	assert(jsval_crypto_random_uuid(&region, crypto, &uuid) < 0);
 	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			digest_input, &digest_promise) < 0);
+	assert(errno == ENOTSUP);
 #endif
 
-	assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
-			&algorithm_name) == 0);
 	assert(jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
 			algorithm_name, 0x5u, &key) == 0);
 	assert(key.kind == JSVAL_KIND_CRYPTO_KEY);

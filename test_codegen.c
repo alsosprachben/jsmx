@@ -155,6 +155,37 @@ static generated_status_t generated_expect_string(jsval_region_t *region,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_expect_array_buffer_bytes(
+		jsval_region_t *region, jsval_t value, const uint8_t *expected,
+		size_t expected_len, char *detail, size_t cap)
+{
+	size_t actual_len = 0;
+	uint8_t actual_buf[expected_len ? expected_len : 1];
+
+	if (value.kind != JSVAL_KIND_ARRAY_BUFFER) {
+		return generated_failf(detail, cap, "expected ArrayBuffer result");
+	}
+	if (jsval_array_buffer_copy_bytes(region, value, NULL, 0, &actual_len) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_buffer_copy_bytes(length)");
+	}
+	if (actual_len != expected_len) {
+		return generated_failf(detail, cap,
+				"expected %zu array-buffer bytes, got %zu",
+				expected_len, actual_len);
+	}
+	if (jsval_array_buffer_copy_bytes(region, value, actual_buf, actual_len,
+			NULL) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_array_buffer_copy_bytes(copy)");
+	}
+	if (memcmp(actual_buf, expected, expected_len) != 0) {
+		return generated_failf(detail, cap,
+				"array-buffer bytes did not match expected output");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_expect_bigint(jsval_region_t *region,
 		jsval_t value, const uint8_t *expected, size_t expected_len,
 		char *detail, size_t cap)
@@ -2773,6 +2804,17 @@ static generated_status_t generated_smoke_jsval_date(char *detail,
 static generated_status_t
 generated_smoke_jsval_crypto(char *detail, size_t cap)
 {
+	static const uint8_t sha1_zeros_16[] = {
+		0xe1, 0x29, 0xf2, 0x7c, 0x51, 0x03, 0xbc, 0x5c,
+		0xc4, 0x4b, 0xcd, 0xf0, 0xa1, 0x5e, 0x16, 0x0d,
+		0x44, 0x50, 0x66, 0xff
+	};
+	static const uint8_t sha256_zeros_16[] = {
+		0x37, 0x47, 0x08, 0xff, 0xf7, 0x71, 0x9d, 0xd5,
+		0x97, 0x9e, 0xc8, 0x75, 0xd5, 0x6c, 0xd2, 0x28,
+		0x6f, 0x6d, 0x3c, 0xf7, 0xec, 0x31, 0x7a, 0x3b,
+		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
+	};
 	uint8_t storage[65536];
 	jsval_region_t region;
 	jsval_t crypto_value;
@@ -2780,6 +2822,13 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 	jsval_t subtle_b;
 	jsval_t typed_u8;
 	jsval_t typed_f32;
+	jsval_t digest_input;
+	jsval_t digest_input_buffer;
+	jsval_t digest_algorithm_object;
+	jsval_t digest_promise;
+	jsval_t digest_dict_promise;
+	jsval_t invalid_algorithm_promise;
+	jsval_t invalid_data_promise;
 	jsval_t result;
 	jsval_t algorithm_name;
 	jsval_t key_value;
@@ -2791,6 +2840,8 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 	size_t len = 0;
 	uint32_t usages = 0;
 	int extractable = 0;
+	jsval_promise_state_t promise_state;
+	generated_status_t status;
 
 	jsval_region_init(&region, storage, sizeof(storage));
 	if (jsval_crypto_new(&region, &crypto_value) < 0) {
@@ -2815,6 +2866,17 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_FLOAT32, 4,
 				&typed_f32) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_typed_array_new");
+	}
+	if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+			&digest_input) < 0
+			|| jsval_typed_array_buffer(&region, digest_input,
+				&digest_input_buffer) < 0) {
+		return generated_fail_errno(detail, cap, "digest input allocation");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+			&algorithm_name) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(SHA-256)");
 	}
 #if JSMX_WITH_CRYPTO
 	if (jsval_typed_array_copy_bytes(&region, typed_u8, before, sizeof(before),
@@ -2859,6 +2921,108 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			|| uuid_buf[23] != '-' || uuid_buf[14] != '4') {
 		return generated_failf(detail, cap, "unexpected uuid shape");
 	}
+
+	if (jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			digest_input, &digest_promise) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_subtle_crypto_digest");
+	}
+	if (jsval_promise_state(&region, digest_promise, &promise_state) < 0
+			|| promise_state != JSVAL_PROMISE_STATE_PENDING
+			|| jsval_microtask_pending(&region) != 1) {
+		return generated_failf(detail, cap,
+				"expected digest promise to stay pending until drain");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(digest)");
+	}
+	if (jsval_promise_result(&region, digest_promise, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(digest)");
+	}
+	status = generated_expect_array_buffer_bytes(&region, result,
+			sha256_zeros_16, sizeof(sha256_zeros_16), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_strict_eq(&region, result, digest_input_buffer) != 0) {
+		return generated_failf(detail, cap,
+				"expected digest to allocate a fresh ArrayBuffer");
+	}
+
+	if (jsval_object_new(&region, 1, &digest_algorithm_object) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"SHA-1", 5,
+				&result) < 0
+			|| jsval_object_set_utf8(&region, digest_algorithm_object,
+				(const uint8_t *)"name", 4, result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"digest algorithm object setup");
+	}
+	if (jsval_subtle_crypto_digest(&region, subtle_a, digest_algorithm_object,
+			digest_input_buffer, &digest_dict_promise) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_subtle_crypto_digest(dict)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(digest dict)");
+	}
+	if (jsval_promise_result(&region, digest_dict_promise, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(digest dict)");
+	}
+	status = generated_expect_array_buffer_bytes(&region, result,
+			sha1_zeros_16, sizeof(sha1_zeros_16), detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"SHA-999", 7,
+			&result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(SHA-999)");
+	}
+	if (jsval_subtle_crypto_digest(&region, subtle_a, result, digest_input,
+			&invalid_algorithm_promise) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_subtle_crypto_digest(unsupported)");
+	}
+	if (jsval_promise_result(&region, invalid_algorithm_promise, &dom_exception)
+			< 0 || dom_exception.kind != JSVAL_KIND_DOM_EXCEPTION) {
+		return generated_failf(detail, cap,
+				"expected unsupported digest to reject with DOMException");
+	}
+	if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_dom_exception_name(unsupported digest)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"NotSupportedError", 17, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			jsval_number(5.0), &invalid_data_promise) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_subtle_crypto_digest(invalid data)");
+	}
+	if (jsval_promise_result(&region, invalid_data_promise, &dom_exception) < 0
+			|| dom_exception.kind != JSVAL_KIND_DOM_EXCEPTION) {
+		return generated_failf(detail, cap,
+				"expected invalid digest input to reject with DOMException");
+	}
+	if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_dom_exception_name(invalid digest data)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"TypeError", 9, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
 #else
 	memset(&error, 0, sizeof(error));
 	errno = 0;
@@ -2867,11 +3031,13 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 		return generated_failf(detail, cap,
 				"expected crypto backend to be disabled");
 	}
-#endif
-	if (jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
-			&algorithm_name) < 0) {
-		return generated_fail_errno(detail, cap, "jsval_string_new_utf8");
+	errno = 0;
+	if (jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+			digest_input, &digest_promise) >= 0 || errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected subtle.digest to stay disabled");
 	}
+#endif
 	if (jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
 			algorithm_name, 0x5u, &key_value) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_crypto_key_new");
