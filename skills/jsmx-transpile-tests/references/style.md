@@ -135,6 +135,17 @@ Function-value note:
 - closures, dynamic `this`, `arguments`, constructor calls, and
   `bind` / `call` / `apply` do not fit the current flattened surface
 
+Date note:
+
+- direct-lowered Date fixtures fit `static_pass` when they stay inside:
+  - `Date.now()` / `Date.UTC(...)`
+  - bounded ISO parse
+  - epoch-millisecond construction
+  - explicit UTC and local field helpers
+  - `toISOString`, `toUTCString`, `toString`, and `toJSON`
+- broad legacy Date-string parsing and host-independent timezone behavior do
+  not fit the current flattened surface
+
 Every manifest entry should also declare one `translation_mode`:
 
 - `idiomatic_flattened`

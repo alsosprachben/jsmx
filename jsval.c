@@ -1,8 +1,11 @@
 #include "jsval.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "jsnum.h"
 #include "jsurl.h"
@@ -34,6 +37,10 @@ typedef struct jsval_native_function_s {
 	size_t length;
 	jsval_t name;
 } jsval_native_function_t;
+
+typedef struct jsval_native_date_s {
+	double time_value_ms;
+} jsval_native_date_t;
 
 typedef struct jsval_native_object_s {
 	size_t len;
@@ -196,9 +203,36 @@ typedef struct jsval_bigint_parse_s {
 	size_t limb_count;
 } jsval_bigint_parse_t;
 
+typedef struct jsval_date_parts_s {
+	int64_t year;
+	int month;
+	int date;
+	int day;
+	int hours;
+	int minutes;
+	int seconds;
+	int milliseconds;
+} jsval_date_parts_t;
+
+typedef enum jsval_date_component_e {
+	JSVAL_DATE_COMPONENT_FULL_YEAR = 0,
+	JSVAL_DATE_COMPONENT_MONTH = 1,
+	JSVAL_DATE_COMPONENT_DATE = 2,
+	JSVAL_DATE_COMPONENT_DAY = 3,
+	JSVAL_DATE_COMPONENT_HOURS = 4,
+	JSVAL_DATE_COMPONENT_MINUTES = 5,
+	JSVAL_DATE_COMPONENT_SECONDS = 6,
+	JSVAL_DATE_COMPONENT_MILLISECONDS = 7
+} jsval_date_component_t;
+
 #define JSVAL_BIGINT_LIMB_BASE 1000000000u
 #define JSVAL_BIGINT_LIMB_DIGITS 9u
 #define JSVAL_BIGINT_SHIFT_CHUNK_BITS 29u
+#define JSVAL_DATE_MS_PER_SECOND 1000LL
+#define JSVAL_DATE_MS_PER_MINUTE (60LL * JSVAL_DATE_MS_PER_SECOND)
+#define JSVAL_DATE_MS_PER_HOUR (60LL * JSVAL_DATE_MS_PER_MINUTE)
+#define JSVAL_DATE_MS_PER_DAY (24LL * JSVAL_DATE_MS_PER_HOUR)
+#define JSVAL_DATE_TIME_CLIP_LIMIT 8640000000000000.0
 
 static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value,
 		int require_object_coercible, jsval_t *string_value_ptr,
@@ -340,6 +374,15 @@ static jsval_native_function_t *jsval_native_function(jsval_region_t *region,
 		return NULL;
 	}
 	return (jsval_native_function_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_date_t *jsval_native_date(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_DATE) {
+		return NULL;
+	}
+	return (jsval_native_date_t *)jsval_region_ptr(region, value.off);
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -1118,6 +1161,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		return 1;
 	default:
 		return 0;
@@ -2552,6 +2596,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -2696,6 +2741,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2766,6 +2812,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2855,6 +2902,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_SYMBOL:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -3022,6 +3070,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -5444,6 +5493,1501 @@ int jsval_function_call(jsval_region_t *region, jsval_t function, size_t argc,
 	}
 	fn = (jsval_native_function_fn)native->fn_ptr;
 	return fn(region, argc, argv, result_ptr, error);
+}
+
+static int64_t jsval_date_floor_div_i64(int64_t value, int64_t divisor)
+{
+	int64_t q = value / divisor;
+	int64_t r = value % divisor;
+
+	if (r != 0 && ((r > 0) != (divisor > 0))) {
+		q--;
+	}
+	return q;
+}
+
+static int64_t jsval_date_floor_mod_i64(int64_t value, int64_t divisor)
+{
+	return value - jsval_date_floor_div_i64(value, divisor) * divisor;
+}
+
+static int
+jsval_date_trunc_i64(double number, int64_t *result_ptr)
+{
+	if (result_ptr == NULL || !isfinite(number)
+			|| number < (double)INT64_MIN
+			|| number > (double)INT64_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+	*result_ptr = (int64_t)number;
+	return 0;
+}
+
+static int
+jsval_date_time_clip(double number, double *result_ptr)
+{
+	int64_t truncated = 0;
+
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!isfinite(number) || fabs(number) > JSVAL_DATE_TIME_CLIP_LIMIT) {
+		*result_ptr = NAN;
+		return 0;
+	}
+	if (jsval_date_trunc_i64(number, &truncated) < 0) {
+		return -1;
+	}
+	*result_ptr = (double)truncated;
+	return 0;
+}
+
+static int
+jsval_date_now_ms(double *time_ptr)
+{
+	struct timespec ts;
+
+	if (time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if defined(TIME_UTC)
+	if (timespec_get(&ts, TIME_UTC) == TIME_UTC) {
+		*time_ptr = (double)ts.tv_sec * 1000.0
+				+ (double)(ts.tv_nsec / 1000000L);
+		return 0;
+	}
+#endif
+	{
+		time_t seconds = time(NULL);
+
+		if (seconds == (time_t)-1) {
+			return -1;
+		}
+		*time_ptr = (double)seconds * 1000.0;
+		return 0;
+	}
+}
+
+static int64_t jsval_date_days_from_civil(int64_t year, unsigned month,
+		unsigned day)
+{
+	int64_t era;
+	unsigned yoe;
+	unsigned doy;
+	unsigned doe;
+
+	year -= month <= 2;
+	era = year >= 0 ? year / 400 : (year - 399) / 400;
+	yoe = (unsigned)(year - era * 400);
+	doy = (153 * (month + (month > 2 ? (unsigned)-3 : 9)) + 2) / 5 + day - 1;
+	doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return era * 146097 + (int64_t)doe - 719468;
+}
+
+static void jsval_date_civil_from_days(int64_t days, int64_t *year_ptr,
+		unsigned *month_ptr, unsigned *day_ptr)
+{
+	int64_t z = days + 719468;
+	int64_t era = z >= 0 ? z / 146097 : (z - 146096) / 146097;
+	unsigned doe = (unsigned)(z - era * 146097);
+	unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+	int64_t year = (int64_t)yoe + era * 400;
+	unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	unsigned mp = (5 * doy + 2) / 153;
+	unsigned day = doy - (153 * mp + 2) / 5 + 1;
+	unsigned month = mp + (mp < 10 ? 3 : (unsigned)-9);
+
+	year += month <= 2;
+	if (year_ptr != NULL) {
+		*year_ptr = year;
+	}
+	if (month_ptr != NULL) {
+		*month_ptr = month;
+	}
+	if (day_ptr != NULL) {
+		*day_ptr = day;
+	}
+}
+
+static int
+jsval_date_make_utc_ms(double year_value, double month_value,
+		double day_value, double hours_value, double minutes_value,
+		double seconds_value, double milliseconds_value,
+		int adjust_constructor_year, double *time_ptr)
+{
+	int64_t year;
+	int64_t month;
+	int64_t day;
+	int64_t hours;
+	int64_t minutes;
+	int64_t seconds;
+	int64_t milliseconds;
+	int64_t year_adjust;
+	int64_t month_norm;
+	int64_t epoch_days;
+	int64_t total_ms;
+	double clipped;
+
+	if (time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!isfinite(year_value) || !isfinite(month_value) || !isfinite(day_value)
+			|| !isfinite(hours_value) || !isfinite(minutes_value)
+			|| !isfinite(seconds_value)
+			|| !isfinite(milliseconds_value)) {
+		*time_ptr = NAN;
+		return 0;
+	}
+	if (jsval_date_trunc_i64(year_value, &year) < 0
+			|| jsval_date_trunc_i64(month_value, &month) < 0
+			|| jsval_date_trunc_i64(day_value, &day) < 0
+			|| jsval_date_trunc_i64(hours_value, &hours) < 0
+			|| jsval_date_trunc_i64(minutes_value, &minutes) < 0
+			|| jsval_date_trunc_i64(seconds_value, &seconds) < 0
+			|| jsval_date_trunc_i64(milliseconds_value, &milliseconds) < 0) {
+		*time_ptr = NAN;
+		errno = 0;
+		return 0;
+	}
+	if (adjust_constructor_year && year >= 0 && year <= 99) {
+		year += 1900;
+	}
+	year_adjust = month / 12;
+	month_norm = month % 12;
+	if (month_norm < 0) {
+		month_norm += 12;
+		year_adjust--;
+	}
+	year += year_adjust;
+	epoch_days = jsval_date_days_from_civil(year, (unsigned)(month_norm + 1), 1)
+			+ (day - 1);
+	total_ms = (((epoch_days * 24 + hours) * 60 + minutes) * 60 + seconds)
+			* 1000 + milliseconds;
+	if (jsval_date_time_clip((double)total_ms, &clipped) < 0) {
+		return -1;
+	}
+	*time_ptr = clipped;
+	return 0;
+}
+
+static int
+jsval_date_make_local_ms(double year_value, double month_value,
+		double day_value, double hours_value, double minutes_value,
+		double seconds_value, double milliseconds_value,
+		int adjust_constructor_year, double *time_ptr)
+{
+	struct tm tm_value;
+	time_t local_seconds;
+	double clipped;
+	int64_t year;
+	int64_t month;
+	int64_t day;
+	int64_t hours;
+	int64_t minutes;
+	int64_t seconds;
+	int64_t milliseconds;
+
+	if (time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!isfinite(year_value) || !isfinite(month_value) || !isfinite(day_value)
+			|| !isfinite(hours_value) || !isfinite(minutes_value)
+			|| !isfinite(seconds_value)
+			|| !isfinite(milliseconds_value)) {
+		*time_ptr = NAN;
+		return 0;
+	}
+	if (jsval_date_trunc_i64(year_value, &year) < 0
+			|| jsval_date_trunc_i64(month_value, &month) < 0
+			|| jsval_date_trunc_i64(day_value, &day) < 0
+			|| jsval_date_trunc_i64(hours_value, &hours) < 0
+			|| jsval_date_trunc_i64(minutes_value, &minutes) < 0
+			|| jsval_date_trunc_i64(seconds_value, &seconds) < 0
+			|| jsval_date_trunc_i64(milliseconds_value, &milliseconds) < 0) {
+		*time_ptr = NAN;
+		errno = 0;
+		return 0;
+	}
+	if (adjust_constructor_year && year >= 0 && year <= 99) {
+		year += 1900;
+	}
+	if (year < (int64_t)INT_MIN + 1900 || year > (int64_t)INT_MAX + 1900) {
+		*time_ptr = NAN;
+		return 0;
+	}
+	memset(&tm_value, 0, sizeof(tm_value));
+	tm_value.tm_year = (int)year - 1900;
+	tm_value.tm_mon = (int)month;
+	tm_value.tm_mday = (int)day;
+	tm_value.tm_hour = (int)hours;
+	tm_value.tm_min = (int)minutes;
+	tm_value.tm_sec = (int)seconds;
+	tm_value.tm_isdst = -1;
+	local_seconds = mktime(&tm_value);
+	if (jsval_date_time_clip((double)local_seconds * 1000.0
+			+ (double)milliseconds, &clipped) < 0) {
+		return -1;
+	}
+	*time_ptr = clipped;
+	return 0;
+}
+
+static int
+jsval_date_decompose_utc(double time_ms, jsval_date_parts_t *parts_ptr)
+{
+	int64_t time_i64;
+	int64_t epoch_days;
+	int64_t time_in_day;
+	unsigned month;
+	unsigned day;
+
+	if (parts_ptr == NULL || !isfinite(time_ms)) {
+		errno = EINVAL;
+		return -1;
+	}
+	time_i64 = (int64_t)time_ms;
+	epoch_days = jsval_date_floor_div_i64(time_i64, JSVAL_DATE_MS_PER_DAY);
+	time_in_day = time_i64 - epoch_days * JSVAL_DATE_MS_PER_DAY;
+	jsval_date_civil_from_days(epoch_days, &parts_ptr->year, &month, &day);
+	parts_ptr->month = (int)month - 1;
+	parts_ptr->date = (int)day;
+	parts_ptr->day = (int)jsval_date_floor_mod_i64(epoch_days + 4, 7);
+	parts_ptr->hours = (int)(time_in_day / JSVAL_DATE_MS_PER_HOUR);
+	time_in_day %= JSVAL_DATE_MS_PER_HOUR;
+	parts_ptr->minutes = (int)(time_in_day / JSVAL_DATE_MS_PER_MINUTE);
+	time_in_day %= JSVAL_DATE_MS_PER_MINUTE;
+	parts_ptr->seconds = (int)(time_in_day / JSVAL_DATE_MS_PER_SECOND);
+	parts_ptr->milliseconds = (int)(time_in_day
+			% JSVAL_DATE_MS_PER_SECOND);
+	return 0;
+}
+
+static int
+jsval_date_decompose_local(double time_ms, jsval_date_parts_t *parts_ptr,
+		int *offset_minutes_ptr)
+{
+	int64_t time_i64;
+	int64_t seconds_floor;
+	int64_t milliseconds;
+	time_t seconds_value;
+	struct tm tm_value;
+
+	if (parts_ptr == NULL || !isfinite(time_ms)) {
+		errno = EINVAL;
+		return -1;
+	}
+	time_i64 = (int64_t)time_ms;
+	seconds_floor = jsval_date_floor_div_i64(time_i64, JSVAL_DATE_MS_PER_SECOND);
+	milliseconds = time_i64 - seconds_floor * JSVAL_DATE_MS_PER_SECOND;
+	seconds_value = (time_t)seconds_floor;
+	if (localtime_r(&seconds_value, &tm_value) == NULL) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	parts_ptr->year = (int64_t)tm_value.tm_year + 1900;
+	parts_ptr->month = tm_value.tm_mon;
+	parts_ptr->date = tm_value.tm_mday;
+	parts_ptr->day = tm_value.tm_wday;
+	parts_ptr->hours = tm_value.tm_hour;
+	parts_ptr->minutes = tm_value.tm_min;
+	parts_ptr->seconds = tm_value.tm_sec;
+	parts_ptr->milliseconds = (int)milliseconds;
+	if (offset_minutes_ptr != NULL) {
+		double local_as_utc = NAN;
+
+		if (jsval_date_make_utc_ms((double)parts_ptr->year,
+				(double)parts_ptr->month, (double)parts_ptr->date,
+				(double)parts_ptr->hours, (double)parts_ptr->minutes,
+				(double)parts_ptr->seconds,
+				(double)parts_ptr->milliseconds, 0, &local_as_utc) < 0) {
+			return -1;
+		}
+		*offset_minutes_ptr = (int)(((int64_t)local_as_utc - (int64_t)time_ms)
+				/ JSVAL_DATE_MS_PER_MINUTE);
+	}
+	return 0;
+}
+
+static int
+jsval_date_make_string(jsval_region_t *region, const char *text,
+		jsval_t *value_ptr)
+{
+	return jsval_string_new_utf8(region, (const uint8_t *)text, strlen(text),
+			value_ptr);
+}
+
+static int
+jsval_date_get_native_time(jsval_region_t *region, jsval_t date_value,
+		double *time_ptr)
+{
+	jsval_native_date_t *native;
+
+	if (region == NULL || time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_date(region, date_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*time_ptr = native->time_value_ms;
+	return 0;
+}
+
+static int
+jsval_date_set_native_time(jsval_region_t *region, jsval_t date_value,
+		double time_ms)
+{
+	jsval_native_date_t *native;
+	double clipped;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_date(region, date_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_time_clip(time_ms, &clipped) < 0) {
+		return -1;
+	}
+	native->time_value_ms = clipped;
+	return 0;
+}
+
+static int
+jsval_date_alloc(jsval_region_t *region, double time_ms, jsval_t *value_ptr)
+{
+	jsval_native_date_t *native;
+	jsval_off_t off;
+	double clipped;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_time_clip(time_ms, &clipped) < 0) {
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+			(void **)&native) < 0) {
+		return -1;
+	}
+	native->time_value_ms = clipped;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_DATE;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+static int
+jsval_date_parse_digits(const uint8_t *bytes, size_t len, size_t *cursor_ptr,
+		size_t digits, int *value_ptr)
+{
+	size_t i;
+	int value = 0;
+	size_t cursor;
+
+	if (bytes == NULL || cursor_ptr == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	cursor = *cursor_ptr;
+	if (cursor + digits > len) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < digits; i++) {
+		uint8_t ch = bytes[cursor + i];
+
+		if (ch < '0' || ch > '9') {
+			errno = EINVAL;
+			return -1;
+		}
+		value = value * 10 + (int)(ch - '0');
+	}
+	*cursor_ptr = cursor + digits;
+	*value_ptr = value;
+	return 0;
+}
+
+static int
+jsval_date_parse_iso_ms_utf8(const uint8_t *bytes, size_t len,
+		double *time_ptr)
+{
+	size_t cursor = 0;
+	int year = 0;
+	int year_sign = 1;
+	int month = 0;
+	int day = 0;
+	int hours = 0;
+	int minutes = 0;
+	int seconds = 0;
+	int milliseconds = 0;
+	int tz_sign = 1;
+	int tz_hours = 0;
+	int tz_minutes = 0;
+	int have_time = 0;
+	int have_tz = 0;
+	int is_date_only = 0;
+	double time_ms = NAN;
+
+	if (bytes == NULL || time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (bytes[cursor] == '+' || bytes[cursor] == '-') {
+		year_sign = bytes[cursor] == '-' ? -1 : 1;
+		cursor++;
+		if (jsval_date_parse_digits(bytes, len, &cursor, 6, &year) < 0) {
+			return -1;
+		}
+		year *= year_sign;
+	} else {
+		if (jsval_date_parse_digits(bytes, len, &cursor, 4, &year) < 0) {
+			return -1;
+		}
+	}
+	if (cursor >= len || bytes[cursor++] != '-') {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_parse_digits(bytes, len, &cursor, 2, &month) < 0) {
+		return -1;
+	}
+	if (cursor >= len || bytes[cursor++] != '-') {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_parse_digits(bytes, len, &cursor, 2, &day) < 0) {
+		return -1;
+	}
+	if (month < 1 || month > 12 || day < 1 || day > 31) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (cursor == len) {
+		is_date_only = 1;
+	} else {
+		if (bytes[cursor++] != 'T') {
+			errno = EINVAL;
+			return -1;
+		}
+		have_time = 1;
+		if (jsval_date_parse_digits(bytes, len, &cursor, 2, &hours) < 0
+				|| cursor >= len || bytes[cursor++] != ':'
+				|| jsval_date_parse_digits(bytes, len, &cursor, 2, &minutes)
+					< 0) {
+			return -1;
+		}
+		if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (cursor < len && bytes[cursor] == ':') {
+			cursor++;
+			if (jsval_date_parse_digits(bytes, len, &cursor, 2, &seconds) < 0) {
+				return -1;
+			}
+			if (seconds < 0 || seconds > 59) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+		if (cursor < len && bytes[cursor] == '.') {
+			size_t start;
+			size_t digits = 0;
+
+			cursor++;
+			start = cursor;
+			while (cursor < len && bytes[cursor] >= '0' && bytes[cursor] <= '9'
+					&& digits < 3) {
+				milliseconds = milliseconds * 10 + (int)(bytes[cursor] - '0');
+				cursor++;
+				digits++;
+			}
+			if (digits == 0) {
+				errno = EINVAL;
+				return -1;
+			}
+			while (digits < 3) {
+				milliseconds *= 10;
+				digits++;
+			}
+			if (cursor < len && bytes[cursor] >= '0' && bytes[cursor] <= '9') {
+				errno = EINVAL;
+				return -1;
+			}
+			(void)start;
+		}
+		if (cursor < len) {
+			if (bytes[cursor] == 'Z') {
+				have_tz = 1;
+				cursor++;
+			} else if (bytes[cursor] == '+' || bytes[cursor] == '-') {
+				have_tz = 1;
+				tz_sign = bytes[cursor] == '-' ? -1 : 1;
+				cursor++;
+				if (jsval_date_parse_digits(bytes, len, &cursor, 2, &tz_hours)
+						< 0
+						|| cursor >= len || bytes[cursor++] != ':'
+						|| jsval_date_parse_digits(bytes, len, &cursor, 2,
+							&tz_minutes) < 0) {
+					return -1;
+				}
+				if (tz_hours < 0 || tz_hours > 23 || tz_minutes < 0
+						|| tz_minutes > 59) {
+					errno = EINVAL;
+					return -1;
+				}
+			}
+		}
+	}
+	if (cursor != len) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (is_date_only) {
+		return jsval_date_make_utc_ms((double)year, (double)(month - 1),
+				(double)day, 0.0, 0.0, 0.0, 0.0, 0, time_ptr);
+	}
+	if (have_tz) {
+		if (jsval_date_make_utc_ms((double)year, (double)(month - 1),
+				(double)day, (double)hours, (double)minutes, (double)seconds,
+				(double)milliseconds, 0, &time_ms) < 0) {
+			return -1;
+		}
+		if (isfinite(time_ms)) {
+			time_ms -= (double)(tz_sign * (tz_hours * 60 + tz_minutes)) * 60000.0;
+			if (jsval_date_time_clip(time_ms, &time_ms) < 0) {
+				return -1;
+			}
+		}
+		*time_ptr = time_ms;
+		return 0;
+	}
+	if (!have_time) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_date_make_local_ms((double)year, (double)(month - 1),
+			(double)day, (double)hours, (double)minutes, (double)seconds,
+			(double)milliseconds, 0, time_ptr);
+}
+
+static int
+jsval_date_copy_string_utf8(jsval_region_t *region, jsval_t value,
+		size_t *len_ptr, uint8_t *buf, size_t cap, jsmethod_error_t *error)
+{
+	jsval_t string_value;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_stringify_value_to_native(region, value, 0, &string_value, error)
+			< 0) {
+		return -1;
+	}
+	return jsval_string_copy_utf8(region, string_value, buf, cap, len_ptr);
+}
+
+static int
+jsval_date_parse_iso_value(jsval_region_t *region, jsval_t input_value,
+		double *time_ptr, jsmethod_error_t *error)
+{
+	size_t input_len = 0;
+
+	if (region == NULL || time_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_copy_string_utf8(region, input_value, &input_len, NULL, 0,
+			error) < 0) {
+		return -1;
+	}
+	{
+		uint8_t input_buf[input_len ? input_len : 1];
+
+		if (input_len > 0 && jsval_date_copy_string_utf8(region, input_value,
+				&input_len, input_buf, sizeof(input_buf), error) < 0) {
+			return -1;
+		}
+		if (jsval_date_parse_iso_ms_utf8(input_buf, input_len, time_ptr) < 0) {
+			if (error != NULL) {
+				error->kind = JSMETHOD_ERROR_SYNTAX;
+				error->message = "invalid ISO date";
+			}
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int
+jsval_date_get_parts(jsval_region_t *region, jsval_t date_value, int local_time,
+		jsval_date_parts_t *parts_ptr)
+{
+	double time_ms;
+
+	if (parts_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (local_time) {
+		return jsval_date_decompose_local(time_ms, parts_ptr, NULL);
+	}
+	return jsval_date_decompose_utc(time_ms, parts_ptr);
+}
+
+static int
+jsval_date_get_component(jsval_region_t *region, jsval_t date_value,
+		int local_time, jsval_date_component_t component, jsval_t *value_ptr)
+{
+	jsval_date_parts_t parts;
+	double time_ms;
+	double result = NAN;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		*value_ptr = jsval_number(NAN);
+		return 0;
+	}
+	if (jsval_date_get_parts(region, date_value, local_time, &parts) < 0) {
+		return -1;
+	}
+	switch (component) {
+	case JSVAL_DATE_COMPONENT_FULL_YEAR:
+		result = (double)parts.year;
+		break;
+	case JSVAL_DATE_COMPONENT_MONTH:
+		result = (double)parts.month;
+		break;
+	case JSVAL_DATE_COMPONENT_DATE:
+		result = (double)parts.date;
+		break;
+	case JSVAL_DATE_COMPONENT_DAY:
+		result = (double)parts.day;
+		break;
+	case JSVAL_DATE_COMPONENT_HOURS:
+		result = (double)parts.hours;
+		break;
+	case JSVAL_DATE_COMPONENT_MINUTES:
+		result = (double)parts.minutes;
+		break;
+	case JSVAL_DATE_COMPONENT_SECONDS:
+		result = (double)parts.seconds;
+		break;
+	case JSVAL_DATE_COMPONENT_MILLISECONDS:
+		result = (double)parts.milliseconds;
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = jsval_number(result);
+	return 0;
+}
+
+static int
+jsval_date_set_component(jsval_region_t *region, jsval_t date_value,
+		jsval_t input_value, int local_time, jsval_date_component_t component,
+		jsval_t *value_ptr)
+{
+	jsval_date_parts_t parts;
+	double time_ms;
+	double input_number;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, input_value, &input_number) < 0) {
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms) || !isfinite(input_number)) {
+		if (jsval_date_set_native_time(region, date_value, NAN) < 0) {
+			return -1;
+		}
+		*value_ptr = jsval_number(NAN);
+		return 0;
+	}
+	if (jsval_date_get_parts(region, date_value, local_time, &parts) < 0) {
+		return -1;
+	}
+	switch (component) {
+	case JSVAL_DATE_COMPONENT_FULL_YEAR:
+		if (local_time) {
+			if (jsval_date_make_local_ms(input_number, (double)parts.month,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms(input_number, (double)parts.month,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_MONTH:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year, input_number,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, input_number,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_DATE:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year,
+					(double)parts.month, input_number, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, (double)parts.month,
+					input_number, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_HOURS:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year,
+					(double)parts.month, (double)parts.date, input_number,
+					(double)parts.minutes, (double)parts.seconds,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, (double)parts.month,
+					(double)parts.date, input_number, (double)parts.minutes,
+					(double)parts.seconds, (double)parts.milliseconds, 0,
+					&time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_MINUTES:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year,
+					(double)parts.month, (double)parts.date,
+					(double)parts.hours, input_number,
+					(double)parts.seconds, (double)parts.milliseconds, 0,
+					&time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, (double)parts.month,
+					(double)parts.date, (double)parts.hours, input_number,
+					(double)parts.seconds, (double)parts.milliseconds, 0,
+					&time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_SECONDS:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year,
+					(double)parts.month, (double)parts.date,
+					(double)parts.hours, (double)parts.minutes,
+					input_number, (double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, (double)parts.month,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, input_number,
+					(double)parts.milliseconds, 0, &time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	case JSVAL_DATE_COMPONENT_MILLISECONDS:
+		if (local_time) {
+			if (jsval_date_make_local_ms((double)parts.year,
+					(double)parts.month, (double)parts.date,
+					(double)parts.hours, (double)parts.minutes,
+					(double)parts.seconds, input_number, 0, &time_ms) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_date_make_utc_ms((double)parts.year, (double)parts.month,
+					(double)parts.date, (double)parts.hours,
+					(double)parts.minutes, (double)parts.seconds, input_number, 0,
+					&time_ms) < 0) {
+				return -1;
+			}
+		}
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_set_native_time(region, date_value, time_ms) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(time_ms);
+	return 0;
+}
+
+static int
+jsval_date_format_iso(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	jsval_date_parts_t parts;
+	double time_ms;
+	char buf[40];
+	int len;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_RANGE;
+			error->message = "Invalid time value";
+		}
+		return -1;
+	}
+	if (jsval_date_decompose_utc(time_ms, &parts) < 0) {
+		return -1;
+	}
+	if (parts.year >= 0 && parts.year <= 9999) {
+		len = snprintf(buf, sizeof(buf),
+				"%04lld-%02d-%02dT%02d:%02d:%02d.%03dZ",
+				(long long)parts.year, parts.month + 1, parts.date,
+				parts.hours, parts.minutes, parts.seconds,
+				parts.milliseconds);
+	} else {
+		len = snprintf(buf, sizeof(buf),
+				"%+07lld-%02d-%02dT%02d:%02d:%02d.%03dZ",
+				(long long)parts.year, parts.month + 1, parts.date,
+				parts.hours, parts.minutes, parts.seconds,
+				parts.milliseconds);
+	}
+	if (len < 0 || (size_t)len >= sizeof(buf)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, (const uint8_t *)buf, (size_t)len,
+			value_ptr);
+}
+
+static int
+jsval_date_format_utc_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	static const char *weekdays[] = {
+		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+	};
+	static const char *months[] = {
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+	};
+	jsval_date_parts_t parts;
+	double time_ms;
+	char buf[48];
+	int len;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		return jsval_date_make_string(region, "Invalid Date", value_ptr);
+	}
+	if (jsval_date_decompose_utc(time_ms, &parts) < 0) {
+		return -1;
+	}
+	len = snprintf(buf, sizeof(buf), "%s, %02d %s %lld %02d:%02d:%02d GMT",
+			weekdays[parts.day], parts.date, months[parts.month],
+			(long long)parts.year, parts.hours, parts.minutes,
+			parts.seconds);
+	if (len < 0 || (size_t)len >= sizeof(buf)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, (const uint8_t *)buf, (size_t)len,
+			value_ptr);
+}
+
+static int
+jsval_date_format_local_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	static const char *weekdays[] = {
+		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+	};
+	static const char *months[] = {
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+	};
+	jsval_date_parts_t parts;
+	double time_ms;
+	char buf[64];
+	int len;
+	int offset_minutes = 0;
+	char sign = '+';
+	int offset_abs;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		return jsval_date_make_string(region, "Invalid Date", value_ptr);
+	}
+	if (jsval_date_decompose_local(time_ms, &parts, &offset_minutes) < 0) {
+		return -1;
+	}
+	if (offset_minutes < 0) {
+		sign = '-';
+		offset_abs = -offset_minutes;
+	} else {
+		offset_abs = offset_minutes;
+	}
+	len = snprintf(buf, sizeof(buf), "%s %s %02d %lld %02d:%02d:%02d GMT%c%02d%02d",
+			weekdays[parts.day], months[parts.month], parts.date,
+			(long long)parts.year, parts.hours, parts.minutes,
+			parts.seconds, sign, offset_abs / 60, offset_abs % 60);
+	if (len < 0 || (size_t)len >= sizeof(buf)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, (const uint8_t *)buf, (size_t)len,
+			value_ptr);
+}
+
+static int
+jsval_date_build_from_fields(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, int local_time, jsval_t *value_ptr,
+		jsmethod_error_t *error)
+{
+	double args[7];
+	double time_ms = NAN;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (argc == 0) {
+		return jsval_date_alloc(region, NAN, value_ptr);
+	}
+	args[0] = NAN;
+	args[1] = 0.0;
+	args[2] = 1.0;
+	args[3] = 0.0;
+	args[4] = 0.0;
+	args[5] = 0.0;
+	args[6] = 0.0;
+	for (i = 0; i < argc && i < 7; i++) {
+		if (jsval_to_number(region, argv[i], &args[i]) < 0) {
+			return -1;
+		}
+	}
+	if (local_time) {
+		if (jsval_date_make_local_ms(args[0], args[1], args[2], args[3],
+				args[4], args[5], args[6], 1, &time_ms) < 0) {
+			return -1;
+		}
+	} else {
+		if (jsval_date_make_utc_ms(args[0], args[1], args[2], args[3], args[4],
+				args[5], args[6], 1, &time_ms) < 0) {
+			return -1;
+		}
+	}
+	return jsval_date_alloc(region, time_ms, value_ptr);
+}
+
+int jsval_date_new_now(jsval_region_t *region, jsval_t *value_ptr)
+{
+	double time_ms;
+
+	if (jsval_date_now_ms(&time_ms) < 0) {
+		return -1;
+	}
+	return jsval_date_alloc(region, time_ms, value_ptr);
+}
+
+int jsval_date_new_time(jsval_region_t *region, jsval_t time_value,
+		jsval_t *value_ptr)
+{
+	double time_ms;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, time_value, &time_ms) < 0) {
+		return -1;
+	}
+	return jsval_date_alloc(region, time_ms, value_ptr);
+}
+
+int jsval_date_new_iso(jsval_region_t *region, jsval_t input_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	double time_ms;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_parse_iso_value(region, input_value, &time_ms, error) < 0) {
+		return -1;
+	}
+	return jsval_date_alloc(region, time_ms, value_ptr);
+}
+
+int jsval_date_new_local_fields(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_date_build_from_fields(region, argc, argv, 1, value_ptr, error);
+}
+
+int jsval_date_new_utc_fields(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_date_build_from_fields(region, argc, argv, 0, value_ptr, error);
+}
+
+int jsval_date_value_of(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_time(region, date_value, value_ptr);
+}
+
+int jsval_date_get_time(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	double time_ms;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(time_ms);
+	return 0;
+}
+
+int jsval_date_set_time(jsval_region_t *region, jsval_t date_value,
+		jsval_t time_value, jsval_t *value_ptr)
+{
+	double time_ms;
+	double clipped;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, time_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (jsval_date_time_clip(time_ms, &clipped) < 0) {
+		return -1;
+	}
+	if (jsval_date_set_native_time(region, date_value, clipped) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(clipped);
+	return 0;
+}
+
+int jsval_date_is_valid(jsval_region_t *region, jsval_t date_value,
+		int *is_valid_ptr)
+{
+	double time_ms;
+
+	if (is_valid_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	*is_valid_ptr = isfinite(time_ms);
+	return 0;
+}
+
+int jsval_date_get_utc_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_FULL_YEAR, value_ptr);
+}
+
+int jsval_date_set_utc_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t year_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, year_value, 0,
+			JSVAL_DATE_COMPONENT_FULL_YEAR, value_ptr);
+}
+
+int jsval_date_get_utc_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_MONTH, value_ptr);
+}
+
+int jsval_date_set_utc_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t month_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, month_value, 0,
+			JSVAL_DATE_COMPONENT_MONTH, value_ptr);
+}
+
+int jsval_date_get_utc_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_DATE, value_ptr);
+}
+
+int jsval_date_set_utc_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t day_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, day_value, 0,
+			JSVAL_DATE_COMPONENT_DATE, value_ptr);
+}
+
+int jsval_date_get_utc_day(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_DAY, value_ptr);
+}
+
+int jsval_date_get_utc_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_HOURS, value_ptr);
+}
+
+int jsval_date_set_utc_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t hours_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, hours_value, 0,
+			JSVAL_DATE_COMPONENT_HOURS, value_ptr);
+}
+
+int jsval_date_get_utc_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_MINUTES, value_ptr);
+}
+
+int jsval_date_set_utc_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t minutes_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, minutes_value, 0,
+			JSVAL_DATE_COMPONENT_MINUTES, value_ptr);
+}
+
+int jsval_date_get_utc_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_SECONDS, value_ptr);
+}
+
+int jsval_date_set_utc_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t seconds_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, seconds_value, 0,
+			JSVAL_DATE_COMPONENT_SECONDS, value_ptr);
+}
+
+int jsval_date_get_utc_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 0,
+			JSVAL_DATE_COMPONENT_MILLISECONDS, value_ptr);
+}
+
+int jsval_date_set_utc_milliseconds(jsval_region_t *region,
+		jsval_t date_value, jsval_t milliseconds_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, milliseconds_value, 0,
+			JSVAL_DATE_COMPONENT_MILLISECONDS, value_ptr);
+}
+
+int jsval_date_get_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_FULL_YEAR, value_ptr);
+}
+
+int jsval_date_set_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t year_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, year_value, 1,
+			JSVAL_DATE_COMPONENT_FULL_YEAR, value_ptr);
+}
+
+int jsval_date_get_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_MONTH, value_ptr);
+}
+
+int jsval_date_set_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t month_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, month_value, 1,
+			JSVAL_DATE_COMPONENT_MONTH, value_ptr);
+}
+
+int jsval_date_get_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_DATE, value_ptr);
+}
+
+int jsval_date_set_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t day_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, day_value, 1,
+			JSVAL_DATE_COMPONENT_DATE, value_ptr);
+}
+
+int jsval_date_get_day(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_DAY, value_ptr);
+}
+
+int jsval_date_get_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_HOURS, value_ptr);
+}
+
+int jsval_date_set_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t hours_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, hours_value, 1,
+			JSVAL_DATE_COMPONENT_HOURS, value_ptr);
+}
+
+int jsval_date_get_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_MINUTES, value_ptr);
+}
+
+int jsval_date_set_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t minutes_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, minutes_value, 1,
+			JSVAL_DATE_COMPONENT_MINUTES, value_ptr);
+}
+
+int jsval_date_get_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_SECONDS, value_ptr);
+}
+
+int jsval_date_set_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t seconds_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, seconds_value, 1,
+			JSVAL_DATE_COMPONENT_SECONDS, value_ptr);
+}
+
+int jsval_date_get_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_get_component(region, date_value, 1,
+			JSVAL_DATE_COMPONENT_MILLISECONDS, value_ptr);
+}
+
+int jsval_date_set_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t milliseconds_value, jsval_t *value_ptr)
+{
+	return jsval_date_set_component(region, date_value, milliseconds_value, 1,
+			JSVAL_DATE_COMPONENT_MILLISECONDS, value_ptr);
+}
+
+int jsval_date_to_iso_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	return jsval_date_format_iso(region, date_value, value_ptr, error);
+}
+
+int jsval_date_to_utc_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_format_utc_string(region, date_value, value_ptr);
+}
+
+int jsval_date_to_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr)
+{
+	return jsval_date_format_local_string(region, date_value, value_ptr);
+}
+
+int jsval_date_to_json(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	double time_ms;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_get_native_time(region, date_value, &time_ms) < 0) {
+		return -1;
+	}
+	if (!isfinite(time_ms)) {
+		*value_ptr = jsval_null();
+		return 0;
+	}
+	return jsval_date_format_iso(region, date_value, value_ptr, error);
+}
+
+int jsval_date_now(jsval_region_t *region, jsval_t *value_ptr)
+{
+	double time_ms;
+	double clipped;
+
+	(void)region;
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_now_ms(&time_ms) < 0
+			|| jsval_date_time_clip(time_ms, &clipped) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(clipped);
+	return 0;
+}
+
+int jsval_date_utc(jsval_region_t *region, size_t argc, const jsval_t *argv,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	double args[7];
+	double time_ms = NAN;
+	size_t i;
+
+	if (value_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (argc == 0) {
+		*value_ptr = jsval_number(NAN);
+		return 0;
+	}
+	args[0] = NAN;
+	args[1] = 0.0;
+	args[2] = 1.0;
+	args[3] = 0.0;
+	args[4] = 0.0;
+	args[5] = 0.0;
+	args[6] = 0.0;
+	for (i = 0; i < argc && i < 7; i++) {
+		if (jsval_to_number(region, argv[i], &args[i]) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_date_make_utc_ms(args[0], args[1], args[2], args[3], args[4],
+			args[5], args[6], 1, &time_ms) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(time_ms);
+	return 0;
+}
+
+int jsval_date_parse_iso(jsval_region_t *region, jsval_t input_value,
+		jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	double time_ms;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_date_parse_iso_value(region, input_value, &time_ms, error) < 0) {
+		return -1;
+	}
+	*value_ptr = jsval_number(time_ms);
+	return 0;
 }
 
 int jsval_bigint_new_i64(jsval_region_t *region, int64_t value,
@@ -16638,6 +18182,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_DATE:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -16731,6 +18276,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		return 1;
 	default:
 		return 0;
@@ -16811,6 +18357,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
+	case JSVAL_KIND_DATE:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -16849,6 +18396,7 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_SET
 			|| left.kind == JSVAL_KIND_MAP
 			|| left.kind == JSVAL_KIND_ITERATOR
+			|| left.kind == JSVAL_KIND_DATE
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
@@ -16857,7 +18405,8 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| right.kind == JSVAL_KIND_URL_SEARCH_PARAMS
 			|| right.kind == JSVAL_KIND_SET
 			|| right.kind == JSVAL_KIND_MAP
-			|| right.kind == JSVAL_KIND_ITERATOR) {
+			|| right.kind == JSVAL_KIND_ITERATOR
+			|| right.kind == JSVAL_KIND_DATE) {
 		errno = ENOTSUP;
 		return -1;
 	}

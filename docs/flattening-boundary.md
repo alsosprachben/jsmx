@@ -22,7 +22,7 @@ The design target is:
 caller-provided memory:
 
 - strings, Unicode, casing, normalization, and well-formedness
-- page-resident values, objects, arrays, Symbols, BigInts, and JSON-backed
+- page-resident values, objects, arrays, Symbols, BigInts, Dates, and JSON-backed
   reads
 - explicit promotion from JSON-backed storage to native storage
 - deterministic ordered object key / value access
@@ -79,6 +79,12 @@ caller-provided memory:
   - first-class storage in native objects, arrays, `Set`, and `Map`
   - identity-sensitive equality without broadening into generic object
     dispatch or constructor semantics
+- native `Date` object semantics such as:
+  - epoch-millisecond storage with explicit invalid-date `NaN` state
+  - bounded ISO parse plus explicit `Date.now()` / `Date.UTC(...)` helpers
+  - UTC and host-local field getters/setters
+  - ISO / UTC / local / JSON stringification helpers
+  - host-libc local-time rules rather than repo-owned timezone data
 - explicit native string iterator production and stepping such as:
   - values grouped by JS string iterator code-point semantics
   - keys and entries reported in UTF-16 code-unit offsets
@@ -108,6 +114,8 @@ Examples:
 - accessors and descriptor-heavy semantics
 - `Symbol.toPrimitive` or custom coercion hooks
 - JS-visible `BigInt()` constructor semantics beyond the explicit helper layer
+- broad legacy Date-string parsing and host-independent timezone policy beyond
+  the explicit ISO and libc-local helpers
 - bigint division, remainder, bitwise, and shift semantics
 - closures, dynamic `this`, `arguments`, constructor calls, and bound-function
   protocol semantics

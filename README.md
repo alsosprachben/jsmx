@@ -70,7 +70,7 @@ That makes semantic correctness more important than surface familiarity:
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
-    `Symbol`, `BigInt`, `Set`, `Map`, and explicit iterator values
+    `Symbol`, `BigInt`, `Date`, `Set`, `Map`, and explicit iterator values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -133,6 +133,13 @@ That makes semantic correctness more important than surface familiarity:
     - first-class storage in native objects, arrays, `Set`, and `Map`
     - `typeof === "function"` without broadening into closures, dynamic `this`,
       or constructor semantics
+  - native `Date` helpers for:
+    - object-like identity-bearing values backed by epoch-millisecond time
+      values with `NaN` invalid-date state
+    - explicit `Date.now()` / `Date.UTC(...)` / bounded ISO parse helpers
+    - UTC and local field getters/setters
+    - ISO, UTC, local, and JSON stringification helpers
+    - host-libc local-time conversion rather than repo-owned timezone data
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,

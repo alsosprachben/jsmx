@@ -7,6 +7,7 @@
 #include "jsval.h"
 
 static void assert_number_value(jsval_t value, double expected);
+static void assert_nan_value(jsval_t value);
 
 typedef struct test_replace_string_callback_ctx_s {
 	int call_count;
@@ -423,6 +424,173 @@ static void test_function_semantics(void)
 	errno = 0;
 	assert(jsval_copy_json(&region, object, NULL, 0, NULL) < 0);
 	assert(errno == ENOTSUP);
+}
+
+static void test_date_semantics(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t result;
+	jsval_t date_a;
+	jsval_t date_b;
+	jsval_t parsed;
+	jsval_t invalid;
+	jsval_t local_date;
+	jsval_t ctor_99;
+	jsval_t input;
+	jsval_t bad_input;
+	jsval_t args[7];
+	size_t len = 0;
+	int valid = 0;
+	jsmethod_error_t error;
+	uint8_t buf[128];
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_date_now(&region, &result) == 0);
+	assert(result.kind == JSVAL_KIND_NUMBER);
+	assert(isfinite(result.as.number));
+	assert(jsval_date_new_now(&region, &date_a) == 0);
+	assert(date_a.kind == JSVAL_KIND_DATE);
+	assert(jsval_truthy(&region, date_a) == 1);
+	assert(jsval_typeof(&region, date_a, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_date_is_valid(&region, date_a, &valid) == 0);
+	assert(valid == 1);
+
+	assert(jsval_date_new_time(&region, jsval_number(1577934245006.0),
+			&date_a) == 0);
+	assert(jsval_date_new_time(&region, jsval_number(1577934245006.0),
+			&date_b) == 0);
+	assert(jsval_strict_eq(&region, date_a, date_a) == 1);
+	assert(jsval_strict_eq(&region, date_a, date_b) == 0);
+	assert(jsval_date_get_time(&region, date_a, &result) == 0);
+	assert_number_value(result, 1577934245006.0);
+	assert(jsval_date_value_of(&region, date_a, &result) == 0);
+	assert_number_value(result, 1577934245006.0);
+
+	assert(jsval_date_get_utc_full_year(&region, date_a, &result) == 0);
+	assert_number_value(result, 2020.0);
+	assert(jsval_date_get_utc_month(&region, date_a, &result) == 0);
+	assert_number_value(result, 0.0);
+	assert(jsval_date_get_utc_date(&region, date_a, &result) == 0);
+	assert_number_value(result, 2.0);
+	assert(jsval_date_get_utc_day(&region, date_a, &result) == 0);
+	assert_number_value(result, 4.0);
+	assert(jsval_date_get_utc_hours(&region, date_a, &result) == 0);
+	assert_number_value(result, 3.0);
+	assert(jsval_date_get_utc_minutes(&region, date_a, &result) == 0);
+	assert_number_value(result, 4.0);
+	assert(jsval_date_get_utc_seconds(&region, date_a, &result) == 0);
+	assert_number_value(result, 5.0);
+	assert(jsval_date_get_utc_milliseconds(&region, date_a, &result) == 0);
+	assert_number_value(result, 6.0);
+
+	memset(&error, 0, sizeof(error));
+	assert(jsval_date_to_iso_string(&region, date_a, &result, &error) == 0);
+	assert_string(&region, result, "2020-01-02T03:04:05.006Z");
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+	assert(jsval_date_to_utc_string(&region, date_a, &result) == 0);
+	assert_string(&region, result, "Thu, 02 Jan 2020 03:04:05 GMT");
+	assert(jsval_date_to_json(&region, date_a, &result, &error) == 0);
+	assert_string(&region, result, "2020-01-02T03:04:05.006Z");
+
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"2020-01-02T03:04:05.006Z",
+			sizeof("2020-01-02T03:04:05.006Z") - 1, &input) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_date_parse_iso(&region, input, &result, &error) == 0);
+	assert_number_value(result, 1577934245006.0);
+	assert(jsval_date_new_iso(&region, input, &parsed, &error) == 0);
+	assert(jsval_date_to_iso_string(&region, parsed, &result, &error) == 0);
+	assert_string(&region, result, "2020-01-02T03:04:05.006Z");
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"bad-date", 8,
+			&bad_input) == 0);
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_date_parse_iso(&region, bad_input, &result, &error) < 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_SYNTAX);
+
+	args[0] = jsval_number(99.0);
+	args[1] = jsval_number(0.0);
+	args[2] = jsval_number(2.0);
+	args[3] = jsval_number(3.0);
+	args[4] = jsval_number(4.0);
+	args[5] = jsval_number(5.0);
+	args[6] = jsval_number(6.0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_date_new_utc_fields(&region, 7, args, &ctor_99, &error) == 0);
+	assert(jsval_date_get_utc_full_year(&region, ctor_99, &result) == 0);
+	assert_number_value(result, 1999.0);
+	assert(jsval_date_utc(&region, 7, args, &result, &error) == 0);
+	assert_number_value(result, 915246245006.0);
+
+	assert(jsval_date_set_utc_month(&region, ctor_99, jsval_number(1.0),
+			&result) == 0);
+	assert_number_value(result, 917924645006.0);
+	assert(jsval_date_get_utc_month(&region, ctor_99, &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_date_set_utc_date(&region, ctor_99, jsval_number(29.0),
+			&result) == 0);
+	assert(jsval_date_get_utc_date(&region, ctor_99, &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_date_get_utc_month(&region, ctor_99, &result) == 0);
+	assert_number_value(result, 2.0);
+
+	memset(&error, 0, sizeof(error));
+	assert(jsval_date_new_local_fields(&region, 7, args, &local_date,
+			&error) == 0);
+	assert(jsval_date_get_full_year(&region, local_date, &result) == 0);
+	assert_number_value(result, 1999.0);
+	assert(jsval_date_get_month(&region, local_date, &result) == 0);
+	assert_number_value(result, 0.0);
+	assert(jsval_date_get_date(&region, local_date, &result) == 0);
+	assert_number_value(result, 2.0);
+	assert(jsval_date_get_hours(&region, local_date, &result) == 0);
+	assert_number_value(result, 3.0);
+	assert(jsval_date_get_minutes(&region, local_date, &result) == 0);
+	assert_number_value(result, 4.0);
+	assert(jsval_date_get_seconds(&region, local_date, &result) == 0);
+	assert_number_value(result, 5.0);
+	assert(jsval_date_get_milliseconds(&region, local_date, &result) == 0);
+	assert_number_value(result, 6.0);
+	assert(jsval_date_set_month(&region, local_date, jsval_number(1.0),
+			&result) == 0);
+	assert(jsval_date_get_month(&region, local_date, &result) == 0);
+	assert_number_value(result, 1.0);
+	assert(jsval_date_set_hours(&region, local_date, jsval_number(23.0),
+			&result) == 0);
+	assert(jsval_date_get_hours(&region, local_date, &result) == 0);
+	assert_number_value(result, 23.0);
+	assert(jsval_date_to_string(&region, local_date, &result) == 0);
+	assert(result.kind == JSVAL_KIND_STRING);
+	assert(jsval_string_copy_utf8(&region, result, NULL, 0, &len) == 0);
+	assert(len > 3 && len < sizeof(buf));
+	assert(jsval_string_copy_utf8(&region, result, buf, len, NULL) == 0);
+	buf[len] = '\0';
+	assert(strstr((const char *)buf, "GMT") != NULL);
+
+	assert(jsval_date_new_time(&region, jsval_number(NAN), &invalid) == 0);
+	assert(jsval_date_is_valid(&region, invalid, &valid) == 0);
+	assert(valid == 0);
+	assert(jsval_date_get_time(&region, invalid, &result) == 0);
+	assert_nan_value(result);
+	assert(jsval_date_get_utc_full_year(&region, invalid, &result) == 0);
+	assert_nan_value(result);
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_date_to_iso_string(&region, invalid, &result, &error) < 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_RANGE);
+	assert(strcmp(error.message, "Invalid time value") == 0);
+	assert(jsval_date_to_utc_string(&region, invalid, &result) == 0);
+	assert_string(&region, result, "Invalid Date");
+	assert(jsval_date_to_string(&region, invalid, &result) == 0);
+	assert_string(&region, result, "Invalid Date");
+	assert(jsval_date_to_json(&region, invalid, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_NULL);
 }
 
 static void test_set_semantics(void)
@@ -7215,6 +7383,7 @@ int main(void)
 	test_symbol_semantics();
 	test_bigint_semantics();
 	test_function_semantics();
+	test_date_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

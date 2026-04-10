@@ -20,7 +20,8 @@ Reusable host/module bridges for production programs live under
 Treat these as direct-lowerable when the entrypoint stays inside the current flattened boundary:
 
 - value kinds:
-  - `undefined`, `null`, booleans, numbers, strings, symbols, bigints
+  - `undefined`, `null`, booleans, numbers, strings, symbols, bigints, and
+    dates
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -38,6 +39,17 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
   - relational comparison
   - `typeof`
   - nullish detection and explicit `??` / ternary lowering patterns
+  - native `Date` construction/value helpers through:
+    - `jsval_date_new_now(...)`
+    - `jsval_date_new_time(...)`
+    - `jsval_date_new_iso(...)`
+    - `jsval_date_new_local_fields(...)`
+    - `jsval_date_new_utc_fields(...)`
+    - `jsval_date_now(...)`
+    - `jsval_date_utc(...)`
+    - `jsval_date_parse_iso(...)`
+    - UTC and local field getter/setter helpers
+    - `toISOString`, `toUTCString`, `toString`, and `toJSON`
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -129,6 +141,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - sparse arrays or holes
   - JS-visible `BigInt()` constructor semantics
   - bigint division, remainder, bitwise, or shift operators
+  - broad legacy Date-string parsing or host-independent timezone policy
+    beyond the bounded ISO + libc-local Date helpers
   - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
     protocol semantics and iterable duck typing
   - functions as values with closure semantics, dynamic `this`, `arguments`,

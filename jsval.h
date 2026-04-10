@@ -36,7 +36,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_ITERATOR = 13,
 	JSVAL_KIND_SYMBOL = 14,
 	JSVAL_KIND_BIGINT = 15,
-	JSVAL_KIND_FUNCTION = 16
+	JSVAL_KIND_FUNCTION = 16,
+	JSVAL_KIND_DATE = 17
 } jsval_kind_t;
 
 typedef enum jsval_iterator_selector_e {
@@ -144,6 +145,96 @@ int jsval_function_length(jsval_region_t *region, jsval_t function,
 		jsval_t *value_ptr);
 int jsval_function_call(jsval_region_t *region, jsval_t function, size_t argc,
 		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error);
+int jsval_date_new_now(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_date_new_time(jsval_region_t *region, jsval_t time_value,
+		jsval_t *value_ptr);
+int jsval_date_new_iso(jsval_region_t *region, jsval_t input_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_new_local_fields(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_new_utc_fields(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_value_of(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_get_time(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_time(jsval_region_t *region, jsval_t date_value,
+		jsval_t time_value, jsval_t *value_ptr);
+int jsval_date_is_valid(jsval_region_t *region, jsval_t date_value,
+		int *is_valid_ptr);
+int jsval_date_get_utc_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t year_value, jsval_t *value_ptr);
+int jsval_date_get_utc_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t month_value, jsval_t *value_ptr);
+int jsval_date_get_utc_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t day_value, jsval_t *value_ptr);
+int jsval_date_get_utc_day(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_get_utc_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t hours_value, jsval_t *value_ptr);
+int jsval_date_get_utc_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t minutes_value, jsval_t *value_ptr);
+int jsval_date_get_utc_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t seconds_value, jsval_t *value_ptr);
+int jsval_date_get_utc_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_utc_milliseconds(jsval_region_t *region,
+		jsval_t date_value, jsval_t milliseconds_value, jsval_t *value_ptr);
+int jsval_date_get_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_full_year(jsval_region_t *region, jsval_t date_value,
+		jsval_t year_value, jsval_t *value_ptr);
+int jsval_date_get_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_month(jsval_region_t *region, jsval_t date_value,
+		jsval_t month_value, jsval_t *value_ptr);
+int jsval_date_get_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_date(jsval_region_t *region, jsval_t date_value,
+		jsval_t day_value, jsval_t *value_ptr);
+int jsval_date_get_day(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_get_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_hours(jsval_region_t *region, jsval_t date_value,
+		jsval_t hours_value, jsval_t *value_ptr);
+int jsval_date_get_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_minutes(jsval_region_t *region, jsval_t date_value,
+		jsval_t minutes_value, jsval_t *value_ptr);
+int jsval_date_get_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_seconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t seconds_value, jsval_t *value_ptr);
+int jsval_date_get_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_set_milliseconds(jsval_region_t *region, jsval_t date_value,
+		jsval_t milliseconds_value, jsval_t *value_ptr);
+int jsval_date_to_iso_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_to_utc_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_to_string(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr);
+int jsval_date_to_json(jsval_region_t *region, jsval_t date_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_now(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_date_utc(jsval_region_t *region, size_t argc, const jsval_t *argv,
+		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_date_parse_iso(jsval_region_t *region, jsval_t input_value,
+		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 

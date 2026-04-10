@@ -2428,6 +2428,221 @@ static generated_status_t generated_smoke_jsval_iterators(char *detail,
 	return GENERATED_PASS;
 }
 
+static generated_status_t generated_smoke_jsval_date(char *detail,
+		size_t cap)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t now_value;
+	jsval_t date_value;
+	jsval_t parsed_value;
+	jsval_t local_value;
+	jsval_t invalid_value;
+	jsval_t input;
+	jsval_t bad_input;
+	jsval_t result;
+	jsval_t args[7];
+	size_t len = 0;
+	int valid = 0;
+	jsmethod_error_t error;
+	generated_status_t status;
+	uint8_t buf[128];
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_date_now(&region, &now_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_now");
+	}
+	if (now_value.kind != JSVAL_KIND_NUMBER || !isfinite(now_value.as.number)) {
+		return generated_failf(detail, cap,
+				"expected Date.now() helper to return a finite number");
+	}
+	if (jsval_date_new_now(&region, &date_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_new_now");
+	}
+	if (!jsval_truthy(&region, date_value)) {
+		return generated_failf(detail, cap, "expected Date object to be truthy");
+	}
+	if (jsval_typeof(&region, date_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(date)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"object", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_is_valid(&region, date_value, &valid) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_is_valid(now)");
+	}
+	if (!valid) {
+		return generated_failf(detail, cap, "expected new Date() helper to be valid");
+	}
+
+	if (jsval_date_new_time(&region, jsval_number(1577934245006.0),
+			&date_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_new_time");
+	}
+	if (jsval_date_get_utc_full_year(&region, date_value, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_date_get_utc_full_year");
+	}
+	status = generated_expect_number(&region, result, 2020.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_get_utc_day(&region, date_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_get_utc_day");
+	}
+	status = generated_expect_number(&region, result, 4.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_date_to_iso_string(&region, date_value, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_to_iso_string");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"2020-01-02T03:04:05.006Z",
+			sizeof("2020-01-02T03:04:05.006Z") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_to_utc_string(&region, date_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_to_utc_string");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"Thu, 02 Jan 2020 03:04:05 GMT",
+			sizeof("Thu, 02 Jan 2020 03:04:05 GMT") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_string_new_utf8(&region,
+			(const uint8_t *)"2020-01-02T03:04:05.006Z",
+			sizeof("2020-01-02T03:04:05.006Z") - 1, &input) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(date)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_date_parse_iso(&region, input, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_parse_iso");
+	}
+	status = generated_expect_number(&region, result, 1577934245006.0, detail,
+			cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_new_iso(&region, input, &parsed_value, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_new_iso");
+	}
+	if (jsval_date_to_iso_string(&region, parsed_value, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_date_to_iso_string(parsed)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"2020-01-02T03:04:05.006Z",
+			sizeof("2020-01-02T03:04:05.006Z") - 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	args[0] = jsval_number(99.0);
+	args[1] = jsval_number(0.0);
+	args[2] = jsval_number(2.0);
+	args[3] = jsval_number(3.0);
+	args[4] = jsval_number(4.0);
+	args[5] = jsval_number(5.0);
+	args[6] = jsval_number(6.0);
+	if (jsval_date_utc(&region, 7, args, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_utc");
+	}
+	status = generated_expect_number(&region, result, 915246245006.0, detail,
+			cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_new_local_fields(&region, 7, args, &local_value, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_new_local_fields");
+	}
+	if (jsval_date_get_full_year(&region, local_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_get_full_year");
+	}
+	status = generated_expect_number(&region, result, 1999.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_set_hours(&region, local_value, jsval_number(23.0),
+			&result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_set_hours");
+	}
+	if (jsval_date_get_hours(&region, local_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_get_hours");
+	}
+	status = generated_expect_number(&region, result, 23.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_date_to_string(&region, local_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_to_string");
+	}
+	if (jsval_string_copy_utf8(&region, result, NULL, 0, &len) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_copy_utf8(local length)");
+	}
+	if (len == 0 || len >= sizeof(buf)) {
+		return generated_failf(detail, cap,
+				"expected non-empty local date string");
+	}
+	if (jsval_string_copy_utf8(&region, result, buf, len, NULL) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_copy_utf8(local copy)");
+	}
+	buf[len] = '\0';
+	if (strstr((const char *)buf, "GMT") == NULL) {
+		return generated_failf(detail, cap,
+				"expected local date string to include GMT offset");
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"bad-date", 8,
+			&bad_input) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(bad-date)");
+	}
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_date_parse_iso(&region, bad_input, &result, &error) >= 0
+			|| errno != EINVAL || error.kind != JSMETHOD_ERROR_SYNTAX) {
+		return generated_failf(detail, cap,
+				"expected invalid ISO parse to fail with syntax error");
+	}
+
+	if (jsval_date_new_time(&region, jsval_number(NAN), &invalid_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_new_time(NaN)");
+	}
+	if (jsval_date_get_time(&region, invalid_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_get_time(invalid)");
+	}
+	status = generated_expect_nan_value(result, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_date_to_iso_string(&region, invalid_value, &result, &error) >= 0
+			|| errno != EINVAL || error.kind != JSMETHOD_ERROR_RANGE) {
+		return generated_failf(detail, cap,
+				"expected invalid date toISOString to fail with range error");
+	}
+	if (jsval_date_to_json(&region, invalid_value, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_date_to_json(invalid)");
+	}
+	if (result.kind != JSVAL_KIND_NULL) {
+		return generated_failf(detail, cap,
+				"expected invalid date JSON result to stay null");
+	}
+
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		size_t cap)
 {
@@ -9929,6 +10144,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_symbol", generated_smoke_jsval_symbol},
 	{"smoke", "jsval_bigint", generated_smoke_jsval_bigint},
 	{"smoke", "jsval_function", generated_smoke_jsval_function},
+	{"smoke", "jsval_date", generated_smoke_jsval_date},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

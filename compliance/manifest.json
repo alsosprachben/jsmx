@@ -3917,6 +3917,56 @@
       "notes": "Repo-authored idiomatic value-semantics fixture for native function values stored in native object, array, Set, and Map containers and invoked after retrieval."
     },
     {
+      "id": "jsmx-values-date-primitive-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/date-primitive-parity.js",
+      "generated": "compliance/generated/values/jsmx/date-primitive-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native Date typeof, truthiness, identity, and time-value helper parity."
+    },
+    {
+      "id": "jsmx-values-date-utc-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/date-utc-parity.js",
+      "generated": "compliance/generated/values/jsmx/date-utc-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native Date.UTC construction plus UTC field getter and setter parity."
+    },
+    {
+      "id": "jsmx-values-date-local-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/date-local-parity.js",
+      "generated": "compliance/generated/values/jsmx/date-local-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native local-field Date construction and local getter/setter parity through host libc time rules."
+    },
+    {
+      "id": "jsmx-values-date-iso-parse-stringify-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/date-iso-parse-stringify-parity.js",
+      "generated": "compliance/generated/values/jsmx/date-iso-parse-stringify-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for bounded ISO Date parse plus ISO, UTC, and JSON stringification parity."
+    },
+    {
+      "id": "jsmx-values-date-invalid-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/date-invalid-parity.js",
+      "generated": "compliance/generated/values/jsmx/date-invalid-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for invalid Date NaN reads, Invalid Date string helpers, null JSON result, and range-style ISO failure."
+    },
+    {
       "id": "jsmx-values-typeof-container-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/typeof-container-parity.js",
