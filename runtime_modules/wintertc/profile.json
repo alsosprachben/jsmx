@@ -5,6 +5,17 @@
       "status": "not_profiled",
       "shared_c_bridge": "runtime_modules/shared/fs_sync.h",
       "notes": "The shared sync fs bridge is cataloged here to document overlap with future WinterTC-style profiles, but no WinterTC fs surface is claimed yet."
+    },
+    "crypto": {
+      "status": "available",
+      "shared_c_bridge": "runtime_modules/shared/webcrypto_openssl.h",
+      "surface": [
+        "globalThis.crypto",
+        "crypto.randomUUID()",
+        "crypto.getRandomValues(typedArray)",
+        "crypto.subtle"
+      ],
+      "notes": "The initial WinterTC crypto profile is sync-only: randomUUID, getRandomValues, and stable subtle object identity. Promise-backed subtle algorithms remain pending."
     }
   }
 }

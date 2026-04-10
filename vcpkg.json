@@ -7,6 +7,12 @@
       "dependencies": [
         "pcre2"
       ]
+    },
+    "crypto": {
+      "description": "Enable the optional OpenSSL-backed crypto module.",
+      "dependencies": [
+        "openssl"
+      ]
     }
   }
 }

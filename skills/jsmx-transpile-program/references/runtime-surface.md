@@ -22,6 +22,12 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 - value kinds:
   - `undefined`, `null`, booleans, numbers, strings, symbols, bigints, and
     dates
+  - optional feature-gated WinterTC sync-crypto values:
+    - `ArrayBuffer`
+    - typed arrays
+    - `Crypto`
+    - `SubtleCrypto` object identity only
+    - `CryptoKey` groundwork values
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -50,6 +56,12 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_date_parse_iso(...)`
     - UTC and local field getter/setter helpers
     - `toISOString`, `toUTCString`, `toString`, and `toJSON`
+  - optional feature-gated WinterTC sync crypto through:
+    - `jsval_crypto_new(...)`
+    - `jsval_crypto_subtle(...)`
+    - `jsval_crypto_random_uuid(...)`
+    - `jsval_crypto_get_random_values(...)`
+    - typed-array / buffer helpers used by `getRandomValues(...)`
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -143,6 +155,7 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - bigint division, remainder, bitwise, or shift operators
   - broad legacy Date-string parsing or host-independent timezone policy
     beyond the bounded ISO + libc-local Date helpers
+  - Promise-backed `SubtleCrypto` methods such as `subtle.digest(...)`
   - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
     protocol semantics and iterable duck typing
   - functions as values with closure semantics, dynamic `this`, `arguments`,

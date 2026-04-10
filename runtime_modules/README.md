@@ -36,3 +36,9 @@ grep demo:
 - Node wrapper:
   - `runtime_modules/node/fs_sync.js`
 
+The next shared module is the WinterTC-oriented sync crypto bridge:
+
+- shared C bridge:
+  - `runtime_modules/shared/webcrypto_openssl.h`
+- WinterTC profile exposure:
+  - `runtime_modules/wintertc/profile.json`

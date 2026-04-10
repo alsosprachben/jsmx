@@ -101,6 +101,10 @@ The committed suites currently cover:
     - shift
     - unshift
     - observable dense length writes
+- a feature-gated `wintertc` suite
+  - stable `globalThis.crypto` / `crypto.subtle` object identity
+  - `crypto.randomUUID()` shape
+  - `crypto.getRandomValues(...)` success and rejection paths
 
 Regex compatibility choices are translator-owned first.
 
@@ -155,6 +159,7 @@ That means the same corpus can be checked against:
 - the default numeric backend
 - the `USE_LIBC` matrix
 - feature-gated cases that declare `required_features` such as `regex`
+  and `crypto`
 
 Manifest entries may be expected to:
 

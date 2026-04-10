@@ -8,10 +8,12 @@ if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 
 option(JSMX_ENABLE_REGEX "Enable optional regex backend support" OFF)
+option(JSMX_ENABLE_CRYPTO "Enable optional crypto backend support" OFF)
 
 add_library(jsmx STATIC
     jsmn.c
     jsnum.c
+    jscrypto.c
     jsval.c
     jsmethod.c
     jsregex.c
@@ -31,4 +33,13 @@ if(JSMX_ENABLE_REGEX)
         JSMX_REGEX_BACKEND_PCRE2=1
     )
     target_link_libraries(jsmx PUBLIC PCRE2::16BIT)
+endif()
+
+if(JSMX_ENABLE_CRYPTO)
+    find_package(OpenSSL REQUIRED)
+    target_compile_definitions(jsmx PUBLIC
+        JSMX_WITH_CRYPTO=1
+        JSMX_CRYPTO_BACKEND_OPENSSL=1
+    )
+    target_link_libraries(jsmx PUBLIC OpenSSL::Crypto)
 endif()

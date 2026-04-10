@@ -593,6 +593,146 @@ static void test_date_semantics(void)
 	assert(result.kind == JSVAL_KIND_NULL);
 }
 
+static void test_crypto_semantics(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t buffer;
+	jsval_t typed_u8;
+	jsval_t typed_f32;
+	jsval_t bytes_view;
+	jsval_t crypto;
+	jsval_t subtle_a;
+	jsval_t subtle_b;
+	jsval_t uuid;
+	jsval_t key;
+	jsval_t dom_exception;
+	jsval_t algorithm_name;
+	jsval_t result;
+	size_t len = 0;
+	uint32_t usages = 0;
+	int extractable = 0;
+	jsval_typed_array_kind_t typed_kind;
+	jsmethod_error_t error;
+	uint8_t before[16];
+	uint8_t after[16];
+	uint8_t uuid_buf[37];
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_array_buffer_new(&region, 16, &buffer) == 0);
+	assert(buffer.kind == JSVAL_KIND_ARRAY_BUFFER);
+	assert(jsval_truthy(&region, buffer) == 1);
+	assert(jsval_typeof(&region, buffer, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_array_buffer_byte_length(&region, buffer, &len) == 0);
+	assert(len == 16);
+	assert(jsval_array_buffer_copy_bytes(&region, buffer, after, sizeof(after),
+			&len) == 0);
+	assert(len == 16);
+	memset(before, 0, sizeof(before));
+	assert(memcmp(before, after, sizeof(before)) == 0);
+
+	assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+			&typed_u8) == 0);
+	assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_FLOAT32, 4,
+			&typed_f32) == 0);
+	assert(typed_u8.kind == JSVAL_KIND_TYPED_ARRAY);
+	assert(jsval_typed_array_kind(&region, typed_u8, &typed_kind) == 0);
+	assert(typed_kind == JSVAL_TYPED_ARRAY_UINT8);
+	assert(jsval_typed_array_length(&region, typed_u8) == 16);
+	assert(jsval_typed_array_byte_length(&region, typed_u8, &len) == 0);
+	assert(len == 16);
+	assert(jsval_typed_array_buffer(&region, typed_u8, &bytes_view) == 0);
+	assert(bytes_view.kind == JSVAL_KIND_ARRAY_BUFFER);
+	assert(jsval_typed_array_get_number(&region, typed_u8, 0, &result) == 0);
+	assert_number_value(result, 0.0);
+	assert(jsval_truthy(&region, typed_u8) == 1);
+	assert(jsval_typeof(&region, typed_u8, &result) == 0);
+	assert_string(&region, result, "object");
+
+	assert(jsval_crypto_new(&region, &crypto) == 0);
+	assert(crypto.kind == JSVAL_KIND_CRYPTO);
+	assert(jsval_truthy(&region, crypto) == 1);
+	assert(jsval_typeof(&region, crypto, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_crypto_subtle(&region, crypto, &subtle_a) == 0);
+	assert(jsval_crypto_subtle(&region, crypto, &subtle_b) == 0);
+	assert(subtle_a.kind == JSVAL_KIND_SUBTLE_CRYPTO);
+	assert(jsval_strict_eq(&region, subtle_a, subtle_b) == 1);
+
+#if JSMX_WITH_CRYPTO
+	assert(jsval_typed_array_copy_bytes(&region, typed_u8, before,
+			sizeof(before), &len) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_crypto_get_random_values(&region, crypto, typed_u8, &result,
+			&error) == 0);
+	assert(jsval_strict_eq(&region, result, typed_u8) == 1);
+	assert(jsval_typed_array_copy_bytes(&region, typed_u8, after, sizeof(after),
+			&len) == 0);
+	assert(memcmp(before, after, sizeof(after)) != 0);
+
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_crypto_get_random_values(&region, crypto, typed_f32, &result,
+			&error) < 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+	assert(strcmp(error.message, "TypeMismatchError") == 0);
+
+	assert(jsval_crypto_random_uuid(&region, crypto, &uuid) == 0);
+	assert(jsval_string_copy_utf8(&region, uuid, NULL, 0, &len) == 0);
+	assert(len == 36);
+	assert(jsval_string_copy_utf8(&region, uuid, uuid_buf, 36, NULL) == 0);
+	uuid_buf[36] = '\0';
+	assert(uuid_buf[8] == '-');
+	assert(uuid_buf[13] == '-');
+	assert(uuid_buf[18] == '-');
+	assert(uuid_buf[23] == '-');
+	assert(uuid_buf[14] == '4');
+	assert(uuid_buf[19] == '8' || uuid_buf[19] == '9'
+			|| uuid_buf[19] == 'a' || uuid_buf[19] == 'b');
+#else
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_crypto_get_random_values(&region, crypto, typed_u8, &result,
+			&error) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_crypto_random_uuid(&region, crypto, &uuid) < 0);
+	assert(errno == ENOTSUP);
+#endif
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+			&algorithm_name) == 0);
+	assert(jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
+			algorithm_name, 0x5u, &key) == 0);
+	assert(key.kind == JSVAL_KIND_CRYPTO_KEY);
+	assert(jsval_typeof(&region, key, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_crypto_key_type(&region, key, &result) == 0);
+	assert_string(&region, result, "secret");
+	assert(jsval_crypto_key_extractable(&region, key, &extractable) == 0);
+	assert(extractable == 1);
+	assert(jsval_crypto_key_algorithm(&region, key, &result) == 0);
+	assert_string(&region, result, "SHA-256");
+	assert(jsval_crypto_key_usages(&region, key, &usages) == 0);
+	assert(usages == 0x5u);
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"QuotaExceededError",
+			sizeof("QuotaExceededError") - 1, &uuid) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"too many bytes",
+			sizeof("too many bytes") - 1, &result) == 0);
+	assert(jsval_dom_exception_new(&region, uuid, result, &dom_exception) == 0);
+	assert(dom_exception.kind == JSVAL_KIND_DOM_EXCEPTION);
+	assert(jsval_typeof(&region, dom_exception, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_dom_exception_name(&region, dom_exception, &result) == 0);
+	assert_string(&region, result, "QuotaExceededError");
+	assert(jsval_dom_exception_message(&region, dom_exception, &result) == 0);
+	assert_string(&region, result, "too many bytes");
+}
+
 static void test_set_semantics(void)
 {
 	uint8_t storage[32768];
@@ -7384,6 +7524,7 @@ int main(void)
 	test_bigint_semantics();
 	test_function_semantics();
 	test_date_semantics();
+	test_crypto_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

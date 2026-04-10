@@ -67,10 +67,16 @@ That makes semantic correctness more important than surface familiarity:
       fidelity
   - translator-owned regex compatibility choices live in
     `skills/jsmx-transpile-tests/`
+- `jscrypto.c`, `jscrypto.h`, `jsmx_config.h`
+  - optional backend-gated crypto layer
+  - the first backend is OpenSSL
+  - current helpers cover random bytes plus RFC 4122 v4 UUID assembly for
+    WinterTC-style sync crypto surfaces
 - `jsval.c`, `jsval.h`
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
-    `Symbol`, `BigInt`, `Date`, `Set`, `Map`, and explicit iterator values
+    `Symbol`, `BigInt`, `Date`, `Set`, `Map`, typed-array / buffer views,
+    WinterTC crypto objects, and explicit iterator values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -140,6 +146,13 @@ That makes semantic correctness more important than surface familiarity:
     - UTC and local field getters/setters
     - ISO, UTC, local, and JSON stringification helpers
     - host-libc local-time conversion rather than repo-owned timezone data
+  - native binary / WinterTC crypto helpers for:
+    - `ArrayBuffer` plus typed-array storage for the integer and float view
+      families used by `crypto.getRandomValues(...)`
+    - stable `Crypto` / `SubtleCrypto` object identity
+    - `crypto.randomUUID()` and `crypto.getRandomValues(...)`
+    - `CryptoKey` and `DOMException` groundwork for later async
+      `SubtleCrypto` slices
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,
@@ -467,6 +480,30 @@ The CMake path will:
 - resolve `pcre2` through `vcpkg`
 - define `JSMX_WITH_REGEX=1`
 - define `JSMX_REGEX_BACKEND_PCRE2=1`
+
+## Optional Crypto Support
+
+Optional WinterTC-oriented crypto support is available through:
+
+- [CMakeLists.txt](/home/ben/repos/jsmx/CMakeLists.txt)
+- [vcpkg.json](/home/ben/repos/jsmx/vcpkg.json)
+
+With `VCPKG_ROOT` set, configure with:
+
+```sh
+cmake -S . -B build -DJSMX_ENABLE_CRYPTO=ON
+```
+
+The CMake path will:
+
+- resolve `openssl` through `vcpkg`
+- define `JSMX_WITH_CRYPTO=1`
+- define `JSMX_CRYPTO_BACKEND_OPENSSL=1`
+
+The manifest-driven runners also understand:
+
+- `JSMX_FEATURES=crypto`
+- `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary
 

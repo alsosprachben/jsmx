@@ -4557,6 +4557,50 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic dense-array fixture for preserving the JSON-backed ENOTSUP mutation boundary until an explicit shallow promotion, then unshifting the native dense head."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-sync-surface-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-sync-surface-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-sync-surface-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC sync-crypto fixture for stable `crypto` and `crypto.subtle` object identity."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-randomuuid-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-randomuuid-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-randomuuid-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC sync-crypto fixture for `crypto.randomUUID()` RFC 4122 v4 shape."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-getrandomvalues-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-getrandomvalues-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-getrandomvalues-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC sync-crypto fixture for `crypto.getRandomValues()` over `Uint8Array`."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-getrandomvalues-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-getrandomvalues-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-getrandomvalues-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC sync-crypto fixture for `TypeMismatchError` and `QuotaExceededError` getRandomValues rejections."
     }
   ]
 }

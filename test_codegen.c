@@ -2643,6 +2643,141 @@ static generated_status_t generated_smoke_jsval_date(char *detail,
 	return GENERATED_PASS;
 }
 
+static generated_status_t
+generated_smoke_jsval_crypto(char *detail, size_t cap)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t crypto_value;
+	jsval_t subtle_a;
+	jsval_t subtle_b;
+	jsval_t typed_u8;
+	jsval_t typed_f32;
+	jsval_t result;
+	jsval_t algorithm_name;
+	jsval_t key_value;
+	jsval_t dom_exception;
+	jsmethod_error_t error;
+	uint8_t uuid_buf[36];
+	uint8_t before[16];
+	uint8_t after[16];
+	size_t len = 0;
+	uint32_t usages = 0;
+	int extractable = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	if (jsval_crypto_new(&region, &crypto_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_new");
+	}
+	if (jsval_typeof(&region, crypto_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(crypto)");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"object", 6,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_crypto_subtle(&region, crypto_value, &subtle_a) < 0
+			|| jsval_crypto_subtle(&region, crypto_value, &subtle_b) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_subtle");
+	}
+	if (jsval_strict_eq(&region, subtle_a, subtle_b) != 1) {
+		return generated_failf(detail, cap,
+				"expected stable subtle identity");
+	}
+	if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16, &typed_u8) < 0
+			|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_FLOAT32, 4,
+				&typed_f32) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typed_array_new");
+	}
+#if JSMX_WITH_CRYPTO
+	if (jsval_typed_array_copy_bytes(&region, typed_u8, before, sizeof(before),
+			&len) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_typed_array_copy_bytes(before)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_crypto_get_random_values(&region, crypto_value, typed_u8,
+			&result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_get_random_values");
+	}
+	if (jsval_strict_eq(&region, result, typed_u8) != 1) {
+		return generated_failf(detail, cap,
+				"expected getRandomValues to return same typed array");
+	}
+	if (jsval_typed_array_copy_bytes(&region, typed_u8, after, sizeof(after),
+			&len) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_typed_array_copy_bytes(after)");
+	}
+	if (memcmp(before, after, sizeof(after)) == 0) {
+		return generated_failf(detail, cap,
+				"expected getRandomValues to mutate bytes");
+	}
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_crypto_get_random_values(&region, crypto_value, typed_f32,
+			&result, &error) >= 0 || errno != EINVAL
+			|| error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected float typed array rejection");
+	}
+	if (jsval_crypto_random_uuid(&region, crypto_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_random_uuid");
+	}
+	if (jsval_string_copy_utf8(&region, result, uuid_buf, sizeof(uuid_buf),
+			&len) < 0 || len != 36) {
+		return generated_fail_errno(detail, cap, "uuid copy");
+	}
+	if (uuid_buf[8] != '-' || uuid_buf[13] != '-' || uuid_buf[18] != '-'
+			|| uuid_buf[23] != '-' || uuid_buf[14] != '4') {
+		return generated_failf(detail, cap, "unexpected uuid shape");
+	}
+#else
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_crypto_get_random_values(&region, crypto_value, typed_u8,
+			&result, &error) >= 0 || errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected crypto backend to be disabled");
+	}
+#endif
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+			&algorithm_name) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8");
+	}
+	if (jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
+			algorithm_name, 0x5u, &key_value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_key_new");
+	}
+	if (jsval_crypto_key_type(&region, key_value, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_key_type");
+	}
+	if (generated_expect_string(&region, result, (const uint8_t *)"secret", 6,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (jsval_crypto_key_extractable(&region, key_value, &extractable) < 0
+			|| !extractable) {
+		return generated_fail_errno(detail, cap,
+				"jsval_crypto_key_extractable");
+	}
+	if (jsval_crypto_key_usages(&region, key_value, &usages) < 0 || usages != 0x5u) {
+		return generated_fail_errno(detail, cap, "jsval_crypto_key_usages");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"QuotaExceededError",
+			sizeof("QuotaExceededError") - 1, &result) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"too many bytes",
+				sizeof("too many bytes") - 1, &algorithm_name) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(domexception)");
+	}
+	if (jsval_dom_exception_new(&region, result, algorithm_name,
+			&dom_exception) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_dom_exception_new");
+	}
+	return GENERATED_PASS;
+}
+
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
 		size_t cap)
 {
@@ -10145,6 +10280,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_bigint", generated_smoke_jsval_bigint},
 	{"smoke", "jsval_function", generated_smoke_jsval_function},
 	{"smoke", "jsval_date", generated_smoke_jsval_date},
+	{"smoke", "jsval_crypto", generated_smoke_jsval_crypto},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

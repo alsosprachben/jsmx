@@ -96,6 +96,22 @@ These are allowed as explicit slow-path host bridges when the JS program is sync
 Keep the encoding assumption explicit in comments. Binary buffers, streams,
 file descriptors, and async filesystem flows are out of scope for this skill.
 
+## WinterTC Crypto
+
+The current reusable WinterTC crypto bridge is sync-only:
+
+- `runtime_modules/shared/webcrypto_openssl.h`
+  - random bytes
+  - UUID v4 assembly
+- `runtime_modules/wintertc/profile.json`
+  - `globalThis.crypto`
+  - `crypto.randomUUID()`
+  - `crypto.getRandomValues(typedArray)`
+  - stable `crypto.subtle` object identity
+
+Do not claim async `SubtleCrypto` method coverage until the runtime has real
+Promise support.
+
 ## Out Of Scope Host Surfaces
 
 Treat these as `manual_runtime_needed` unless the user explicitly asks for a larger runtime design:

@@ -37,8 +37,34 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_SYMBOL = 14,
 	JSVAL_KIND_BIGINT = 15,
 	JSVAL_KIND_FUNCTION = 16,
-	JSVAL_KIND_DATE = 17
+	JSVAL_KIND_DATE = 17,
+	JSVAL_KIND_ARRAY_BUFFER = 18,
+	JSVAL_KIND_TYPED_ARRAY = 19,
+	JSVAL_KIND_CRYPTO = 20,
+	JSVAL_KIND_SUBTLE_CRYPTO = 21,
+	JSVAL_KIND_CRYPTO_KEY = 22,
+	JSVAL_KIND_DOM_EXCEPTION = 23
 } jsval_kind_t;
+
+typedef enum jsval_typed_array_kind_e {
+	JSVAL_TYPED_ARRAY_INT8 = 0,
+	JSVAL_TYPED_ARRAY_UINT8 = 1,
+	JSVAL_TYPED_ARRAY_UINT8_CLAMPED = 2,
+	JSVAL_TYPED_ARRAY_INT16 = 3,
+	JSVAL_TYPED_ARRAY_UINT16 = 4,
+	JSVAL_TYPED_ARRAY_INT32 = 5,
+	JSVAL_TYPED_ARRAY_UINT32 = 6,
+	JSVAL_TYPED_ARRAY_BIGINT64 = 7,
+	JSVAL_TYPED_ARRAY_BIGUINT64 = 8,
+	JSVAL_TYPED_ARRAY_FLOAT32 = 9,
+	JSVAL_TYPED_ARRAY_FLOAT64 = 10
+} jsval_typed_array_kind_t;
+
+typedef enum jsval_crypto_key_type_e {
+	JSVAL_CRYPTO_KEY_TYPE_SECRET = 0,
+	JSVAL_CRYPTO_KEY_TYPE_PUBLIC = 1,
+	JSVAL_CRYPTO_KEY_TYPE_PRIVATE = 2
+} jsval_crypto_key_type_t;
 
 typedef enum jsval_iterator_selector_e {
 	JSVAL_ITERATOR_SELECTOR_DEFAULT = 0,
@@ -235,6 +261,53 @@ int jsval_date_utc(jsval_region_t *region, size_t argc, const jsval_t *argv,
 		jsval_t *value_ptr, jsmethod_error_t *error);
 int jsval_date_parse_iso(jsval_region_t *region, jsval_t input_value,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+int jsval_array_buffer_new(jsval_region_t *region, size_t byte_length,
+		jsval_t *value_ptr);
+int jsval_array_buffer_byte_length(jsval_region_t *region, jsval_t buffer,
+		size_t *len_ptr);
+int jsval_array_buffer_copy_bytes(jsval_region_t *region, jsval_t buffer,
+		uint8_t *buf, size_t cap, size_t *len_ptr);
+int jsval_typed_array_new(jsval_region_t *region, jsval_typed_array_kind_t kind,
+		size_t length, jsval_t *value_ptr);
+int jsval_typed_array_kind(jsval_region_t *region, jsval_t typed_array,
+		jsval_typed_array_kind_t *kind_ptr);
+size_t jsval_typed_array_length(jsval_region_t *region, jsval_t typed_array);
+int jsval_typed_array_byte_length(jsval_region_t *region, jsval_t typed_array,
+		size_t *len_ptr);
+int jsval_typed_array_buffer(jsval_region_t *region, jsval_t typed_array,
+		jsval_t *value_ptr);
+int jsval_typed_array_copy_bytes(jsval_region_t *region, jsval_t typed_array,
+		uint8_t *buf, size_t cap, size_t *len_ptr);
+int jsval_typed_array_get_number(jsval_region_t *region, jsval_t typed_array,
+		size_t index, jsval_t *value_ptr);
+int jsval_typed_array_get_bigint(jsval_region_t *region, jsval_t typed_array,
+		size_t index, jsval_t *value_ptr);
+int jsval_dom_exception_new(jsval_region_t *region, jsval_t name_value,
+		jsval_t message_value, jsval_t *value_ptr);
+int jsval_dom_exception_name(jsval_region_t *region, jsval_t exception_value,
+		jsval_t *value_ptr);
+int jsval_dom_exception_message(jsval_region_t *region,
+		jsval_t exception_value, jsval_t *value_ptr);
+int jsval_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_subtle_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
+		jsval_t *value_ptr);
+int jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
+		jsval_t *value_ptr);
+int jsval_crypto_get_random_values(jsval_region_t *region,
+		jsval_t crypto_value, jsval_t typed_array, jsval_t *value_ptr,
+		jsmethod_error_t *error);
+int jsval_crypto_key_new(jsval_region_t *region, jsval_crypto_key_type_t type,
+		int extractable, jsval_t algorithm_name, uint32_t usages_mask,
+		jsval_t *value_ptr);
+int jsval_crypto_key_type(jsval_region_t *region, jsval_t key_value,
+		jsval_t *value_ptr);
+int jsval_crypto_key_extractable(jsval_region_t *region, jsval_t key_value,
+		int *extractable_ptr);
+int jsval_crypto_key_algorithm(jsval_region_t *region, jsval_t key_value,
+		jsval_t *value_ptr);
+int jsval_crypto_key_usages(jsval_region_t *region, jsval_t key_value,
+		uint32_t *usages_ptr);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 

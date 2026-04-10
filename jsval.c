@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "jscrypto.h"
 #include "jsnum.h"
 #include "jsurl.h"
 #include "jsregex.h"
@@ -41,6 +42,39 @@ typedef struct jsval_native_function_s {
 typedef struct jsval_native_date_s {
 	double time_value_ms;
 } jsval_native_date_t;
+
+typedef struct jsval_native_array_buffer_s {
+	size_t byte_length;
+} jsval_native_array_buffer_t;
+
+typedef struct jsval_native_typed_array_s {
+	jsval_off_t buffer_off;
+	size_t byte_offset;
+	size_t length;
+	uint8_t kind;
+	uint8_t reserved[7];
+} jsval_native_typed_array_t;
+
+typedef struct jsval_native_crypto_s {
+	jsval_t subtle_value;
+} jsval_native_crypto_t;
+
+typedef struct jsval_native_subtle_crypto_s {
+	uint8_t reserved[8];
+} jsval_native_subtle_crypto_t;
+
+typedef struct jsval_native_crypto_key_s {
+	jsval_t algorithm_name;
+	uint32_t usages_mask;
+	uint8_t type;
+	uint8_t extractable;
+	uint8_t reserved[2];
+} jsval_native_crypto_key_t;
+
+typedef struct jsval_native_dom_exception_s {
+	jsval_t name;
+	jsval_t message;
+} jsval_native_dom_exception_t;
 
 typedef struct jsval_native_object_s {
 	size_t len;
@@ -238,6 +272,8 @@ static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value
 		int require_object_coercible, jsval_t *string_value_ptr,
 		jsmethod_error_t *error);
 static int jsval_ascii_space(uint8_t ch);
+static jsval_t jsval_native_make_value(jsval_region_t *region, void *ptr,
+		jsval_kind_t kind);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -383,6 +419,69 @@ static jsval_native_date_t *jsval_native_date(jsval_region_t *region,
 		return NULL;
 	}
 	return (jsval_native_date_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_array_buffer_t *jsval_native_array_buffer(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_ARRAY_BUFFER) {
+		return NULL;
+	}
+	return (jsval_native_array_buffer_t *)jsval_region_ptr(region, value.off);
+}
+
+static uint8_t *jsval_native_array_buffer_bytes(
+		jsval_native_array_buffer_t *buffer)
+{
+	return (uint8_t *)(buffer + 1);
+}
+
+static jsval_native_typed_array_t *jsval_native_typed_array(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_TYPED_ARRAY) {
+		return NULL;
+	}
+	return (jsval_native_typed_array_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_crypto_t *jsval_native_crypto(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_CRYPTO) {
+		return NULL;
+	}
+	return (jsval_native_crypto_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_subtle_crypto_t *jsval_native_subtle_crypto(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_SUBTLE_CRYPTO) {
+		return NULL;
+	}
+	return (jsval_native_subtle_crypto_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_crypto_key_t *jsval_native_crypto_key(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_CRYPTO_KEY) {
+		return NULL;
+	}
+	return (jsval_native_crypto_key_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_dom_exception_t *jsval_native_dom_exception(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_DOM_EXCEPTION) {
+		return NULL;
+	}
+	return (jsval_native_dom_exception_t *)jsval_region_ptr(region, value.off);
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -1162,10 +1261,133 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		return 1;
 	default:
 		return 0;
 	}
+}
+
+static size_t
+jsval_typed_array_element_size(jsval_typed_array_kind_t kind)
+{
+	switch (kind) {
+	case JSVAL_TYPED_ARRAY_INT8:
+	case JSVAL_TYPED_ARRAY_UINT8:
+	case JSVAL_TYPED_ARRAY_UINT8_CLAMPED:
+		return 1;
+	case JSVAL_TYPED_ARRAY_INT16:
+	case JSVAL_TYPED_ARRAY_UINT16:
+		return 2;
+	case JSVAL_TYPED_ARRAY_INT32:
+	case JSVAL_TYPED_ARRAY_UINT32:
+	case JSVAL_TYPED_ARRAY_FLOAT32:
+		return 4;
+	case JSVAL_TYPED_ARRAY_BIGINT64:
+	case JSVAL_TYPED_ARRAY_BIGUINT64:
+	case JSVAL_TYPED_ARRAY_FLOAT64:
+		return 8;
+	default:
+		return 0;
+	}
+}
+
+static int
+jsval_typed_array_kind_valid(jsval_typed_array_kind_t kind)
+{
+	return jsval_typed_array_element_size(kind) > 0;
+}
+
+static int
+jsval_typed_array_kind_integer(jsval_typed_array_kind_t kind)
+{
+	switch (kind) {
+	case JSVAL_TYPED_ARRAY_INT8:
+	case JSVAL_TYPED_ARRAY_UINT8:
+	case JSVAL_TYPED_ARRAY_UINT8_CLAMPED:
+	case JSVAL_TYPED_ARRAY_INT16:
+	case JSVAL_TYPED_ARRAY_UINT16:
+	case JSVAL_TYPED_ARRAY_INT32:
+	case JSVAL_TYPED_ARRAY_UINT32:
+	case JSVAL_TYPED_ARRAY_BIGINT64:
+	case JSVAL_TYPED_ARRAY_BIGUINT64:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int
+jsval_typed_array_kind_bigint(jsval_typed_array_kind_t kind)
+{
+	return kind == JSVAL_TYPED_ARRAY_BIGINT64
+			|| kind == JSVAL_TYPED_ARRAY_BIGUINT64;
+}
+
+static int
+jsval_typed_array_kind_get_random_values_supported(jsval_typed_array_kind_t kind)
+{
+	return jsval_typed_array_kind_integer(kind);
+}
+
+static int
+jsval_crypto_key_type_valid(jsval_crypto_key_type_t type)
+{
+	return type == JSVAL_CRYPTO_KEY_TYPE_SECRET
+			|| type == JSVAL_CRYPTO_KEY_TYPE_PUBLIC
+			|| type == JSVAL_CRYPTO_KEY_TYPE_PRIVATE;
+}
+
+static int
+jsval_typed_array_bytes(jsval_region_t *region, jsval_t typed_array,
+		uint8_t **bytes_ptr, size_t *len_ptr,
+		jsval_typed_array_kind_t *kind_ptr)
+{
+	jsval_native_typed_array_t *native;
+	jsval_native_array_buffer_t *buffer;
+	size_t element_size;
+	size_t byte_length;
+	uint8_t *bytes;
+
+	if (region == NULL || bytes_ptr == NULL || len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_typed_array(region, typed_array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	element_size = jsval_typed_array_element_size(
+			(jsval_typed_array_kind_t)native->kind);
+	if (element_size == 0 || native->length > SIZE_MAX / element_size) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	buffer = (jsval_native_array_buffer_t *)jsval_region_ptr(region,
+			native->buffer_off);
+	if (buffer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	byte_length = native->length * element_size;
+	if (native->byte_offset > buffer->byte_length
+			|| byte_length > buffer->byte_length - native->byte_offset) {
+		errno = EINVAL;
+		return -1;
+	}
+	bytes = jsval_native_array_buffer_bytes(buffer) + native->byte_offset;
+	*bytes_ptr = bytes;
+	*len_ptr = byte_length;
+	if (kind_ptr != NULL) {
+		*kind_ptr = (jsval_typed_array_kind_t)native->kind;
+	}
+	return 0;
 }
 
 static int jsval_key_is_property_name(jsval_t key)
@@ -2597,6 +2819,12 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -2742,6 +2970,12 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2813,6 +3047,12 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2903,6 +3143,12 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_SYMBOL:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -3071,6 +3317,12 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -6987,6 +7239,678 @@ int jsval_date_parse_iso(jsval_region_t *region, jsval_t input_value,
 		return -1;
 	}
 	*value_ptr = jsval_number(time_ms);
+	return 0;
+}
+
+int
+jsval_array_buffer_new(jsval_region_t *region, size_t byte_length,
+		jsval_t *value_ptr)
+{
+	jsval_native_array_buffer_t *buffer;
+	jsval_off_t off;
+	size_t total_len;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (byte_length > SIZE_MAX - sizeof(*buffer)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total_len = sizeof(*buffer) + byte_length;
+	if (jsval_region_reserve(region, total_len, JSVAL_ALIGN, &off,
+			(void **)&buffer) < 0) {
+		return -1;
+	}
+	buffer->byte_length = byte_length;
+	if (byte_length > 0) {
+		memset(jsval_native_array_buffer_bytes(buffer), 0, byte_length);
+	}
+	*value_ptr = jsval_native_make_value(region, buffer,
+			JSVAL_KIND_ARRAY_BUFFER);
+	return 0;
+}
+
+int
+jsval_array_buffer_byte_length(jsval_region_t *region, jsval_t buffer,
+		size_t *len_ptr)
+{
+	jsval_native_array_buffer_t *native;
+
+	if (len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_array_buffer(region, buffer);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*len_ptr = native->byte_length;
+	return 0;
+}
+
+int
+jsval_array_buffer_copy_bytes(jsval_region_t *region, jsval_t buffer,
+		uint8_t *buf, size_t cap, size_t *len_ptr)
+{
+	jsval_native_array_buffer_t *native;
+
+	native = jsval_native_array_buffer(region, buffer);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = native->byte_length;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < native->byte_length) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (native->byte_length > 0) {
+		memcpy(buf, jsval_native_array_buffer_bytes(native),
+				native->byte_length);
+	}
+	return 0;
+}
+
+int
+jsval_typed_array_new(jsval_region_t *region, jsval_typed_array_kind_t kind,
+		size_t length, jsval_t *value_ptr)
+{
+	jsval_native_typed_array_t *typed_array;
+	jsval_t buffer;
+	size_t element_size;
+	size_t byte_length;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL
+			|| !jsval_typed_array_kind_valid(kind)) {
+		errno = EINVAL;
+		return -1;
+	}
+	element_size = jsval_typed_array_element_size(kind);
+	if (length > 0 && element_size > SIZE_MAX / length) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	byte_length = length * element_size;
+	if (jsval_array_buffer_new(region, byte_length, &buffer) < 0) {
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*typed_array),
+			_Alignof(jsval_native_typed_array_t), &ptr) < 0) {
+		return -1;
+	}
+	typed_array = (jsval_native_typed_array_t *)ptr;
+	memset(typed_array, 0, sizeof(*typed_array));
+	typed_array->buffer_off = buffer.off;
+	typed_array->byte_offset = 0;
+	typed_array->length = length;
+	typed_array->kind = (uint8_t)kind;
+	*value_ptr = jsval_native_make_value(region, typed_array,
+			JSVAL_KIND_TYPED_ARRAY);
+	return 0;
+}
+
+int
+jsval_typed_array_kind(jsval_region_t *region, jsval_t typed_array,
+		jsval_typed_array_kind_t *kind_ptr)
+{
+	jsval_native_typed_array_t *native;
+
+	if (kind_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_typed_array(region, typed_array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*kind_ptr = (jsval_typed_array_kind_t)native->kind;
+	return 0;
+}
+
+size_t
+jsval_typed_array_length(jsval_region_t *region, jsval_t typed_array)
+{
+	jsval_native_typed_array_t *native = jsval_native_typed_array(region,
+			typed_array);
+
+	return native == NULL ? 0 : native->length;
+}
+
+int
+jsval_typed_array_byte_length(jsval_region_t *region, jsval_t typed_array,
+		size_t *len_ptr)
+{
+	uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+
+	if (jsval_typed_array_bytes(region, typed_array, &bytes, &byte_length,
+			NULL) < 0) {
+		return -1;
+	}
+	(void)bytes;
+	if (len_ptr != NULL) {
+		*len_ptr = byte_length;
+	}
+	return 0;
+}
+
+int
+jsval_typed_array_buffer(jsval_region_t *region, jsval_t typed_array,
+		jsval_t *value_ptr)
+{
+	jsval_native_typed_array_t *native;
+	void *buffer_ptr;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_typed_array(region, typed_array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	buffer_ptr = jsval_region_ptr(region, native->buffer_off);
+	if (buffer_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = jsval_native_make_value(region, buffer_ptr,
+			JSVAL_KIND_ARRAY_BUFFER);
+	return 0;
+}
+
+int
+jsval_typed_array_copy_bytes(jsval_region_t *region, jsval_t typed_array,
+		uint8_t *buf, size_t cap, size_t *len_ptr)
+{
+	uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+
+	if (jsval_typed_array_bytes(region, typed_array, &bytes, &byte_length,
+			NULL) < 0) {
+		return -1;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = byte_length;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < byte_length) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (byte_length > 0) {
+		memcpy(buf, bytes, byte_length);
+	}
+	return 0;
+}
+
+int
+jsval_typed_array_get_number(jsval_region_t *region, jsval_t typed_array,
+		size_t index, jsval_t *value_ptr)
+{
+	jsval_native_typed_array_t *native;
+	uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+	jsval_typed_array_kind_t kind;
+	size_t element_size;
+	const uint8_t *src;
+	double out;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_typed_array(region, typed_array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_typed_array_bytes(region, typed_array, &bytes, &byte_length,
+			&kind) < 0) {
+		return -1;
+	}
+	if (jsval_typed_array_kind_bigint(kind)) {
+		errno = EINVAL;
+		return -1;
+	}
+	element_size = jsval_typed_array_element_size(kind);
+	if (index >= native->length) {
+		errno = ERANGE;
+		return -1;
+	}
+	src = bytes + (index * element_size);
+	switch (kind) {
+	case JSVAL_TYPED_ARRAY_INT8: {
+		int8_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_UINT8:
+	case JSVAL_TYPED_ARRAY_UINT8_CLAMPED: {
+		uint8_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_INT16: {
+		int16_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_UINT16: {
+		uint16_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_INT32: {
+		int32_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_UINT32: {
+		uint32_t value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_FLOAT32: {
+		float value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	case JSVAL_TYPED_ARRAY_FLOAT64: {
+		double value;
+		memcpy(&value, src, sizeof(value));
+		out = value;
+		break;
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = jsval_number(out);
+	return 0;
+}
+
+int
+jsval_typed_array_get_bigint(jsval_region_t *region, jsval_t typed_array,
+		size_t index, jsval_t *value_ptr)
+{
+	jsval_native_typed_array_t *native;
+	uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+	jsval_typed_array_kind_t kind;
+	size_t element_size;
+	const uint8_t *src;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_typed_array(region, typed_array);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_typed_array_bytes(region, typed_array, &bytes, &byte_length,
+			&kind) < 0) {
+		return -1;
+	}
+	if (!jsval_typed_array_kind_bigint(kind)) {
+		errno = EINVAL;
+		return -1;
+	}
+	element_size = jsval_typed_array_element_size(kind);
+	if (index >= native->length) {
+		errno = ERANGE;
+		return -1;
+	}
+	src = bytes + (index * element_size);
+	if (kind == JSVAL_TYPED_ARRAY_BIGINT64) {
+		int64_t value;
+		memcpy(&value, src, sizeof(value));
+		return jsval_bigint_new_i64(region, value, value_ptr);
+	}
+	{
+		uint64_t value;
+		memcpy(&value, src, sizeof(value));
+		return jsval_bigint_new_u64(region, value, value_ptr);
+	}
+}
+
+int
+jsval_dom_exception_new(jsval_region_t *region, jsval_t name_value,
+		jsval_t message_value, jsval_t *value_ptr)
+{
+	jsval_native_dom_exception_t *native;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL
+			|| name_value.kind != JSVAL_KIND_STRING
+			|| message_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_dom_exception_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_dom_exception_t *)ptr;
+	native->name = name_value;
+	native->message = message_value;
+	*value_ptr = jsval_native_make_value(region, native,
+			JSVAL_KIND_DOM_EXCEPTION);
+	return 0;
+}
+
+int
+jsval_dom_exception_name(jsval_region_t *region, jsval_t exception_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_dom_exception_t *native;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_dom_exception(region, exception_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->name;
+	return 0;
+}
+
+int
+jsval_dom_exception_message(jsval_region_t *region, jsval_t exception_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_dom_exception_t *native;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_dom_exception(region, exception_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->message;
+	return 0;
+}
+
+int
+jsval_subtle_crypto_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	jsval_native_subtle_crypto_t *native;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_subtle_crypto_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_subtle_crypto_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	*value_ptr = jsval_native_make_value(region, native,
+			JSVAL_KIND_SUBTLE_CRYPTO);
+	return 0;
+}
+
+int
+jsval_crypto_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	jsval_native_crypto_t *native;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_crypto_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_crypto_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	native->subtle_value = jsval_undefined();
+	*value_ptr = jsval_native_make_value(region, native, JSVAL_KIND_CRYPTO);
+	return 0;
+}
+
+int
+jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_crypto_t *native;
+	jsval_t subtle_value;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_crypto(region, crypto_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->subtle_value.kind == JSVAL_KIND_SUBTLE_CRYPTO
+			&& native->subtle_value.repr == JSVAL_REPR_NATIVE) {
+		*value_ptr = native->subtle_value;
+		return 0;
+	}
+	if (jsval_subtle_crypto_new(region, &subtle_value) < 0) {
+		return -1;
+	}
+	native->subtle_value = subtle_value;
+	*value_ptr = subtle_value;
+	return 0;
+}
+
+int
+jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
+		jsval_t *value_ptr)
+{
+	uint8_t buf[36];
+
+	if (region == NULL || value_ptr == NULL
+			|| jsval_native_crypto(region, crypto_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jscrypto_random_uuid(buf, sizeof(buf), NULL) < 0) {
+		return -1;
+	}
+	return jsval_string_new_utf8(region, buf, sizeof(buf), value_ptr);
+}
+
+int
+jsval_crypto_get_random_values(jsval_region_t *region, jsval_t crypto_value,
+		jsval_t typed_array, jsval_t *value_ptr, jsmethod_error_t *error)
+{
+	uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+	jsval_typed_array_kind_t kind;
+
+	if (value_ptr == NULL || jsval_native_crypto(region, crypto_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (jsval_typed_array_bytes(region, typed_array, &bytes, &byte_length,
+			&kind) < 0) {
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "TypeMismatchError";
+		}
+		return -1;
+	}
+	if (!jsval_typed_array_kind_get_random_values_supported(kind)) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "TypeMismatchError";
+		}
+		return -1;
+	}
+	if (byte_length > 65536u) {
+		errno = EOVERFLOW;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_RANGE;
+			error->message = "QuotaExceededError";
+		}
+		return -1;
+	}
+	if (jscrypto_random_bytes(bytes, byte_length) < 0) {
+		return -1;
+	}
+	*value_ptr = typed_array;
+	return 0;
+}
+
+int
+jsval_crypto_key_new(jsval_region_t *region, jsval_crypto_key_type_t type,
+		int extractable, jsval_t algorithm_name, uint32_t usages_mask,
+		jsval_t *value_ptr)
+{
+	jsval_native_crypto_key_t *native;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL
+			|| !jsval_crypto_key_type_valid(type)
+			|| algorithm_name.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_crypto_key_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_crypto_key_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	native->algorithm_name = algorithm_name;
+	native->usages_mask = usages_mask;
+	native->type = (uint8_t)type;
+	native->extractable = extractable ? 1 : 0;
+	*value_ptr = jsval_native_make_value(region, native,
+			JSVAL_KIND_CRYPTO_KEY);
+	return 0;
+}
+
+int
+jsval_crypto_key_type(jsval_region_t *region, jsval_t key_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_crypto_key_t *native;
+	const uint8_t *label;
+	size_t len;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	switch ((jsval_crypto_key_type_t)native->type) {
+	case JSVAL_CRYPTO_KEY_TYPE_SECRET:
+		label = (const uint8_t *)"secret";
+		len = 6;
+		break;
+	case JSVAL_CRYPTO_KEY_TYPE_PUBLIC:
+		label = (const uint8_t *)"public";
+		len = 6;
+		break;
+	case JSVAL_CRYPTO_KEY_TYPE_PRIVATE:
+		label = (const uint8_t *)"private";
+		len = 7;
+		break;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_string_new_utf8(region, label, len, value_ptr);
+}
+
+int
+jsval_crypto_key_extractable(jsval_region_t *region, jsval_t key_value,
+		int *extractable_ptr)
+{
+	jsval_native_crypto_key_t *native;
+
+	if (extractable_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*extractable_ptr = native->extractable ? 1 : 0;
+	return 0;
+}
+
+int
+jsval_crypto_key_algorithm(jsval_region_t *region, jsval_t key_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_crypto_key_t *native;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->algorithm_name;
+	return 0;
+}
+
+int
+jsval_crypto_key_usages(jsval_region_t *region, jsval_t key_value,
+		uint32_t *usages_ptr)
+{
+	jsval_native_crypto_key_t *native;
+
+	if (usages_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*usages_ptr = native->usages_mask;
 	return 0;
 }
 
@@ -18183,6 +19107,12 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -18277,6 +19207,12 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		return 1;
 	default:
 		return 0;
@@ -18358,6 +19294,12 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_DATE:
+	case JSVAL_KIND_ARRAY_BUFFER:
+	case JSVAL_KIND_TYPED_ARRAY:
+	case JSVAL_KIND_CRYPTO:
+	case JSVAL_KIND_SUBTLE_CRYPTO:
+	case JSVAL_KIND_CRYPTO_KEY:
+	case JSVAL_KIND_DOM_EXCEPTION:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -18397,6 +19339,12 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_MAP
 			|| left.kind == JSVAL_KIND_ITERATOR
 			|| left.kind == JSVAL_KIND_DATE
+			|| left.kind == JSVAL_KIND_ARRAY_BUFFER
+			|| left.kind == JSVAL_KIND_TYPED_ARRAY
+			|| left.kind == JSVAL_KIND_CRYPTO
+			|| left.kind == JSVAL_KIND_SUBTLE_CRYPTO
+			|| left.kind == JSVAL_KIND_CRYPTO_KEY
+			|| left.kind == JSVAL_KIND_DOM_EXCEPTION
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
@@ -18406,7 +19354,13 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| right.kind == JSVAL_KIND_SET
 			|| right.kind == JSVAL_KIND_MAP
 			|| right.kind == JSVAL_KIND_ITERATOR
-			|| right.kind == JSVAL_KIND_DATE) {
+			|| right.kind == JSVAL_KIND_DATE
+			|| right.kind == JSVAL_KIND_ARRAY_BUFFER
+			|| right.kind == JSVAL_KIND_TYPED_ARRAY
+			|| right.kind == JSVAL_KIND_CRYPTO
+			|| right.kind == JSVAL_KIND_SUBTLE_CRYPTO
+			|| right.kind == JSVAL_KIND_CRYPTO_KEY
+			|| right.kind == JSVAL_KIND_DOM_EXCEPTION) {
 		errno = ENOTSUP;
 		return -1;
 	}

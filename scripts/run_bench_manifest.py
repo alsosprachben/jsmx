@@ -28,6 +28,7 @@ RUNTIME_SOURCES = [
 
 KNOWN_FEATURES = {
     "regex",
+    "crypto",
 }
 
 
@@ -56,6 +57,8 @@ def enabled_features():
     defines = parse_preprocessor_defines()
     if defines.get("JSMX_WITH_REGEX") == "1":
         features.add("regex")
+    if defines.get("JSMX_WITH_CRYPTO") == "1":
+        features.add("crypto")
     return features
 
 
