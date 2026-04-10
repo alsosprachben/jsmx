@@ -29,6 +29,12 @@ typedef struct jsval_native_bigint_s {
 	uint8_t reserved[7];
 } jsval_native_bigint_t;
 
+typedef struct jsval_native_function_s {
+	uintptr_t fn_ptr;
+	size_t length;
+	jsval_t name;
+} jsval_native_function_t;
+
 typedef struct jsval_native_object_s {
 	size_t len;
 	size_t cap;
@@ -325,6 +331,15 @@ static jsval_native_bigint_t *jsval_native_bigint(jsval_region_t *region,
 		return NULL;
 	}
 	return (jsval_native_bigint_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_function_t *jsval_native_function(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_FUNCTION) {
+		return NULL;
+	}
+	return (jsval_native_function_t *)jsval_region_ptr(region, value.off);
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -1102,6 +1117,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		return 1;
 	default:
 		return 0;
@@ -2535,6 +2551,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
 	case JSVAL_KIND_BIGINT:
+	case JSVAL_KIND_FUNCTION:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -2678,6 +2695,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2747,6 +2765,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -2835,6 +2854,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 		return 0;
 	case JSVAL_KIND_BIGINT:
 	case JSVAL_KIND_SYMBOL:
+	case JSVAL_KIND_FUNCTION:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -3001,6 +3021,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -5320,6 +5341,109 @@ int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
 	}
 	*value_ptr = native->description;
 	return 0;
+}
+
+int jsval_function_new(jsval_region_t *region, jsval_native_function_fn fn,
+		size_t length, int have_name, jsval_t name_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_function_t *native;
+	jsmethod_error_t error;
+	jsval_t name = jsval_undefined();
+	jsval_off_t off;
+
+	if (region == NULL || fn == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (have_name) {
+		memset(&error, 0, sizeof(error));
+		if (name_value.kind == JSVAL_KIND_STRING
+				&& name_value.repr == JSVAL_REPR_NATIVE) {
+			name = name_value;
+		} else if (jsval_stringify_value_to_native(region, name_value, 0,
+				&name, &error) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+			(void **)&native) < 0) {
+		return -1;
+	}
+	native->fn_ptr = (uintptr_t)fn;
+	native->length = length;
+	native->name = name;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_FUNCTION;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_function_name(jsval_region_t *region, jsval_t function,
+		jsval_t *value_ptr)
+{
+	static const uint8_t empty[1] = {0};
+	jsval_native_function_t *native;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_function(region, function);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->name.kind != JSVAL_KIND_UNDEFINED) {
+		*value_ptr = native->name;
+		return 0;
+	}
+	return jsval_string_new_utf8(region, empty, 0, value_ptr);
+}
+
+int jsval_function_length(jsval_region_t *region, jsval_t function,
+		jsval_t *value_ptr)
+{
+	jsval_native_function_t *native;
+
+	(void)region;
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_function(region, function);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = jsval_number((double)native->length);
+	return 0;
+}
+
+int jsval_function_call(jsval_region_t *region, jsval_t function, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	jsval_native_function_t *native;
+	jsval_native_function_fn fn;
+
+	if (region == NULL || result_ptr == NULL
+			|| (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	native = jsval_native_function(region, function);
+	if (native == NULL || native->fn_ptr == 0) {
+		errno = EINVAL;
+		if (error != NULL) {
+			error->kind = JSMETHOD_ERROR_TYPE;
+			error->message = "function required";
+		}
+		return -1;
+	}
+	fn = (jsval_native_function_fn)native->fn_ptr;
+	return fn(region, argc, argv, result_ptr, error);
 }
 
 int jsval_bigint_new_i64(jsval_region_t *region, int64_t value,
@@ -16517,6 +16641,10 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
+	case JSVAL_KIND_FUNCTION:
+		text = (const uint8_t *)"function";
+		len = 8;
+		break;
 	case JSVAL_KIND_BOOL:
 		text = (const uint8_t *)"boolean";
 		len = 7;
@@ -16602,6 +16730,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		return 1;
 	default:
 		return 0;
@@ -16681,6 +16810,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_SET:
 	case JSVAL_KIND_MAP:
 	case JSVAL_KIND_ITERATOR:
+	case JSVAL_KIND_FUNCTION:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -16702,6 +16832,14 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 	if (result_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+	if (left.kind == JSVAL_KIND_FUNCTION || right.kind == JSVAL_KIND_FUNCTION) {
+		if (left.kind == JSVAL_KIND_FUNCTION && right.kind == JSVAL_KIND_FUNCTION) {
+			*result_ptr = jsval_strict_eq(region, left, right);
+		} else {
+			*result_ptr = 0;
+		}
+		return 0;
 	}
 	if (left.kind == JSVAL_KIND_OBJECT || left.kind == JSVAL_KIND_ARRAY
 			|| left.kind == JSVAL_KIND_REGEXP

@@ -126,6 +126,13 @@ That makes semantic correctness more important than surface familiarity:
     - numeric-value equality and relational comparisons
     - page-resident `+`, `-`, `*`, and unary `-` without hidden heap growth
     - explicit mixed Number/BigInt rejection for arithmetic and unary `+`
+  - native static-function helpers for:
+    - identity-bearing function values over translator-emitted static C call
+      targets
+    - explicit `name`, `length`, and call helpers
+    - first-class storage in native objects, arrays, `Set`, and `Map`
+    - `typeof === "function"` without broadening into closures, dynamic `this`,
+      or constructor semantics
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,

@@ -52,6 +52,57 @@ typedef struct test_replace_surrogate_callback_ctx_s {
 	const char *replacement_values[4];
 } test_replace_surrogate_callback_ctx_t;
 
+static int test_function_sum(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)error;
+	if (region == NULL || result_ptr == NULL || argc < 2 || argv == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_add(region, argv[0], argv[1], result_ptr);
+}
+
+static int test_function_box(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	jsval_t object;
+	jsval_t value = jsval_undefined();
+
+	(void)error;
+	if (region == NULL || result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (argc > 0 && argv != NULL) {
+		value = argv[0];
+	}
+	if (jsval_object_new(region, 1, &object) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, object, (const uint8_t *)"value", 5,
+			value) < 0) {
+		return -1;
+	}
+	*result_ptr = object;
+	return 0;
+}
+
+static int test_function_throw(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)argc;
+	(void)argv;
+	(void)result_ptr;
+	errno = EINVAL;
+	if (error != NULL) {
+		error->kind = JSMETHOD_ERROR_ABRUPT;
+		error->message = "test function threw";
+	}
+	return -1;
+}
+
 static void assert_string(jsval_region_t *region, jsval_t value, const char *expected)
 {
 	size_t expected_len = strlen(expected);
@@ -239,6 +290,139 @@ static void assert_array_strings(jsval_region_t *region, jsval_t array,
 			assert_string(region, value, expected[i]);
 		}
 	}
+}
+
+static void test_function_semantics(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t name;
+	jsval_t named;
+	jsval_t anonymous;
+	jsval_t named_again;
+	jsval_t boxer;
+	jsval_t thrower;
+	jsval_t object;
+	jsval_t array;
+	jsval_t set;
+	jsval_t map;
+	jsval_t clone;
+	jsval_t copied;
+	jsval_t result;
+	jsval_t value;
+	jsval_t args[2];
+	int has = 0;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"sum", 3,
+			&name) == 0);
+	assert(jsval_function_new(&region, test_function_sum, 2, 1, name,
+			&named) == 0);
+	assert(jsval_function_new(&region, test_function_sum, 2, 0,
+			jsval_undefined(), &anonymous) == 0);
+	assert(jsval_function_new(&region, test_function_sum, 2, 1, name,
+			&named_again) == 0);
+	assert(jsval_function_new(&region, test_function_box, 1, 0,
+			jsval_undefined(), &boxer) == 0);
+	assert(jsval_function_new(&region, test_function_throw, 0, 1, name,
+			&thrower) == 0);
+
+	assert(named.kind == JSVAL_KIND_FUNCTION);
+	assert(jsval_truthy(&region, named) == 1);
+	assert(jsval_typeof(&region, named, &result) == 0);
+	assert_string(&region, result, "function");
+	assert(jsval_strict_eq(&region, named, named) == 1);
+	assert(jsval_strict_eq(&region, named, named_again) == 0);
+	assert(jsval_abstract_eq(&region, named, named, &has) == 0);
+	assert(has == 1);
+	assert(jsval_abstract_eq(&region, named, named_again, &has) == 0);
+	assert(has == 0);
+	assert(jsval_abstract_eq(&region, named, name, &has) == 0);
+	assert(has == 0);
+
+	assert(jsval_function_name(&region, named, &result) == 0);
+	assert_string(&region, result, "sum");
+	assert(jsval_function_name(&region, anonymous, &result) == 0);
+	assert_string(&region, result, "");
+	assert(jsval_function_length(&region, named, &result) == 0);
+	assert_number_value(result, 2.0);
+
+	args[0] = jsval_number(20.0);
+	args[1] = jsval_number(22.0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_function_call(&region, named, 2, args, &result, &error) == 0);
+	assert_number_value(result, 42.0);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+
+	memset(&error, 0, sizeof(error));
+	assert(jsval_function_call(&region, boxer, 1, args, &result, &error) == 0);
+	assert(result.kind == JSVAL_KIND_OBJECT);
+	assert_object_number_prop(&region, result, "value", 20.0);
+
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_function_call(&region, thrower, 0, NULL, &result, &error)
+			< 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_ABRUPT);
+	assert(strcmp(error.message, "test function threw") == 0);
+
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	assert(jsval_function_call(&region, jsval_number(1.0), 0, NULL, &result,
+			&error) < 0);
+	assert(errno == EINVAL);
+	assert(error.kind == JSMETHOD_ERROR_TYPE);
+	assert(strcmp(error.message, "function required") == 0);
+
+	assert(jsval_object_new(&region, 1, &object) == 0);
+	assert(jsval_object_set_utf8(&region, object, (const uint8_t *)"fn", 2,
+			named) == 0);
+	assert(jsval_object_get_utf8(&region, object, (const uint8_t *)"fn", 2,
+			&value) == 0);
+	assert(jsval_strict_eq(&region, value, named) == 1);
+
+	assert(jsval_array_new(&region, 1, &array) == 0);
+	assert(jsval_array_push(&region, array, named) == 0);
+	assert(jsval_array_get(&region, array, 0, &value) == 0);
+	assert(jsval_strict_eq(&region, value, named) == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_function_call(&region, value, 2, args, &result, &error) == 0);
+	assert_number_value(result, 42.0);
+
+	assert(jsval_set_new(&region, 1, &set) == 0);
+	assert(jsval_set_add(&region, set, named) == 0);
+	assert(jsval_set_has(&region, set, named, &has) == 0);
+	assert(has == 1);
+	assert(jsval_set_has(&region, set, named_again, &has) == 0);
+	assert(has == 0);
+
+	assert(jsval_map_new(&region, 1, &map) == 0);
+	assert(jsval_map_set(&region, map, named, jsval_bool(1)) == 0);
+	assert(jsval_map_get(&region, map, named, &value) == 0);
+	assert(value.kind == JSVAL_KIND_BOOL);
+	assert(value.as.boolean == 1);
+	assert(jsval_map_get(&region, map, named_again, &value) == 0);
+	assert(value.kind == JSVAL_KIND_UNDEFINED);
+
+	assert(jsval_object_clone_own(&region, object, 1, &clone) == 0);
+	assert(jsval_object_get_utf8(&region, clone, (const uint8_t *)"fn", 2,
+			&value) == 0);
+	assert(jsval_strict_eq(&region, value, named) == 1);
+	assert(jsval_object_new(&region, 1, &copied) == 0);
+	assert(jsval_object_copy_own(&region, copied, object) == 0);
+	assert(jsval_object_get_utf8(&region, copied, (const uint8_t *)"fn", 2,
+			&value) == 0);
+	assert(jsval_strict_eq(&region, value, named) == 1);
+
+	errno = 0;
+	assert(jsval_copy_json(&region, named, NULL, 0, NULL) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_copy_json(&region, object, NULL, 0, NULL) < 0);
+	assert(errno == ENOTSUP);
 }
 
 static void test_set_semantics(void)
@@ -7030,6 +7214,7 @@ int main(void)
 	test_value_semantics();
 	test_symbol_semantics();
 	test_bigint_semantics();
+	test_function_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

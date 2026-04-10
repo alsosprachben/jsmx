@@ -570,6 +570,48 @@ generated_named_groups_replace_callback(jsval_region_t *region, void *opaque,
 }
 #endif
 
+static int
+generated_static_sum_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)error;
+	if (region == NULL || result_ptr == NULL || argc < 2 || argv == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_add(region, argv[0], argv[1], result_ptr);
+}
+
+static int
+generated_static_echo_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)error;
+	if (result_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*result_ptr = (argc > 0 && argv != NULL) ? argv[0] : jsval_undefined();
+	return 0;
+}
+
+static int
+generated_static_throw_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)argc;
+	(void)argv;
+	(void)result_ptr;
+	errno = EINVAL;
+	if (error != NULL) {
+		error->kind = JSMETHOD_ERROR_ABRUPT;
+		error->message = "generated function threw";
+	}
+	return -1;
+}
+
 static generated_status_t generated_expect_negative_zero(jsval_t value,
 		char *detail, size_t cap)
 {
@@ -1721,6 +1763,245 @@ static generated_status_t generated_smoke_jsval_bigint(char *detail,
 	if (value.kind != JSVAL_KIND_BOOL || value.as.boolean != 1) {
 		return generated_failf(detail, cap,
 				"expected bigint-keyed map lookup to return true");
+	}
+
+	return GENERATED_PASS;
+}
+
+static generated_status_t generated_smoke_jsval_function(char *detail,
+		size_t cap)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t name;
+	jsval_t named;
+	jsval_t anonymous;
+	jsval_t named_again;
+	jsval_t echoer;
+	jsval_t thrower;
+	jsval_t object;
+	jsval_t array;
+	jsval_t set;
+	jsval_t map;
+	jsval_t value;
+	jsval_t result;
+	jsval_t args[2];
+	int boolean = 0;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"sum", 3, &name) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(sum)");
+	}
+	if (jsval_function_new(&region, generated_static_sum_function, 2, 1, name,
+			&named) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_new(named)");
+	}
+	if (jsval_function_new(&region, generated_static_sum_function, 2, 0,
+			jsval_undefined(), &anonymous) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_function_new(anonymous)");
+	}
+	if (jsval_function_new(&region, generated_static_sum_function, 2, 1, name,
+			&named_again) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_function_new(named_again)");
+	}
+	if (jsval_function_new(&region, generated_static_echo_function, 1, 0,
+			jsval_undefined(), &echoer) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_new(echoer)");
+	}
+	if (jsval_function_new(&region, generated_static_throw_function, 0, 1, name,
+			&thrower) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_new(thrower)");
+	}
+
+	if (!jsval_truthy(&region, named)) {
+		return generated_failf(detail, cap, "expected function value to be truthy");
+	}
+	if (jsval_typeof(&region, named, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(function)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"function", 8, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_strict_eq(&region, named, named) != 1) {
+		return generated_failf(detail, cap,
+				"expected reused function value to preserve identity");
+	}
+	if (jsval_strict_eq(&region, named, named_again) != 0) {
+		return generated_failf(detail, cap,
+				"expected distinct function allocations to stay distinct");
+	}
+	if (jsval_abstract_eq(&region, named, named_again, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_abstract_eq(function,function)");
+	}
+	status = generated_expect_boolean_result(boolean, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_function_name(&region, named, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_name(named)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"sum", 3,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_function_name(&region, anonymous, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_function_name(anonymous)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"", 0,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_function_length(&region, named, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_length(named)");
+	}
+	status = generated_expect_number(&region, result, 2.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	args[0] = jsval_number(20.0);
+	args[1] = jsval_number(22.0);
+	memset(&error, 0, sizeof(error));
+	if (jsval_function_call(&region, named, 2, args, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_call(named)");
+	}
+	status = generated_expect_number(&region, result, 42.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_object_new(&region, 1, &object) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_object_new(function)");
+	}
+	if (jsval_object_set_utf8(&region, object, (const uint8_t *)"fn", 2, named)
+			< 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_set_utf8(function)");
+	}
+	if (jsval_object_get_utf8(&region, object, (const uint8_t *)"fn", 2,
+			&value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_object_get_utf8(function)");
+	}
+	if (jsval_strict_eq(&region, value, named) != 1) {
+		return generated_failf(detail, cap,
+				"expected function property readback to preserve identity");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_function_call(&region, value, 2, args, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_function_call(object property)");
+	}
+	status = generated_expect_number(&region, result, 42.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_array_new(&region, 1, &array) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_new(function)");
+	}
+	if (jsval_array_push(&region, array, echoer) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_push(function)");
+	}
+	if (jsval_array_get(&region, array, 0, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_array_get(function)");
+	}
+	if (jsval_strict_eq(&region, value, echoer) != 1) {
+		return generated_failf(detail, cap,
+				"expected array-stored function to preserve identity");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"echo", 4, &args[0])
+			< 0) {
+		return generated_fail_errno(detail, cap, "jsval_string_new_utf8(echo)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_function_call(&region, value, 1, args, &result, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_function_call(array function)");
+	}
+	status = generated_expect_string(&region, result, (const uint8_t *)"echo",
+			4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_set_new(&region, 1, &set) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_new(function)");
+	}
+	if (jsval_set_add(&region, set, named) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_add(function)");
+	}
+	if (jsval_set_has(&region, set, named, &boolean) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_set_has(function)");
+	}
+	status = generated_expect_boolean_result(boolean, 1, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_set_has(&region, set, named_again, &boolean) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_set_has(distinct function)");
+	}
+	status = generated_expect_boolean_result(boolean, 0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_map_new(&region, 1, &map) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_new(function)");
+	}
+	if (jsval_map_set(&region, map, named, jsval_bool(1)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_set(function)");
+	}
+	if (jsval_map_get(&region, map, named, &value) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_map_get(function)");
+	}
+	if (value.kind != JSVAL_KIND_BOOL || value.as.boolean != 1) {
+		return generated_failf(detail, cap,
+				"expected function-keyed map lookup to return true");
+	}
+
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_function_call(&region, thrower, 0, NULL, &result, &error) != -1) {
+		return generated_failf(detail, cap,
+				"expected generated throw function to fail");
+	}
+	if (errno != EINVAL || error.kind != JSMETHOD_ERROR_ABRUPT
+			|| error.message == NULL
+			|| strcmp(error.message, "generated function threw") != 0) {
+		return generated_failf(detail, cap,
+				"expected abrupt function call error propagation");
+	}
+
+	memset(&error, 0, sizeof(error));
+	errno = 0;
+	if (jsval_function_call(&region, jsval_number(1.0), 0, NULL, &result,
+			&error) != -1) {
+		return generated_failf(detail, cap,
+				"expected non-function call to fail");
+	}
+	if (errno != EINVAL || error.kind != JSMETHOD_ERROR_TYPE) {
+		return generated_failf(detail, cap,
+				"expected non-function call to report a type error");
+	}
+
+	errno = 0;
+	if (jsval_copy_json(&region, named, NULL, 0, NULL) != -1
+			|| errno != ENOTSUP) {
+		return generated_failf(detail, cap,
+				"expected JSON emission of a function value to fail");
 	}
 
 	return GENERATED_PASS;
@@ -9647,6 +9928,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_typeof", generated_smoke_jsval_typeof},
 	{"smoke", "jsval_symbol", generated_smoke_jsval_symbol},
 	{"smoke", "jsval_bigint", generated_smoke_jsval_bigint},
+	{"smoke", "jsval_function", generated_smoke_jsval_function},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

@@ -96,7 +96,8 @@ Examples:
 - prototype chain semantics
 - descriptors or accessors
 - `Symbol.for`, `Symbol.keyFor`, and well-known symbol protocols
-- functions or closures
+- closures or function semantics that depend on dynamic `this`, `arguments`,
+  constructor behavior, or bound-call protocol
 - promises
 - sparse-array behavior
 - `JSON.stringify`-specific handling of `undefined` or holes
@@ -123,6 +124,16 @@ BigInt-specific note:
   fit `static_pass`
 - JS-visible `BigInt()` constructor semantics and bigint division / remainder /
   bitwise / shift behavior do not fit the current flattened surface
+
+Function-value note:
+
+- capture-free function declarations, function expressions, and arrows can fit
+  `static_pass` when the translator emits:
+  - a static C call target
+  - `jsval_function_new(...)`
+  - `jsval_function_call(...)`
+- closures, dynamic `this`, `arguments`, constructor calls, and
+  `bind` / `call` / `apply` do not fit the current flattened surface
 
 Every manifest entry should also declare one `translation_mode`:
 

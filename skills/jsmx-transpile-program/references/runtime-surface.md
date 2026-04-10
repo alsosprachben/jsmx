@@ -21,6 +21,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 
 - value kinds:
   - `undefined`, `null`, booleans, numbers, strings, symbols, bigints
+  - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
   - explicit iterator values over strings, arrays, Sets, Maps, and
@@ -80,8 +81,11 @@ These are not runtime features. They are the translator's job and are acceptable
   - closure capture
   - dynamic `this`
   - `arguments`
-  - function objects as first-class values
   - `eval`
+- capture-free function values can also lower directly when the translator:
+  - emits a static C call target
+  - materializes a first-class value through `jsval_function_new(...)`
+  - routes calls through `jsval_function_call(...)`
 
 If the JS function behavior depends on those missing categories, classify the program as `manual_runtime_needed`.
 
@@ -127,7 +131,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - bigint division, remainder, bitwise, or shift operators
   - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
     protocol semantics and iterable duck typing
-  - functions as values with closure semantics
+  - functions as values with closure semantics, dynamic `this`, `arguments`,
+    constructor behavior, or `bind` / `call` / `apply`
 - host contracts with no clear current mapping:
   - exact `console.log` object formatting like Node `util.inspect`
   - arbitrary core-module behavior beyond the documented host bridges

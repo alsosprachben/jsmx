@@ -35,7 +35,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_MAP = 12,
 	JSVAL_KIND_ITERATOR = 13,
 	JSVAL_KIND_SYMBOL = 14,
-	JSVAL_KIND_BIGINT = 15
+	JSVAL_KIND_BIGINT = 15,
+	JSVAL_KIND_FUNCTION = 16
 } jsval_kind_t;
 
 typedef enum jsval_iterator_selector_e {
@@ -72,6 +73,10 @@ typedef struct jsval_region_s {
 	size_t used;
 	jsval_pages_t *pages;
 } jsval_region_t;
+
+typedef int (*jsval_native_function_fn)(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr,
+		jsmethod_error_t *error);
 
 #if JSMX_WITH_REGEX
 typedef struct jsval_regexp_info_s {
@@ -130,6 +135,15 @@ int jsval_bigint_copy_utf8(jsval_region_t *region, jsval_t value,
 		uint8_t *buf, size_t cap, size_t *len_ptr);
 int jsval_bigint_compare(jsval_region_t *region, jsval_t left, jsval_t right,
 		int *result_ptr);
+int jsval_function_new(jsval_region_t *region, jsval_native_function_fn fn,
+		size_t length, int have_name, jsval_t name_value,
+		jsval_t *value_ptr);
+int jsval_function_name(jsval_region_t *region, jsval_t function,
+		jsval_t *value_ptr);
+int jsval_function_length(jsval_region_t *region, jsval_t function,
+		jsval_t *value_ptr);
+int jsval_function_call(jsval_region_t *region, jsval_t function, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 

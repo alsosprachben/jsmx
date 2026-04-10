@@ -3897,6 +3897,26 @@
       "notes": "Repo-authored idiomatic value-semantics fixture for BigInt equality against exact integral numbers and relational ordering against numeric and decimal-string operands."
     },
     {
+      "id": "jsmx-values-function-primitive-call-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/function-primitive-call-parity.js",
+      "generated": "compliance/generated/values/jsmx/function-primitive-call-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native function typeof, truthiness, identity, metadata, and direct explicit-call parity through static call targets."
+    },
+    {
+      "id": "jsmx-values-function-container-call-parity",
+      "suite": "values",
+      "source": "compliance/js/values/jsmx/function-container-call-parity.js",
+      "generated": "compliance/generated/values/jsmx/function-container-call-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic value-semantics fixture for native function values stored in native object, array, Set, and Map containers and invoked after retrieval."
+    },
+    {
       "id": "jsmx-values-typeof-container-parity",
       "suite": "values",
       "source": "compliance/js/values/jsmx/typeof-container-parity.js",

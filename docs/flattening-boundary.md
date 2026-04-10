@@ -73,6 +73,12 @@ caller-provided memory:
   - relational ordering against bigint, string, and numeric operands
   - page-resident `+`, `-`, `*`, and unary `-`
   - explicit mixed Number/BigInt rejection rather than hidden coercion
+- native static function values such as:
+  - translator-emitted capture-free static call targets
+  - explicit `name`, `length`, and call helpers
+  - first-class storage in native objects, arrays, `Set`, and `Map`
+  - identity-sensitive equality without broadening into generic object
+    dispatch or constructor semantics
 - explicit native string iterator production and stepping such as:
   - values grouped by JS string iterator code-point semantics
   - keys and entries reported in UTF-16 code-unit offsets
@@ -103,6 +109,8 @@ Examples:
 - `Symbol.toPrimitive` or custom coercion hooks
 - JS-visible `BigInt()` constructor semantics beyond the explicit helper layer
 - bigint division, remainder, bitwise, and shift semantics
+- closures, dynamic `this`, `arguments`, constructor calls, and bound-function
+  protocol semantics
 - proxies, `eval`, `with`, and similar dynamic escape hatches
 
 ## Capability Classes
