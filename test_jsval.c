@@ -53,6 +53,39 @@ typedef struct test_replace_surrogate_callback_ctx_s {
 	const char *replacement_values[4];
 } test_replace_surrogate_callback_ctx_t;
 
+typedef struct test_promise_identity_ctx_s {
+	int call_count;
+	size_t last_argc;
+	jsval_t last_arg;
+} test_promise_identity_ctx_t;
+
+typedef struct test_promise_return_ctx_s {
+	int call_count;
+	size_t last_argc;
+	jsval_t last_arg;
+	jsval_t return_value;
+} test_promise_return_ctx_t;
+
+typedef struct test_promise_throw_ctx_s {
+	int call_count;
+} test_promise_throw_ctx_t;
+
+typedef struct test_microtask_ctx_s {
+	int call_count;
+	int enqueue_nested;
+	jsval_t nested_function;
+} test_microtask_ctx_t;
+
+typedef struct test_scheduler_ctx_s {
+	int enqueue_count;
+	int wake_count;
+} test_scheduler_ctx_t;
+
+static test_promise_identity_ctx_t test_promise_identity_ctx;
+static test_promise_return_ctx_t test_promise_return_ctx;
+static test_promise_throw_ctx_t test_promise_throw_ctx;
+static test_microtask_ctx_t test_microtask_ctx;
+
 static int test_function_sum(jsval_region_t *region, size_t argc,
 		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
 {
@@ -104,6 +137,91 @@ static int test_function_throw(jsval_region_t *region, size_t argc,
 	return -1;
 }
 
+static int test_promise_identity(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)error;
+	if (result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	test_promise_identity_ctx.call_count++;
+	test_promise_identity_ctx.last_argc = argc;
+	test_promise_identity_ctx.last_arg = argc > 0 ? argv[0] : jsval_undefined();
+	*result_ptr = argc > 0 ? argv[0] : jsval_undefined();
+	return 0;
+}
+
+static int test_promise_return(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)error;
+	if (result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	test_promise_return_ctx.call_count++;
+	test_promise_return_ctx.last_argc = argc;
+	test_promise_return_ctx.last_arg = argc > 0 ? argv[0] : jsval_undefined();
+	*result_ptr = test_promise_return_ctx.return_value;
+	return 0;
+}
+
+static int test_promise_throw_handler(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)argc;
+	(void)argv;
+	(void)result_ptr;
+	test_promise_throw_ctx.call_count++;
+	errno = EINVAL;
+	if (error != NULL) {
+		error->kind = JSMETHOD_ERROR_ABRUPT;
+		error->message = "test promise handler threw";
+	}
+	return -1;
+}
+
+static int test_microtask_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)error;
+	if (region == NULL || result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	test_microtask_ctx.call_count++;
+	if (test_microtask_ctx.enqueue_nested
+			&& test_microtask_ctx.nested_function.kind == JSVAL_KIND_FUNCTION) {
+		test_microtask_ctx.enqueue_nested = 0;
+		if (jsval_microtask_enqueue(region, test_microtask_ctx.nested_function,
+				0, NULL) < 0) {
+			return -1;
+		}
+	}
+	*result_ptr = argc > 0 ? argv[0] : jsval_undefined();
+	return 0;
+}
+
+static void test_scheduler_on_enqueue(jsval_region_t *region, void *ctx)
+{
+	(void)region;
+	if (ctx != NULL) {
+		((test_scheduler_ctx_t *)ctx)->enqueue_count++;
+	}
+}
+
+static void test_scheduler_on_wake(jsval_region_t *region, void *ctx)
+{
+	(void)region;
+	if (ctx != NULL) {
+		((test_scheduler_ctx_t *)ctx)->wake_count++;
+	}
+}
+
 static void assert_string(jsval_region_t *region, jsval_t value, const char *expected)
 {
 	size_t expected_len = strlen(expected);
@@ -115,6 +233,18 @@ static void assert_string(jsval_region_t *region, jsval_t value, const char *exp
 	assert(actual_len == expected_len);
 	assert(jsval_string_copy_utf8(region, value, buf, actual_len, NULL) == 0);
 	assert(memcmp(buf, expected, expected_len) == 0);
+}
+
+static void assert_dom_exception(jsval_region_t *region, jsval_t value,
+		const char *expected_name, const char *expected_message)
+{
+	jsval_t result;
+
+	assert(value.kind == JSVAL_KIND_DOM_EXCEPTION);
+	assert(jsval_dom_exception_name(region, value, &result) == 0);
+	assert_string(region, result, expected_name);
+	assert(jsval_dom_exception_message(region, value, &result) == 0);
+	assert_string(region, result, expected_message);
 }
 
 static void assert_bigint_string(jsval_region_t *region, jsval_t value,
@@ -731,6 +861,238 @@ static void test_crypto_semantics(void)
 	assert_string(&region, result, "QuotaExceededError");
 	assert(jsval_dom_exception_message(&region, dom_exception, &result) == 0);
 	assert_string(&region, result, "too many bytes");
+}
+
+static void test_promise_semantics(void)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_scheduler_t scheduler;
+	jsval_scheduler_t scheduler_copy;
+	test_scheduler_ctx_t scheduler_ctx;
+	jsval_t identity_fn;
+	jsval_t return_fn;
+	jsval_t throw_fn;
+	jsval_t microtask_fn;
+	jsval_t promise;
+	jsval_t downstream;
+	jsval_t settled_then;
+	jsval_t rejected_source;
+	jsval_t caught;
+	jsval_t finally_source;
+	jsval_t finally_chain;
+	jsval_t cleanup;
+	jsval_t finally_rejected_source;
+	jsval_t after_finally;
+	jsval_t outer;
+	jsval_t inner;
+	jsval_t throwing_source;
+	jsval_t rejected_chain;
+	jsval_t self_promise;
+	jsval_t fixed;
+	jsval_t boom;
+	jsval_t caught_value;
+	jsval_t result;
+	jsval_promise_state_t state;
+	jsmethod_error_t error;
+
+	memset(&test_promise_identity_ctx, 0, sizeof(test_promise_identity_ctx));
+	memset(&test_promise_return_ctx, 0, sizeof(test_promise_return_ctx));
+	memset(&test_promise_throw_ctx, 0, sizeof(test_promise_throw_ctx));
+	memset(&test_microtask_ctx, 0, sizeof(test_microtask_ctx));
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	memset(&scheduler, 0, sizeof(scheduler));
+	scheduler.ctx = &scheduler_ctx;
+	scheduler.on_enqueue = test_scheduler_on_enqueue;
+	scheduler.on_wake = test_scheduler_on_wake;
+	jsval_region_set_scheduler(&region, &scheduler);
+	memset(&scheduler_copy, 0, sizeof(scheduler_copy));
+	jsval_region_get_scheduler(&region, &scheduler_copy);
+	assert(scheduler_copy.ctx == &scheduler_ctx);
+	assert(scheduler_copy.on_enqueue == test_scheduler_on_enqueue);
+	assert(scheduler_copy.on_wake == test_scheduler_on_wake);
+
+	assert(jsval_function_new(&region, test_promise_identity, 1, 0,
+			jsval_undefined(), &identity_fn) == 0);
+	assert(jsval_function_new(&region, test_promise_return, 0, 0,
+			jsval_undefined(), &return_fn) == 0);
+	assert(jsval_function_new(&region, test_promise_throw_handler, 1, 0,
+			jsval_undefined(), &throw_fn) == 0);
+	assert(jsval_function_new(&region, test_microtask_function, 0, 0,
+			jsval_undefined(), &microtask_fn) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"boom", 4,
+			&boom) == 0);
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"caught", 6,
+			&caught_value) == 0);
+
+	test_microtask_ctx.nested_function = microtask_fn;
+	test_microtask_ctx.enqueue_nested = 1;
+	assert(jsval_microtask_enqueue(&region, microtask_fn, 0, NULL) == 0);
+	assert(jsval_microtask_pending(&region) == 1);
+	assert(scheduler_ctx.enqueue_count == 1);
+	assert(scheduler_ctx.wake_count == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+	assert(jsval_microtask_pending(&region) == 0);
+	assert(test_microtask_ctx.call_count == 2);
+	assert(scheduler_ctx.enqueue_count == 2);
+	assert(scheduler_ctx.wake_count == 1);
+
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+	assert(jsval_promise_new(&region, &promise) == 0);
+	assert(promise.kind == JSVAL_KIND_PROMISE);
+	assert(jsval_truthy(&region, promise) == 1);
+	assert(jsval_typeof(&region, promise, &result) == 0);
+	assert_string(&region, result, "object");
+	assert(jsval_promise_state(&region, promise, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_promise_result(&region, promise, &result) == 0);
+	assert(result.kind == JSVAL_KIND_UNDEFINED);
+	assert(jsval_strict_eq(&region, promise, promise) == 1);
+
+	assert(jsval_promise_then(&region, promise, identity_fn,
+			jsval_undefined(), &downstream) == 0);
+	assert(jsval_promise_resolve(&region, promise, jsval_number(7.0)) == 0);
+	assert(jsval_promise_state(&region, promise, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_state(&region, downstream, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_microtask_pending(&region) == 1);
+	assert(scheduler_ctx.enqueue_count == 1);
+	assert(scheduler_ctx.wake_count == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(error.kind == JSMETHOD_ERROR_NONE);
+	assert(test_promise_identity_ctx.call_count == 1);
+	assert(test_promise_identity_ctx.last_argc == 1);
+	assert_number_value(test_promise_identity_ctx.last_arg, 7.0);
+	assert(jsval_promise_state(&region, downstream, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, downstream, &result) == 0);
+	assert_number_value(result, 7.0);
+
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+	memset(&test_promise_identity_ctx, 0, sizeof(test_promise_identity_ctx));
+	assert(jsval_promise_then(&region, promise, identity_fn,
+			jsval_undefined(), &settled_then) == 0);
+	assert(jsval_promise_state(&region, settled_then, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_microtask_pending(&region) == 1);
+	assert(scheduler_ctx.enqueue_count == 1);
+	assert(scheduler_ctx.wake_count == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(test_promise_identity_ctx.call_count == 1);
+	assert_number_value(test_promise_identity_ctx.last_arg, 7.0);
+	assert(jsval_promise_state(&region, settled_then, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, settled_then, &result) == 0);
+	assert_number_value(result, 7.0);
+
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+	memset(&test_promise_return_ctx, 0, sizeof(test_promise_return_ctx));
+	test_promise_return_ctx.return_value = caught_value;
+	assert(jsval_promise_new(&region, &rejected_source) == 0);
+	assert(jsval_promise_catch(&region, rejected_source, return_fn, &caught)
+			== 0);
+	assert(jsval_promise_reject(&region, rejected_source, boom) == 0);
+	assert(jsval_promise_state(&region, caught, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_microtask_pending(&region) == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(test_promise_return_ctx.call_count == 1);
+	assert_string(&region, test_promise_return_ctx.last_arg, "boom");
+	assert(jsval_promise_state(&region, caught, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, caught, &result) == 0);
+	assert_string(&region, result, "caught");
+
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+	memset(&test_promise_return_ctx, 0, sizeof(test_promise_return_ctx));
+	test_promise_return_ctx.return_value = jsval_undefined();
+	assert(jsval_promise_new(&region, &finally_source) == 0);
+	assert(jsval_promise_finally(&region, finally_source, return_fn,
+			&finally_chain) == 0);
+	assert(jsval_promise_resolve(&region, finally_source, jsval_number(42.0))
+			== 0);
+	assert(jsval_microtask_pending(&region) == 1);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(test_promise_return_ctx.call_count == 1);
+	assert(test_promise_return_ctx.last_argc == 0);
+	assert(jsval_promise_state(&region, finally_chain, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, finally_chain, &result) == 0);
+	assert_number_value(result, 42.0);
+
+	memset(&scheduler_ctx, 0, sizeof(scheduler_ctx));
+	memset(&test_promise_return_ctx, 0, sizeof(test_promise_return_ctx));
+	assert(jsval_promise_new(&region, &cleanup) == 0);
+	test_promise_return_ctx.return_value = cleanup;
+	assert(jsval_promise_new(&region, &finally_rejected_source) == 0);
+	assert(jsval_promise_finally(&region, finally_rejected_source, return_fn,
+			&after_finally) == 0);
+	assert(jsval_promise_reject(&region, finally_rejected_source, boom) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(test_promise_return_ctx.call_count == 1);
+	assert(jsval_promise_state(&region, after_finally, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_promise_resolve(&region, cleanup, jsval_undefined()) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(jsval_promise_state(&region, after_finally, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, after_finally, &result) == 0);
+	assert_string(&region, result, "boom");
+
+	assert(jsval_promise_new(&region, &outer) == 0);
+	assert(jsval_promise_new(&region, &inner) == 0);
+	assert(jsval_promise_resolve(&region, outer, inner) == 0);
+	assert(jsval_promise_state(&region, outer, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_promise_resolve(&region, inner, jsval_number(9.0)) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(jsval_promise_state(&region, outer, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, outer, &result) == 0);
+	assert_number_value(result, 9.0);
+
+	memset(&test_promise_throw_ctx, 0, sizeof(test_promise_throw_ctx));
+	assert(jsval_promise_new(&region, &throwing_source) == 0);
+	assert(jsval_promise_then(&region, throwing_source, throw_fn,
+			jsval_undefined(), &rejected_chain) == 0);
+	assert(jsval_promise_resolve(&region, throwing_source, jsval_number(1.0))
+			== 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(test_promise_throw_ctx.call_count == 1);
+	assert(jsval_promise_state(&region, rejected_chain, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, rejected_chain, &result) == 0);
+	assert_dom_exception(&region, result, "Error",
+			"test promise handler threw");
+
+	assert(jsval_promise_new(&region, &self_promise) == 0);
+	assert(jsval_promise_resolve(&region, self_promise, self_promise) == 0);
+	assert(jsval_promise_state(&region, self_promise, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, self_promise, &result) == 0);
+	assert_dom_exception(&region, result, "TypeError",
+			"promise self-resolution");
+
+	assert(jsval_promise_new(&region, &fixed) == 0);
+	assert(jsval_promise_resolve(&region, fixed, jsval_number(3.0)) == 0);
+	assert(jsval_promise_reject(&region, fixed, jsval_number(4.0)) == 0);
+	assert(jsval_promise_state(&region, fixed, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, fixed, &result) == 0);
+	assert_number_value(result, 3.0);
 }
 
 static void test_set_semantics(void)
@@ -7525,6 +7887,7 @@ int main(void)
 	test_function_semantics();
 	test_date_semantics();
 	test_crypto_semantics();
+	test_promise_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

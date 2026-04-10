@@ -15,7 +15,7 @@
         "crypto.getRandomValues(typedArray)",
         "crypto.subtle"
       ],
-      "notes": "The initial WinterTC crypto profile is sync-only: randomUUID, getRandomValues, and stable subtle object identity. Promise-backed subtle algorithms remain pending."
+      "notes": "The current WinterTC crypto profile covers randomUUID, getRandomValues, and stable subtle object identity. The generic Promise substrate now exists in jsmx, but Promise-backed subtle algorithms remain pending until a later digest slice."
     }
   }
 }

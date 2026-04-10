@@ -43,7 +43,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_CRYPTO = 20,
 	JSVAL_KIND_SUBTLE_CRYPTO = 21,
 	JSVAL_KIND_CRYPTO_KEY = 22,
-	JSVAL_KIND_DOM_EXCEPTION = 23
+	JSVAL_KIND_DOM_EXCEPTION = 23,
+	JSVAL_KIND_PROMISE = 24
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -73,6 +74,12 @@ typedef enum jsval_iterator_selector_e {
 	JSVAL_ITERATOR_SELECTOR_ENTRIES = 3
 } jsval_iterator_selector_t;
 
+typedef enum jsval_promise_state_e {
+	JSVAL_PROMISE_STATE_PENDING = 0,
+	JSVAL_PROMISE_STATE_FULFILLED = 1,
+	JSVAL_PROMISE_STATE_REJECTED = 2
+} jsval_promise_state_t;
+
 typedef struct jsval_s {
 	uint8_t kind;
 	uint8_t repr;
@@ -94,11 +101,28 @@ typedef struct jsval_pages_s {
 	jsval_t root;
 } jsval_pages_t;
 
+struct jsval_region_s;
+typedef struct jsval_region_s jsval_region_t;
+
+typedef void (*jsval_scheduler_notify_fn)(jsval_region_t *region, void *ctx);
+
+typedef struct jsval_scheduler_s {
+	void *ctx;
+	jsval_scheduler_notify_fn on_enqueue;
+	jsval_scheduler_notify_fn on_wake;
+} jsval_scheduler_t;
+
 typedef struct jsval_region_s {
 	uint8_t *base;
 	size_t len;
 	size_t used;
 	jsval_pages_t *pages;
+	jsval_off_t microtask_head;
+	jsval_off_t microtask_tail;
+	size_t microtask_count;
+	uint8_t microtask_draining;
+	uint8_t reserved[7];
+	jsval_scheduler_t scheduler;
 } jsval_region_t;
 
 typedef int (*jsval_native_function_fn)(jsval_region_t *region, size_t argc,
@@ -128,6 +152,10 @@ typedef int (*jsval_replace_callback_fn)(jsval_region_t *region, void *ctx,
 
 void jsval_region_init(jsval_region_t *region, void *buf, size_t len);
 void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len);
+void jsval_region_set_scheduler(jsval_region_t *region,
+		const jsval_scheduler_t *scheduler);
+void jsval_region_get_scheduler(const jsval_region_t *region,
+		jsval_scheduler_t *scheduler_ptr);
 size_t jsval_region_remaining(jsval_region_t *region);
 int jsval_region_alloc(jsval_region_t *region, size_t len, size_t align,
 		void **ptr_ptr);
@@ -308,6 +336,25 @@ int jsval_crypto_key_algorithm(jsval_region_t *region, jsval_t key_value,
 		jsval_t *value_ptr);
 int jsval_crypto_key_usages(jsval_region_t *region, jsval_t key_value,
 		uint32_t *usages_ptr);
+int jsval_promise_new(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_promise_state(jsval_region_t *region, jsval_t promise_value,
+		jsval_promise_state_t *state_ptr);
+int jsval_promise_result(jsval_region_t *region, jsval_t promise_value,
+		jsval_t *value_ptr);
+int jsval_promise_resolve(jsval_region_t *region, jsval_t promise_value,
+		jsval_t value);
+int jsval_promise_reject(jsval_region_t *region, jsval_t promise_value,
+		jsval_t reason);
+int jsval_promise_then(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_fulfilled, jsval_t on_rejected, jsval_t *value_ptr);
+int jsval_promise_catch(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_rejected, jsval_t *value_ptr);
+int jsval_promise_finally(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_finally, jsval_t *value_ptr);
+int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
+		size_t argc, const jsval_t *argv);
+size_t jsval_microtask_pending(jsval_region_t *region);
+int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 int jsval_array_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);
 

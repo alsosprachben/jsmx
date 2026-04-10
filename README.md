@@ -76,7 +76,8 @@ That makes semantic correctness more important than surface familiarity:
   - versioned page-set storage with an in-page root handle
   - native and JSON-backed JS value/object/array representations plus native
     `Symbol`, `BigInt`, `Date`, `Set`, `Map`, typed-array / buffer views,
-    WinterTC crypto objects, and explicit iterator values
+    WinterTC crypto objects, Promise values with a pluggable microtask
+    scheduler boundary, and explicit iterator values
   - explicit promotion helpers for generated C
   - shallow capacity-planned promotion for selectively mutating parsed JSON
     subtrees
@@ -153,6 +154,13 @@ That makes semantic correctness more important than surface familiarity:
     - `crypto.randomUUID()` and `crypto.getRandomValues(...)`
     - `CryptoKey` and `DOMException` groundwork for later async
       `SubtleCrypto` slices
+  - native Promise helpers for:
+    - identity-bearing Promise values with pending / fulfilled / rejected
+      state
+    - explicit `then`, `catch`, and `finally` chaining
+    - a runtime-owned microtask queue with optional scheduler wake hooks so
+      standalone `jsmx` and later outer runtimes can share the same Promise
+      semantics
   - primitive `typeof`, nullish detection, numeric, arithmetic, equality, and
     relational helpers for flattened generated code
   - translator-facing callback replacers for `replace` / `replaceAll`,
@@ -503,6 +511,17 @@ The CMake path will:
 The manifest-driven runners also understand:
 
 - `JSMX_FEATURES=crypto`
+
+Current WinterTC-oriented crypto coverage is:
+
+- `globalThis.crypto`
+- `crypto.randomUUID()`
+- `crypto.getRandomValues(...)`
+- stable `crypto.subtle` identity
+
+The Promise substrate needed for later async WebCrypto methods now exists in
+`jsval`, but Promise-backed `SubtleCrypto` algorithms such as
+`subtle.digest(...)` are still a later slice.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

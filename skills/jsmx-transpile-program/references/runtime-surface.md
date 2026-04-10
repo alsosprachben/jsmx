@@ -22,6 +22,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
 - value kinds:
   - `undefined`, `null`, booleans, numbers, strings, symbols, bigints, and
     dates
+  - native Promise values with explicit runtime-owned microtask scheduling and
+    `then` / `catch` / `finally` chaining
   - optional feature-gated WinterTC sync-crypto values:
     - `ArrayBuffer`
     - typed arrays
@@ -56,6 +58,18 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_date_parse_iso(...)`
     - UTC and local field getter/setter helpers
     - `toISOString`, `toUTCString`, `toString`, and `toJSON`
+  - explicit Promise helpers through:
+    - `jsval_promise_new(...)`
+    - `jsval_promise_resolve(...)`
+    - `jsval_promise_reject(...)`
+    - `jsval_promise_then(...)`
+    - `jsval_promise_catch(...)`
+    - `jsval_promise_finally(...)`
+    - `jsval_microtask_enqueue(...)`
+    - `jsval_microtask_drain(...)`
+    - `jsval_microtask_pending(...)`
+    - `jsval_region_set_scheduler(...)`
+    - `jsval_region_get_scheduler(...)`
   - optional feature-gated WinterTC sync crypto through:
     - `jsval_crypto_new(...)`
     - `jsval_crypto_subtle(...)`
@@ -142,8 +156,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
 - modules or loaders whose semantics are not being inlined explicitly
   - dynamic `require(...)`
   - ESM loader semantics
-- async or event-loop behavior:
-  - promises
+- async or event-loop behavior beyond the explicit Promise core:
+  - host event-loop ownership
   - timers
   - streams with async callbacks
   - networking
@@ -156,6 +170,9 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - broad legacy Date-string parsing or host-independent timezone policy
     beyond the bounded ISO + libc-local Date helpers
   - Promise-backed `SubtleCrypto` methods such as `subtle.digest(...)`
+  - JS-visible global / prototype Promise surface beyond the explicit helper
+    contract, including arbitrary thenable duck typing and Promise
+    combinators such as `all`, `race`, `any`, and `allSettled`
   - JS-visible `Symbol.iterator` / `String.prototype[Symbol.iterator]`
     protocol semantics and iterable duck typing
   - functions as values with closure semantics, dynamic `this`, `arguments`,

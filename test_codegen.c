@@ -38,6 +38,39 @@ typedef struct generated_regex_replace_callback_ctx_s {
 	int should_throw;
 } generated_regex_replace_callback_ctx_t;
 
+typedef struct generated_promise_identity_state_s {
+	int call_count;
+	size_t last_argc;
+	jsval_t last_arg;
+} generated_promise_identity_state_t;
+
+typedef struct generated_promise_return_state_s {
+	int call_count;
+	size_t last_argc;
+	jsval_t last_arg;
+	jsval_t return_value;
+} generated_promise_return_state_t;
+
+typedef struct generated_promise_throw_state_s {
+	int call_count;
+} generated_promise_throw_state_t;
+
+typedef struct generated_microtask_state_s {
+	int call_count;
+	int enqueue_nested;
+	jsval_t nested_function;
+} generated_microtask_state_t;
+
+typedef struct generated_scheduler_state_s {
+	int enqueue_count;
+	int wake_count;
+} generated_scheduler_state_t;
+
+static generated_promise_identity_state_t generated_promise_identity_state;
+static generated_promise_return_state_t generated_promise_return_state;
+static generated_promise_throw_state_t generated_promise_throw_state;
+static generated_microtask_state_t generated_microtask_state;
+
 static generated_status_t generated_write_detail(generated_status_t status, char *detail, size_t cap, const char *fmt, ...)
 {
 	va_list ap;
@@ -610,6 +643,100 @@ generated_static_throw_function(jsval_region_t *region, size_t argc,
 		error->message = "generated function threw";
 	}
 	return -1;
+}
+
+static int
+generated_promise_identity_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)error;
+	if (result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	generated_promise_identity_state.call_count++;
+	generated_promise_identity_state.last_argc = argc;
+	generated_promise_identity_state.last_arg =
+		(argc > 0) ? argv[0] : jsval_undefined();
+	*result_ptr = (argc > 0) ? argv[0] : jsval_undefined();
+	return 0;
+}
+
+static int
+generated_promise_return_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)error;
+	if (result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	generated_promise_return_state.call_count++;
+	generated_promise_return_state.last_argc = argc;
+	generated_promise_return_state.last_arg =
+		(argc > 0) ? argv[0] : jsval_undefined();
+	*result_ptr = generated_promise_return_state.return_value;
+	return 0;
+}
+
+static int
+generated_promise_throw_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)region;
+	(void)argc;
+	(void)argv;
+	(void)result_ptr;
+	generated_promise_throw_state.call_count++;
+	errno = EINVAL;
+	if (error != NULL) {
+		error->kind = JSMETHOD_ERROR_ABRUPT;
+		error->message = "generated promise handler threw";
+	}
+	return -1;
+}
+
+static int
+generated_microtask_function(jsval_region_t *region, size_t argc,
+		const jsval_t *argv, jsval_t *result_ptr, jsmethod_error_t *error)
+{
+	(void)error;
+	if (region == NULL || result_ptr == NULL || (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	generated_microtask_state.call_count++;
+	if (generated_microtask_state.enqueue_nested
+			&& generated_microtask_state.nested_function.kind
+				== JSVAL_KIND_FUNCTION) {
+		generated_microtask_state.enqueue_nested = 0;
+		if (jsval_microtask_enqueue(region,
+				generated_microtask_state.nested_function, 0, NULL) < 0) {
+			return -1;
+		}
+	}
+	*result_ptr = (argc > 0) ? argv[0] : jsval_undefined();
+	return 0;
+}
+
+static void
+generated_scheduler_on_enqueue(jsval_region_t *region, void *ctx)
+{
+	(void)region;
+	if (ctx != NULL) {
+		((generated_scheduler_state_t *)ctx)->enqueue_count++;
+	}
+}
+
+static void
+generated_scheduler_on_wake(jsval_region_t *region, void *ctx)
+{
+	(void)region;
+	if (ctx != NULL) {
+		((generated_scheduler_state_t *)ctx)->wake_count++;
+	}
 }
 
 static generated_status_t generated_expect_negative_zero(jsval_t value,
@@ -2776,6 +2903,388 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 		return generated_fail_errno(detail, cap, "jsval_dom_exception_new");
 	}
 	return GENERATED_PASS;
+}
+
+static generated_status_t
+generated_smoke_jsval_promise(char *detail, size_t cap)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_scheduler_t scheduler;
+	generated_scheduler_state_t scheduler_state;
+	jsval_t identity_fn;
+	jsval_t return_fn;
+	jsval_t throw_fn;
+	jsval_t microtask_fn;
+	jsval_t promise;
+	jsval_t downstream;
+	jsval_t settled_then;
+	jsval_t rejected_source;
+	jsval_t caught;
+	jsval_t finally_source;
+	jsval_t finally_chain;
+	jsval_t cleanup;
+	jsval_t finally_rejected_source;
+	jsval_t after_finally;
+	jsval_t outer;
+	jsval_t inner;
+	jsval_t throwing_source;
+	jsval_t rejected_chain;
+	jsval_t self_promise;
+	jsval_t fixed;
+	jsval_t boom;
+	jsval_t caught_value;
+	jsval_t result;
+	jsval_promise_state_t state;
+	jsmethod_error_t error;
+	generated_status_t status;
+
+	memset(&generated_promise_identity_state, 0,
+			sizeof(generated_promise_identity_state));
+	memset(&generated_promise_return_state, 0,
+			sizeof(generated_promise_return_state));
+	memset(&generated_promise_throw_state, 0,
+			sizeof(generated_promise_throw_state));
+	memset(&generated_microtask_state, 0, sizeof(generated_microtask_state));
+	memset(&scheduler_state, 0, sizeof(scheduler_state));
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	memset(&scheduler, 0, sizeof(scheduler));
+	scheduler.ctx = &scheduler_state;
+	scheduler.on_enqueue = generated_scheduler_on_enqueue;
+	scheduler.on_wake = generated_scheduler_on_wake;
+	jsval_region_set_scheduler(&region, &scheduler);
+
+	if (jsval_function_new(&region, generated_promise_identity_function, 1, 0,
+			jsval_undefined(), &identity_fn) < 0
+			|| jsval_function_new(&region, generated_promise_return_function, 0,
+				0, jsval_undefined(), &return_fn) < 0
+			|| jsval_function_new(&region, generated_promise_throw_function, 1, 0,
+				jsval_undefined(), &throw_fn) < 0
+			|| jsval_function_new(&region, generated_microtask_function, 0, 0,
+				jsval_undefined(), &microtask_fn) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_function_new(promise)");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"boom", 4, &boom) < 0
+			|| jsval_string_new_utf8(&region, (const uint8_t *)"caught", 6,
+				&caught_value) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_string_new_utf8(promise strings)");
+	}
+
+	generated_microtask_state.nested_function = microtask_fn;
+	generated_microtask_state.enqueue_nested = 1;
+	if (jsval_microtask_enqueue(&region, microtask_fn, 0, NULL) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_microtask_enqueue");
+	}
+	if (jsval_microtask_pending(&region) != 1
+			|| scheduler_state.enqueue_count != 1
+			|| scheduler_state.wake_count != 1) {
+		return generated_failf(detail, cap,
+				"expected first microtask enqueue to notify scheduler once");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_microtask_drain");
+	}
+	if (generated_microtask_state.call_count != 2
+			|| jsval_microtask_pending(&region) != 0
+			|| scheduler_state.enqueue_count != 2
+			|| scheduler_state.wake_count != 1) {
+		return generated_failf(detail, cap,
+				"expected nested microtask drain to run to completion");
+	}
+
+	memset(&scheduler_state, 0, sizeof(scheduler_state));
+	if (jsval_promise_new(&region, &promise) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_new");
+	}
+	if (!jsval_truthy(&region, promise)) {
+		return generated_failf(detail, cap, "expected promise to be truthy");
+	}
+	if (jsval_typeof(&region, promise, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_typeof(promise)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"object", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_promise_state(&region, promise, &state) < 0
+			|| state != JSVAL_PROMISE_STATE_PENDING) {
+		return generated_fail_errno(detail, cap, "jsval_promise_state(pending)");
+	}
+	if (jsval_promise_result(&region, promise, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_result(pending)");
+	}
+	if (result.kind != JSVAL_KIND_UNDEFINED) {
+		return generated_failf(detail, cap,
+				"expected pending promise result to stay undefined");
+	}
+
+	if (jsval_promise_then(&region, promise, identity_fn, jsval_undefined(),
+			&downstream) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_then");
+	}
+	if (jsval_promise_resolve(&region, promise, jsval_number(7.0)) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_resolve");
+	}
+	if (jsval_promise_state(&region, downstream, &state) < 0
+			|| state != JSVAL_PROMISE_STATE_PENDING
+			|| jsval_microtask_pending(&region) != 1) {
+		return generated_failf(detail, cap,
+				"expected downstream promise to remain pending until drain");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(promise then)");
+	}
+	if (generated_promise_identity_state.call_count != 1) {
+		return generated_failf(detail, cap,
+				"expected fulfilled handler to run exactly once");
+	}
+	status = generated_expect_number(&region,
+			generated_promise_identity_state.last_arg, 7.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_promise_result(&region, downstream, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(downstream)");
+	}
+	status = generated_expect_number(&region, result, 7.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	memset(&generated_promise_identity_state, 0,
+			sizeof(generated_promise_identity_state));
+	memset(&scheduler_state, 0, sizeof(scheduler_state));
+	if (jsval_promise_then(&region, promise, identity_fn, jsval_undefined(),
+			&settled_then) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_then(settled)");
+	}
+	if (jsval_promise_state(&region, settled_then, &state) < 0
+			|| state != JSVAL_PROMISE_STATE_PENDING
+			|| jsval_microtask_pending(&region) != 1) {
+		return generated_failf(detail, cap,
+				"expected settled source handlers to stay async");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(settled then)");
+	}
+	status = generated_expect_number(&region,
+			generated_promise_identity_state.last_arg, 7.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	memset(&generated_promise_return_state, 0,
+			sizeof(generated_promise_return_state));
+	generated_promise_return_state.return_value = caught_value;
+	if (jsval_promise_new(&region, &rejected_source) < 0
+			|| jsval_promise_catch(&region, rejected_source, return_fn, &caught)
+				< 0) {
+		return generated_fail_errno(detail, cap, "promise catch setup");
+	}
+	if (jsval_promise_reject(&region, rejected_source, boom) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_reject");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(catch)");
+	}
+	status = generated_expect_string(&region,
+			generated_promise_return_state.last_arg,
+			(const uint8_t *)"boom", 4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+	if (jsval_promise_result(&region, caught, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_result(caught)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"caught", 6, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	memset(&generated_promise_return_state, 0,
+			sizeof(generated_promise_return_state));
+	generated_promise_return_state.return_value = jsval_undefined();
+	if (jsval_promise_new(&region, &finally_source) < 0
+			|| jsval_promise_finally(&region, finally_source, return_fn,
+				&finally_chain) < 0) {
+		return generated_fail_errno(detail, cap, "promise finally setup");
+	}
+	if (jsval_promise_resolve(&region, finally_source, jsval_number(42.0)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_resolve(finally)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(finally)");
+	}
+	if (generated_promise_return_state.call_count != 1
+			|| generated_promise_return_state.last_argc != 0) {
+		return generated_failf(detail, cap,
+				"expected finally handler to run without arguments");
+	}
+	if (jsval_promise_result(&region, finally_chain, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(finally)");
+	}
+	status = generated_expect_number(&region, result, 42.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	memset(&generated_promise_return_state, 0,
+			sizeof(generated_promise_return_state));
+	if (jsval_promise_new(&region, &cleanup) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_new(cleanup)");
+	}
+	generated_promise_return_state.return_value = cleanup;
+	if (jsval_promise_new(&region, &finally_rejected_source) < 0
+			|| jsval_promise_finally(&region, finally_rejected_source, return_fn,
+				&after_finally) < 0) {
+		return generated_fail_errno(detail, cap,
+				"promise finally rejected setup");
+	}
+	if (jsval_promise_reject(&region, finally_rejected_source, boom) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_reject(finally)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(finally pending)");
+	}
+	if (jsval_promise_state(&region, after_finally, &state) < 0
+			|| state != JSVAL_PROMISE_STATE_PENDING) {
+		return generated_failf(detail, cap,
+				"expected finally chain to wait on returned promise");
+	}
+	if (jsval_promise_resolve(&region, cleanup, jsval_undefined()) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_resolve(cleanup)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(finally settle)");
+	}
+	if (jsval_promise_result(&region, after_finally, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(after finally)");
+	}
+	status = generated_expect_string(&region, result,
+			(const uint8_t *)"boom", 4, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_promise_new(&region, &outer) < 0
+			|| jsval_promise_new(&region, &inner) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_new(adopt)");
+	}
+	if (jsval_promise_resolve(&region, outer, inner) < 0
+			|| jsval_promise_resolve(&region, inner, jsval_number(9.0)) < 0) {
+		return generated_fail_errno(detail, cap, "promise adoption resolve");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(adopt)");
+	}
+	if (jsval_promise_result(&region, outer, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_result(outer)");
+	}
+	status = generated_expect_number(&region, result, 9.0, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	memset(&generated_promise_throw_state, 0,
+			sizeof(generated_promise_throw_state));
+	if (jsval_promise_new(&region, &throwing_source) < 0
+			|| jsval_promise_then(&region, throwing_source, throw_fn,
+				jsval_undefined(), &rejected_chain) < 0) {
+		return generated_fail_errno(detail, cap, "promise throw chain setup");
+	}
+	if (jsval_promise_resolve(&region, throwing_source, jsval_number(1.0)) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_resolve(throw source)");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_microtask_drain(throw chain)");
+	}
+	if (generated_promise_throw_state.call_count != 1) {
+		return generated_failf(detail, cap,
+				"expected throwing handler to run exactly once");
+	}
+	if (jsval_promise_result(&region, rejected_chain, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(rejected chain)");
+	}
+	if (result.kind != JSVAL_KIND_DOM_EXCEPTION) {
+		return generated_failf(detail, cap,
+				"expected thrown handler to reject with DOMException");
+	}
+	if (jsval_dom_exception_name(&region, result, &boom) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_dom_exception_name");
+	}
+	status = generated_expect_string(&region, boom, (const uint8_t *)"Error", 5,
+			detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_promise_new(&region, &self_promise) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_new(self resolution)");
+	}
+	if (jsval_promise_resolve(&region, self_promise, self_promise) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_resolve(self)");
+	}
+	if (jsval_promise_result(&region, self_promise, &result) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_promise_result(self)");
+	}
+	if (result.kind != JSVAL_KIND_DOM_EXCEPTION) {
+		return generated_failf(detail, cap,
+				"expected self resolution to reject with DOMException");
+	}
+	if (jsval_dom_exception_name(&region, result, &boom) < 0) {
+		return generated_fail_errno(detail, cap,
+				"jsval_dom_exception_name(self)");
+	}
+	status = generated_expect_string(&region, boom,
+			(const uint8_t *)"TypeError", 9, detail, cap);
+	if (status != GENERATED_PASS) {
+		return status;
+	}
+
+	if (jsval_promise_new(&region, &fixed) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_new(fixed)");
+	}
+	if (jsval_promise_resolve(&region, fixed, jsval_number(3.0)) < 0
+			|| jsval_promise_reject(&region, fixed, jsval_number(4.0)) < 0) {
+		return generated_fail_errno(detail, cap, "promise double settle");
+	}
+	if (jsval_promise_result(&region, fixed, &result) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_promise_result(fixed)");
+	}
+	return generated_expect_number(&region, result, 3.0, detail, cap);
 }
 
 static generated_status_t generated_smoke_jsval_url_core(char *detail,
@@ -10281,6 +10790,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsval_function", generated_smoke_jsval_function},
 	{"smoke", "jsval_date", generated_smoke_jsval_date},
 	{"smoke", "jsval_crypto", generated_smoke_jsval_crypto},
+	{"smoke", "jsval_promise", generated_smoke_jsval_promise},
 	{"smoke", "jsval_set", generated_smoke_jsval_set},
 	{"smoke", "jsval_map", generated_smoke_jsval_map},
 	{"smoke", "jsval_iterators", generated_smoke_jsval_iterators},

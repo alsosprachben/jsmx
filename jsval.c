@@ -76,6 +76,31 @@ typedef struct jsval_native_dom_exception_s {
 	jsval_t message;
 } jsval_native_dom_exception_t;
 
+typedef struct jsval_native_promise_s {
+	jsval_t result;
+	jsval_off_t reactions_head;
+	jsval_off_t reactions_tail;
+	uint8_t state;
+	uint8_t reserved[7];
+} jsval_native_promise_t;
+
+typedef enum jsval_promise_reaction_mode_e {
+	JSVAL_PROMISE_REACTION_MODE_THEN = 0,
+	JSVAL_PROMISE_REACTION_MODE_FINALLY = 1,
+	JSVAL_PROMISE_REACTION_MODE_FINALLY_SETTLE = 2
+} jsval_promise_reaction_mode_t;
+
+typedef struct jsval_native_promise_reaction_s {
+	jsval_off_t next_off;
+	jsval_off_t downstream_off;
+	jsval_t on_fulfilled;
+	jsval_t on_rejected;
+	jsval_t passthrough;
+	uint8_t mode;
+	uint8_t passthrough_state;
+	uint8_t reserved[6];
+} jsval_native_promise_reaction_t;
+
 typedef struct jsval_native_object_s {
 	size_t len;
 	size_t cap;
@@ -192,6 +217,29 @@ typedef struct jsval_native_match_iterator_s {
 	uint8_t reserved[4];
 } jsval_native_match_iterator_t;
 
+typedef enum jsval_microtask_kind_e {
+	JSVAL_MICROTASK_KIND_FUNCTION_CALL = 0,
+	JSVAL_MICROTASK_KIND_PROMISE_REACTION = 1
+} jsval_microtask_kind_t;
+
+typedef struct jsval_native_microtask_s {
+	jsval_off_t next_off;
+	uint8_t kind;
+	uint8_t reserved[3];
+} jsval_native_microtask_t;
+
+typedef struct jsval_native_microtask_call_s {
+	jsval_native_microtask_t base;
+	jsval_t function;
+	size_t argc;
+} jsval_native_microtask_call_t;
+
+typedef struct jsval_native_microtask_promise_reaction_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t reaction_off;
+} jsval_native_microtask_promise_reaction_t;
+
 typedef struct jsval_native_prop_s {
 	jsval_t name;
 	jsval_t value;
@@ -274,6 +322,8 @@ static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value
 static int jsval_ascii_space(uint8_t ch);
 static jsval_t jsval_native_make_value(jsval_region_t *region, void *ptr,
 		jsval_kind_t kind);
+static int jsval_promise_schedule_reactions(jsval_region_t *region,
+		jsval_t promise_value);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -482,6 +532,39 @@ static jsval_native_dom_exception_t *jsval_native_dom_exception(
 		return NULL;
 	}
 	return (jsval_native_dom_exception_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_promise_t *jsval_native_promise(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_PROMISE) {
+		return NULL;
+	}
+	return (jsval_native_promise_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_promise_reaction_t *jsval_native_promise_reaction(
+		jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_promise_reaction_t *)jsval_region_ptr(region, off);
+}
+
+static jsval_native_microtask_t *jsval_native_microtask(
+		jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_microtask_t *)jsval_region_ptr(region, off);
+}
+
+static jsval_t *jsval_native_microtask_call_args(
+		jsval_native_microtask_call_t *task)
+{
+	return (jsval_t *)(task + 1);
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -1267,6 +1350,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		return 1;
 	default:
 		return 0;
@@ -2825,6 +2909,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -2976,6 +3061,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3053,6 +3139,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3149,6 +3236,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -3323,6 +3411,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -5380,6 +5469,12 @@ void jsval_region_init(jsval_region_t *region, void *buf, size_t len)
 	region->len = len;
 	region->used = 0;
 	region->pages = NULL;
+	region->microtask_head = 0;
+	region->microtask_tail = 0;
+	region->microtask_count = 0;
+	region->microtask_draining = 0;
+	memset(region->reserved, 0, sizeof(region->reserved));
+	memset(&region->scheduler, 0, sizeof(region->scheduler));
 
 	if (buf == NULL || len < head_size || len > UINT32_MAX) {
 		return;
@@ -5403,6 +5498,12 @@ void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len)
 	region->len = len;
 	region->used = 0;
 	region->pages = NULL;
+	region->microtask_head = 0;
+	region->microtask_tail = 0;
+	region->microtask_count = 0;
+	region->microtask_draining = 0;
+	memset(region->reserved, 0, sizeof(region->reserved));
+	memset(&region->scheduler, 0, sizeof(region->scheduler));
 
 	if (buf == NULL || len < sizeof(jsval_pages_t)) {
 		return;
@@ -5421,6 +5522,32 @@ void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len)
 	region->pages = pages;
 	region->len = pages->total_len;
 	region->used = pages->used_len;
+}
+
+void jsval_region_set_scheduler(jsval_region_t *region,
+		const jsval_scheduler_t *scheduler)
+{
+	if (region == NULL) {
+		return;
+	}
+	if (scheduler == NULL) {
+		memset(&region->scheduler, 0, sizeof(region->scheduler));
+		return;
+	}
+	region->scheduler = *scheduler;
+}
+
+void jsval_region_get_scheduler(const jsval_region_t *region,
+		jsval_scheduler_t *scheduler_ptr)
+{
+	if (scheduler_ptr == NULL) {
+		return;
+	}
+	if (region == NULL) {
+		memset(scheduler_ptr, 0, sizeof(*scheduler_ptr));
+		return;
+	}
+	*scheduler_ptr = region->scheduler;
 }
 
 size_t jsval_region_remaining(jsval_region_t *region)
@@ -7911,6 +8038,658 @@ jsval_crypto_key_usages(jsval_region_t *region, jsval_t key_value,
 		return -1;
 	}
 	*usages_ptr = native->usages_mask;
+	return 0;
+}
+
+static jsval_t jsval_promise_value(jsval_off_t off)
+{
+	jsval_t value = jsval_undefined();
+
+	value.kind = JSVAL_KIND_PROMISE;
+	value.repr = JSVAL_REPR_NATIVE;
+	value.off = off;
+	return value;
+}
+
+static void jsval_scheduler_notify_enqueue(jsval_region_t *region,
+		int should_wake)
+{
+	if (region == NULL) {
+		return;
+	}
+	if (region->scheduler.on_enqueue != NULL) {
+		region->scheduler.on_enqueue(region, region->scheduler.ctx);
+	}
+	if (should_wake && !region->microtask_draining
+			&& region->scheduler.on_wake != NULL) {
+		region->scheduler.on_wake(region, region->scheduler.ctx);
+	}
+}
+
+static int jsval_microtask_push(jsval_region_t *region, jsval_off_t task_off,
+		jsval_native_microtask_t *task)
+{
+	jsval_native_microtask_t *tail;
+	int was_empty;
+
+	if (region == NULL || task_off == 0 || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	task->next_off = 0;
+	was_empty = region->microtask_head == 0;
+	if (region->microtask_tail == 0) {
+		region->microtask_head = task_off;
+		region->microtask_tail = task_off;
+	} else {
+		tail = jsval_native_microtask(region, region->microtask_tail);
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = task_off;
+		region->microtask_tail = task_off;
+	}
+	region->microtask_count++;
+	jsval_scheduler_notify_enqueue(region, was_empty);
+	return 0;
+}
+
+static jsval_off_t jsval_microtask_pop(jsval_region_t *region)
+{
+	jsval_native_microtask_t *task;
+	jsval_off_t off;
+
+	if (region == NULL || region->microtask_head == 0) {
+		return 0;
+	}
+	off = region->microtask_head;
+	task = jsval_native_microtask(region, off);
+	if (task == NULL) {
+		errno = EINVAL;
+		return 0;
+	}
+	region->microtask_head = task->next_off;
+	if (region->microtask_head == 0) {
+		region->microtask_tail = 0;
+	}
+	if (region->microtask_count > 0) {
+		region->microtask_count--;
+	}
+	task->next_off = 0;
+	return off;
+}
+
+size_t jsval_microtask_pending(jsval_region_t *region)
+{
+	if (region == NULL) {
+		return 0;
+	}
+	return region->microtask_count;
+}
+
+int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
+		size_t argc, const jsval_t *argv)
+{
+	jsval_native_microtask_call_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+	jsval_t *args;
+
+	if (region == NULL || function.kind != JSVAL_KIND_FUNCTION
+			|| (argc > 0 && argv == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + argc * sizeof(*argv);
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_FUNCTION_CALL;
+	task->function = function;
+	task->argc = argc;
+	args = jsval_native_microtask_call_args(task);
+	if (argc > 0) {
+		memcpy(args, argv, argc * sizeof(*argv));
+	}
+	return jsval_microtask_push(region, off, &task->base);
+}
+
+static int jsval_error_to_exception_value(jsval_region_t *region,
+		const jsmethod_error_t *error, jsval_t *value_ptr)
+{
+	static const uint8_t type_name[] = "TypeError";
+	static const uint8_t range_name[] = "RangeError";
+	static const uint8_t syntax_name[] = "SyntaxError";
+	static const uint8_t abrupt_name[] = "Error";
+	static const uint8_t generic_message[] = "Promise handler threw";
+	const uint8_t *name_bytes = abrupt_name;
+	size_t name_len = sizeof(abrupt_name) - 1;
+	const uint8_t *message_bytes = generic_message;
+	size_t message_len = sizeof(generic_message) - 1;
+	jsval_t name_value;
+	jsval_t message_value;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (error != NULL) {
+		switch (error->kind) {
+		case JSMETHOD_ERROR_TYPE:
+			name_bytes = type_name;
+			name_len = sizeof(type_name) - 1;
+			break;
+		case JSMETHOD_ERROR_RANGE:
+			name_bytes = range_name;
+			name_len = sizeof(range_name) - 1;
+			break;
+		case JSMETHOD_ERROR_SYNTAX:
+			name_bytes = syntax_name;
+			name_len = sizeof(syntax_name) - 1;
+			break;
+		case JSMETHOD_ERROR_NONE:
+		case JSMETHOD_ERROR_ABRUPT:
+		default:
+			name_bytes = abrupt_name;
+			name_len = sizeof(abrupt_name) - 1;
+			break;
+		}
+		if (error->message != NULL && error->message[0] != '\0') {
+			message_bytes = (const uint8_t *)error->message;
+			message_len = strlen(error->message);
+		}
+	}
+	if (jsval_string_new_utf8(region, name_bytes, name_len, &name_value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, message_bytes, message_len,
+			&message_value) < 0) {
+		return -1;
+	}
+	return jsval_dom_exception_new(region, name_value, message_value,
+			value_ptr);
+}
+
+static int jsval_promise_enqueue_reaction(jsval_region_t *region,
+		jsval_t promise_value, jsval_off_t reaction_off)
+{
+	jsval_native_microtask_promise_reaction_t *task;
+	jsval_off_t off;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| reaction_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_PROMISE_REACTION;
+	task->promise_off = promise_value.off;
+	task->reaction_off = reaction_off;
+	return jsval_microtask_push(region, off, &task->base);
+}
+
+static int jsval_promise_schedule_reactions(jsval_region_t *region,
+		jsval_t promise_value)
+{
+	jsval_native_promise_t *promise;
+	jsval_off_t reaction_off;
+
+	promise = jsval_native_promise(region, promise_value);
+	if (promise == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	reaction_off = promise->reactions_head;
+	while (reaction_off != 0) {
+		jsval_native_promise_reaction_t *reaction =
+			jsval_native_promise_reaction(region, reaction_off);
+		jsval_off_t next_off;
+
+		if (reaction == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		next_off = reaction->next_off;
+		if (jsval_promise_enqueue_reaction(region, promise_value, reaction_off)
+				< 0) {
+			return -1;
+		}
+		reaction_off = next_off;
+	}
+	return 0;
+}
+
+static int jsval_promise_settle(jsval_region_t *region, jsval_t promise_value,
+		jsval_promise_state_t state, jsval_t result)
+{
+	jsval_native_promise_t *promise;
+
+	promise = jsval_native_promise(region, promise_value);
+	if (promise == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)promise->state != JSVAL_PROMISE_STATE_PENDING) {
+		return 0;
+	}
+	promise->state = (uint8_t)state;
+	promise->result = result;
+	return jsval_promise_schedule_reactions(region, promise_value);
+}
+
+static int jsval_promise_reject_from_error(jsval_region_t *region,
+		jsval_t promise_value, const jsmethod_error_t *error)
+{
+	jsval_t reason;
+
+	if (jsval_error_to_exception_value(region, error, &reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_settle(region, promise_value,
+			JSVAL_PROMISE_STATE_REJECTED, reason);
+}
+
+static int jsval_promise_forward(jsval_region_t *region, jsval_t promise_value,
+		jsval_promise_state_t state, jsval_t result)
+{
+	if (state == JSVAL_PROMISE_STATE_REJECTED) {
+		return jsval_promise_reject(region, promise_value, result);
+	}
+	return jsval_promise_resolve(region, promise_value, result);
+}
+
+static int jsval_promise_reaction_add(jsval_region_t *region,
+		jsval_t source_promise, jsval_t downstream_promise,
+		jsval_promise_reaction_mode_t mode, jsval_t on_fulfilled,
+		jsval_t on_rejected, jsval_promise_state_t passthrough_state,
+		jsval_t passthrough)
+{
+	jsval_native_promise_t *promise;
+	jsval_native_promise_reaction_t *reaction;
+	jsval_off_t off;
+
+	promise = jsval_native_promise(region, source_promise);
+	if (promise == NULL || downstream_promise.kind != JSVAL_KIND_PROMISE) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*reaction), JSVAL_ALIGN, &off,
+			(void **)&reaction) < 0) {
+		return -1;
+	}
+	memset(reaction, 0, sizeof(*reaction));
+	reaction->downstream_off = downstream_promise.off;
+	reaction->on_fulfilled = on_fulfilled;
+	reaction->on_rejected = on_rejected;
+	reaction->passthrough = passthrough;
+	reaction->mode = (uint8_t)mode;
+	reaction->passthrough_state = (uint8_t)passthrough_state;
+	if (promise->reactions_tail == 0) {
+		promise->reactions_head = off;
+		promise->reactions_tail = off;
+	} else {
+		jsval_native_promise_reaction_t *tail =
+			jsval_native_promise_reaction(region, promise->reactions_tail);
+
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = off;
+		promise->reactions_tail = off;
+	}
+	if ((jsval_promise_state_t)promise->state != JSVAL_PROMISE_STATE_PENDING) {
+		return jsval_promise_enqueue_reaction(region, source_promise, off);
+	}
+	return 0;
+}
+
+static int jsval_promise_then_handler(jsval_region_t *region,
+		jsval_t source_promise, jsval_native_promise_reaction_t *reaction)
+{
+	jsval_native_promise_t *source;
+	jsval_t downstream;
+	jsval_t handler;
+	jsval_t result;
+	jsval_t argv[1];
+	jsmethod_error_t error;
+
+	source = jsval_native_promise(region, source_promise);
+	if (source == NULL || reaction == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	downstream = jsval_promise_value(reaction->downstream_off);
+	handler = ((jsval_promise_state_t)source->state
+			== JSVAL_PROMISE_STATE_REJECTED)
+		? reaction->on_rejected : reaction->on_fulfilled;
+	if (handler.kind != JSVAL_KIND_FUNCTION) {
+		return jsval_promise_forward(region, downstream,
+				(jsval_promise_state_t)source->state, source->result);
+	}
+	argv[0] = source->result;
+	jsmethod_error_clear(&error);
+	if (jsval_function_call(region, handler, 1, argv, &result, &error) < 0) {
+		return jsval_promise_reject_from_error(region, downstream, &error);
+	}
+	return jsval_promise_resolve(region, downstream, result);
+}
+
+static int jsval_promise_finally_handler(jsval_region_t *region,
+		jsval_t source_promise, jsval_native_promise_reaction_t *reaction)
+{
+	jsval_native_promise_t *source;
+	jsval_t downstream;
+	jsval_t handler;
+	jsval_t result;
+	jsmethod_error_t error;
+
+	source = jsval_native_promise(region, source_promise);
+	if (source == NULL || reaction == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	downstream = jsval_promise_value(reaction->downstream_off);
+	handler = reaction->on_fulfilled;
+	if (handler.kind != JSVAL_KIND_FUNCTION) {
+		return jsval_promise_forward(region, downstream,
+				(jsval_promise_state_t)source->state, source->result);
+	}
+	jsmethod_error_clear(&error);
+	if (jsval_function_call(region, handler, 0, NULL, &result, &error) < 0) {
+		return jsval_promise_reject_from_error(region, downstream, &error);
+	}
+	if (result.kind == JSVAL_KIND_PROMISE) {
+		if (result.repr != JSVAL_REPR_NATIVE
+				|| jsval_native_promise(region, result) == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (result.off == downstream.off) {
+			error.kind = JSMETHOD_ERROR_TYPE;
+			error.message = "promise self-resolution";
+			return jsval_promise_reject_from_error(region, downstream, &error);
+		}
+		return jsval_promise_reaction_add(region, result, downstream,
+				JSVAL_PROMISE_REACTION_MODE_FINALLY_SETTLE,
+				jsval_undefined(), jsval_undefined(),
+				(jsval_promise_state_t)source->state, source->result);
+	}
+	return jsval_promise_forward(region, downstream,
+			(jsval_promise_state_t)source->state, source->result);
+}
+
+static int jsval_promise_finally_settle(jsval_region_t *region,
+		jsval_t source_promise, jsval_native_promise_reaction_t *reaction)
+{
+	jsval_native_promise_t *source;
+	jsval_t downstream;
+
+	source = jsval_native_promise(region, source_promise);
+	if (source == NULL || reaction == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	downstream = jsval_promise_value(reaction->downstream_off);
+	if ((jsval_promise_state_t)source->state == JSVAL_PROMISE_STATE_REJECTED) {
+		return jsval_promise_reject(region, downstream, source->result);
+	}
+	return jsval_promise_forward(region, downstream,
+			(jsval_promise_state_t)reaction->passthrough_state,
+			reaction->passthrough);
+}
+
+static int jsval_promise_run_reaction(jsval_region_t *region,
+		jsval_t source_promise, jsval_off_t reaction_off)
+{
+	jsval_native_promise_reaction_t *reaction =
+		jsval_native_promise_reaction(region, reaction_off);
+
+	if (reaction == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	switch ((jsval_promise_reaction_mode_t)reaction->mode) {
+	case JSVAL_PROMISE_REACTION_MODE_THEN:
+		return jsval_promise_then_handler(region, source_promise, reaction);
+	case JSVAL_PROMISE_REACTION_MODE_FINALLY:
+		return jsval_promise_finally_handler(region, source_promise, reaction);
+	case JSVAL_PROMISE_REACTION_MODE_FINALLY_SETTLE:
+		return jsval_promise_finally_settle(region, source_promise, reaction);
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
+{
+	jsval_off_t off;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	jsmethod_error_clear(error);
+	if (region->microtask_draining) {
+		return 0;
+	}
+	region->microtask_draining = 1;
+	while ((off = jsval_microtask_pop(region)) != 0) {
+		jsval_native_microtask_t *task = jsval_native_microtask(region, off);
+
+		if (task == NULL) {
+			region->microtask_draining = 0;
+			errno = EINVAL;
+			return -1;
+		}
+		switch ((jsval_microtask_kind_t)task->kind) {
+		case JSVAL_MICROTASK_KIND_FUNCTION_CALL:
+		{
+			jsval_native_microtask_call_t *call_task =
+				(jsval_native_microtask_call_t *)task;
+			jsval_t ignored;
+
+			if (jsval_function_call(region, call_task->function,
+					call_task->argc,
+					jsval_native_microtask_call_args(call_task), &ignored,
+					error) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_PROMISE_REACTION:
+		{
+			jsval_native_microtask_promise_reaction_t *reaction_task =
+				(jsval_native_microtask_promise_reaction_t *)task;
+			jsval_t promise_value =
+				jsval_promise_value(reaction_task->promise_off);
+
+			if (jsval_promise_run_reaction(region, promise_value,
+					reaction_task->reaction_off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		default:
+			region->microtask_draining = 0;
+			errno = EINVAL;
+			return -1;
+		}
+	}
+	region->microtask_draining = 0;
+	return 0;
+}
+
+int jsval_promise_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	jsval_native_promise_t *native;
+	void *ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_promise_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_promise_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	native->result = jsval_undefined();
+	native->state = JSVAL_PROMISE_STATE_PENDING;
+	*value_ptr = jsval_native_make_value(region, native, JSVAL_KIND_PROMISE);
+	return 0;
+}
+
+int jsval_promise_state(jsval_region_t *region, jsval_t promise_value,
+		jsval_promise_state_t *state_ptr)
+{
+	jsval_native_promise_t *native;
+
+	if (state_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_promise(region, promise_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*state_ptr = (jsval_promise_state_t)native->state;
+	return 0;
+}
+
+int jsval_promise_result(jsval_region_t *region, jsval_t promise_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_promise_t *native;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_promise(region, promise_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)native->state == JSVAL_PROMISE_STATE_PENDING) {
+		*value_ptr = jsval_undefined();
+		return 0;
+	}
+	*value_ptr = native->result;
+	return 0;
+}
+
+int jsval_promise_resolve(jsval_region_t *region, jsval_t promise_value,
+		jsval_t value)
+{
+	jsval_native_promise_t *native;
+	jsmethod_error_t error;
+
+	native = jsval_native_promise(region, promise_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)native->state != JSVAL_PROMISE_STATE_PENDING) {
+		return 0;
+	}
+	if (value.kind == JSVAL_KIND_PROMISE) {
+		if (value.repr != JSVAL_REPR_NATIVE
+				|| jsval_native_promise(region, value) == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (value.off == promise_value.off) {
+			error.kind = JSMETHOD_ERROR_TYPE;
+			error.message = "promise self-resolution";
+			return jsval_promise_reject_from_error(region, promise_value,
+					&error);
+		}
+		return jsval_promise_reaction_add(region, value, promise_value,
+				JSVAL_PROMISE_REACTION_MODE_THEN, jsval_undefined(),
+				jsval_undefined(), JSVAL_PROMISE_STATE_PENDING,
+				jsval_undefined());
+	}
+	return jsval_promise_settle(region, promise_value,
+			JSVAL_PROMISE_STATE_FULFILLED, value);
+}
+
+int jsval_promise_reject(jsval_region_t *region, jsval_t promise_value,
+		jsval_t reason)
+{
+	jsval_native_promise_t *native;
+
+	native = jsval_native_promise(region, promise_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)native->state != JSVAL_PROMISE_STATE_PENDING) {
+		return 0;
+	}
+	return jsval_promise_settle(region, promise_value,
+			JSVAL_PROMISE_STATE_REJECTED, reason);
+}
+
+int jsval_promise_then(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_fulfilled, jsval_t on_rejected, jsval_t *value_ptr)
+{
+	jsval_t downstream;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_promise_new(region, &downstream) < 0) {
+		return -1;
+	}
+	if (jsval_promise_reaction_add(region, promise_value, downstream,
+			JSVAL_PROMISE_REACTION_MODE_THEN, on_fulfilled, on_rejected,
+			JSVAL_PROMISE_STATE_PENDING, jsval_undefined()) < 0) {
+		return -1;
+	}
+	*value_ptr = downstream;
+	return 0;
+}
+
+int jsval_promise_catch(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_rejected, jsval_t *value_ptr)
+{
+	return jsval_promise_then(region, promise_value, jsval_undefined(),
+			on_rejected, value_ptr);
+}
+
+int jsval_promise_finally(jsval_region_t *region, jsval_t promise_value,
+		jsval_t on_finally, jsval_t *value_ptr)
+{
+	jsval_t downstream;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_promise_new(region, &downstream) < 0) {
+		return -1;
+	}
+	if (jsval_promise_reaction_add(region, promise_value, downstream,
+			JSVAL_PROMISE_REACTION_MODE_FINALLY, on_finally,
+			jsval_undefined(), JSVAL_PROMISE_STATE_PENDING,
+			jsval_undefined()) < 0) {
+		return -1;
+	}
+	*value_ptr = downstream;
 	return 0;
 }
 
@@ -19113,6 +19892,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -19213,6 +19993,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		return 1;
 	default:
 		return 0;
@@ -19300,6 +20081,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_SUBTLE_CRYPTO:
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
+	case JSVAL_KIND_PROMISE:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -19345,6 +20127,7 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| left.kind == JSVAL_KIND_SUBTLE_CRYPTO
 			|| left.kind == JSVAL_KIND_CRYPTO_KEY
 			|| left.kind == JSVAL_KIND_DOM_EXCEPTION
+			|| left.kind == JSVAL_KIND_PROMISE
 			|| right.kind == JSVAL_KIND_OBJECT
 			|| right.kind == JSVAL_KIND_ARRAY
 			|| right.kind == JSVAL_KIND_REGEXP
@@ -19360,7 +20143,8 @@ int jsval_abstract_eq(jsval_region_t *region, jsval_t left, jsval_t right,
 			|| right.kind == JSVAL_KIND_CRYPTO
 			|| right.kind == JSVAL_KIND_SUBTLE_CRYPTO
 			|| right.kind == JSVAL_KIND_CRYPTO_KEY
-			|| right.kind == JSVAL_KIND_DOM_EXCEPTION) {
+			|| right.kind == JSVAL_KIND_DOM_EXCEPTION
+			|| right.kind == JSVAL_KIND_PROMISE) {
 		errno = ENOTSUP;
 		return -1;
 	}
