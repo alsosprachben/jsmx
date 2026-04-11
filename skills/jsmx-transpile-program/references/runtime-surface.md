@@ -30,10 +30,12 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `Crypto`
     - `SubtleCrypto`, including Promise-backed `digest(...)`, HMAC
       `generateKey(...)`, `importKey(...)`, `exportKey(...)`, `sign(...)`,
-      and `verify(...)`, plus AES-GCM `generateKey(...)`, `importKey(...)`,
-      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`
-    - `CryptoKey` values for the current HMAC and AES-GCM secret-key surfaces
-      over `raw` and `jwk`
+      and `verify(...)`, AES-GCM `generateKey(...)`, `importKey(...)`,
+      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`, plus PBKDF2
+      `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
+      HMAC or AES-GCM
+    - `CryptoKey` values for the current HMAC, AES-GCM, and PBKDF2
+      secret-key surfaces over `raw` and `jwk` where applicable
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -85,10 +87,12 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_subtle_crypto_decrypt(...)`
     - `jsval_subtle_crypto_sign(...)`
     - `jsval_subtle_crypto_verify(...)`
+    - `jsval_subtle_crypto_derive_bits(...)`
+    - `jsval_subtle_crypto_derive_key(...)`
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
-      HMAC, and AES-GCM `BufferSource` inputs
+      HMAC, AES-GCM, and PBKDF2 `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -186,7 +190,8 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
     `sign(...)` / `verify(...)`, and AES-GCM `generateKey(...)` /
     `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
-    including deriveBits
+    plus PBKDF2 `importKey("raw", ...)` / `deriveBits(...)` /
+    `deriveKey(...)` to HMAC or AES-GCM
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

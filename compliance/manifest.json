@@ -4667,6 +4667,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC AES-GCM rejection fixture for unsupported formats, malformed JWKs, missing IV, invalid tagLength, non-extractable exports, and authentication failure."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-pbkdf2-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-pbkdf2-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-pbkdf2-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC PBKDF2 fixture for Promise-backed raw import, deriveBits, and deriveKey to HMAC and AES-GCM."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-pbkdf2-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-pbkdf2-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-pbkdf2-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC PBKDF2 rejection fixture for unsupported formats, usage mismatches, invalid params, and unsupported derived-key targets."
     }
   ]
 }

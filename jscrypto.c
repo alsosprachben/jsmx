@@ -341,6 +341,55 @@ jscrypto_hmac_verify(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
 }
 
 int
+jscrypto_pbkdf2(jscrypto_digest_algorithm_t algorithm, const uint8_t *password,
+		size_t password_len, const uint8_t *salt, size_t salt_len,
+		uint32_t iterations, uint8_t *output, size_t output_len)
+{
+	static const uint8_t empty_salt[1] = { 0 };
+	static const char empty_password[1] = { '\0' };
+
+	if ((password == NULL && password_len > 0)
+			|| (salt == NULL && salt_len > 0)
+			|| (output == NULL && output_len > 0)
+			|| iterations == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (output_len > (size_t)INT_MAX || iterations > (uint32_t)INT_MAX) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm;
+	(void)password;
+	(void)password_len;
+	(void)salt;
+	(void)salt_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(algorithm);
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (PKCS5_PBKDF2_HMAC(
+					password_len > 0 ? (const char *)password : empty_password,
+					(int)password_len,
+					salt_len > 0 ? salt : empty_salt, (int)salt_len,
+					(int)iterations, md, (int)output_len, output) != 1) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
 jscrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
 		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
 		uint32_t tag_bits, const uint8_t *input, size_t input_len,

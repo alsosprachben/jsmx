@@ -81,6 +81,20 @@ assert_aes_gcm_vector(const uint8_t *key, size_t key_len, const uint8_t *iv,
 	assert(errno == EIO);
 }
 
+static void
+assert_pbkdf2_vector(jscrypto_digest_algorithm_t algorithm,
+		const uint8_t *password, size_t password_len, const uint8_t *salt,
+		size_t salt_len, uint32_t iterations, const uint8_t *expected,
+		size_t expected_len)
+{
+	uint8_t output[128];
+
+	assert(expected_len <= sizeof(output));
+	assert(jscrypto_pbkdf2(algorithm, password, password_len, salt, salt_len,
+			iterations, output, expected_len) == 0);
+	assert(memcmp(output, expected, expected_len) == 0);
+}
+
 int
 main(void)
 {
@@ -163,6 +177,41 @@ main(void)
 		0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd,
 		0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf
 	};
+	static const uint8_t pbkdf2_password[] = {
+		'p', 'a', 's', 's', 'w', 'o', 'r', 'd'
+	};
+	static const uint8_t pbkdf2_salt[] = {
+		's', 'a', 'l', 't'
+	};
+	static const uint8_t pbkdf2_sha1_password_salt_1[] = {
+		0x0c, 0x60, 0xc8, 0x0f, 0x96, 0x1f, 0x0e, 0x71,
+		0xf3, 0xa9, 0xb5, 0x24, 0xaf, 0x60, 0x12, 0x06,
+		0x2f, 0xe0, 0x37, 0xa6
+	};
+	static const uint8_t pbkdf2_sha256_password_salt_2[] = {
+		0xae, 0x4d, 0x0c, 0x95, 0xaf, 0x6b, 0x46, 0xd3,
+		0x2d, 0x0a, 0xdf, 0xf9, 0x28, 0xf0, 0x6d, 0xd0,
+		0x2a, 0x30, 0x3f, 0x8e, 0xf3, 0xc2, 0x51, 0xdf,
+		0xd6, 0xe2, 0xd8, 0x5a, 0x95, 0x47, 0x4c, 0x43
+	};
+	static const uint8_t pbkdf2_sha384_password_salt_2[] = {
+		0x54, 0xf7, 0x75, 0xc6, 0xd7, 0x90, 0xf2, 0x19,
+		0x30, 0x45, 0x91, 0x62, 0xfc, 0x53, 0x5d, 0xbf,
+		0x04, 0xa9, 0x39, 0x18, 0x51, 0x27, 0x01, 0x6a,
+		0x04, 0x17, 0x6a, 0x07, 0x30, 0xc6, 0xf1, 0xf4,
+		0xfb, 0x48, 0x83, 0x2a, 0xd1, 0x26, 0x1b, 0xaa,
+		0xdd, 0x2c, 0xed, 0xd5, 0x08, 0x14, 0xb1, 0xc8
+	};
+	static const uint8_t pbkdf2_sha512_password_salt_2[] = {
+		0xe1, 0xd9, 0xc1, 0x6a, 0xa6, 0x81, 0x70, 0x8a,
+		0x45, 0xf5, 0xc7, 0xc4, 0xe2, 0x15, 0xce, 0xb6,
+		0x6e, 0x01, 0x1a, 0x2e, 0x9f, 0x00, 0x40, 0x71,
+		0x3f, 0x18, 0xae, 0xfd, 0xb8, 0x66, 0xd5, 0x3c,
+		0xf7, 0x6c, 0xab, 0x28, 0x68, 0xa3, 0x9b, 0x9f,
+		0x78, 0x40, 0xed, 0xce, 0x4f, 0xef, 0x5a, 0x82,
+		0xbe, 0x67, 0x33, 0x5c, 0x77, 0xa6, 0x06, 0x8e,
+		0x04, 0x11, 0x27, 0x54, 0xf2, 0x7c, 0xcf, 0x4e
+	};
  #if JSMX_WITH_CRYPTO
 	uint8_t bytes[32];
 	uint8_t uuid[36];
@@ -230,6 +279,22 @@ main(void)
 	assert_hmac_vector(JSCRYPTO_DIGEST_SHA512, hmac_key, sizeof(hmac_key),
 			hmac_input, sizeof(hmac_input), hmac_sha512_hi_there,
 			sizeof(hmac_sha512_hi_there));
+	assert_pbkdf2_vector(JSCRYPTO_DIGEST_SHA1, pbkdf2_password,
+			sizeof(pbkdf2_password), pbkdf2_salt, sizeof(pbkdf2_salt), 1,
+			pbkdf2_sha1_password_salt_1,
+			sizeof(pbkdf2_sha1_password_salt_1));
+	assert_pbkdf2_vector(JSCRYPTO_DIGEST_SHA256, pbkdf2_password,
+			sizeof(pbkdf2_password), pbkdf2_salt, sizeof(pbkdf2_salt), 2,
+			pbkdf2_sha256_password_salt_2,
+			sizeof(pbkdf2_sha256_password_salt_2));
+	assert_pbkdf2_vector(JSCRYPTO_DIGEST_SHA384, pbkdf2_password,
+			sizeof(pbkdf2_password), pbkdf2_salt, sizeof(pbkdf2_salt), 2,
+			pbkdf2_sha384_password_salt_2,
+			sizeof(pbkdf2_sha384_password_salt_2));
+	assert_pbkdf2_vector(JSCRYPTO_DIGEST_SHA512, pbkdf2_password,
+			sizeof(pbkdf2_password), pbkdf2_salt, sizeof(pbkdf2_salt), 2,
+			pbkdf2_sha512_password_salt_2,
+			sizeof(pbkdf2_sha512_password_salt_2));
 	assert_aes_gcm_vector(aes_gcm_zero_key_128, sizeof(aes_gcm_zero_key_128),
 			aes_gcm_zero_iv_96, sizeof(aes_gcm_zero_iv_96), NULL, 0, 128, NULL,
 			0, aes_gcm_empty_ciphertext_tag,
@@ -259,6 +324,9 @@ main(void)
 	assert(jscrypto_hmac(algorithm, (const uint8_t *)"k", 1,
 			(const uint8_t *)"abc", 3, &byte, 1, NULL) == -1);
 	assert(errno == ENOTSUP || errno == ENOBUFS);
+	assert(jscrypto_pbkdf2(algorithm, (const uint8_t *)"k", 1,
+			(const uint8_t *)"s", 1, 1, &byte, 1) == -1);
+	assert(errno == ENOTSUP);
 	assert(jscrypto_hmac_verify(algorithm, (const uint8_t *)"k", 1,
 			(const uint8_t *)"abc", 3, &byte, 1, &matches) == -1);
 	assert(errno == ENOTSUP || errno == ENOBUFS);

@@ -2817,6 +2817,26 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 	};
 	static const uint8_t zero_key_16[16] = { 0 };
 	static const uint8_t zero_key_32[32] = { 0 };
+	static const uint8_t pbkdf2_zero_derivebits_32[] = {
+		0x40, 0x2a, 0xf3, 0x77, 0xcd, 0xb5, 0xeb, 0x7e,
+		0x01, 0x7a, 0x58, 0x19, 0xf4, 0x70, 0x85, 0x86,
+		0x00, 0xe2, 0xc9, 0xbb, 0x25, 0xb7, 0xae, 0x51,
+		0xb0, 0x4b, 0x20, 0x95, 0x83, 0xba, 0x77, 0xcd
+	};
+	static const uint8_t pbkdf2_zero_derivekey_aes_16[] = {
+		0x40, 0x2a, 0xf3, 0x77, 0xcd, 0xb5, 0xeb, 0x7e,
+		0x01, 0x7a, 0x58, 0x19, 0xf4, 0x70, 0x85, 0x86
+	};
+	static const uint8_t pbkdf2_zero_derivekey_hmac_64[] = {
+		0x40, 0x2a, 0xf3, 0x77, 0xcd, 0xb5, 0xeb, 0x7e,
+		0x01, 0x7a, 0x58, 0x19, 0xf4, 0x70, 0x85, 0x86,
+		0x00, 0xe2, 0xc9, 0xbb, 0x25, 0xb7, 0xae, 0x51,
+		0xb0, 0x4b, 0x20, 0x95, 0x83, 0xba, 0x77, 0xcd,
+		0xd4, 0xbd, 0x77, 0x2c, 0x6d, 0xd0, 0xde, 0x9e,
+		0xe4, 0x1c, 0x40, 0xa5, 0x35, 0x0f, 0xdc, 0x86,
+		0xb6, 0x12, 0xad, 0xbd, 0xb3, 0xba, 0x67, 0x02,
+		0x01, 0xd2, 0x54, 0x7c, 0xc1, 0x9b, 0xda, 0x01
+	};
 	static const uint8_t aes_gcm_zero_ciphertext_16_tag[] = {
 		0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
 		0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
@@ -3873,6 +3893,343 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 				}
 				status = generated_expect_string(&region, result,
 						(const uint8_t *)"DataError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+			}
+
+			{
+				jsval_t pbkdf2_usages;
+				jsval_t derive_key_only_usages;
+				jsval_t sign_verify_usages;
+				jsval_t aes_usages;
+				jsval_t pbkdf2_algorithm;
+				jsval_t pbkdf2_params;
+				jsval_t pbkdf2_invalid_params;
+				jsval_t hash_object;
+				jsval_t raw_format;
+				jsval_t jwk_format;
+				jsval_t password_input;
+				jsval_t salt_input;
+				jsval_t pbkdf2_key_promise;
+				jsval_t pbkdf2_key;
+				jsval_t pbkdf2_key_derivekey_promise;
+				jsval_t pbkdf2_key_derivekey;
+				jsval_t derive_bits_promise;
+				jsval_t derive_hmac_key_promise;
+				jsval_t derive_hmac_key;
+				jsval_t derive_aes_key_promise;
+				jsval_t derive_aes_key;
+				jsval_t export_hmac_raw_promise;
+				jsval_t export_aes_raw_promise;
+				jsval_t invalid_length_promise;
+				jsval_t invalid_usage_promise;
+				jsval_t unsupported_target_promise;
+				jsval_t invalid_salt_promise;
+				jsval_t hmac_algorithm;
+				jsval_t aes_algorithm;
+				jsval_t unsupported_algorithm;
+
+				if (jsval_array_new(&region, 2, &pbkdf2_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"deriveBits", 10, &result) < 0
+						|| jsval_array_push(&region, pbkdf2_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"deriveKey", 9, &result) < 0
+						|| jsval_array_push(&region, pbkdf2_usages, result) < 0
+						|| jsval_array_new(&region, 1, &derive_key_only_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"deriveKey", 9, &result) < 0
+						|| jsval_array_push(&region, derive_key_only_usages, result) < 0
+						|| jsval_array_new(&region, 2, &sign_verify_usages) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+							&result) < 0
+						|| jsval_array_push(&region, sign_verify_usages, result) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+							&result) < 0
+						|| jsval_array_push(&region, sign_verify_usages, result) < 0
+						|| jsval_array_new(&region, 2, &aes_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"encrypt", 7, &result) < 0
+						|| jsval_array_push(&region, aes_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"decrypt", 7, &result) < 0
+						|| jsval_array_push(&region, aes_usages, result) < 0
+						|| jsval_object_new(&region, 1, &hash_object) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, hash_object,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_new(&region, 1, &pbkdf2_algorithm) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"PBKDF2", 6,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_algorithm,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_new(&region, 4, &pbkdf2_params) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"PBKDF2", 6,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_params,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_params,
+							(const uint8_t *)"hash", 4, hash_object) < 0
+						|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 8,
+							&password_input) < 0
+						|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 8,
+							&salt_input) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_params,
+							(const uint8_t *)"salt", 4, salt_input) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_params,
+							(const uint8_t *)"iterations", 10,
+							jsval_number(2.0)) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+							&raw_format) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+							&jwk_format) < 0) {
+					return generated_fail_errno(detail, cap, "pbkdf2 setup");
+				}
+				if (jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+						password_input, pbkdf2_algorithm, 1, pbkdf2_usages,
+						&pbkdf2_key_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_import_key(pbkdf2 raw)");
+				}
+				if (jsval_promise_state(&region, pbkdf2_key_promise, &promise_state) < 0
+						|| promise_state != JSVAL_PROMISE_STATE_PENDING) {
+					return generated_failf(detail, cap,
+							"expected PBKDF2 importKey promise to stay pending");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, pbkdf2_key_promise,
+							&pbkdf2_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 import drain/result");
+				}
+				if (jsval_crypto_key_algorithm(&region, pbkdf2_key, &result) < 0
+						|| result.kind != JSVAL_KIND_OBJECT) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 key algorithm");
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"name", 4, &dom_exception) < 0) {
+					return generated_fail_errno(detail, cap, "pbkdf2 algorithm name");
+				}
+				status = generated_expect_string(&region, dom_exception,
+						(const uint8_t *)"PBKDF2", 6, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_crypto_key_usages(&region, pbkdf2_key, &usages) < 0) {
+					return generated_fail_errno(detail, cap, "pbkdf2 usages");
+				}
+				if (usages != (JSVAL_CRYPTO_KEY_USAGE_DERIVE_BITS
+							| JSVAL_CRYPTO_KEY_USAGE_DERIVE_KEY)) {
+					return generated_failf(detail, cap,
+							"unexpected PBKDF2 usages");
+				}
+				if (jsval_subtle_crypto_derive_bits(&region, subtle_a, pbkdf2_params,
+						pbkdf2_key, jsval_number(256.0),
+						&derive_bits_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_derive_bits");
+				}
+				if (jsval_promise_state(&region, derive_bits_promise, &promise_state)
+						< 0 || promise_state != JSVAL_PROMISE_STATE_PENDING) {
+					return generated_failf(detail, cap,
+							"expected PBKDF2 deriveBits promise to stay pending");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, derive_bits_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 deriveBits drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						pbkdf2_zero_derivebits_32,
+						sizeof(pbkdf2_zero_derivebits_32), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 2, &hmac_algorithm) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, hmac_algorithm,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, hmac_algorithm,
+							(const uint8_t *)"hash", 4, hash_object) < 0) {
+					return generated_fail_errno(detail, cap, "pbkdf2 hmac setup");
+				}
+				if (jsval_subtle_crypto_derive_key(&region, subtle_a, pbkdf2_params,
+						pbkdf2_key, hmac_algorithm, 1, sign_verify_usages,
+						&derive_hmac_key_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_derive_key(hmac)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, derive_hmac_key_promise,
+							&derive_hmac_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 derive hmac drain/result");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						derive_hmac_key, &export_hmac_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 export hmac raw");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, export_hmac_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 export hmac raw drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						pbkdf2_zero_derivekey_hmac_64,
+						sizeof(pbkdf2_zero_derivekey_hmac_64), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 2, &aes_algorithm) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM",
+							7, &result) < 0
+						|| jsval_object_set_utf8(&region, aes_algorithm,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, aes_algorithm,
+							(const uint8_t *)"length", 6,
+							jsval_number(128.0)) < 0) {
+					return generated_fail_errno(detail, cap, "pbkdf2 aes setup");
+				}
+				if (jsval_subtle_crypto_derive_key(&region, subtle_a, pbkdf2_params,
+						pbkdf2_key, aes_algorithm, 1, aes_usages,
+						&derive_aes_key_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_derive_key(aes)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, derive_aes_key_promise,
+							&derive_aes_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 derive aes drain/result");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						derive_aes_key, &export_aes_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 export aes raw");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, export_aes_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 export aes raw drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						pbkdf2_zero_derivekey_aes_16,
+						sizeof(pbkdf2_zero_derivekey_aes_16), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+						password_input, pbkdf2_algorithm, 1, derive_key_only_usages,
+						&pbkdf2_key_derivekey_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 deriveKey-only import");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, pbkdf2_key_derivekey_promise,
+							&pbkdf2_key_derivekey) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 deriveKey-only drain/result");
+				}
+				if (jsval_subtle_crypto_derive_bits(&region, subtle_a, pbkdf2_params,
+						pbkdf2_key_derivekey, jsval_number(256.0),
+						&invalid_usage_promise) < 0
+						|| jsval_promise_result(&region, invalid_usage_promise,
+							&dom_exception) < 0
+						|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 invalid usage");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"InvalidAccessError", 18, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_derive_bits(&region, subtle_a, pbkdf2_params,
+						pbkdf2_key, jsval_number(255.0),
+						&invalid_length_promise) < 0
+						|| jsval_promise_result(&region, invalid_length_promise,
+							&dom_exception) < 0
+						|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 invalid length");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"TypeError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 3, &pbkdf2_invalid_params) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"PBKDF2", 6,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_invalid_params,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_invalid_params,
+							(const uint8_t *)"hash", 4, hash_object) < 0
+						|| jsval_object_set_utf8(&region, pbkdf2_invalid_params,
+							(const uint8_t *)"iterations", 10,
+							jsval_number(2.0)) < 0
+						|| jsval_subtle_crypto_derive_bits(&region, subtle_a,
+							pbkdf2_invalid_params, pbkdf2_key, jsval_number(256.0),
+							&invalid_salt_promise) < 0
+						|| jsval_promise_result(&region, invalid_salt_promise,
+							&dom_exception) < 0
+						|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 invalid salt");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"TypeError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 2, &unsupported_algorithm) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, unsupported_algorithm,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, unsupported_algorithm,
+							(const uint8_t *)"length", 6,
+							jsval_number(128.0)) < 0
+						|| jsval_subtle_crypto_derive_key(&region, subtle_a,
+							pbkdf2_params, pbkdf2_key, unsupported_algorithm, 1,
+							aes_usages, &unsupported_target_promise) < 0
+						|| jsval_promise_result(&region, unsupported_target_promise,
+							&dom_exception) < 0
+						|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 unsupported target");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"NotSupportedError", 17, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+						password_input, pbkdf2_algorithm, 1, pbkdf2_usages,
+						&unsupported_target_promise) < 0
+						|| jsval_promise_result(&region, unsupported_target_promise,
+							&dom_exception) < 0
+						|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pbkdf2 unsupported format");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"NotSupportedError", 17, detail, cap);
 				if (status != GENERATED_PASS) {
 					return status;
 				}

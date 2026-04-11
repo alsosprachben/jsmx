@@ -161,8 +161,10 @@ That makes semantic correctness more important than surface familiarity:
     - Promise-backed AES-GCM `generateKey(...)`, `importKey(...)`,
       `exportKey(...)`, `encrypt(...)`, and `decrypt(...)` over `raw` and
       `jwk` key formats
+    - Promise-backed PBKDF2 `importKey("raw", ...)`, `deriveBits(...)`, and
+      `deriveKey(...)` to HMAC or AES-GCM
     - native `CryptoKey` and `DOMException` support for the current digest,
-      HMAC, and AES-GCM WebCrypto slices
+      HMAC, AES-GCM, and PBKDF2 WebCrypto slices
   - native Promise helpers for:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
