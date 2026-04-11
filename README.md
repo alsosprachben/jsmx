@@ -158,8 +158,11 @@ That makes semantic correctness more important than surface familiarity:
     - Promise-backed HMAC `generateKey(...)`, `importKey(...)`,
       `exportKey(...)`, `sign(...)`, and `verify(...)` over `raw` and `jwk`
       key formats
-    - native `CryptoKey` and `DOMException` support for the current digest and
-      HMAC WebCrypto slice
+    - Promise-backed AES-GCM `generateKey(...)`, `importKey(...)`,
+      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)` over `raw` and
+      `jwk` key formats
+    - native `CryptoKey` and `DOMException` support for the current digest,
+      HMAC, and AES-GCM WebCrypto slices
   - native Promise helpers for:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
@@ -530,10 +533,14 @@ Current WinterTC-oriented crypto coverage is:
   `crypto.subtle.importKey(...)`, `crypto.subtle.exportKey(...)`,
   `crypto.subtle.sign(...)`, and `crypto.subtle.verify(...)` over `raw` and
   `jwk`
+- Promise-backed AES-GCM `crypto.subtle.generateKey(...)`,
+  `crypto.subtle.importKey(...)`, `crypto.subtle.exportKey(...)`,
+  `crypto.subtle.encrypt(...)`, and `crypto.subtle.decrypt(...)` over `raw`
+  and `jwk`
 
 The Promise substrate needed for later async WebCrypto methods now exists in
-`jsval`. Other `SubtleCrypto` algorithms beyond digest and HMAC are still later
-slices.
+`jsval`. Other `SubtleCrypto` algorithms beyond digest, HMAC, and AES-GCM are
+still later slices.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

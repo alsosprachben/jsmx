@@ -2815,10 +2815,18 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 		0x6f, 0x6d, 0x3c, 0xf7, 0xec, 0x31, 0x7a, 0x3b,
 		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
 	};
+	static const uint8_t zero_key_16[16] = { 0 };
 	static const uint8_t zero_key_32[32] = { 0 };
+	static const uint8_t aes_gcm_zero_ciphertext_16_tag[] = {
+		0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
+		0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
+		0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd,
+		0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf
+	};
 	static const uint8_t masked_key_9_bits[] = { 0xff, 0x80 };
 	static const char *expected_sign_verify_ops[] = { "sign", "verify" };
 	static const char *expected_sign_ops[] = { "sign" };
+	static const char *expected_encrypt_decrypt_ops[] = { "encrypt", "decrypt" };
 	uint8_t storage[262144];
 	jsval_region_t region;
 	jsval_t crypto_value;
@@ -3424,27 +3432,481 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 				|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
 			return generated_fail_errno(detail, cap, "unsupported format result");
 		}
-		status = generated_expect_string(&region, result,
-				(const uint8_t *)"NotSupportedError", 17, detail, cap);
-		if (status != GENERATED_PASS) {
-			return status;
+			status = generated_expect_string(&region, result,
+					(const uint8_t *)"NotSupportedError", 17, detail, cap);
+			if (status != GENERATED_PASS) {
+				return status;
+			}
+
+			{
+				jsval_t aes_usages;
+				jsval_t aes_algorithm;
+				jsval_t aes_import_algorithm;
+				jsval_t aes_name;
+				jsval_t aes_raw_key_promise;
+				jsval_t aes_raw_key;
+				jsval_t aes_export_raw_promise;
+				jsval_t aes_export_jwk_promise;
+				jsval_t aes_import_raw_promise;
+				jsval_t aes_import_raw_key;
+				jsval_t aes_import_jwk_promise;
+				jsval_t aes_import_jwk_key;
+				jsval_t aes_encrypt_promise;
+				jsval_t aes_decrypt_promise;
+				jsval_t aes_bad_decrypt_key_promise;
+				jsval_t aes_bad_decrypt_key;
+				jsval_t aes_bad_decrypt_promise;
+				jsval_t aes_invalid_iv_params;
+				jsval_t aes_invalid_iv_promise;
+				jsval_t aes_invalid_tag_params;
+				jsval_t aes_invalid_tag_promise;
+				jsval_t aes_non_extractable_promise;
+				jsval_t aes_non_extractable_key;
+				jsval_t aes_non_extractable_export_promise;
+				jsval_t aes_iv;
+				jsval_t aes_iv_buffer;
+				jsval_t aes_params;
+				jsval_t aes_bad_format;
+				jsval_t aes_unsupported_format_promise;
+				jsval_t aes_jwk_object;
+				jsval_t aes_malformed_jwk_promise;
+
+				if (jsval_array_new(&region, 2, &aes_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"encrypt", 7, &result) < 0
+						|| jsval_array_push(&region, aes_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"decrypt", 7, &result) < 0
+						|| jsval_array_push(&region, aes_usages, result) < 0
+						|| jsval_object_new(&region, 2, &aes_algorithm) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AES-GCM", 7, &aes_name) < 0
+						|| jsval_object_set_utf8(&region, aes_algorithm,
+							(const uint8_t *)"name", 4, aes_name) < 0
+						|| jsval_object_set_utf8(&region, aes_algorithm,
+							(const uint8_t *)"length", 6, jsval_number(256.0)) < 0
+						|| jsval_object_new(&region, 1, &aes_import_algorithm) < 0
+						|| jsval_object_set_utf8(&region, aes_import_algorithm,
+							(const uint8_t *)"name", 4, aes_name) < 0
+						|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+							&aes_iv) < 0
+						|| jsval_typed_array_buffer(&region, aes_iv, &aes_iv_buffer) < 0
+						|| jsval_object_new(&region, 2, &aes_params) < 0
+						|| jsval_object_set_utf8(&region, aes_params,
+							(const uint8_t *)"name", 4, aes_name) < 0
+						|| jsval_object_set_utf8(&region, aes_params,
+							(const uint8_t *)"iv", 2, aes_iv_buffer) < 0) {
+					return generated_fail_errno(detail, cap, "aes-gcm setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a, aes_algorithm,
+						1, aes_usages, &aes_raw_key_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(aes)");
+				}
+				if (jsval_promise_state(&region, aes_raw_key_promise, &promise_state)
+						< 0
+						|| promise_state != JSVAL_PROMISE_STATE_PENDING) {
+					return generated_failf(detail, cap,
+							"expected AES-GCM generateKey promise to stay pending");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_raw_key_promise,
+							&aes_raw_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes generateKey drain/result");
+				}
+				if (aes_raw_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected AES-GCM generateKey to resolve CryptoKey");
+				}
+				if (jsval_crypto_key_algorithm(&region, aes_raw_key, &result) < 0
+						|| result.kind != JSVAL_KIND_OBJECT) {
+					return generated_fail_errno(detail, cap,
+							"jsval_crypto_key_algorithm(aes generated)");
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"name", 4, &prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes algorithm.name");
+				}
+				status = generated_expect_string(&region, prop,
+						(const uint8_t *)"AES-GCM", 7, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"length", 6, &prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes algorithm.length");
+				}
+				if (prop.kind != JSVAL_KIND_NUMBER || prop.as.number != 256.0) {
+					return generated_failf(detail, cap,
+							"expected generated AES-GCM key length 256");
+				}
+				if (jsval_crypto_key_usages(&region, aes_raw_key, &usages) < 0
+						|| usages != (JSVAL_CRYPTO_KEY_USAGE_ENCRYPT
+							| JSVAL_CRYPTO_KEY_USAGE_DECRYPT)) {
+					return generated_fail_errno(detail, cap,
+							"jsval_crypto_key_usages(aes generated)");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						aes_raw_key, &aes_export_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_export_key(aes raw)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_export_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes export raw drain/result");
+				}
+				if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+						|| len != 32) {
+					return generated_failf(detail, cap,
+							"expected 32-byte exported raw AES-GCM key");
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+						&result) < 0
+						|| jsval_typed_array_buffer(&region, result, &prop) < 0
+						|| jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+							prop, aes_import_algorithm, 1, aes_usages,
+							&aes_import_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap, "aes raw import setup");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_import_raw_promise,
+							&aes_import_raw_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes raw import drain/result");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						aes_import_raw_key,
+						&aes_export_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap, "aes raw re-export");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_export_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes raw re-export drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						zero_key_16, sizeof(zero_key_16), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 5, &aes_jwk_object) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"oct", 3,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"kty", 3, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAA", 22,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"k", 1, result) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"A128GCM",
+							7, &result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"alg", 3, result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"ext", 3, jsval_bool(1)) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"key_ops", 7, aes_usages) < 0) {
+					return generated_fail_errno(detail, cap, "aes jwk setup");
+				}
+				if (jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+						aes_jwk_object, aes_import_algorithm, 1, aes_usages,
+						&aes_import_jwk_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_import_key(aes jwk)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_import_jwk_promise,
+							&aes_import_jwk_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes jwk import drain/result");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+						aes_import_jwk_key, &aes_export_jwk_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_export_key(aes jwk)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_export_jwk_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes jwk export drain/result");
+				}
+				if (jsval_object_get_utf8(&region, result, (const uint8_t *)"alg", 3,
+						&prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes jwk alg");
+				}
+				status = generated_expect_string(&region, prop,
+						(const uint8_t *)"A128GCM", 7, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"key_ops", 7, &prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes jwk key_ops");
+				}
+				status = generated_expect_string_array(&region, prop,
+						expected_encrypt_decrypt_ops, 2, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_encrypt(&region, subtle_a, aes_params,
+						aes_import_raw_key,
+						digest_input_buffer, &aes_encrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_encrypt");
+				}
+				if (jsval_promise_state(&region, aes_encrypt_promise, &promise_state) < 0
+						|| promise_state != JSVAL_PROMISE_STATE_PENDING) {
+					return generated_failf(detail, cap,
+							"expected AES-GCM encrypt promise to stay pending");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_encrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes encrypt drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						aes_gcm_zero_ciphertext_16_tag,
+						sizeof(aes_gcm_zero_ciphertext_16_tag), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_decrypt(&region, subtle_a, aes_params,
+						aes_import_raw_key,
+						result, &aes_decrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_decrypt");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_decrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes decrypt drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						zero_key_16, sizeof(zero_key_16), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a, aes_algorithm, 1,
+						aes_usages, &aes_bad_decrypt_key_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes bad decrypt key generate");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_bad_decrypt_key_promise,
+							&aes_bad_decrypt_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes bad decrypt key drain/result");
+				}
+				if (jsval_subtle_crypto_encrypt(&region, subtle_a, aes_params,
+						aes_import_raw_key,
+						digest_input_buffer, &aes_encrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes re-encrypt for bad decrypt");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_encrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes re-encrypt drain/result");
+				}
+				if (jsval_subtle_crypto_decrypt(&region, subtle_a, aes_params,
+						aes_bad_decrypt_key, result, &aes_bad_decrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes bad decrypt call");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_bad_decrypt_promise,
+							&dom_exception) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes bad decrypt drain/result");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes bad decrypt exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"OperationError", 14, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 1, &aes_invalid_iv_params) < 0
+						|| jsval_object_set_utf8(&region, aes_invalid_iv_params,
+							(const uint8_t *)"name", 4, aes_name) < 0
+						|| jsval_subtle_crypto_encrypt(&region, subtle_a,
+							aes_invalid_iv_params, aes_import_raw_key,
+							digest_input_buffer,
+							&aes_invalid_iv_promise) < 0
+						|| jsval_promise_result(&region, aes_invalid_iv_promise,
+							&dom_exception) < 0) {
+						return generated_fail_errno(detail, cap, "aes invalid iv");
+					}
+					if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes invalid iv exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"TypeError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 3, &aes_invalid_tag_params) < 0
+						|| jsval_object_set_utf8(&region, aes_invalid_tag_params,
+							(const uint8_t *)"name", 4, aes_name) < 0
+						|| jsval_object_set_utf8(&region, aes_invalid_tag_params,
+							(const uint8_t *)"iv", 2, aes_iv_buffer) < 0
+						|| jsval_object_set_utf8(&region, aes_invalid_tag_params,
+							(const uint8_t *)"tagLength", 9,
+							jsval_number(40.0)) < 0
+						|| jsval_subtle_crypto_encrypt(&region, subtle_a,
+							aes_invalid_tag_params, aes_import_raw_key,
+							digest_input_buffer,
+							&aes_invalid_tag_promise) < 0
+						|| jsval_promise_result(&region, aes_invalid_tag_promise,
+							&dom_exception) < 0) {
+						return generated_fail_errno(detail, cap, "aes invalid tag");
+					}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes invalid tag exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"TypeError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a, aes_algorithm, 0,
+						aes_usages, &aes_non_extractable_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes nonextractable generate");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, aes_non_extractable_promise,
+							&aes_non_extractable_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes nonextractable drain/result");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						aes_non_extractable_key,
+						&aes_non_extractable_export_promise) < 0
+						|| jsval_promise_result(&region,
+							aes_non_extractable_export_promise, &dom_exception) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes nonextractable export");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes nonextractable exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"InvalidAccessError", 18, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+						&aes_bad_format) < 0
+						|| jsval_subtle_crypto_import_key(&region, subtle_a,
+							aes_bad_format, aes_iv_buffer, aes_import_algorithm, 1,
+							aes_usages, &aes_unsupported_format_promise) < 0
+						|| jsval_promise_result(&region,
+							aes_unsupported_format_promise, &dom_exception) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes unsupported format");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes unsupported format exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"NotSupportedError", 17, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_object_new(&region, 5, &aes_jwk_object) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"RSA", 3,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"kty", 3, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAA", 22,
+							&result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"k", 1, result) < 0
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"A128GCM",
+							7, &result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"alg", 3, result) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"ext", 3, jsval_bool(1)) < 0
+						|| jsval_object_set_utf8(&region, aes_jwk_object,
+							(const uint8_t *)"key_ops", 7, aes_usages) < 0
+						|| jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+							aes_jwk_object, aes_import_algorithm, 1, aes_usages,
+							&aes_malformed_jwk_promise) < 0
+						|| jsval_promise_result(&region, aes_malformed_jwk_promise,
+							&dom_exception) < 0) {
+					return generated_fail_errno(detail, cap, "aes malformed jwk");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes malformed jwk exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"DataError", 9, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+			}
 		}
-	}
-#else
-	memset(&error, 0, sizeof(error));
-	errno = 0;
+	#else
+		memset(&error, 0, sizeof(error));
+		errno = 0;
 	if (jsval_crypto_get_random_values(&region, crypto_value, typed_u8,
 			&result, &error) >= 0 || errno != ENOTSUP) {
 		return generated_failf(detail, cap,
 				"expected crypto backend to be disabled");
 	}
 	errno = 0;
-	if (jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
-			digest_input, &digest_promise) >= 0 || errno != ENOTSUP) {
-		return generated_failf(detail, cap,
-				"expected subtle.digest to stay disabled");
-	}
-#endif
+		if (jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
+				digest_input, &digest_promise) >= 0 || errno != ENOTSUP) {
+			return generated_failf(detail, cap,
+					"expected subtle.digest to stay disabled");
+		}
+		errno = 0;
+		if (jsval_subtle_crypto_encrypt(&region, subtle_a, algorithm_name,
+				jsval_number(1.0), digest_input, &digest_promise) >= 0
+				|| errno != ENOTSUP) {
+			return generated_failf(detail, cap,
+					"expected subtle.encrypt to stay disabled");
+		}
+		errno = 0;
+		if (jsval_subtle_crypto_decrypt(&region, subtle_a, algorithm_name,
+				jsval_number(1.0), digest_input, &digest_promise) >= 0
+				|| errno != ENOTSUP) {
+			return generated_failf(detail, cap,
+					"expected subtle.decrypt to stay disabled");
+		}
+	#endif
 	if (jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
 			algorithm_name, JSVAL_CRYPTO_KEY_USAGE_SIGN
 			| JSVAL_CRYPTO_KEY_USAGE_VERIFY, &key_value) < 0) {

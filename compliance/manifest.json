@@ -4645,6 +4645,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC HMAC rejection fixture for empty usages, unsupported formats, malformed JWKs, and non-extractable exports."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-aes-gcm-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-gcm-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-gcm-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-GCM fixture for Promise-backed generateKey/importKey/exportKey/encrypt/decrypt over `raw` and `jwk` formats."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-aes-gcm-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-gcm-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-gcm-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-GCM rejection fixture for unsupported formats, malformed JWKs, missing IV, invalid tagLength, non-extractable exports, and authentication failure."
     }
   ]
 }

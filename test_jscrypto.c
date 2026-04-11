@@ -51,6 +51,36 @@ assert_hmac_vector(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
 	assert(matches == 0);
 }
 
+static void
+assert_aes_gcm_vector(const uint8_t *key, size_t key_len, const uint8_t *iv,
+		size_t iv_len, const uint8_t *aad, size_t aad_len,
+		uint32_t tag_bits, const uint8_t *input, size_t input_len,
+		const uint8_t *expected, size_t expected_len)
+{
+	uint8_t output[128];
+	uint8_t decrypted[128];
+	size_t len = 0;
+
+	assert(jscrypto_aes_gcm_encrypt(key, key_len, iv, iv_len, aad, aad_len,
+			tag_bits, input, input_len, NULL, 0, &len) == 0);
+	assert(len == expected_len);
+	assert(jscrypto_aes_gcm_encrypt(key, key_len, iv, iv_len, aad, aad_len,
+			tag_bits, input, input_len, output, sizeof(output), NULL) == 0);
+	assert(memcmp(output, expected, expected_len) == 0);
+	assert(jscrypto_aes_gcm_decrypt(key, key_len, iv, iv_len, aad, aad_len,
+			tag_bits, output, expected_len, NULL, 0, &len) == 0);
+	assert(len == input_len);
+	assert(jscrypto_aes_gcm_decrypt(key, key_len, iv, iv_len, aad, aad_len,
+			tag_bits, output, expected_len, decrypted, sizeof(decrypted),
+			NULL) == 0);
+	assert(memcmp(decrypted, input, input_len) == 0);
+	output[expected_len - 1] ^= 0x01u;
+	assert(jscrypto_aes_gcm_decrypt(key, key_len, iv, iv_len, aad, aad_len,
+			tag_bits, output, expected_len, decrypted, sizeof(decrypted),
+			NULL) == -1);
+	assert(errno == EIO);
+}
+
 int
 main(void)
 {
@@ -120,6 +150,19 @@ main(void)
 		0xbe, 0x9d, 0x91, 0x4e, 0xeb, 0x61, 0xf1, 0x70,
 		0x2e, 0x69, 0x6c, 0x20, 0x3a, 0x12, 0x68, 0x54
 	};
+	static const uint8_t aes_gcm_zero_key_128[16] = { 0 };
+	static const uint8_t aes_gcm_zero_iv_96[12] = { 0 };
+	static const uint8_t aes_gcm_empty_ciphertext_tag[] = {
+		0x58, 0xe2, 0xfc, 0xce, 0xfa, 0x7e, 0x30, 0x61,
+		0x36, 0x7f, 0x1d, 0x57, 0xa4, 0xe7, 0x45, 0x5a
+	};
+	static const uint8_t aes_gcm_zero_plaintext_16[16] = { 0 };
+	static const uint8_t aes_gcm_zero_ciphertext_16_tag[] = {
+		0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
+		0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
+		0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd,
+		0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf
+	};
  #if JSMX_WITH_CRYPTO
 	uint8_t bytes[32];
 	uint8_t uuid[36];
@@ -187,6 +230,15 @@ main(void)
 	assert_hmac_vector(JSCRYPTO_DIGEST_SHA512, hmac_key, sizeof(hmac_key),
 			hmac_input, sizeof(hmac_input), hmac_sha512_hi_there,
 			sizeof(hmac_sha512_hi_there));
+	assert_aes_gcm_vector(aes_gcm_zero_key_128, sizeof(aes_gcm_zero_key_128),
+			aes_gcm_zero_iv_96, sizeof(aes_gcm_zero_iv_96), NULL, 0, 128, NULL,
+			0, aes_gcm_empty_ciphertext_tag,
+			sizeof(aes_gcm_empty_ciphertext_tag));
+	assert_aes_gcm_vector(aes_gcm_zero_key_128, sizeof(aes_gcm_zero_key_128),
+			aes_gcm_zero_iv_96, sizeof(aes_gcm_zero_iv_96), NULL, 0, 128,
+			aes_gcm_zero_plaintext_16, sizeof(aes_gcm_zero_plaintext_16),
+			aes_gcm_zero_ciphertext_16_tag,
+			sizeof(aes_gcm_zero_ciphertext_16_tag));
 #else
 	uint8_t byte = 0;
 	int matches = 0;
@@ -210,7 +262,16 @@ main(void)
 	assert(jscrypto_hmac_verify(algorithm, (const uint8_t *)"k", 1,
 			(const uint8_t *)"abc", 3, &byte, 1, &matches) == -1);
 	assert(errno == ENOTSUP || errno == ENOBUFS);
-#endif
+	assert(jscrypto_aes_gcm_encrypt((const uint8_t *)"0123456789abcdef", 16,
+			(const uint8_t *)"abcdefghijkl", 12, NULL, 0, 128,
+			(const uint8_t *)"abc", 3, &byte, 1, NULL) == -1);
+		assert(errno == ENOTSUP || errno == ENOBUFS);
+		assert(jscrypto_aes_gcm_decrypt((const uint8_t *)"0123456789abcdef", 16,
+				(const uint8_t *)"abcdefghijkl", 12, NULL, 0, 128,
+				aes_gcm_zero_ciphertext_16_tag,
+				sizeof(aes_gcm_zero_ciphertext_16_tag), &byte, 1, NULL) == -1);
+		assert(errno == ENOTSUP || errno == ENOBUFS);
+	#endif
 
 	return 0;
 }

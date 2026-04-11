@@ -30,5 +30,13 @@ int jscrypto_hmac_verify(jscrypto_digest_algorithm_t algorithm,
 		const uint8_t *key, size_t key_len, const uint8_t *input,
 		size_t input_len, const uint8_t *signature, size_t signature_len,
 		int *matches_ptr);
+int jscrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
+		uint32_t tag_bits, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr);
+int jscrypto_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
+		uint32_t tag_bits, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr);
 
 #endif

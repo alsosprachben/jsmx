@@ -28,11 +28,12 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `ArrayBuffer`
     - typed arrays
     - `Crypto`
-    - `SubtleCrypto`, including Promise-backed `digest(...)` plus HMAC
+    - `SubtleCrypto`, including Promise-backed `digest(...)`, HMAC
       `generateKey(...)`, `importKey(...)`, `exportKey(...)`, `sign(...)`,
-      and `verify(...)`
-    - `CryptoKey` values for the current HMAC secret-key surface over `raw`
-      and `jwk`
+      and `verify(...)`, plus AES-GCM `generateKey(...)`, `importKey(...)`,
+      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`
+    - `CryptoKey` values for the current HMAC and AES-GCM secret-key surfaces
+      over `raw` and `jwk`
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -80,12 +81,14 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_subtle_crypto_generate_key(...)`
     - `jsval_subtle_crypto_import_key(...)`
     - `jsval_subtle_crypto_export_key(...)`
+    - `jsval_subtle_crypto_encrypt(...)`
+    - `jsval_subtle_crypto_decrypt(...)`
     - `jsval_subtle_crypto_sign(...)`
     - `jsval_subtle_crypto_verify(...)`
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
-    - typed-array / buffer helpers used by `getRandomValues(...)` and the
-      current HMAC `BufferSource` inputs
+    - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
+      HMAC, and AES-GCM `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -179,9 +182,11 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
   - bigint division, remainder, bitwise, or shift operators
   - broad legacy Date-string parsing or host-independent timezone policy
     beyond the bounded ISO + libc-local Date helpers
-  - `SubtleCrypto` methods beyond `digest(...)` and HMAC
+  - `SubtleCrypto` methods beyond `digest(...)`, HMAC
     `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
-    `sign(...)` / `verify(...)`, including encrypt/decrypt and deriveBits
+    `sign(...)` / `verify(...)`, and AES-GCM `generateKey(...)` /
+    `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
+    including deriveBits
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

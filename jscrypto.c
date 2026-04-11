@@ -105,6 +105,23 @@ jscrypto_digest_block_size_bits(jscrypto_digest_algorithm_t algorithm,
 	}
 }
 
+static int
+jscrypto_aes_gcm_tag_bits_valid(uint32_t tag_bits)
+{
+	switch (tag_bits) {
+	case 32:
+	case 64:
+	case 96:
+	case 104:
+	case 112:
+	case 120:
+	case 128:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 #if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
 static const EVP_MD *
 jscrypto_digest_evp(jscrypto_digest_algorithm_t algorithm)
@@ -118,6 +135,21 @@ jscrypto_digest_evp(jscrypto_digest_algorithm_t algorithm)
 		return EVP_sha384();
 	case JSCRYPTO_DIGEST_SHA512:
 		return EVP_sha512();
+	default:
+		return NULL;
+	}
+}
+
+static const EVP_CIPHER *
+jscrypto_aes_gcm_evp(size_t key_len)
+{
+	switch (key_len) {
+	case 16:
+		return EVP_aes_128_gcm();
+	case 24:
+		return EVP_aes_192_gcm();
+	case 32:
+		return EVP_aes_256_gcm();
 	default:
 		return NULL;
 	}
@@ -306,6 +338,219 @@ jscrypto_hmac_verify(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
 	}
 	*matches_ptr = diff == 0u;
 	return 0;
+}
+
+int
+jscrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
+		uint32_t tag_bits, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	size_t tag_len;
+	size_t output_len;
+
+	if ((key == NULL && key_len > 0) || (iv == NULL && iv_len > 0)
+			|| (aad == NULL && aad_len > 0) || (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!jscrypto_aes_gcm_tag_bits_valid(tag_bits)) {
+		errno = EINVAL;
+		return -1;
+	}
+	tag_len = tag_bits / 8u;
+	if (input_len > SIZE_MAX - tag_len) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	output_len = input_len + tag_len;
+	if (len_ptr != NULL) {
+		*len_ptr = output_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < output_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)iv;
+	(void)aad;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_gcm_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || iv_len > (size_t)INT_MAX || aad_len > (size_t)INT_MAX
+				|| input_len > (size_t)INT_MAX || tag_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1
+				|| EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, (int)iv_len,
+					NULL) != 1
+				|| EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (aad_len > 0 && EVP_EncryptUpdate(ctx, NULL, &written, aad,
+				(int)aad_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (input_len > 0 && EVP_EncryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_EncryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total += final_len;
+		if ((size_t)total != input_len
+				|| EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, (int)tag_len,
+					output + input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		EVP_CIPHER_CTX_free(ctx);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
+		uint32_t tag_bits, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	size_t tag_len;
+	size_t output_len;
+	size_t ciphertext_len;
+
+	if ((key == NULL && key_len > 0) || (iv == NULL && iv_len > 0)
+			|| (aad == NULL && aad_len > 0) || (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!jscrypto_aes_gcm_tag_bits_valid(tag_bits)) {
+		errno = EINVAL;
+		return -1;
+	}
+	tag_len = tag_bits / 8u;
+	if (input_len < tag_len) {
+		errno = EINVAL;
+		return -1;
+	}
+	ciphertext_len = input_len - tag_len;
+	output_len = ciphertext_len;
+	if (len_ptr != NULL) {
+		*len_ptr = output_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < output_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)iv;
+	(void)aad;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_gcm_evp(key_len);
+		const uint8_t *tag = input + ciphertext_len;
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || iv_len > (size_t)INT_MAX || aad_len > (size_t)INT_MAX
+				|| ciphertext_len > (size_t)INT_MAX || tag_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_DecryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1
+				|| EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, (int)iv_len,
+					NULL) != 1
+				|| EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (aad_len > 0 && EVP_DecryptUpdate(ctx, NULL, &written, aad,
+				(int)aad_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (ciphertext_len > 0
+				&& EVP_DecryptUpdate(ctx, output, &written, input,
+					(int)ciphertext_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, (int)tag_len,
+				(void *)tag) != 1
+				|| EVP_DecryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if ((size_t)total != ciphertext_len) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
 }
 
 int

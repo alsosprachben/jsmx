@@ -752,9 +752,19 @@ static void test_crypto_semantics(void)
 		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
 	};
 	static const uint8_t zero_key_32[32] = { 0 };
+	static const uint8_t zero_key_16[16] = { 0 };
 	static const uint8_t masked_key_9_bits[] = { 0xff, 0x80 };
+	static const uint8_t aes_gcm_zero_ciphertext_16_tag[] = {
+		0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
+		0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
+		0xab, 0x6e, 0x47, 0xd4, 0x2c, 0xec, 0x13, 0xbd,
+		0xf5, 0x3a, 0x67, 0xb2, 0x12, 0x57, 0xbd, 0xdf
+	};
 	static const char *expected_sign_verify_ops[] = { "sign", "verify" };
 	static const char *expected_sign_ops[] = { "sign" };
+	static const char *expected_encrypt_decrypt_ops[] = {
+		"encrypt", "decrypt"
+	};
 	uint8_t storage[262144];
 	jsval_region_t region;
 	jsval_t buffer;
@@ -1168,6 +1178,336 @@ static void test_crypto_semantics(void)
 		assert_dom_exception(&region, result, "NotSupportedError",
 				"unsupported key format");
 	}
+
+	{
+		jsval_t usages_array;
+		jsval_t aes_algorithm;
+		jsval_t aes_import_algorithm;
+		jsval_t aes_params;
+		jsval_t aes_params_aad;
+		jsval_t generated_key_promise;
+		jsval_t generated_key;
+		jsval_t exported_raw_promise;
+		jsval_t exported_jwk_promise;
+		jsval_t encrypt_promise;
+		jsval_t decrypt_promise;
+		jsval_t encrypt_aad_promise;
+		jsval_t decrypt_aad_promise;
+		jsval_t import_key_promise;
+		jsval_t import_key;
+		jsval_t jwk_object;
+		jsval_t jwk_import_key_promise;
+		jsval_t jwk_import_key;
+		jsval_t jwk_export_raw_promise;
+		jsval_t jwk_export_jwk_promise;
+		jsval_t usage_string;
+		jsval_t key_ops_value;
+		jsval_t raw_key_input;
+		jsval_t iv_input;
+		jsval_t iv_buffer;
+		jsval_t aad_input;
+		jsval_t aad_buffer;
+		jsval_t non_extractable_key_promise;
+		jsval_t non_extractable_key;
+		jsval_t non_extractable_export_promise;
+		jsval_t empty_usages;
+		jsval_t empty_usages_promise;
+		jsval_t format_value;
+		jsval_t unsupported_format_promise;
+		jsval_t invalid_iv_params;
+		jsval_t invalid_iv_promise;
+		jsval_t invalid_tag_params;
+		jsval_t invalid_tag_promise;
+		jsval_t malformed_jwk_promise;
+		jsval_t bad_decrypt_promise;
+		jsval_t bad_decrypt_key_promise;
+		jsval_t bad_decrypt_key;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+
+		assert(jsval_array_new(&region, 2, &usages_array) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"encrypt", 7,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, usages_array, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"decrypt", 7,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, usages_array, usage_string) == 0);
+		assert(jsval_object_new(&region, 2, &aes_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(256.0)) == 0);
+		assert(jsval_object_new(&region, 1, &aes_import_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_import_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				aes_algorithm, 1, usages_array, &generated_key_promise) == 0);
+		assert(jsval_promise_state(&region, generated_key_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, generated_key_promise,
+				&generated_key) == 0);
+		assert(generated_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, generated_key, &result) == 0);
+		assert(result.kind == JSVAL_KIND_OBJECT);
+		assert_object_string_prop(&region, result, "name", "AES-GCM");
+		assert_object_number_prop(&region, result, "length", 256.0);
+		assert(jsval_crypto_key_usages(&region, generated_key, &usages) == 0);
+		assert(usages == (JSVAL_CRYPTO_KEY_USAGE_ENCRYPT
+				| JSVAL_CRYPTO_KEY_USAGE_DECRYPT));
+
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				generated_key, &exported_raw_promise) == 0);
+		assert(jsval_promise_state(&region, exported_raw_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 32);
+
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				generated_key, &exported_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_jwk_promise, &result) == 0);
+		assert_object_string_prop(&region, result, "kty", "oct");
+		assert_object_string_prop(&region, result, "alg", "A256GCM");
+		assert(jsval_object_get_utf8(&region, result, (const uint8_t *)"key_ops",
+				7, &key_ops_value) == 0);
+		assert_array_strings(&region, key_ops_value, expected_encrypt_decrypt_ops,
+				2);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&raw_key_input) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				raw_key_input, aes_import_algorithm, 1, usages_array,
+				&import_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, import_key_promise, &import_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				import_key, &exported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result) == 0);
+		assert_array_buffer_bytes(&region, result, zero_key_16,
+				sizeof(zero_key_16));
+
+		assert(jsval_object_new(&region, 5, &jwk_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"oct", 3,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"kty", 3, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region,
+				(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAA", 22,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object, (const uint8_t *)"k", 1,
+				usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"A128GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"alg", 3, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"ext", 3, jsval_bool(1)) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"key_ops", 7, usages_array) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				jwk_object, aes_import_algorithm, 1, usages_array,
+				&jwk_import_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_import_key_promise,
+				&jwk_import_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				jwk_import_key, &jwk_export_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_export_raw_promise, &result)
+				== 0);
+		assert_array_buffer_bytes(&region, result, zero_key_16,
+				sizeof(zero_key_16));
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				jwk_import_key, &jwk_export_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_export_jwk_promise, &result)
+				== 0);
+		assert_object_string_prop(&region, result, "alg", "A128GCM");
+		assert(jsval_object_get_utf8(&region, result, (const uint8_t *)"key_ops",
+				7, &key_ops_value) == 0);
+		assert_array_strings(&region, key_ops_value, expected_encrypt_decrypt_ops,
+				2);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+				&iv_input) == 0);
+		assert(jsval_typed_array_buffer(&region, iv_input, &iv_buffer) == 0);
+		assert(jsval_object_new(&region, 2, &aes_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params,
+				(const uint8_t *)"iv", 2, iv_buffer) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, aes_params,
+				import_key, digest_input_buffer, &encrypt_promise) == 0);
+		assert(jsval_promise_state(&region, encrypt_promise, &promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_promise, &result) == 0);
+		assert_array_buffer_bytes(&region, result, aes_gcm_zero_ciphertext_16_tag,
+				sizeof(aes_gcm_zero_ciphertext_16_tag));
+
+		assert(jsval_subtle_crypto_decrypt(&region, subtle_a, aes_params,
+				import_key, result, &decrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, decrypt_promise, &result) == 0);
+		assert_array_buffer_bytes(&region, result, zero_key_16,
+				sizeof(zero_key_16));
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 4,
+				&aad_input) == 0);
+		assert(jsval_typed_array_buffer(&region, aad_input, &aad_buffer) == 0);
+		assert(jsval_object_new(&region, 4, &aes_params_aad) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params_aad,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params_aad,
+				(const uint8_t *)"iv", 2, iv_buffer) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params_aad,
+				(const uint8_t *)"additionalData", 14, aad_buffer) == 0);
+		assert(jsval_object_set_utf8(&region, aes_params_aad,
+				(const uint8_t *)"tagLength", 9, jsval_number(96.0)) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, aes_params_aad,
+				import_key, digest_input_buffer, &encrypt_aad_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_aad_promise, &result) == 0);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 28);
+		assert(jsval_subtle_crypto_decrypt(&region, subtle_a, aes_params_aad,
+				import_key, result, &decrypt_aad_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, decrypt_aad_promise, &result) == 0);
+		assert_array_buffer_bytes(&region, result, zero_key_16,
+				sizeof(zero_key_16));
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				aes_algorithm, 1, usages_array, &bad_decrypt_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, bad_decrypt_key_promise,
+				&bad_decrypt_key) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, aes_params,
+				import_key, digest_input_buffer, &encrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_promise, &result) == 0);
+			assert(jsval_subtle_crypto_decrypt(&region, subtle_a, aes_params,
+					bad_decrypt_key, result, &bad_decrypt_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, bad_decrypt_promise, &result) == 0);
+			assert_dom_exception(&region, result, "OperationError",
+					"AES-GCM operation failed");
+
+		assert(jsval_object_new(&region, 1, &invalid_iv_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, invalid_iv_params,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, invalid_iv_params,
+				import_key, digest_input_buffer, &invalid_iv_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_iv_promise, &result) == 0);
+		assert_dom_exception(&region, result, "TypeError",
+				"expected AES-GCM iv");
+
+		assert(jsval_object_new(&region, 3, &invalid_tag_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, invalid_tag_params,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, invalid_tag_params,
+				(const uint8_t *)"iv", 2, iv_buffer) == 0);
+		assert(jsval_object_set_utf8(&region, invalid_tag_params,
+				(const uint8_t *)"tagLength", 9, jsval_number(40.0)) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, invalid_tag_params,
+				import_key, digest_input_buffer, &invalid_tag_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_tag_promise, &result) == 0);
+		assert_dom_exception(&region, result, "TypeError",
+				"invalid AES-GCM tagLength");
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				aes_algorithm, 0, usages_array, &non_extractable_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, non_extractable_key_promise,
+				&non_extractable_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				non_extractable_key, &non_extractable_export_promise) == 0);
+		assert(jsval_promise_result(&region, non_extractable_export_promise,
+				&result) == 0);
+		assert_dom_exception(&region, result, "InvalidAccessError",
+				"key is not extractable");
+
+		assert(jsval_array_new(&region, 0, &empty_usages) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				aes_algorithm, 1, empty_usages, &empty_usages_promise) == 0);
+		assert(jsval_promise_result(&region, empty_usages_promise, &result) == 0);
+		assert_dom_exception(&region, result, "SyntaxError",
+				"expected non-empty key usages");
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+				&format_value) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, format_value,
+				raw_key_input, aes_import_algorithm, 1, usages_array,
+				&unsupported_format_promise) == 0);
+		assert(jsval_promise_result(&region, unsupported_format_promise,
+				&result) == 0);
+		assert_dom_exception(&region, result, "NotSupportedError",
+				"unsupported key format");
+
+		assert(jsval_object_new(&region, 5, &jwk_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"RSA", 3,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"kty", 3, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region,
+				(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAA", 22,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"k", 1, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"A128GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"alg", 3, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"ext", 3, jsval_bool(1)) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"key_ops", 7, usages_array) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				jwk_object, aes_import_algorithm, 1, usages_array,
+				&malformed_jwk_promise) == 0);
+		assert(jsval_promise_result(&region, malformed_jwk_promise, &result) == 0);
+		assert_dom_exception(&region, result, "DataError", "invalid JWK kty");
+	}
 #else
 	memset(&error, 0, sizeof(error));
 	errno = 0;
@@ -1180,6 +1520,14 @@ static void test_crypto_semantics(void)
 	errno = 0;
 	assert(jsval_subtle_crypto_digest(&region, subtle_a, algorithm_name,
 			digest_input, &digest_promise) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_subtle_crypto_encrypt(&region, subtle_a, jsval_undefined(),
+			jsval_undefined(), jsval_undefined(), &digest_promise) < 0);
+	assert(errno == ENOTSUP);
+	errno = 0;
+	assert(jsval_subtle_crypto_decrypt(&region, subtle_a, jsval_undefined(),
+			jsval_undefined(), jsval_undefined(), &digest_promise) < 0);
 	assert(errno == ENOTSUP);
 #endif
 

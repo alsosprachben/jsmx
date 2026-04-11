@@ -69,7 +69,9 @@ typedef enum jsval_crypto_key_type_e {
 
 typedef enum jsval_crypto_key_usage_e {
 	JSVAL_CRYPTO_KEY_USAGE_SIGN = 1u << 0,
-	JSVAL_CRYPTO_KEY_USAGE_VERIFY = 1u << 1
+	JSVAL_CRYPTO_KEY_USAGE_VERIFY = 1u << 1,
+	JSVAL_CRYPTO_KEY_USAGE_ENCRYPT = 1u << 2,
+	JSVAL_CRYPTO_KEY_USAGE_DECRYPT = 1u << 3
 } jsval_crypto_key_usage_t;
 
 typedef enum jsval_iterator_selector_e {
@@ -343,6 +345,12 @@ int jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
 int jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
 		jsval_t algorithm_value, jsval_t key_value, jsval_t signature_value,
 		jsval_t data_value, jsval_t *promise_ptr);
+int jsval_subtle_crypto_encrypt(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t data_value,
+		jsval_t *promise_ptr);
+int jsval_subtle_crypto_decrypt(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t data_value,
+		jsval_t *promise_ptr);
 int jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr);
 int jsval_crypto_get_random_values(jsval_region_t *region,
