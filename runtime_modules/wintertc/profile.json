@@ -14,9 +14,14 @@
         "crypto.randomUUID()",
         "crypto.getRandomValues(typedArray)",
         "crypto.subtle",
-        "crypto.subtle.digest()"
+        "crypto.subtle.digest()",
+        "crypto.subtle.generateKey()",
+        "crypto.subtle.importKey()",
+        "crypto.subtle.exportKey()",
+        "crypto.subtle.sign()",
+        "crypto.subtle.verify()"
       ],
-      "notes": "The current WinterTC crypto profile covers randomUUID, getRandomValues, stable subtle object identity, and Promise-backed subtle.digest over the SHA digest family. Other subtle algorithms remain pending."
+      "notes": "The current WinterTC crypto profile covers randomUUID, getRandomValues, stable subtle object identity, Promise-backed subtle.digest over the SHA digest family, and HMAC generateKey/importKey/exportKey/sign/verify over raw and jwk key formats. Other subtle algorithms remain pending."
     }
   }
 }

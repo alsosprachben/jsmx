@@ -19,7 +19,16 @@ int jscrypto_digest_algorithm_parse(const uint8_t *name, size_t len,
 		jscrypto_digest_algorithm_t *algorithm_ptr);
 int jscrypto_digest_length(jscrypto_digest_algorithm_t algorithm,
 		size_t *len_ptr);
+int jscrypto_digest_block_size_bits(jscrypto_digest_algorithm_t algorithm,
+		size_t *len_ptr);
 int jscrypto_digest(jscrypto_digest_algorithm_t algorithm, const uint8_t *input,
 		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr);
+int jscrypto_hmac(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
+		size_t key_len, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr);
+int jscrypto_hmac_verify(jscrypto_digest_algorithm_t algorithm,
+		const uint8_t *key, size_t key_len, const uint8_t *input,
+		size_t input_len, const uint8_t *signature, size_t signature_len,
+		int *matches_ptr);
 
 #endif

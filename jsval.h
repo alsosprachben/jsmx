@@ -67,6 +67,11 @@ typedef enum jsval_crypto_key_type_e {
 	JSVAL_CRYPTO_KEY_TYPE_PRIVATE = 2
 } jsval_crypto_key_type_t;
 
+typedef enum jsval_crypto_key_usage_e {
+	JSVAL_CRYPTO_KEY_USAGE_SIGN = 1u << 0,
+	JSVAL_CRYPTO_KEY_USAGE_VERIFY = 1u << 1
+} jsval_crypto_key_usage_t;
+
 typedef enum jsval_iterator_selector_e {
 	JSVAL_ITERATOR_SELECTOR_DEFAULT = 0,
 	JSVAL_ITERATOR_SELECTOR_KEYS = 1,
@@ -322,13 +327,29 @@ int jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr);
 int jsval_subtle_crypto_digest(jsval_region_t *region, jsval_t subtle_value,
 		jsval_t algorithm_value, jsval_t data_value, jsval_t *promise_ptr);
+int jsval_subtle_crypto_generate_key(jsval_region_t *region,
+		jsval_t subtle_value, jsval_t algorithm_value, int extractable,
+		jsval_t usages_value, jsval_t *promise_ptr);
+int jsval_subtle_crypto_import_key(jsval_region_t *region,
+		jsval_t subtle_value, jsval_t format_value, jsval_t key_data_value,
+		jsval_t algorithm_value, int extractable, jsval_t usages_value,
+		jsval_t *promise_ptr);
+int jsval_subtle_crypto_export_key(jsval_region_t *region,
+		jsval_t subtle_value, jsval_t format_value, jsval_t key_value,
+		jsval_t *promise_ptr);
+int jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t data_value,
+		jsval_t *promise_ptr);
+int jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t signature_value,
+		jsval_t data_value, jsval_t *promise_ptr);
 int jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr);
 int jsval_crypto_get_random_values(jsval_region_t *region,
 		jsval_t crypto_value, jsval_t typed_array, jsval_t *value_ptr,
 		jsmethod_error_t *error);
 int jsval_crypto_key_new(jsval_region_t *region, jsval_crypto_key_type_t type,
-		int extractable, jsval_t algorithm_name, uint32_t usages_mask,
+		int extractable, jsval_t algorithm_value, uint32_t usages_mask,
 		jsval_t *value_ptr);
 int jsval_crypto_key_type(jsval_region_t *region, jsval_t key_value,
 		jsval_t *value_ptr);

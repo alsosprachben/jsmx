@@ -7,7 +7,9 @@
 #include "utf8.h"
 
 #if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #endif
 
@@ -73,6 +75,29 @@ jscrypto_digest_length(jscrypto_digest_algorithm_t algorithm, size_t *len_ptr)
 		return 0;
 	case JSCRYPTO_DIGEST_SHA512:
 		*len_ptr = 64;
+		return 0;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+int
+jscrypto_digest_block_size_bits(jscrypto_digest_algorithm_t algorithm,
+		size_t *len_ptr)
+{
+	if (len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	switch (algorithm) {
+	case JSCRYPTO_DIGEST_SHA1:
+	case JSCRYPTO_DIGEST_SHA256:
+		*len_ptr = 512;
+		return 0;
+	case JSCRYPTO_DIGEST_SHA384:
+	case JSCRYPTO_DIGEST_SHA512:
+		*len_ptr = 1024;
 		return 0;
 	default:
 		errno = EINVAL;
@@ -182,6 +207,105 @@ jscrypto_digest(jscrypto_digest_algorithm_t algorithm, const uint8_t *input,
 		return 0;
 	}
 #endif
+}
+
+int
+jscrypto_hmac(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
+		size_t key_len, const uint8_t *input, size_t input_len,
+		uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	size_t digest_len = 0;
+
+	if ((key == NULL && key_len > 0) || (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jscrypto_digest_length(algorithm, &digest_len) < 0) {
+		return -1;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = digest_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < digest_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)key_len;
+	(void)input;
+	(void)input_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(algorithm);
+		unsigned int written = 0;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (key_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		if (HMAC(md, key, (int)key_len, input, input_len, output, &written)
+				== NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if ((size_t)written != digest_len) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_hmac_verify(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
+		size_t key_len, const uint8_t *input, size_t input_len,
+		const uint8_t *signature, size_t signature_len, int *matches_ptr)
+{
+	size_t mac_len = 0;
+	uint8_t mac[64];
+	size_t i;
+	unsigned diff = 0;
+	size_t compare_len;
+
+	if ((key == NULL && key_len > 0) || (input == NULL && input_len > 0)
+			|| (signature == NULL && signature_len > 0)
+			|| matches_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jscrypto_hmac(algorithm, key, key_len, input, input_len, mac,
+			sizeof(mac), &mac_len) < 0) {
+		return -1;
+	}
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+	if (signature_len == mac_len) {
+		*matches_ptr = CRYPTO_memcmp(signature, mac, mac_len) == 0;
+		return 0;
+	}
+#endif
+	diff = signature_len == mac_len ? 0u : 1u;
+	compare_len = signature_len > mac_len ? signature_len : mac_len;
+	for (i = 0; i < compare_len; i++) {
+		uint8_t lhs = i < signature_len ? signature[i] : 0;
+		uint8_t rhs = i < mac_len ? mac[i] : 0;
+
+		diff |= (unsigned)(lhs ^ rhs);
+	}
+	*matches_ptr = diff == 0u;
+	return 0;
 }
 
 int

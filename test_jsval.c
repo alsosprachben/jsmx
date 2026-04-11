@@ -751,7 +751,11 @@ static void test_crypto_semantics(void)
 		0x6f, 0x6d, 0x3c, 0xf7, 0xec, 0x31, 0x7a, 0x3b,
 		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
 	};
-	uint8_t storage[65536];
+	static const uint8_t zero_key_32[32] = { 0 };
+	static const uint8_t masked_key_9_bits[] = { 0xff, 0x80 };
+	static const char *expected_sign_verify_ops[] = { "sign", "verify" };
+	static const char *expected_sign_ops[] = { "sign" };
+	uint8_t storage[262144];
 	jsval_region_t region;
 	jsval_t buffer;
 	jsval_t typed_u8;
@@ -920,6 +924,250 @@ static void test_crypto_semantics(void)
 	assert(jsval_promise_result(&region, invalid_data_promise, &result) == 0);
 	assert_dom_exception(&region, result, "TypeError",
 			"expected BufferSource input");
+
+	{
+		jsval_t usages_array;
+		jsval_t hmac_algorithm;
+		jsval_t hash_object;
+		jsval_t generated_key_promise;
+		jsval_t generated_key;
+		jsval_t exported_raw_promise;
+		jsval_t exported_jwk_promise;
+		jsval_t sign_promise;
+		jsval_t verify_promise;
+		jsval_t verify_false_promise;
+		jsval_t usage_string;
+		jsval_t sign_key_ops;
+		jsval_t raw_import_key_promise;
+		jsval_t raw_import_key;
+		jsval_t zero_key_input;
+		jsval_t non_extractable_key_promise;
+		jsval_t non_extractable_key;
+		jsval_t non_extractable_export_promise;
+		jsval_t empty_usages;
+		jsval_t empty_usages_promise;
+		jsval_t format_value;
+		jsval_t hmac_name;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t unsupported_format_promise;
+		jsval_t jwk_object;
+		jsval_t jwk_import_key_promise;
+		jsval_t jwk_import_key;
+		jsval_t jwk_export_raw_promise;
+		jsval_t jwk_export_jwk_promise;
+
+		assert(jsval_array_new(&region, 2, &usages_array) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, usages_array, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, usages_array, usage_string) == 0);
+		assert(jsval_object_new(&region, 1, &hash_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hash_object,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_new(&region, 3, &hmac_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+				&usage_string) == 0);
+		hmac_name = usage_string;
+		assert(jsval_object_set_utf8(&region, hmac_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_algorithm,
+				(const uint8_t *)"hash", 4, hash_object) == 0);
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				hmac_algorithm, 1, usages_array, &generated_key_promise) == 0);
+		assert(jsval_promise_state(&region, generated_key_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(error.kind == JSMETHOD_ERROR_NONE);
+		assert(jsval_promise_result(&region, generated_key_promise,
+				&generated_key) == 0);
+		assert(generated_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, generated_key, &result) == 0);
+		assert(result.kind == JSVAL_KIND_OBJECT);
+		assert_object_string_prop(&region, result, "name", "HMAC");
+		assert(jsval_object_get_utf8(&region, result, (const uint8_t *)"hash", 4,
+				&hash_object) == 0);
+		assert_object_string_prop(&region, hash_object, "name", "SHA-256");
+		assert_object_number_prop(&region, result, "length", 512.0);
+		assert(jsval_crypto_key_usages(&region, generated_key, &usages) == 0);
+		assert(usages == (JSVAL_CRYPTO_KEY_USAGE_SIGN
+				| JSVAL_CRYPTO_KEY_USAGE_VERIFY));
+		assert(jsval_crypto_key_extractable(&region, generated_key,
+				&extractable) == 0);
+		assert(extractable == 1);
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				generated_key, &exported_raw_promise) == 0);
+		assert(jsval_promise_state(&region, exported_raw_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result)
+				== 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 64);
+
+		assert(jsval_subtle_crypto_sign(&region, subtle_a, hmac_name,
+				generated_key, digest_input_buffer, &sign_promise) == 0);
+		assert(jsval_promise_state(&region, sign_promise, &promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, sign_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 32);
+
+		assert(jsval_subtle_crypto_verify(&region, subtle_a, usage_string,
+				generated_key, result, digest_input_buffer,
+				&verify_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, verify_promise, &uuid) == 0);
+		assert(uuid.kind == JSVAL_KIND_BOOL && uuid.as.boolean == 1);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 15,
+				&bytes_view) == 0);
+		assert(jsval_typed_array_buffer(&region, bytes_view, &buffer) == 0);
+		assert(jsval_subtle_crypto_verify(&region, subtle_a, usage_string,
+				generated_key, result, buffer, &verify_false_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, verify_false_promise, &uuid) == 0);
+		assert(uuid.kind == JSVAL_KIND_BOOL && uuid.as.boolean == 0);
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				generated_key, &exported_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_jwk_promise, &result)
+				== 0);
+		assert_object_string_prop(&region, result, "kty", "oct");
+		assert_object_string_prop(&region, result, "alg", "HS256");
+		assert(jsval_object_get_utf8(&region, result, (const uint8_t *)"ext", 3,
+				&uuid) == 0);
+		assert(uuid.kind == JSVAL_KIND_BOOL && uuid.as.boolean == 1);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"key_ops", 7, &sign_key_ops) == 0);
+		assert_array_strings(&region, sign_key_ops, expected_sign_verify_ops, 2);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 32,
+				&zero_key_input) == 0);
+		assert(jsval_array_new(&region, 1, &sign_key_ops) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, sign_key_ops, usage_string) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				zero_key_input, hmac_algorithm, 1,
+				sign_key_ops, &raw_import_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, raw_import_key_promise,
+				&raw_import_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				raw_import_key, &exported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result)
+				== 0);
+		assert_array_buffer_bytes(&region, result, zero_key_32,
+				sizeof(zero_key_32));
+
+		assert(jsval_object_new(&region, 5, &jwk_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"oct", 3,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"kty", 3, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"__8", 3,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object, (const uint8_t *)"k", 1,
+				usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HS256", 5,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"alg", 3, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"ext", 3, jsval_bool(1)) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"key_ops", 7, sign_key_ops) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(9.0)) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				jwk_object, hmac_algorithm, 1, sign_key_ops,
+				&jwk_import_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_import_key_promise,
+				&jwk_import_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				jwk_import_key,
+				&jwk_export_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_export_raw_promise, &result)
+				== 0);
+		assert_array_buffer_bytes(&region, result, masked_key_9_bits,
+				sizeof(masked_key_9_bits));
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				jwk_import_key,
+				&jwk_export_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_export_jwk_promise, &result)
+				== 0);
+		assert_object_string_prop(&region, result, "k", "_4A");
+		assert_object_string_prop(&region, result, "alg", "HS256");
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"key_ops", 7, &sign_key_ops) == 0);
+		assert_array_strings(&region, sign_key_ops, expected_sign_ops, 1);
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				hmac_algorithm, 0, sign_key_ops,
+				&non_extractable_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, non_extractable_key_promise,
+				&non_extractable_key) == 0);
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				non_extractable_key,
+				&non_extractable_export_promise) == 0);
+		assert(jsval_promise_result(&region, non_extractable_export_promise,
+				&result) == 0);
+		assert_dom_exception(&region, result, "InvalidAccessError",
+				"key is not extractable");
+
+		assert(jsval_array_new(&region, 0, &empty_usages) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				hmac_algorithm, 1, empty_usages,
+				&empty_usages_promise) == 0);
+		assert(jsval_promise_result(&region, empty_usages_promise, &result)
+				== 0);
+		assert_dom_exception(&region, result, "SyntaxError",
+				"expected non-empty key usages");
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+				&format_value) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, format_value,
+				zero_key_input, hmac_algorithm, 1, sign_key_ops,
+				&unsupported_format_promise) == 0);
+		assert(jsval_promise_result(&region, unsupported_format_promise,
+				&result) == 0);
+		assert_dom_exception(&region, result, "NotSupportedError",
+				"unsupported key format");
+	}
 #else
 	memset(&error, 0, sizeof(error));
 	errno = 0;
@@ -936,7 +1184,8 @@ static void test_crypto_semantics(void)
 #endif
 
 	assert(jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
-			algorithm_name, 0x5u, &key) == 0);
+			algorithm_name, JSVAL_CRYPTO_KEY_USAGE_SIGN
+			| JSVAL_CRYPTO_KEY_USAGE_VERIFY, &key) == 0);
 	assert(key.kind == JSVAL_KIND_CRYPTO_KEY);
 	assert(jsval_typeof(&region, key, &result) == 0);
 	assert_string(&region, result, "object");
@@ -947,7 +1196,8 @@ static void test_crypto_semantics(void)
 	assert(jsval_crypto_key_algorithm(&region, key, &result) == 0);
 	assert_string(&region, result, "SHA-256");
 	assert(jsval_crypto_key_usages(&region, key, &usages) == 0);
-	assert(usages == 0x5u);
+	assert(usages == (JSVAL_CRYPTO_KEY_USAGE_SIGN
+			| JSVAL_CRYPTO_KEY_USAGE_VERIFY));
 
 	assert(jsval_string_new_utf8(&region, (const uint8_t *)"QuotaExceededError",
 			sizeof("QuotaExceededError") - 1, &uuid) == 0);

@@ -2815,7 +2815,11 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 		0x6f, 0x6d, 0x3c, 0xf7, 0xec, 0x31, 0x7a, 0x3b,
 		0x25, 0x63, 0x2a, 0xab, 0x28, 0xec, 0x37, 0xbb
 	};
-	uint8_t storage[65536];
+	static const uint8_t zero_key_32[32] = { 0 };
+	static const uint8_t masked_key_9_bits[] = { 0xff, 0x80 };
+	static const char *expected_sign_verify_ops[] = { "sign", "verify" };
+	static const char *expected_sign_ops[] = { "sign" };
+	uint8_t storage[262144];
 	jsval_region_t region;
 	jsval_t crypto_value;
 	jsval_t subtle_a;
@@ -3023,6 +3027,409 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 	if (status != GENERATED_PASS) {
 		return status;
 	}
+
+	{
+		jsval_t usages_array;
+		jsval_t hash_object;
+		jsval_t hmac_algorithm;
+		jsval_t hmac_name;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t generated_key_promise;
+		jsval_t generated_key;
+		jsval_t exported_raw_promise;
+		jsval_t exported_jwk_promise;
+		jsval_t sign_promise;
+		jsval_t verify_promise;
+		jsval_t verify_false_promise;
+		jsval_t raw_import_key_promise;
+		jsval_t raw_import_key;
+		jsval_t zero_key_input;
+		jsval_t sign_usages;
+		jsval_t sign_usage;
+		jsval_t jwk_object;
+		jsval_t jwk_import_key_promise;
+		jsval_t jwk_import_key;
+		jsval_t jwk_export_raw_promise;
+		jsval_t jwk_export_jwk_promise;
+		jsval_t empty_usages;
+		jsval_t empty_usages_promise;
+		jsval_t non_extractable_key_promise;
+		jsval_t non_extractable_key;
+		jsval_t non_extractable_export_promise;
+		jsval_t unsupported_format_promise;
+		jsval_t prop;
+		jsval_t algorithm_object;
+
+		if (jsval_array_new(&region, 2, &usages_array) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&result) < 0
+				|| jsval_array_push(&region, usages_array, result) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+					&result) < 0
+				|| jsval_array_push(&region, usages_array, result) < 0
+				|| jsval_object_new(&region, 1, &hash_object) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+					&result) < 0
+				|| jsval_object_set_utf8(&region, hash_object,
+					(const uint8_t *)"name", 4, result) < 0
+				|| jsval_object_new(&region, 3, &hmac_algorithm) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+					&hmac_name) < 0
+				|| jsval_object_set_utf8(&region, hmac_algorithm,
+					(const uint8_t *)"name", 4, hmac_name) < 0
+				|| jsval_object_set_utf8(&region, hmac_algorithm,
+					(const uint8_t *)"hash", 4, hash_object) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+					&raw_format) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+					&jwk_format) < 0) {
+			return generated_fail_errno(detail, cap, "hmac setup");
+		}
+		if (jsval_subtle_crypto_generate_key(&region, subtle_a, hmac_algorithm, 1,
+				usages_array, &generated_key_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_generate_key");
+		}
+		if (jsval_promise_state(&region, generated_key_promise, &promise_state) < 0
+				|| promise_state != JSVAL_PROMISE_STATE_PENDING) {
+			return generated_failf(detail, cap,
+					"expected generateKey promise to stay pending");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_microtask_drain(generateKey)");
+		}
+		if (jsval_promise_result(&region, generated_key_promise, &generated_key)
+				< 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_promise_result(generateKey)");
+		}
+		if (generated_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+			return generated_failf(detail, cap, "expected CryptoKey result");
+		}
+		if (jsval_crypto_key_algorithm(&region, generated_key, &result) < 0
+				|| result.kind != JSVAL_KIND_OBJECT) {
+			return generated_fail_errno(detail, cap,
+					"jsval_crypto_key_algorithm(generated)");
+		}
+		algorithm_object = result;
+		if (jsval_object_get_utf8(&region, algorithm_object,
+				(const uint8_t *)"name", 4,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "algorithm.name");
+		}
+		status = generated_expect_string(&region, prop, (const uint8_t *)"HMAC",
+				4, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_get_utf8(&region, algorithm_object,
+				(const uint8_t *)"hash", 4,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "algorithm.hash");
+		}
+		if (jsval_object_get_utf8(&region, prop, (const uint8_t *)"name", 4,
+				&result) < 0) {
+			return generated_fail_errno(detail, cap, "algorithm.hash.name");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"SHA-256", 7, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_get_utf8(&region, algorithm_object,
+				(const uint8_t *)"length", 6,
+				&result) < 0) {
+			return generated_fail_errno(detail, cap, "algorithm.length");
+		}
+		if (result.kind != JSVAL_KIND_NUMBER || result.as.number != 512.0) {
+			return generated_failf(detail, cap,
+					"expected generated HMAC key length 512");
+		}
+		if (jsval_crypto_key_usages(&region, generated_key, &usages) < 0
+				|| usages != (JSVAL_CRYPTO_KEY_USAGE_SIGN
+					| JSVAL_CRYPTO_KEY_USAGE_VERIFY)) {
+			return generated_fail_errno(detail, cap,
+					"jsval_crypto_key_usages(generated)");
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				generated_key, &exported_raw_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_export_key(raw)");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_microtask_drain(export raw)");
+		}
+		if (jsval_promise_result(&region, exported_raw_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_promise_result(export raw)");
+		}
+		if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+				|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+				|| len != 64) {
+			return generated_failf(detail, cap,
+					"expected 64-byte exported raw HMAC key");
+		}
+		if (jsval_subtle_crypto_sign(&region, subtle_a, hmac_name, generated_key,
+				digest_input_buffer, &sign_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_sign");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, sign_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap, "sign drain/result");
+		}
+		if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+				|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+				|| len != 32) {
+			return generated_failf(detail, cap,
+					"expected 32-byte HMAC signature");
+		}
+		if (jsval_subtle_crypto_verify(&region, subtle_a, hmac_name, generated_key,
+				result, digest_input_buffer, &verify_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_verify(true)");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, verify_promise, &prop) < 0) {
+			return generated_fail_errno(detail, cap, "verify(true) drain/result");
+		}
+		if (prop.kind != JSVAL_KIND_BOOL || !prop.as.boolean) {
+			return generated_failf(detail, cap,
+					"expected HMAC verify(true) to fulfill true");
+		}
+		if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 15,
+				&typed_u8) < 0
+				|| jsval_typed_array_buffer(&region, typed_u8, &prop) < 0
+				|| jsval_subtle_crypto_verify(&region, subtle_a, hmac_name,
+					generated_key, result, prop, &verify_false_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"verify(false) setup");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, verify_false_promise, &prop) < 0) {
+			return generated_fail_errno(detail, cap,
+					"verify(false) drain/result");
+		}
+		if (prop.kind != JSVAL_KIND_BOOL || prop.as.boolean) {
+			return generated_failf(detail, cap,
+					"expected HMAC verify(false) to fulfill false");
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				generated_key, &exported_jwk_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_export_key(jwk)");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, exported_jwk_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"export jwk drain/result");
+		}
+		if (jsval_object_get_utf8(&region, result, (const uint8_t *)"kty", 3,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "export jwk kty");
+		}
+		status = generated_expect_string(&region, prop, (const uint8_t *)"oct", 3,
+				detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_get_utf8(&region, result, (const uint8_t *)"alg", 3,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "export jwk alg");
+		}
+		status = generated_expect_string(&region, prop,
+				(const uint8_t *)"HS256", 5, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_get_utf8(&region, result, (const uint8_t *)"key_ops", 7,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "export jwk key_ops");
+		}
+		status = generated_expect_string_array(&region, prop,
+				expected_sign_verify_ops, 2, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 32,
+				&zero_key_input) < 0
+				|| jsval_array_new(&region, 1, &sign_usages) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&sign_usage) < 0
+				|| jsval_array_push(&region, sign_usages, sign_usage) < 0) {
+			return generated_fail_errno(detail, cap, "raw import setup");
+		}
+		if (jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				zero_key_input, hmac_algorithm, 1, sign_usages,
+				&raw_import_key_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_import_key(raw)");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, raw_import_key_promise,
+					&raw_import_key) < 0) {
+			return generated_fail_errno(detail, cap,
+					"raw import drain/result");
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				raw_import_key, &exported_raw_promise) < 0) {
+			return generated_fail_errno(detail, cap, "export raw imported");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, exported_raw_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"export raw imported drain/result");
+		}
+		status = generated_expect_array_buffer_bytes(&region, result, zero_key_32,
+				sizeof(zero_key_32), detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_new(&region, 5, &jwk_object) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"oct", 3,
+					&result) < 0
+				|| jsval_object_set_utf8(&region, jwk_object,
+					(const uint8_t *)"kty", 3, result) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"__8", 3,
+					&result) < 0
+				|| jsval_object_set_utf8(&region, jwk_object,
+					(const uint8_t *)"k", 1, result) < 0
+				|| jsval_string_new_utf8(&region, (const uint8_t *)"HS256", 5,
+					&result) < 0
+				|| jsval_object_set_utf8(&region, jwk_object,
+					(const uint8_t *)"alg", 3, result) < 0
+				|| jsval_object_set_utf8(&region, jwk_object,
+					(const uint8_t *)"ext", 3, jsval_bool(1)) < 0
+				|| jsval_object_set_utf8(&region, jwk_object,
+					(const uint8_t *)"key_ops", 7, sign_usages) < 0
+				|| jsval_object_set_utf8(&region, hmac_algorithm,
+					(const uint8_t *)"length", 6, jsval_number(9.0)) < 0) {
+			return generated_fail_errno(detail, cap, "jwk import setup");
+		}
+		if (jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				jwk_object, hmac_algorithm, 1, sign_usages,
+				&jwk_import_key_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jsval_subtle_crypto_import_key(jwk)");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, jwk_import_key_promise,
+					&jwk_import_key) < 0) {
+			return generated_fail_errno(detail, cap, "jwk import drain/result");
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				jwk_import_key, &jwk_export_raw_promise) < 0) {
+			return generated_fail_errno(detail, cap, "jwk export raw");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, jwk_export_raw_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jwk export raw drain/result");
+		}
+		status = generated_expect_array_buffer_bytes(&region, result,
+				masked_key_9_bits, sizeof(masked_key_9_bits), detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				jwk_import_key, &jwk_export_jwk_promise) < 0) {
+			return generated_fail_errno(detail, cap, "jwk export jwk");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, jwk_export_jwk_promise, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"jwk export jwk drain/result");
+		}
+		if (jsval_object_get_utf8(&region, result, (const uint8_t *)"k", 1,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "jwk export jwk.k");
+		}
+		status = generated_expect_string(&region, prop, (const uint8_t *)"_4A", 3,
+				detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_object_get_utf8(&region, result, (const uint8_t *)"key_ops", 7,
+				&prop) < 0) {
+			return generated_fail_errno(detail, cap, "jwk export jwk.key_ops");
+		}
+		status = generated_expect_string_array(&region, prop, expected_sign_ops, 1,
+				detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_subtle_crypto_generate_key(&region, subtle_a, hmac_algorithm, 0,
+				sign_usages, &non_extractable_key_promise) < 0) {
+			return generated_fail_errno(detail, cap,
+					"generate nonextractable key");
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(&region, &error) < 0
+				|| jsval_promise_result(&region, non_extractable_key_promise,
+					&non_extractable_key) < 0) {
+			return generated_fail_errno(detail, cap,
+					"nonextractable generate drain/result");
+		}
+		if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				non_extractable_key, &non_extractable_export_promise) < 0
+				|| jsval_promise_result(&region, non_extractable_export_promise,
+					&dom_exception) < 0) {
+			return generated_fail_errno(detail, cap,
+					"nonextractable export result");
+		}
+		if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+			return generated_fail_errno(detail, cap,
+					"nonextractable export exception name");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"InvalidAccessError", 18, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_array_new(&region, 0, &empty_usages) < 0
+				|| jsval_subtle_crypto_generate_key(&region, subtle_a,
+					hmac_algorithm, 1, empty_usages,
+					&empty_usages_promise) < 0
+				|| jsval_promise_result(&region, empty_usages_promise,
+					&dom_exception) < 0
+				|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+			return generated_fail_errno(detail, cap, "empty usages result");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"SyntaxError", 11, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+		if (jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+				&result) < 0
+				|| jsval_subtle_crypto_import_key(&region, subtle_a, result,
+					zero_key_input, hmac_algorithm, 1, sign_usages,
+					&unsupported_format_promise) < 0
+				|| jsval_promise_result(&region, unsupported_format_promise,
+					&dom_exception) < 0
+				|| jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+			return generated_fail_errno(detail, cap, "unsupported format result");
+		}
+		status = generated_expect_string(&region, result,
+				(const uint8_t *)"NotSupportedError", 17, detail, cap);
+		if (status != GENERATED_PASS) {
+			return status;
+		}
+	}
 #else
 	memset(&error, 0, sizeof(error));
 	errno = 0;
@@ -3039,7 +3446,8 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 	}
 #endif
 	if (jsval_crypto_key_new(&region, JSVAL_CRYPTO_KEY_TYPE_SECRET, 1,
-			algorithm_name, 0x5u, &key_value) < 0) {
+			algorithm_name, JSVAL_CRYPTO_KEY_USAGE_SIGN
+			| JSVAL_CRYPTO_KEY_USAGE_VERIFY, &key_value) < 0) {
 		return generated_fail_errno(detail, cap, "jsval_crypto_key_new");
 	}
 	if (jsval_crypto_key_type(&region, key_value, &result) < 0) {
@@ -3054,7 +3462,9 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 		return generated_fail_errno(detail, cap,
 				"jsval_crypto_key_extractable");
 	}
-	if (jsval_crypto_key_usages(&region, key_value, &usages) < 0 || usages != 0x5u) {
+	if (jsval_crypto_key_usages(&region, key_value, &usages) < 0
+			|| usages != (JSVAL_CRYPTO_KEY_USAGE_SIGN
+				| JSVAL_CRYPTO_KEY_USAGE_VERIFY)) {
 		return generated_fail_errno(detail, cap, "jsval_crypto_key_usages");
 	}
 	if (jsval_string_new_utf8(&region, (const uint8_t *)"QuotaExceededError",

@@ -35,11 +35,37 @@ runtime_webcrypto_digest_length(runtime_webcrypto_digest_algorithm_t algorithm,
 }
 
 static inline int
+runtime_webcrypto_digest_block_size_bits(
+		runtime_webcrypto_digest_algorithm_t algorithm, size_t *len_ptr)
+{
+	return jscrypto_digest_block_size_bits(algorithm, len_ptr);
+}
+
+static inline int
 runtime_webcrypto_digest(runtime_webcrypto_digest_algorithm_t algorithm,
 		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
 		size_t *len_ptr)
 {
 	return jscrypto_digest(algorithm, input, input_len, output, cap, len_ptr);
+}
+
+static inline int
+runtime_webcrypto_hmac(runtime_webcrypto_digest_algorithm_t algorithm,
+		const uint8_t *key, size_t key_len, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	return jscrypto_hmac(algorithm, key, key_len, input, input_len, output,
+			cap, len_ptr);
+}
+
+static inline int
+runtime_webcrypto_hmac_verify(runtime_webcrypto_digest_algorithm_t algorithm,
+		const uint8_t *key, size_t key_len, const uint8_t *input,
+		size_t input_len, const uint8_t *signature, size_t signature_len,
+		int *matches_ptr)
+{
+	return jscrypto_hmac_verify(algorithm, key, key_len, input, input_len,
+			signature, signature_len, matches_ptr);
 }
 
 #endif

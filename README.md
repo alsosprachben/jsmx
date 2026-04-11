@@ -155,8 +155,11 @@ That makes semantic correctness more important than surface familiarity:
     - `crypto.randomUUID()` and `crypto.getRandomValues(...)`
     - Promise-backed `crypto.subtle.digest(...)` for `SHA-1`, `SHA-256`,
       `SHA-384`, and `SHA-512`
-    - `CryptoKey` and `DOMException` groundwork for later async
-      `SubtleCrypto` slices beyond digest
+    - Promise-backed HMAC `generateKey(...)`, `importKey(...)`,
+      `exportKey(...)`, `sign(...)`, and `verify(...)` over `raw` and `jwk`
+      key formats
+    - native `CryptoKey` and `DOMException` support for the current digest and
+      HMAC WebCrypto slice
   - native Promise helpers for:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
@@ -523,9 +526,14 @@ Current WinterTC-oriented crypto coverage is:
 - stable `crypto.subtle` identity
 - Promise-backed `crypto.subtle.digest(...)` for `SHA-1`, `SHA-256`,
   `SHA-384`, and `SHA-512`
+- Promise-backed HMAC `crypto.subtle.generateKey(...)`,
+  `crypto.subtle.importKey(...)`, `crypto.subtle.exportKey(...)`,
+  `crypto.subtle.sign(...)`, and `crypto.subtle.verify(...)` over `raw` and
+  `jwk`
 
 The Promise substrate needed for later async WebCrypto methods now exists in
-`jsval`. Other `SubtleCrypto` algorithms beyond digest are still later slices.
+`jsval`. Other `SubtleCrypto` algorithms beyond digest and HMAC are still later
+slices.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

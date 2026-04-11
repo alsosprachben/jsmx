@@ -63,12 +63,21 @@ typedef struct jsval_native_subtle_crypto_s {
 	uint8_t reserved[8];
 } jsval_native_subtle_crypto_t;
 
+typedef enum jsval_crypto_algorithm_kind_e {
+	JSVAL_CRYPTO_ALGORITHM_NONE = 0,
+	JSVAL_CRYPTO_ALGORITHM_HMAC = 1
+} jsval_crypto_algorithm_kind_t;
+
 typedef struct jsval_native_crypto_key_s {
-	jsval_t algorithm_name;
+	jsval_t algorithm;
+	jsval_off_t key_bytes_off;
+	size_t key_byte_length;
+	uint32_t key_bit_length;
 	uint32_t usages_mask;
 	uint8_t type;
 	uint8_t extractable;
-	uint8_t reserved[2];
+	uint8_t algorithm_kind;
+	uint8_t hash_algorithm;
 } jsval_native_crypto_key_t;
 
 typedef struct jsval_native_dom_exception_s {
@@ -220,7 +229,8 @@ typedef struct jsval_native_match_iterator_s {
 typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_FUNCTION_CALL = 0,
 	JSVAL_MICROTASK_KIND_PROMISE_REACTION = 1,
-	JSVAL_MICROTASK_KIND_SUBTLE_DIGEST = 2
+	JSVAL_MICROTASK_KIND_SUBTLE_DIGEST = 2,
+	JSVAL_MICROTASK_KIND_SUBTLE_HMAC = 3
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -248,6 +258,33 @@ typedef struct jsval_native_microtask_subtle_digest_s {
 	uint8_t algorithm;
 	uint8_t reserved[7];
 } jsval_native_microtask_subtle_digest_t;
+
+typedef enum jsval_subtle_hmac_task_op_e {
+	JSVAL_SUBTLE_HMAC_TASK_GENERATE = 0,
+	JSVAL_SUBTLE_HMAC_TASK_IMPORT = 1,
+	JSVAL_SUBTLE_HMAC_TASK_EXPORT = 2,
+	JSVAL_SUBTLE_HMAC_TASK_SIGN = 3,
+	JSVAL_SUBTLE_HMAC_TASK_VERIFY = 4
+} jsval_subtle_hmac_task_op_t;
+
+typedef enum jsval_subtle_crypto_key_format_e {
+	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW = 0,
+	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK = 1
+} jsval_subtle_crypto_key_format_t;
+
+typedef struct jsval_native_microtask_subtle_hmac_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t key_off;
+	size_t data_len;
+	size_t extra_len;
+	uint32_t key_bit_length;
+	uint32_t usages_mask;
+	uint8_t operation;
+	uint8_t format;
+	uint8_t hash_algorithm;
+	uint8_t extractable;
+} jsval_native_microtask_subtle_hmac_t;
 
 typedef struct jsval_native_prop_s {
 	jsval_t name;
@@ -305,6 +342,11 @@ typedef struct jsval_date_parts_s {
 	int milliseconds;
 } jsval_date_parts_t;
 
+typedef struct jsval_webcrypto_error_s {
+	const char *name;
+	const char *message;
+} jsval_webcrypto_error_t;
+
 typedef enum jsval_date_component_e {
 	JSVAL_DATE_COMPONENT_FULL_YEAR = 0,
 	JSVAL_DATE_COMPONENT_MONTH = 1,
@@ -332,6 +374,9 @@ static int jsval_ascii_space(uint8_t ch);
 static jsval_t jsval_native_make_value(jsval_region_t *region, void *ptr,
 		jsval_kind_t kind);
 static jsval_t jsval_promise_value(jsval_off_t off);
+static jsval_t jsval_crypto_key_value(jsval_off_t off);
+static int jsval_subtle_crypto_digest_parse_algorithm(jsval_region_t *region,
+		jsval_t algorithm_value, jscrypto_digest_algorithm_t *algorithm_ptr);
 static int jsval_microtask_push(jsval_region_t *region, jsval_off_t task_off,
 		jsval_native_microtask_t *task);
 static int jsval_promise_schedule_reactions(jsval_region_t *region,
@@ -536,6 +581,19 @@ static jsval_native_crypto_key_t *jsval_native_crypto_key(
 	return (jsval_native_crypto_key_t *)jsval_region_ptr(region, value.off);
 }
 
+static const uint8_t *
+jsval_native_crypto_key_bytes(jsval_region_t *region,
+		jsval_native_crypto_key_t *key)
+{
+	if (key == NULL) {
+		return NULL;
+	}
+	if (key->key_byte_length == 0) {
+		return NULL;
+	}
+	return (const uint8_t *)jsval_region_ptr(region, key->key_bytes_off);
+}
+
 static jsval_native_dom_exception_t *jsval_native_dom_exception(
 		jsval_region_t *region, jsval_t value)
 {
@@ -583,6 +641,18 @@ static uint8_t *jsval_native_microtask_subtle_digest_input(
 		jsval_native_microtask_subtle_digest_t *task)
 {
 	return (uint8_t *)(task + 1);
+}
+
+static uint8_t *jsval_native_microtask_subtle_hmac_data(
+		jsval_native_microtask_subtle_hmac_t *task)
+{
+	return (uint8_t *)(task + 1);
+}
+
+static uint8_t *jsval_native_microtask_subtle_hmac_extra(
+		jsval_native_microtask_subtle_hmac_t *task)
+{
+	return jsval_native_microtask_subtle_hmac_data(task) + task->data_len;
 }
 
 static uint32_t *jsval_native_bigint_limbs(jsval_native_bigint_t *bigint)
@@ -1443,6 +1513,13 @@ jsval_crypto_key_type_valid(jsval_crypto_key_type_t type)
 	return type == JSVAL_CRYPTO_KEY_TYPE_SECRET
 			|| type == JSVAL_CRYPTO_KEY_TYPE_PUBLIC
 			|| type == JSVAL_CRYPTO_KEY_TYPE_PRIVATE;
+}
+
+static int
+jsval_crypto_key_usages_hmac_valid(uint32_t usages_mask)
+{
+	return (usages_mask & ~(uint32_t)(JSVAL_CRYPTO_KEY_USAGE_SIGN
+			| JSVAL_CRYPTO_KEY_USAGE_VERIFY)) == 0;
 }
 
 static int
@@ -7900,6 +7977,619 @@ jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
 }
 
 static int
+jsval_webcrypto_error_set(jsval_webcrypto_error_t *error,
+		const char *name, const char *message)
+{
+	if (error != NULL) {
+		error->name = name;
+		error->message = message;
+	}
+	return -1;
+}
+
+static int
+jsval_subtle_crypto_reject(jsval_region_t *region, jsval_t promise_value,
+		const char *name, const char *message)
+{
+	jsval_t reason;
+
+	if (jsval_dom_exception_new_utf8(region, name, message, &reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
+static const char *
+jsval_subtle_crypto_digest_name(jscrypto_digest_algorithm_t algorithm)
+{
+	switch (algorithm) {
+	case JSCRYPTO_DIGEST_SHA1:
+		return "SHA-1";
+	case JSCRYPTO_DIGEST_SHA256:
+		return "SHA-256";
+	case JSCRYPTO_DIGEST_SHA384:
+		return "SHA-384";
+	case JSCRYPTO_DIGEST_SHA512:
+		return "SHA-512";
+	default:
+		return NULL;
+	}
+}
+
+static const char *
+jsval_subtle_crypto_hmac_jwk_alg(jscrypto_digest_algorithm_t algorithm)
+{
+	switch (algorithm) {
+	case JSCRYPTO_DIGEST_SHA1:
+		return "HS1";
+	case JSCRYPTO_DIGEST_SHA256:
+		return "HS256";
+	case JSCRYPTO_DIGEST_SHA384:
+		return "HS384";
+	case JSCRYPTO_DIGEST_SHA512:
+		return "HS512";
+	default:
+		return NULL;
+	}
+}
+
+static int
+jsval_string_eq_ascii(jsval_region_t *region, jsval_t value,
+		const char *expected)
+{
+	uint8_t buf[32];
+	size_t len = 0;
+	size_t expected_len;
+
+	if (region == NULL || expected == NULL || value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	expected_len = strlen(expected);
+	if (expected_len > sizeof(buf)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, value, NULL, 0, &len) < 0) {
+		return -1;
+	}
+	if (len != expected_len) {
+		return 0;
+	}
+	if (len > 0 && jsval_string_copy_utf8(region, value, buf, len, NULL) < 0) {
+		return -1;
+	}
+	return memcmp(buf, expected, len) == 0;
+}
+
+static int
+jsval_subtle_crypto_read_enforce_range_u32(jsval_region_t *region,
+		jsval_t value, uint32_t *out_ptr, jsval_webcrypto_error_t *error,
+		const char *message)
+{
+	double number;
+
+	if (out_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_to_number(region, value, &number) < 0) {
+		return jsval_webcrypto_error_set(error, "TypeError", message);
+	}
+	if (!isfinite(number) || number < 0.0 || number > 4294967295.0
+			|| (double)(uint32_t)number != number) {
+		return jsval_webcrypto_error_set(error, "TypeError", message);
+	}
+	*out_ptr = (uint32_t)number;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_parse_format(jsval_region_t *region, jsval_t format_value,
+		jsval_subtle_crypto_key_format_t *format_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	if (format_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (format_value.kind != JSVAL_KIND_STRING) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected key format string");
+	}
+	if (jsval_string_eq_ascii(region, format_value, "raw") > 0) {
+		*format_ptr = JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW;
+		return 0;
+	}
+	if (jsval_string_eq_ascii(region, format_value, "jwk") > 0) {
+		*format_ptr = JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK;
+		return 0;
+	}
+	return jsval_webcrypto_error_set(error, "NotSupportedError",
+			"unsupported key format");
+}
+
+static int
+jsval_subtle_crypto_parse_usages(jsval_region_t *region, jsval_t usages_value,
+		uint32_t allowed_mask, int require_non_empty, uint32_t *mask_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	size_t len;
+	size_t i;
+	uint32_t mask = 0;
+
+	if (mask_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (usages_value.kind != JSVAL_KIND_ARRAY) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected key usages array");
+	}
+	len = jsval_array_length(region, usages_value);
+	if (require_non_empty && len == 0) {
+		return jsval_webcrypto_error_set(error, "SyntaxError",
+				"expected non-empty key usages");
+	}
+	for (i = 0; i < len; i++) {
+		jsval_t value;
+		int eq;
+
+		if (jsval_array_get(region, usages_value, i, &value) < 0) {
+			return -1;
+		}
+		if (value.kind != JSVAL_KIND_STRING) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected key usage string");
+		}
+		eq = jsval_string_eq_ascii(region, value, "sign");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq > 0) {
+			mask |= JSVAL_CRYPTO_KEY_USAGE_SIGN;
+			continue;
+		}
+		eq = jsval_string_eq_ascii(region, value, "verify");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq > 0) {
+			mask |= JSVAL_CRYPTO_KEY_USAGE_VERIFY;
+			continue;
+		}
+		return jsval_webcrypto_error_set(error, "SyntaxError",
+				"unsupported key usage");
+	}
+	if ((mask & ~allowed_mask) != 0) {
+		return jsval_webcrypto_error_set(error, "SyntaxError",
+				"unsupported key usage");
+	}
+	if (require_non_empty && mask == 0) {
+		return jsval_webcrypto_error_set(error, "SyntaxError",
+				"expected non-empty key usages");
+	}
+	*mask_ptr = mask;
+	return 0;
+}
+
+static int
+jsval_base64url_value(uint8_t ch)
+{
+	if (ch >= 'A' && ch <= 'Z') {
+		return ch - 'A';
+	}
+	if (ch >= 'a' && ch <= 'z') {
+		return ch - 'a' + 26;
+	}
+	if (ch >= '0' && ch <= '9') {
+		return ch - '0' + 52;
+	}
+	if (ch == '-') {
+		return 62;
+	}
+	if (ch == '_') {
+		return 63;
+	}
+	return -1;
+}
+
+static int
+jsval_base64url_encode(const uint8_t *input, size_t input_len, uint8_t *buf,
+		size_t cap, size_t *len_ptr)
+{
+	static const uint8_t alphabet[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	size_t out_len = (input_len / 3) * 4;
+	size_t i;
+	size_t out = 0;
+
+	switch (input_len % 3) {
+	case 1:
+		out_len += 2;
+		break;
+	case 2:
+		out_len += 3;
+		break;
+	default:
+		break;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = out_len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < out_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	for (i = 0; i + 2 < input_len; i += 3) {
+		uint32_t word = ((uint32_t)input[i] << 16)
+			| ((uint32_t)input[i + 1] << 8) | input[i + 2];
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+		buf[out++] = alphabet[(word >> 6) & 0x3f];
+		buf[out++] = alphabet[word & 0x3f];
+	}
+	if (input_len - i == 1) {
+		uint32_t word = (uint32_t)input[i] << 16;
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+	} else if (input_len - i == 2) {
+		uint32_t word = ((uint32_t)input[i] << 16)
+			| ((uint32_t)input[i + 1] << 8);
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+		buf[out++] = alphabet[(word >> 6) & 0x3f];
+	}
+	return 0;
+}
+
+static int
+jsval_base64url_decode(const uint8_t *input, size_t input_len, uint8_t *buf,
+		size_t cap, size_t *len_ptr)
+{
+	size_t out_len;
+	size_t cursor = 0;
+	size_t out = 0;
+
+	if ((input == NULL && input_len > 0) || (buf == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((input_len % 4) == 1) {
+		errno = EINVAL;
+		return -1;
+	}
+	out_len = (input_len / 4) * 3;
+	if ((input_len % 4) == 2) {
+		out_len += 1;
+	} else if ((input_len % 4) == 3) {
+		out_len += 2;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = out_len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < out_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	while (cursor + 4 <= input_len) {
+		int a = jsval_base64url_value(input[cursor]);
+		int b = jsval_base64url_value(input[cursor + 1]);
+		int c = jsval_base64url_value(input[cursor + 2]);
+		int d = jsval_base64url_value(input[cursor + 3]);
+		uint32_t word;
+
+		if (a < 0 || b < 0 || c < 0 || d < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12)
+			| ((uint32_t)c << 6) | (uint32_t)d;
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+		buf[out++] = (uint8_t)((word >> 8) & 0xff);
+		buf[out++] = (uint8_t)(word & 0xff);
+		cursor += 4;
+	}
+	if (input_len - cursor == 2) {
+		int a = jsval_base64url_value(input[cursor]);
+		int b = jsval_base64url_value(input[cursor + 1]);
+		uint32_t word;
+
+		if (a < 0 || b < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12);
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+	} else if (input_len - cursor == 3) {
+		int a = jsval_base64url_value(input[cursor]);
+		int b = jsval_base64url_value(input[cursor + 1]);
+		int c = jsval_base64url_value(input[cursor + 2]);
+		uint32_t word;
+
+		if (a < 0 || b < 0 || c < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12)
+			| ((uint32_t)c << 6);
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+		buf[out++] = (uint8_t)((word >> 8) & 0xff);
+	}
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_mask_unused_key_bits(uint8_t *bytes, size_t byte_len,
+		uint32_t bit_len)
+{
+	uint32_t remainder;
+
+	if ((bytes == NULL && byte_len > 0) || (bit_len == 0 && byte_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	remainder = bit_len & 7u;
+	if (byte_len > 0 && remainder != 0) {
+		uint8_t mask = (uint8_t)(0xffu << (8u - remainder));
+		bytes[byte_len - 1] &= mask;
+	}
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_hash_object_new(jsval_region_t *region,
+		jscrypto_digest_algorithm_t algorithm, jsval_t *value_ptr)
+{
+	const char *name = jsval_subtle_crypto_digest_name(algorithm);
+	jsval_t object;
+	jsval_t name_value;
+
+	if (name == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 1, &object) < 0
+			|| jsval_string_new_utf8(region, (const uint8_t *)name,
+				strlen(name), &name_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name", 4,
+				name_value) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_hmac_algorithm_object_new(jsval_region_t *region,
+		jscrypto_digest_algorithm_t hash_algorithm, uint32_t bit_length,
+		jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t name_value;
+	jsval_t hash_value;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 3, &object) < 0
+			|| jsval_string_new_utf8(region, (const uint8_t *)"HMAC", 4,
+				&name_value) < 0
+			|| jsval_subtle_crypto_hash_object_new(region, hash_algorithm,
+				&hash_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name", 4,
+				name_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"hash", 4,
+				hash_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"length", 6,
+				jsval_number((double)bit_length)) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_usages_array_new(jsval_region_t *region,
+		uint32_t usages_mask, jsval_t *value_ptr)
+{
+	jsval_t array;
+	size_t cap = 0;
+	jsval_t value;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN) {
+		cap++;
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY) {
+		cap++;
+	}
+	if (jsval_array_new(region, cap, &array) < 0) {
+		return -1;
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"sign", 4, &value)
+				< 0
+				|| jsval_array_push(region, array, value) < 0) {
+			return -1;
+		}
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"verify", 6, &value)
+				< 0
+				|| jsval_array_push(region, array, value) < 0) {
+			return -1;
+		}
+	}
+	*value_ptr = array;
+	return 0;
+}
+
+static int
+jsval_crypto_key_new_internal(jsval_region_t *region,
+		jsval_crypto_key_type_t type, int extractable, jsval_t algorithm_value,
+		uint32_t usages_mask, jsval_crypto_algorithm_kind_t algorithm_kind,
+		jscrypto_digest_algorithm_t hash_algorithm, uint32_t key_bit_length,
+		const uint8_t *key_bytes, size_t key_byte_length, jsval_t *value_ptr)
+{
+	jsval_native_crypto_key_t *native;
+	void *ptr = NULL;
+	void *bytes_ptr = NULL;
+
+	if (region == NULL || value_ptr == NULL
+			|| !jsval_crypto_key_type_valid(type)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_bit_length > 0 && (key_bytes == NULL || key_byte_length == 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_bit_length == 0 && key_byte_length != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*native),
+			_Alignof(jsval_native_crypto_key_t), &ptr) < 0) {
+		return -1;
+	}
+	native = (jsval_native_crypto_key_t *)ptr;
+	memset(native, 0, sizeof(*native));
+	if (key_byte_length > 0) {
+		if (jsval_region_alloc(region, key_byte_length, 1, &bytes_ptr) < 0) {
+			return -1;
+		}
+		memcpy(bytes_ptr, key_bytes, key_byte_length);
+		native->key_bytes_off = (jsval_off_t)((uint8_t *)bytes_ptr
+				- region->base);
+		native->key_byte_length = key_byte_length;
+		native->key_bit_length = key_bit_length;
+	}
+	native->algorithm = algorithm_value;
+	native->usages_mask = usages_mask;
+	native->type = (uint8_t)type;
+	native->extractable = extractable ? 1 : 0;
+	native->algorithm_kind = (uint8_t)algorithm_kind;
+	native->hash_algorithm = (uint8_t)hash_algorithm;
+	*value_ptr = jsval_native_make_value(region, native,
+			JSVAL_KIND_CRYPTO_KEY);
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_hmac_params_parse(jsval_region_t *region,
+		jsval_t algorithm_value, int require_hash, int allow_string_name,
+		int allow_length, jscrypto_digest_algorithm_t *hash_ptr,
+		int *has_hash_ptr, uint32_t *length_ptr, int *has_length_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	jsval_t name_value;
+	jsval_t hash_value = jsval_undefined();
+	jsval_t length_value = jsval_undefined();
+	int eq;
+
+	if (require_hash && hash_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (has_hash_ptr != NULL) {
+		*has_hash_ptr = 0;
+	}
+	if (has_length_ptr != NULL) {
+		*has_length_ptr = 0;
+	}
+	if (algorithm_value.kind == JSVAL_KIND_STRING) {
+		if (!allow_string_name) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected HMAC algorithm object");
+		}
+		eq = jsval_string_eq_ascii(region, algorithm_value, "HMAC");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq == 0) {
+			return jsval_webcrypto_error_set(error, "NotSupportedError",
+					"unsupported algorithm");
+		}
+		if (require_hash) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected HMAC hash identifier");
+		}
+		return 0;
+	}
+	if (algorithm_value.kind != JSVAL_KIND_OBJECT) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected algorithm identifier");
+	}
+	if (jsval_object_get_utf8(region, algorithm_value, (const uint8_t *)"name",
+			4, &name_value) < 0) {
+		return -1;
+	}
+	if (name_value.kind != JSVAL_KIND_STRING) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected algorithm name");
+	}
+	eq = jsval_string_eq_ascii(region, name_value, "HMAC");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq == 0) {
+		return jsval_webcrypto_error_set(error, "NotSupportedError",
+				"unsupported algorithm");
+	}
+	if (jsval_object_get_utf8(region, algorithm_value, (const uint8_t *)"hash",
+			4, &hash_value) < 0) {
+		return -1;
+	}
+	if (hash_value.kind != JSVAL_KIND_UNDEFINED) {
+		if (jsval_subtle_crypto_digest_parse_algorithm(region, hash_value,
+				hash_ptr) < 0) {
+			if (errno == ENOTSUP) {
+				return jsval_webcrypto_error_set(error, "NotSupportedError",
+						"unsupported HMAC hash");
+			}
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected HMAC hash identifier");
+		}
+		if (has_hash_ptr != NULL) {
+			*has_hash_ptr = 1;
+		}
+	} else if (require_hash) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected HMAC hash identifier");
+	}
+	if (allow_length) {
+		if (jsval_object_get_utf8(region, algorithm_value,
+				(const uint8_t *)"length", 6, &length_value) < 0) {
+			return -1;
+		}
+		if (length_value.kind != JSVAL_KIND_UNDEFINED) {
+			if (jsval_subtle_crypto_read_enforce_range_u32(region, length_value,
+					length_ptr, error, "expected HMAC length") < 0) {
+				return -1;
+			}
+			if (has_length_ptr != NULL) {
+				*has_length_ptr = 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int
 jsval_subtle_crypto_digest_parse_name(jsval_region_t *region,
 		jsval_t name_value, jscrypto_digest_algorithm_t *algorithm_ptr)
 {
@@ -7987,6 +8677,324 @@ jsval_buffer_source_bytes(jsval_region_t *region, jsval_t value,
 	}
 	errno = EINVAL;
 	return -1;
+}
+
+static int
+jsval_subtle_crypto_new_hmac_task(jsval_region_t *region,
+		jsval_t promise_value, jsval_subtle_hmac_task_op_t operation,
+		jsval_off_t key_off, jsval_subtle_crypto_key_format_t format,
+		jscrypto_digest_algorithm_t hash_algorithm, int extractable,
+		uint32_t usages_mask, uint32_t key_bit_length, size_t data_len,
+		size_t extra_len, jsval_off_t *off_ptr,
+		jsval_native_microtask_subtle_hmac_t **task_ptr)
+{
+	jsval_native_microtask_subtle_hmac_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| off_ptr == NULL || task_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (data_len > SIZE_MAX - sizeof(*task) || extra_len > SIZE_MAX - data_len
+			- sizeof(*task)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + data_len + extra_len;
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_SUBTLE_HMAC;
+	task->promise_off = promise_value.off;
+	task->key_off = key_off;
+	task->data_len = data_len;
+	task->extra_len = extra_len;
+	task->key_bit_length = key_bit_length;
+	task->usages_mask = usages_mask;
+	task->operation = (uint8_t)operation;
+	task->format = (uint8_t)format;
+	task->hash_algorithm = (uint8_t)hash_algorithm;
+	task->extractable = extractable ? 1 : 0;
+	*off_ptr = off;
+	*task_ptr = task;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_hmac_key_validate(jsval_region_t *region, jsval_t key_value,
+		uint32_t required_usages, int require_extractable,
+		jsval_native_crypto_key_t **native_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	jsval_native_crypto_key_t *native;
+
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected CryptoKey value");
+	}
+	if ((jsval_crypto_key_type_t)native->type != JSVAL_CRYPTO_KEY_TYPE_SECRET
+			|| (jsval_crypto_algorithm_kind_t)native->algorithm_kind
+				!= JSVAL_CRYPTO_ALGORITHM_HMAC
+			|| native->key_bit_length == 0
+			|| native->key_byte_length == 0
+			|| jsval_native_crypto_key_bytes(region, native) == NULL) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"expected HMAC secret key");
+	}
+	if (required_usages != 0
+			&& (native->usages_mask & required_usages) != required_usages) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"key does not support requested usage");
+	}
+	if (require_extractable && !native->extractable) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"key is not extractable");
+	}
+	if (native_ptr != NULL) {
+		*native_ptr = native;
+	}
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_hmac_build_export_jwk(jsval_region_t *region,
+		jsval_native_crypto_key_t *key, jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t value;
+	jsval_t key_ops;
+	uint8_t b64[256];
+	size_t key_len;
+	size_t b64_len = 0;
+	const uint8_t *key_bytes;
+	const char *alg_name;
+
+	if (region == NULL || key == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	key_bytes = jsval_native_crypto_key_bytes(region, key);
+	key_len = key->key_byte_length;
+	if (key_bytes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_base64url_encode(key_bytes, key_len, NULL, 0, &b64_len) < 0) {
+		return -1;
+	}
+	if (b64_len > sizeof(b64)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	if (jsval_base64url_encode(key_bytes, key_len, b64, sizeof(b64), NULL) < 0) {
+		return -1;
+	}
+	alg_name = jsval_subtle_crypto_hmac_jwk_alg(
+			(jscrypto_digest_algorithm_t)key->hash_algorithm);
+	if (alg_name == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 5, &object) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"oct", 3, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"kty", 3,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, b64, b64_len, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"k", 1,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)alg_name,
+			strlen(alg_name), &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"alg", 3,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_subtle_crypto_usages_array_new(region, key->usages_mask,
+			&key_ops) < 0
+			|| jsval_object_set_utf8(region, object,
+				(const uint8_t *)"key_ops", 7, key_ops) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, object, (const uint8_t *)"ext", 3,
+			jsval_bool(key->extractable ? 1 : 0)) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_run_hmac(jsval_region_t *region,
+		jsval_native_microtask_subtle_hmac_t *task)
+{
+	static const char operation_error_name[] = "OperationError";
+	static const char operation_error_message[] = "HMAC operation failed";
+	jsval_t promise_value;
+	jsval_t result;
+	jsval_t reason;
+	jsval_native_crypto_key_t *key;
+	const uint8_t *key_bytes;
+	size_t key_len;
+	jsval_webcrypto_error_t error;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	switch ((jsval_subtle_hmac_task_op_t)task->operation) {
+	case JSVAL_SUBTLE_HMAC_TASK_GENERATE:
+	{
+		uint8_t *bytes = jsval_native_microtask_subtle_hmac_data(task);
+
+		if (jscrypto_random_bytes(bytes, task->data_len) < 0
+				|| jsval_subtle_crypto_mask_unused_key_bits(bytes,
+					task->data_len, task->key_bit_length) < 0
+				|| jsval_subtle_crypto_hmac_algorithm_object_new(region,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->key_bit_length, &result) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_SECRET, task->extractable != 0,
+					result, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_HMAC,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->key_bit_length, bytes, task->data_len,
+					&result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_HMAC_TASK_IMPORT:
+		if (jsval_subtle_crypto_hmac_algorithm_object_new(region,
+				(jscrypto_digest_algorithm_t)task->hash_algorithm,
+				task->key_bit_length, &result) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_SECRET, task->extractable != 0,
+					result, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_HMAC,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->key_bit_length,
+					jsval_native_microtask_subtle_hmac_data(task),
+					task->data_len, &result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	case JSVAL_SUBTLE_HMAC_TASK_EXPORT:
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_hmac_key_validate(region,
+				jsval_crypto_key_value(task->key_off), 0, 1, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+			jsval_native_array_buffer_t *buffer;
+			uint8_t *out;
+
+			if (jsval_array_buffer_new(region, key->key_byte_length, &result) < 0) {
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			out = jsval_native_array_buffer_bytes(buffer);
+			memcpy(out, jsval_native_crypto_key_bytes(region, key),
+					key->key_byte_length);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		if (jsval_subtle_crypto_hmac_build_export_jwk(region, key, &result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	case JSVAL_SUBTLE_HMAC_TASK_SIGN:
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_hmac_key_validate(region,
+				jsval_crypto_key_value(task->key_off),
+				JSVAL_CRYPTO_KEY_USAGE_SIGN, 0, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		key_bytes = jsval_native_crypto_key_bytes(region, key);
+		key_len = key->key_byte_length;
+		if (jscrypto_digest_length((jscrypto_digest_algorithm_t)key->hash_algorithm,
+				&key_len) < 0
+				|| jsval_array_buffer_new(region, key_len, &result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		if (jscrypto_hmac((jscrypto_digest_algorithm_t)key->hash_algorithm,
+				key_bytes, key->key_byte_length,
+				jsval_native_microtask_subtle_hmac_data(task), task->data_len,
+				jsval_native_array_buffer_bytes(
+					jsval_native_array_buffer(region, result)),
+				key_len, NULL) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	case JSVAL_SUBTLE_HMAC_TASK_VERIFY:
+	{
+		int matches = 0;
+
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_hmac_key_validate(region,
+				jsval_crypto_key_value(task->key_off),
+				JSVAL_CRYPTO_KEY_USAGE_VERIFY, 0, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jscrypto_hmac_verify((jscrypto_digest_algorithm_t)key->hash_algorithm,
+				jsval_native_crypto_key_bytes(region, key),
+				key->key_byte_length,
+				jsval_native_microtask_subtle_hmac_data(task), task->data_len,
+				jsval_native_microtask_subtle_hmac_extra(task), task->extra_len,
+				&matches) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value,
+				jsval_bool(matches ? 1 : 0));
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
 }
 
 static int
@@ -8127,6 +9135,524 @@ jsval_subtle_crypto_digest(jsval_region_t *region, jsval_t subtle_value,
 }
 
 int
+jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, int extractable, jsval_t usages_value,
+		jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jscrypto_digest_algorithm_t hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+	jsval_t promise_value;
+	jsval_native_microtask_subtle_hmac_t *task;
+	jsval_off_t off;
+	uint32_t usages_mask = 0;
+	uint32_t key_bit_length = 0;
+	int has_length = 0;
+	size_t default_bits = 0;
+	size_t key_byte_length;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm_value;
+	(void)extractable;
+	(void)usages_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_hmac_params_parse(region, algorithm_value, 1, 0, 1,
+			&hash_algorithm, NULL, &key_bit_length, &has_length, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (!has_length) {
+		if (jscrypto_digest_block_size_bits(hash_algorithm, &default_bits) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"OperationError", "failed to determine HMAC key length");
+		}
+		key_bit_length = (uint32_t)default_bits;
+	}
+	if (key_bit_length == 0) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"OperationError", "invalid HMAC key length");
+	}
+	if (jsval_subtle_crypto_parse_usages(region, usages_value,
+			JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY, 1,
+			&usages_mask, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	key_byte_length = (key_bit_length + 7u) / 8u;
+	if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+			JSVAL_SUBTLE_HMAC_TASK_GENERATE, 0,
+			JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW, hash_algorithm, extractable,
+			usages_mask, key_bit_length, key_byte_length, 0, &off, &task) < 0) {
+		return -1;
+	}
+	return jsval_microtask_push(region, off, &task->base);
+#endif
+}
+
+int
+jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t format_value, jsval_t key_data_value, jsval_t algorithm_value,
+		int extractable, jsval_t usages_value, jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_native_microtask_subtle_hmac_t *task;
+	jsval_off_t off;
+	jsval_subtle_crypto_key_format_t format;
+	jscrypto_digest_algorithm_t hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+	uint32_t usages_mask = 0;
+	uint32_t key_bit_length = 0;
+	int has_length = 0;
+	const uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)format_value;
+	(void)key_data_value;
+	(void)algorithm_value;
+	(void)extractable;
+	(void)usages_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_parse_format(region, format_value, &format,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_hmac_params_parse(region, algorithm_value, 1, 0, 1,
+			&hash_algorithm, NULL, &key_bit_length, &has_length, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_parse_usages(region, usages_value,
+			JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY, 1,
+			&usages_mask, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+		if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+				&byte_length) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"TypeError", "expected BufferSource key data");
+		}
+		if (byte_length == 0 || byte_length > UINT32_MAX / 8u) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key material");
+		}
+		if (!has_length) {
+			key_bit_length = (uint32_t)(byte_length * 8u);
+		} else if (key_bit_length > (uint32_t)(byte_length * 8u)
+				|| key_bit_length <= (uint32_t)(byte_length * 8u - 8u)) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key length");
+		}
+		if (key_bit_length == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key length");
+		}
+		if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+				JSVAL_SUBTLE_HMAC_TASK_IMPORT, 0, format, hash_algorithm,
+				extractable, usages_mask, key_bit_length, byte_length, 0, &off,
+				&task) < 0) {
+			return -1;
+		}
+		memcpy(jsval_native_microtask_subtle_hmac_data(task), bytes, byte_length);
+		if (jsval_subtle_crypto_mask_unused_key_bits(
+				jsval_native_microtask_subtle_hmac_data(task), byte_length,
+				key_bit_length) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &task->base);
+	}
+	if (key_data_value.kind != JSVAL_KIND_OBJECT) {
+		return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+				"expected JWK object");
+	}
+	{
+		jsval_t field;
+		size_t encoded_len = 0;
+		size_t decoded_len = 0;
+		int eq;
+
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"kty", 3, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_STRING) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid JWK kty");
+		}
+		eq = jsval_string_eq_ascii(region, field, "oct");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid JWK kty");
+		}
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"use", 3, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_UNDEFINED) {
+			if (field.kind != JSVAL_KIND_STRING) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK use");
+			}
+			eq = jsval_string_eq_ascii(region, field, "sig");
+			if (eq < 0) {
+				return -1;
+			}
+			if (eq == 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK use");
+			}
+		}
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"alg", 3, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_UNDEFINED) {
+			const char *expected = jsval_subtle_crypto_hmac_jwk_alg(
+					hash_algorithm);
+
+			if (field.kind != JSVAL_KIND_STRING || expected == NULL) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK algorithm");
+			}
+			eq = jsval_string_eq_ascii(region, field, expected);
+			if (eq < 0) {
+				return -1;
+			}
+			if (eq == 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK algorithm");
+			}
+		}
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"ext", 3, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_UNDEFINED) {
+			if (field.kind != JSVAL_KIND_BOOL) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK ext");
+			}
+			if (!field.as.boolean && extractable) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "inconsistent JWK extractability");
+			}
+		}
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"key_ops", 7, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_UNDEFINED) {
+			size_t i;
+			size_t len;
+			uint32_t present_mask = 0;
+
+			if (field.kind != JSVAL_KIND_ARRAY) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key_ops");
+			}
+			len = jsval_array_length(region, field);
+			for (i = 0; i < len; i++) {
+				jsval_t item;
+
+				if (jsval_array_get(region, field, i, &item) < 0) {
+					return -1;
+				}
+				if (item.kind != JSVAL_KIND_STRING) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK key_ops");
+				}
+				eq = jsval_string_eq_ascii(region, item, "sign");
+				if (eq < 0) {
+					return -1;
+				}
+				if (eq > 0) {
+					present_mask |= JSVAL_CRYPTO_KEY_USAGE_SIGN;
+					continue;
+				}
+				eq = jsval_string_eq_ascii(region, item, "verify");
+				if (eq < 0) {
+					return -1;
+				}
+				if (eq > 0) {
+					present_mask |= JSVAL_CRYPTO_KEY_USAGE_VERIFY;
+					continue;
+				}
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key_ops");
+			}
+			if ((usages_mask & ~present_mask) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key_ops");
+			}
+		}
+		if (jsval_object_get_utf8(region, key_data_value,
+				(const uint8_t *)"k", 1, &field) < 0) {
+			return -1;
+		}
+		if (field.kind != JSVAL_KIND_STRING) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid JWK key material");
+		}
+		if (jsval_string_copy_utf8(region, field, NULL, 0, &encoded_len) < 0) {
+			return -1;
+		}
+		if (encoded_len == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid JWK key material");
+		}
+		if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+				JSVAL_SUBTLE_HMAC_TASK_IMPORT, 0, format, hash_algorithm,
+				extractable, usages_mask, 0, encoded_len, 0, &off, &task) < 0) {
+			return -1;
+		}
+		if (jsval_string_copy_utf8(region, field,
+				jsval_native_microtask_subtle_hmac_data(task), encoded_len,
+				NULL) < 0) {
+			return -1;
+		}
+		if (jsval_base64url_decode(jsval_native_microtask_subtle_hmac_data(task),
+				encoded_len, jsval_native_microtask_subtle_hmac_data(task),
+				encoded_len, &decoded_len) < 0
+				|| decoded_len == 0 || decoded_len > UINT32_MAX / 8u) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid JWK key material");
+		}
+		task->data_len = decoded_len;
+		if (!has_length) {
+			task->key_bit_length = (uint32_t)(decoded_len * 8u);
+		} else if (key_bit_length > (uint32_t)(decoded_len * 8u)
+				|| key_bit_length <= (uint32_t)(decoded_len * 8u - 8u)) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key length");
+		} else {
+			task->key_bit_length = key_bit_length;
+		}
+		if (task->key_bit_length == 0
+				|| jsval_subtle_crypto_mask_unused_key_bits(
+					jsval_native_microtask_subtle_hmac_data(task),
+					task->data_len, task->key_bit_length) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key length");
+		}
+		return jsval_microtask_push(region, off, &task->base);
+	}
+#endif
+}
+
+int
+jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t format_value, jsval_t key_value, jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_native_crypto_key_t *key;
+	jsval_subtle_crypto_key_format_t format;
+	jsval_off_t off;
+	jsval_native_microtask_subtle_hmac_t *task;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)format_value;
+	(void)key_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_parse_format(region, format_value, &format,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_hmac_key_validate(region, key_value, 0, 1, &key,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+			JSVAL_SUBTLE_HMAC_TASK_EXPORT, key_value.off, format,
+			(jscrypto_digest_algorithm_t)key->hash_algorithm,
+			key->extractable != 0, key->usages_mask, key->key_bit_length, 0, 0,
+			&off, &task) < 0) {
+		return -1;
+	}
+	return jsval_microtask_push(region, off, &task->base);
+#endif
+}
+
+int
+jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t data_value,
+		jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_native_crypto_key_t *key;
+	jscrypto_digest_algorithm_t hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+	const uint8_t *bytes = NULL;
+	size_t byte_length = 0;
+	int has_hash = 0;
+	jsval_off_t off;
+	jsval_native_microtask_subtle_hmac_t *task;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm_value;
+	(void)key_value;
+	(void)data_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_hmac_key_validate(region, key_value,
+			JSVAL_CRYPTO_KEY_USAGE_SIGN, 0, &key, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_hmac_params_parse(region, algorithm_value, 0, 1, 0,
+			&hash_algorithm, &has_hash, NULL, NULL, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (has_hash && (uint8_t)hash_algorithm != key->hash_algorithm) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"InvalidAccessError", "algorithm does not match key");
+	}
+	if (jsval_buffer_source_bytes(region, data_value, &bytes, &byte_length) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+				"expected BufferSource input");
+	}
+	if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+			JSVAL_SUBTLE_HMAC_TASK_SIGN, key_value.off,
+			JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+			(jscrypto_digest_algorithm_t)key->hash_algorithm,
+			key->extractable != 0, key->usages_mask, key->key_bit_length,
+			byte_length, 0, &off, &task) < 0) {
+		return -1;
+	}
+	if (byte_length > 0) {
+		memcpy(jsval_native_microtask_subtle_hmac_data(task), bytes, byte_length);
+	}
+	return jsval_microtask_push(region, off, &task->base);
+#endif
+}
+
+int
+jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t algorithm_value, jsval_t key_value, jsval_t signature_value,
+		jsval_t data_value, jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_native_crypto_key_t *key;
+	jscrypto_digest_algorithm_t hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+	const uint8_t *data_bytes = NULL;
+	const uint8_t *signature_bytes = NULL;
+	size_t data_len = 0;
+	size_t signature_len = 0;
+	int has_hash = 0;
+	jsval_off_t off;
+	jsval_native_microtask_subtle_hmac_t *task;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm_value;
+	(void)key_value;
+	(void)signature_value;
+	(void)data_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_hmac_key_validate(region, key_value,
+			JSVAL_CRYPTO_KEY_USAGE_VERIFY, 0, &key, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_hmac_params_parse(region, algorithm_value, 0, 1, 0,
+			&hash_algorithm, &has_hash, NULL, NULL, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (has_hash && (uint8_t)hash_algorithm != key->hash_algorithm) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"InvalidAccessError", "algorithm does not match key");
+	}
+	if (jsval_buffer_source_bytes(region, signature_value, &signature_bytes,
+			&signature_len) < 0
+			|| jsval_buffer_source_bytes(region, data_value, &data_bytes,
+				&data_len) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+				"expected BufferSource input");
+	}
+	if (jsval_subtle_crypto_new_hmac_task(region, promise_value,
+			JSVAL_SUBTLE_HMAC_TASK_VERIFY, key_value.off,
+			JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+			(jscrypto_digest_algorithm_t)key->hash_algorithm,
+			key->extractable != 0, key->usages_mask, key->key_bit_length,
+			data_len, signature_len, &off, &task) < 0) {
+		return -1;
+	}
+	if (data_len > 0) {
+		memcpy(jsval_native_microtask_subtle_hmac_data(task), data_bytes,
+				data_len);
+	}
+	if (signature_len > 0) {
+		memcpy(jsval_native_microtask_subtle_hmac_extra(task), signature_bytes,
+				signature_len);
+	}
+	return jsval_microtask_push(region, off, &task->base);
+#endif
+}
+
+int
 jsval_crypto_random_uuid(jsval_region_t *region, jsval_t crypto_value,
 		jsval_t *value_ptr)
 {
@@ -8189,31 +9715,12 @@ jsval_crypto_get_random_values(jsval_region_t *region, jsval_t crypto_value,
 
 int
 jsval_crypto_key_new(jsval_region_t *region, jsval_crypto_key_type_t type,
-		int extractable, jsval_t algorithm_name, uint32_t usages_mask,
+		int extractable, jsval_t algorithm_value, uint32_t usages_mask,
 		jsval_t *value_ptr)
 {
-	jsval_native_crypto_key_t *native;
-	void *ptr = NULL;
-
-	if (region == NULL || value_ptr == NULL
-			|| !jsval_crypto_key_type_valid(type)
-			|| algorithm_name.kind != JSVAL_KIND_STRING) {
-		errno = EINVAL;
-		return -1;
-	}
-	if (jsval_region_alloc(region, sizeof(*native),
-			_Alignof(jsval_native_crypto_key_t), &ptr) < 0) {
-		return -1;
-	}
-	native = (jsval_native_crypto_key_t *)ptr;
-	memset(native, 0, sizeof(*native));
-	native->algorithm_name = algorithm_name;
-	native->usages_mask = usages_mask;
-	native->type = (uint8_t)type;
-	native->extractable = extractable ? 1 : 0;
-	*value_ptr = jsval_native_make_value(region, native,
-			JSVAL_KIND_CRYPTO_KEY);
-	return 0;
+	return jsval_crypto_key_new_internal(region, type, extractable,
+			algorithm_value, usages_mask, JSVAL_CRYPTO_ALGORITHM_NONE,
+			JSCRYPTO_DIGEST_SHA256, 0, NULL, 0, value_ptr);
 }
 
 int
@@ -8287,7 +9794,7 @@ jsval_crypto_key_algorithm(jsval_region_t *region, jsval_t key_value,
 		errno = EINVAL;
 		return -1;
 	}
-	*value_ptr = native->algorithm_name;
+	*value_ptr = native->algorithm;
 	return 0;
 }
 
@@ -8315,6 +9822,17 @@ static jsval_t jsval_promise_value(jsval_off_t off)
 	jsval_t value = jsval_undefined();
 
 	value.kind = JSVAL_KIND_PROMISE;
+	value.repr = JSVAL_REPR_NATIVE;
+	value.off = off;
+	return value;
+}
+
+static jsval_t
+jsval_crypto_key_value(jsval_off_t off)
+{
+	jsval_t value = jsval_undefined();
+
+	value.kind = JSVAL_KIND_CRYPTO_KEY;
 	value.repr = JSVAL_REPR_NATIVE;
 	value.off = off;
 	return value;
@@ -8795,6 +10313,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 				(jsval_native_microtask_subtle_digest_t *)task;
 
 			if (jsval_subtle_crypto_run_digest(region, digest_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_SUBTLE_HMAC:
+		{
+			jsval_native_microtask_subtle_hmac_t *hmac_task =
+				(jsval_native_microtask_subtle_hmac_t *)task;
+
+			if (jsval_subtle_crypto_run_hmac(region, hmac_task) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}

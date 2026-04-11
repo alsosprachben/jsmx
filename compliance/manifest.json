@@ -4623,6 +4623,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC digest rejection fixture for unsupported algorithms and invalid BufferSource inputs."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-hmac-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-hmac-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-hmac-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC HMAC fixture for Promise-backed generateKey/importKey/exportKey/sign/verify over `raw` and `jwk` formats."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-hmac-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-hmac-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-hmac-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC HMAC rejection fixture for empty usages, unsupported formats, malformed JWKs, and non-extractable exports."
     }
   ]
 }
