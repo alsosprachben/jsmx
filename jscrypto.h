@@ -34,6 +34,10 @@ int jscrypto_pbkdf2(jscrypto_digest_algorithm_t algorithm,
 		const uint8_t *password, size_t password_len, const uint8_t *salt,
 		size_t salt_len, uint32_t iterations, uint8_t *output,
 		size_t output_len);
+int jscrypto_hkdf(jscrypto_digest_algorithm_t algorithm,
+		const uint8_t *key, size_t key_len, const uint8_t *salt,
+		size_t salt_len, const uint8_t *info, size_t info_len,
+		uint8_t *output, size_t output_len);
 int jscrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
 		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
 		uint32_t tag_bits, const uint8_t *input, size_t input_len,

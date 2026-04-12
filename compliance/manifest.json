@@ -4689,6 +4689,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC PBKDF2 rejection fixture for unsupported formats, usage mismatches, invalid params, and unsupported derived-key targets."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-hkdf-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-hkdf-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-hkdf-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC HKDF fixture for Promise-backed raw import, deriveBits, and deriveKey to HMAC and AES-GCM."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-hkdf-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-hkdf-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-hkdf-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC HKDF rejection fixture for unsupported formats, usage mismatches, missing params, invalid lengths, and unsupported derived-key targets."
     }
   ]
 }

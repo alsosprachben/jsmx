@@ -10,6 +10,7 @@
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #include <openssl/rand.h>
 #endif
 
@@ -381,6 +382,84 @@ jscrypto_pbkdf2(jscrypto_digest_algorithm_t algorithm, const uint8_t *password,
 					(int)password_len,
 					salt_len > 0 ? salt : empty_salt, (int)salt_len,
 					(int)iterations, md, (int)output_len, output) != 1) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_hkdf(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
+		size_t key_len, const uint8_t *salt, size_t salt_len,
+		const uint8_t *info, size_t info_len, uint8_t *output,
+		size_t output_len)
+{
+	static const uint8_t empty_input[1] = { 0 };
+
+	if ((key == NULL && key_len > 0) || (salt == NULL && salt_len > 0)
+			|| (info == NULL && info_len > 0) || (output == NULL && output_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len > (size_t)INT_MAX || salt_len > (size_t)INT_MAX
+			|| info_len > (size_t)INT_MAX) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)algorithm;
+	(void)key;
+	(void)key_len;
+	(void)salt;
+	(void)salt_len;
+	(void)info;
+	(void)info_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(algorithm);
+		EVP_PKEY_CTX *ctx = NULL;
+		size_t derived_len = output_len;
+		int rc = 0;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		rc = EVP_PKEY_derive_init(ctx);
+		if (rc == 1) {
+			rc = EVP_PKEY_CTX_set_hkdf_mode(ctx,
+					EVP_PKEY_HKDEF_MODE_EXTRACT_AND_EXPAND);
+		}
+		if (rc == 1) {
+			rc = EVP_PKEY_CTX_set_hkdf_md(ctx, md);
+		}
+		if (rc == 1) {
+			rc = EVP_PKEY_CTX_set1_hkdf_salt(ctx,
+					salt_len > 0 ? salt : empty_input, (int)salt_len);
+		}
+		if (rc == 1) {
+			rc = EVP_PKEY_CTX_set1_hkdf_key(ctx,
+					key_len > 0 ? key : empty_input, (int)key_len);
+		}
+		if (rc == 1) {
+			rc = EVP_PKEY_CTX_add1_hkdf_info(ctx,
+					info_len > 0 ? info : empty_input, (int)info_len);
+		}
+		if (rc == 1) {
+			rc = EVP_PKEY_derive(ctx, output, &derived_len);
+		}
+		EVP_PKEY_CTX_free(ctx);
+		if (rc != 1 || derived_len != output_len) {
 			errno = EIO;
 			return -1;
 		}

@@ -774,6 +774,26 @@ static void test_crypto_semantics(void)
 		0xb6, 0x12, 0xad, 0xbd, 0xb3, 0xba, 0x67, 0x02,
 		0x01, 0xd2, 0x54, 0x7c, 0xc1, 0x9b, 0xda, 0x01
 	};
+	static const uint8_t hkdf_zero_derivebits_32[] = {
+		0x82, 0x31, 0x15, 0x09, 0x86, 0xb1, 0xed, 0x08,
+		0x62, 0x8a, 0x63, 0xfa, 0x43, 0xd5, 0x42, 0xcb,
+		0x2f, 0x2d, 0xb9, 0x1d, 0xa3, 0xfa, 0xc6, 0xd8,
+		0x95, 0x0c, 0xab, 0x2f, 0x2b, 0x2e, 0xe4, 0x51
+	};
+	static const uint8_t hkdf_zero_derivekey_aes_16[] = {
+		0x82, 0x31, 0x15, 0x09, 0x86, 0xb1, 0xed, 0x08,
+		0x62, 0x8a, 0x63, 0xfa, 0x43, 0xd5, 0x42, 0xcb
+	};
+	static const uint8_t hkdf_zero_derivekey_hmac_64[] = {
+		0x82, 0x31, 0x15, 0x09, 0x86, 0xb1, 0xed, 0x08,
+		0x62, 0x8a, 0x63, 0xfa, 0x43, 0xd5, 0x42, 0xcb,
+		0x2f, 0x2d, 0xb9, 0x1d, 0xa3, 0xfa, 0xc6, 0xd8,
+		0x95, 0x0c, 0xab, 0x2f, 0x2b, 0x2e, 0xe4, 0x51,
+		0x2e, 0xe4, 0xce, 0x8f, 0x92, 0x5c, 0xb7, 0x1e,
+		0xa7, 0x3c, 0x6e, 0x7f, 0x0c, 0x29, 0x80, 0x1e,
+		0x9f, 0xea, 0x6f, 0xfa, 0x11, 0xbe, 0x5e, 0x73,
+		0x4c, 0xcd, 0x50, 0x39, 0x98, 0x3c, 0xd7, 0xae
+	};
 	static const uint8_t aes_gcm_zero_ciphertext_16_tag[] = {
 		0x03, 0x88, 0xda, 0xce, 0x60, 0xb6, 0xa3, 0x92,
 		0xf3, 0x28, 0xc2, 0xb9, 0x71, 0xb2, 0xfe, 0x78,
@@ -1770,6 +1790,275 @@ static void test_crypto_semantics(void)
 		assert(jsval_object_set_utf8(&region, unsupported_algorithm,
 				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
 		assert(jsval_subtle_crypto_derive_key(&region, subtle_a, pbkdf2_params,
+				base_key, unsupported_algorithm, 1, encrypt_decrypt_usages,
+				&unsupported_target_promise) == 0);
+		assert(jsval_promise_result(&region, unsupported_target_promise,
+				&result) == 0);
+		assert_dom_exception(&region, result, "NotSupportedError",
+				"unsupported derived key algorithm");
+	}
+	{
+		jsval_t derive_usages;
+		jsval_t derive_key_only_usages;
+		jsval_t sign_verify_usages;
+		jsval_t encrypt_decrypt_usages;
+		jsval_t hkdf_algorithm;
+		jsval_t hkdf_params;
+		jsval_t hkdf_missing_salt;
+		jsval_t hkdf_missing_info;
+		jsval_t hash_object;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t key_input;
+		jsval_t salt_input;
+		jsval_t info_input;
+		jsval_t base_key_promise;
+		jsval_t base_key;
+		jsval_t derive_key_only_base_promise;
+		jsval_t derive_key_only_base;
+		jsval_t derive_bits_promise;
+		jsval_t derive_hmac_key_promise;
+		jsval_t derive_hmac_key;
+		jsval_t derive_aes_key_promise;
+		jsval_t derive_aes_key;
+		jsval_t export_hmac_raw_promise;
+		jsval_t export_aes_raw_promise;
+		jsval_t unsupported_format_promise;
+		jsval_t invalid_length_promise;
+		jsval_t invalid_salt_promise;
+		jsval_t invalid_info_promise;
+		jsval_t invalid_usage_promise;
+		jsval_t unsupported_target_promise;
+		jsval_t usage_string;
+		jsval_t hmac_algorithm;
+		jsval_t aes_algorithm;
+		jsval_t unsupported_algorithm;
+
+		assert(jsval_array_new(&region, 2, &derive_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"deriveBits", 10,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, derive_usages, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"deriveKey", 9,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, derive_usages, usage_string) == 0);
+		assert(jsval_array_new(&region, 1, &derive_key_only_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"deriveKey", 9,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, derive_key_only_usages, usage_string)
+				== 0);
+		assert(jsval_array_new(&region, 2, &sign_verify_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, sign_verify_usages, usage_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, sign_verify_usages, usage_string) == 0);
+		assert(jsval_array_new(&region, 2, &encrypt_decrypt_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"encrypt", 7,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, encrypt_decrypt_usages, usage_string)
+				== 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"decrypt", 7,
+				&usage_string) == 0);
+		assert(jsval_array_push(&region, encrypt_decrypt_usages, usage_string)
+				== 0);
+		assert(jsval_object_new(&region, 1, &hash_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hash_object,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_new(&region, 1, &hkdf_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HKDF", 4,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_new(&region, 4, &hkdf_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HKDF", 4,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_params,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_params,
+				(const uint8_t *)"hash", 4, hash_object) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 8,
+				&key_input) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 8,
+				&salt_input) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 8,
+				&info_input) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_params,
+				(const uint8_t *)"salt", 4, salt_input) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_params,
+				(const uint8_t *)"info", 4, info_input) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				key_input, hkdf_algorithm, 1, derive_usages,
+				&base_key_promise) == 0);
+		assert(jsval_promise_state(&region, base_key_promise, &promise_state)
+				== 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, base_key_promise, &base_key) == 0);
+		assert(base_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, base_key, &result) == 0);
+		assert_object_string_prop(&region, result, "name", "HKDF");
+		assert(jsval_crypto_key_usages(&region, base_key, &usages) == 0);
+		assert(usages == (JSVAL_CRYPTO_KEY_USAGE_DERIVE_BITS
+				| JSVAL_CRYPTO_KEY_USAGE_DERIVE_KEY));
+		assert(jsval_crypto_key_extractable(&region, base_key, &extractable) == 0);
+		assert(extractable == 1);
+
+		assert(jsval_subtle_crypto_derive_bits(&region, subtle_a, hkdf_params,
+				base_key, jsval_number(256.0), &derive_bits_promise) == 0);
+		assert(jsval_promise_state(&region, derive_bits_promise, &promise_state)
+				== 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, derive_bits_promise, &result) == 0);
+		assert_array_buffer_bytes(&region, result, hkdf_zero_derivebits_32,
+				sizeof(hkdf_zero_derivebits_32));
+
+		assert(jsval_object_new(&region, 2, &hmac_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_algorithm,
+				(const uint8_t *)"hash", 4, hash_object) == 0);
+		assert(jsval_subtle_crypto_derive_key(&region, subtle_a, hkdf_params,
+				base_key, hmac_algorithm, 1, sign_verify_usages,
+				&derive_hmac_key_promise) == 0);
+		assert(jsval_promise_state(&region, derive_hmac_key_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, derive_hmac_key_promise,
+				&derive_hmac_key) == 0);
+		assert(jsval_crypto_key_algorithm(&region, derive_hmac_key, &result) == 0);
+		assert_object_string_prop(&region, result, "name", "HMAC");
+		assert(jsval_object_get_utf8(&region, result, (const uint8_t *)"hash", 4,
+				&hash_object) == 0);
+		assert_object_string_prop(&region, hash_object, "name", "SHA-256");
+		assert_object_number_prop(&region, result, "length", 512.0);
+		assert(jsval_crypto_key_usages(&region, derive_hmac_key, &usages) == 0);
+		assert(usages == (JSVAL_CRYPTO_KEY_USAGE_SIGN
+				| JSVAL_CRYPTO_KEY_USAGE_VERIFY));
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				derive_hmac_key, &export_hmac_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, export_hmac_raw_promise, &result)
+				== 0);
+		assert_array_buffer_bytes(&region, result, hkdf_zero_derivekey_hmac_64,
+				sizeof(hkdf_zero_derivekey_hmac_64));
+
+		assert(jsval_object_new(&region, 2, &aes_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_subtle_crypto_derive_key(&region, subtle_a, hkdf_params,
+				base_key, aes_algorithm, 1, encrypt_decrypt_usages,
+				&derive_aes_key_promise) == 0);
+		assert(jsval_promise_state(&region, derive_aes_key_promise,
+				&promise_state) == 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, derive_aes_key_promise,
+				&derive_aes_key) == 0);
+		assert(jsval_crypto_key_algorithm(&region, derive_aes_key, &result) == 0);
+		assert_object_string_prop(&region, result, "name", "AES-GCM");
+		assert_object_number_prop(&region, result, "length", 128.0);
+		assert(jsval_crypto_key_usages(&region, derive_aes_key, &usages) == 0);
+		assert(usages == (JSVAL_CRYPTO_KEY_USAGE_ENCRYPT
+				| JSVAL_CRYPTO_KEY_USAGE_DECRYPT));
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				derive_aes_key, &export_aes_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, export_aes_raw_promise, &result)
+				== 0);
+		assert_array_buffer_bytes(&region, result, hkdf_zero_derivekey_aes_16,
+				sizeof(hkdf_zero_derivekey_aes_16));
+
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				key_input, hkdf_algorithm, 1, derive_usages,
+				&unsupported_format_promise) == 0);
+		assert(jsval_promise_result(&region, unsupported_format_promise, &result)
+				== 0);
+		assert_dom_exception(&region, result, "NotSupportedError",
+				"unsupported key format");
+
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				key_input, hkdf_algorithm, 1, derive_key_only_usages,
+				&derive_key_only_base_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, derive_key_only_base_promise,
+				&derive_key_only_base) == 0);
+		assert(jsval_subtle_crypto_derive_bits(&region, subtle_a, hkdf_params,
+				derive_key_only_base, jsval_number(256.0),
+				&invalid_usage_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_usage_promise, &result) == 0);
+		assert_dom_exception(&region, result, "InvalidAccessError",
+				"key does not support requested usage");
+
+		assert(jsval_subtle_crypto_derive_bits(&region, subtle_a, hkdf_params,
+				base_key, jsval_number(255.0), &invalid_length_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_length_promise, &result)
+				== 0);
+		assert_dom_exception(&region, result, "TypeError",
+				"expected HKDF length");
+
+		assert(jsval_object_new(&region, 3, &hkdf_missing_salt) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HKDF", 4,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_salt,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_salt,
+				(const uint8_t *)"hash", 4, hash_object) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_salt,
+				(const uint8_t *)"info", 4, info_input) == 0);
+		assert(jsval_subtle_crypto_derive_bits(&region, subtle_a,
+				hkdf_missing_salt, base_key, jsval_number(256.0),
+				&invalid_salt_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_salt_promise, &result) == 0);
+		assert_dom_exception(&region, result, "TypeError",
+				"expected HKDF salt");
+
+		assert(jsval_object_new(&region, 3, &hkdf_missing_info) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HKDF", 4,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_info,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_info,
+				(const uint8_t *)"hash", 4, hash_object) == 0);
+		assert(jsval_object_set_utf8(&region, hkdf_missing_info,
+				(const uint8_t *)"salt", 4, salt_input) == 0);
+		assert(jsval_subtle_crypto_derive_bits(&region, subtle_a,
+				hkdf_missing_info, base_key, jsval_number(256.0),
+				&invalid_info_promise) == 0);
+		assert(jsval_promise_result(&region, invalid_info_promise, &result) == 0);
+		assert_dom_exception(&region, result, "TypeError",
+				"expected HKDF info");
+
+		assert(jsval_object_new(&region, 2, &unsupported_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+				&usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, unsupported_algorithm,
+				(const uint8_t *)"name", 4, usage_string) == 0);
+		assert(jsval_object_set_utf8(&region, unsupported_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_subtle_crypto_derive_key(&region, subtle_a, hkdf_params,
 				base_key, unsupported_algorithm, 1, encrypt_decrypt_usages,
 				&unsupported_target_promise) == 0);
 		assert(jsval_promise_result(&region, unsupported_target_promise,

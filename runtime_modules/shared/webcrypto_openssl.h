@@ -79,6 +79,16 @@ runtime_webcrypto_pbkdf2(runtime_webcrypto_digest_algorithm_t algorithm,
 }
 
 static inline int
+runtime_webcrypto_hkdf(runtime_webcrypto_digest_algorithm_t algorithm,
+		const uint8_t *key, size_t key_len, const uint8_t *salt,
+		size_t salt_len, const uint8_t *info, size_t info_len,
+		uint8_t *output, size_t output_len)
+{
+	return jscrypto_hkdf(algorithm, key, key_len, salt, salt_len, info,
+			info_len, output, output_len);
+}
+
+static inline int
 runtime_webcrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
 		const uint8_t *iv, size_t iv_len, const uint8_t *aad, size_t aad_len,
 		uint32_t tag_bits, const uint8_t *input, size_t input_len,
