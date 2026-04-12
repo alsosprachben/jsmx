@@ -179,6 +179,12 @@ That makes semantic correctness more important than surface familiarity:
       public-key only) and `jwk` key formats with `SHA-256`, `SHA-384`,
       and `SHA-512` hashes — signatures are WebCrypto-spec IEEE P1363
       fixed-width `r || s` (64 bytes)
+    - Promise-backed RSASSA-PKCS1-v1_5 `generateKey(...)` (resolving to a
+      `{publicKey, privateKey}` pair), `importKey(...)`, `exportKey(...)`,
+      `sign(...)`, and `verify(...)` over `jwk` key format only at
+      2048 / 3072 / 4096-bit modulus lengths with public exponent
+      65537 and `SHA-256` / `SHA-384` / `SHA-512` hashes — RS256
+      JWT verification is expressible end-to-end with this surface
     - Promise-backed PBKDF2 `importKey("raw", ...)`, `deriveBits(...)`, and
       `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - Promise-backed HKDF `importKey("raw", ...)`, `deriveBits(...)`, and
@@ -582,6 +588,13 @@ Current WinterTC-oriented crypto coverage is:
   public-key only) and `jwk` key formats with SHA-256/384/512 hashes —
   ES256/384/512 JWT verification is expressible end-to-end with this
   surface
+- Promise-backed RSASSA-PKCS1-v1_5 `crypto.subtle.generateKey(...)`
+  (resolving to a `{publicKey, privateKey}` pair),
+  `crypto.subtle.importKey(...)`, `crypto.subtle.exportKey(...)`,
+  `crypto.subtle.sign(...)`, and `crypto.subtle.verify(...)` over `jwk`
+  key format only at 2048/3072/4096-bit modulus lengths with public
+  exponent 65537 and SHA-256/384/512 hashes — RS256/384/512 JWT
+  verification works against any IdP's JWKS endpoint
 - Promise-backed PBKDF2 `crypto.subtle.importKey("raw", ...)`,
   `crypto.subtle.deriveBits(...)`, and `crypto.subtle.deriveKey(...)` to
   HMAC, AES-GCM, AES-CTR, or AES-CBC
@@ -591,11 +604,12 @@ Current WinterTC-oriented crypto coverage is:
 
 The Promise substrate needed for later async WebCrypto methods now exists in
 `jsval`. Other `SubtleCrypto` algorithms beyond digest, HMAC, AES-GCM,
-AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, and ECDSA P-256 are still later
-slices, and `wrapKey`/`unwrapKey` currently dispatch to either an
-AES-KW or AES-GCM wrapping cipher (other wrapping algorithms are
-future slices). Asymmetric JWT support beyond ES256/ES384/ES512
-(RSA-PSS, RSASSA-PKCS1-v1_5, RSA-OAEP, Ed25519) is still pending.
+AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, ECDSA P-256, and
+RSASSA-PKCS1-v1_5 are still later slices, and `wrapKey`/`unwrapKey`
+currently dispatch to either an AES-KW or AES-GCM wrapping cipher
+(other wrapping algorithms are future slices). Asymmetric JWT support
+beyond ES256/384/512 and RS256/384/512 (RSA-PSS, RSA-OAEP, Ed25519)
+is still pending.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

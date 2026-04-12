@@ -74,4 +74,45 @@ int jscrypto_ecdsa_p256_verify(const uint8_t public_in_xy[64],
 		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
 		const uint8_t signature_in[64], int *matches_out);
 
+int jscrypto_rsa_pkcs1_v1_5_generate(uint32_t modulus_bits,
+		uint8_t *private_der_out, size_t private_cap,
+		size_t *private_len_out);
+int jscrypto_rsa_public_from_private(const uint8_t *private_der,
+		size_t private_len, uint8_t *public_der_out, size_t public_cap,
+		size_t *public_len_out);
+int jscrypto_rsa_modulus_bits(const uint8_t *der, size_t der_len,
+		int is_private, uint32_t *bits_out);
+int jscrypto_rsa_pkcs1_v1_5_sign(const uint8_t *private_der,
+		size_t private_len, jscrypto_digest_algorithm_t hash,
+		const uint8_t *data, size_t data_len,
+		uint8_t *signature_out, size_t sig_cap, size_t *sig_len_out);
+int jscrypto_rsa_pkcs1_v1_5_verify(const uint8_t *public_der,
+		size_t public_len, jscrypto_digest_algorithm_t hash,
+		const uint8_t *data, size_t data_len,
+		const uint8_t *signature, size_t signature_len, int *matches_out);
+int jscrypto_rsa_public_jwk_components(const uint8_t *public_der,
+		size_t public_len,
+		uint8_t *n_out, size_t n_cap, size_t *n_len,
+		uint8_t *e_out, size_t e_cap, size_t *e_len);
+int jscrypto_rsa_private_jwk_components(const uint8_t *private_der,
+		size_t private_len,
+		uint8_t *n_out, size_t n_cap, size_t *n_len,
+		uint8_t *e_out, size_t e_cap, size_t *e_len,
+		uint8_t *d_out, size_t d_cap, size_t *d_len,
+		uint8_t *p_out, size_t p_cap, size_t *p_len,
+		uint8_t *q_out, size_t q_cap, size_t *q_len,
+		uint8_t *dp_out, size_t dp_cap, size_t *dp_len,
+		uint8_t *dq_out, size_t dq_cap, size_t *dq_len,
+		uint8_t *qi_out, size_t qi_cap, size_t *qi_len);
+int jscrypto_rsa_public_from_jwk_components(
+		const uint8_t *n, size_t n_len, const uint8_t *e, size_t e_len,
+		uint8_t *public_der_out, size_t cap, size_t *len_out);
+int jscrypto_rsa_private_from_jwk_components(
+		const uint8_t *n, size_t n_len, const uint8_t *e, size_t e_len,
+		const uint8_t *d, size_t d_len,
+		const uint8_t *p, size_t p_len, const uint8_t *q, size_t q_len,
+		const uint8_t *dp, size_t dp_len, const uint8_t *dq, size_t dq_len,
+		const uint8_t *qi, size_t qi_len,
+		uint8_t *private_der_out, size_t cap, size_t *len_out);
+
 #endif

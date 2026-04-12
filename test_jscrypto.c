@@ -939,6 +939,183 @@ main(void)
 			assert(matches == 1);
 		}
 	}
+
+	/* RSASSA-PKCS1-v1_5: generate a 2048-bit key, sign, verify, tamper,
+	 * round-trip through JWK components, and spot-check larger moduli. */
+	{
+		uint8_t private_der[4096];
+		uint8_t public_der[1024];
+		size_t private_len = 0;
+		size_t public_len = 0;
+		uint8_t message[32];
+		uint8_t signature[512];
+		size_t sig_len = 0;
+		uint32_t bits = 0;
+		size_t i;
+		int matches = 0;
+
+		for (i = 0; i < sizeof(message); i++) {
+			message[i] = (uint8_t)(i * 3u);
+		}
+		assert(jscrypto_rsa_pkcs1_v1_5_generate(2048, private_der,
+				sizeof(private_der), &private_len) == 0);
+		assert(private_len > 0 && private_len < sizeof(private_der));
+		assert(jscrypto_rsa_public_from_private(private_der, private_len,
+				public_der, sizeof(public_der), &public_len) == 0);
+		assert(public_len > 0 && public_len < sizeof(public_der));
+		assert(jscrypto_rsa_modulus_bits(private_der, private_len, 1,
+				&bits) == 0);
+		assert(bits == 2048);
+		assert(jscrypto_rsa_modulus_bits(public_der, public_len, 0,
+				&bits) == 0);
+		assert(bits == 2048);
+
+		assert(jscrypto_rsa_pkcs1_v1_5_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(sig_len == 256);
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+
+		/* Flip a signature byte -> verify resolves false. */
+		signature[0] ^= 0x80u;
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 0);
+		signature[0] ^= 0x80u;
+
+		/* Tamper the message -> verify resolves false. */
+		message[5] ^= 0x01u;
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 0);
+		message[5] ^= 0x01u;
+
+		/* SHA-384 and SHA-512 variants round-trip. */
+		assert(jscrypto_rsa_pkcs1_v1_5_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA384, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(sig_len == 256);
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA384, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+		assert(jscrypto_rsa_pkcs1_v1_5_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA512, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(sig_len == 256);
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA512, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+
+		/* JWK component extraction + round-trip via
+		 * _from_jwk_components then sign/verify. */
+		{
+			uint8_t n_bytes[512];
+			uint8_t e_bytes[8];
+			uint8_t d_bytes[512];
+			uint8_t p_bytes[256];
+			uint8_t q_bytes[256];
+			uint8_t dp_bytes[256];
+			uint8_t dq_bytes[256];
+			uint8_t qi_bytes[256];
+			size_t n_len = 0;
+			size_t e_len = 0;
+			size_t d_len = 0;
+			size_t p_len = 0;
+			size_t q_len = 0;
+			size_t dp_len = 0;
+			size_t dq_len = 0;
+			size_t qi_len = 0;
+			uint8_t rebuilt_private[4096];
+			uint8_t rebuilt_public[1024];
+			size_t rebuilt_private_len = 0;
+			size_t rebuilt_public_len = 0;
+
+			assert(jscrypto_rsa_private_jwk_components(private_der,
+					private_len,
+					n_bytes, sizeof(n_bytes), &n_len,
+					e_bytes, sizeof(e_bytes), &e_len,
+					d_bytes, sizeof(d_bytes), &d_len,
+					p_bytes, sizeof(p_bytes), &p_len,
+					q_bytes, sizeof(q_bytes), &q_len,
+					dp_bytes, sizeof(dp_bytes), &dp_len,
+					dq_bytes, sizeof(dq_bytes), &dq_len,
+					qi_bytes, sizeof(qi_bytes), &qi_len) == 0);
+			/* JWK strips leading zeros: 2048-bit modulus -> 256 bytes
+			 * unless the top byte happens to be zero (very rare). */
+			assert(n_len > 0 && n_len <= 256);
+			assert(e_len == 3);
+			assert(e_bytes[0] == 0x01u && e_bytes[1] == 0x00u
+					&& e_bytes[2] == 0x01u);
+
+			assert(jscrypto_rsa_private_from_jwk_components(
+					n_bytes, n_len, e_bytes, e_len, d_bytes, d_len,
+					p_bytes, p_len, q_bytes, q_len,
+					dp_bytes, dp_len, dq_bytes, dq_len, qi_bytes, qi_len,
+					rebuilt_private, sizeof(rebuilt_private),
+					&rebuilt_private_len) == 0);
+			assert(jscrypto_rsa_public_from_jwk_components(n_bytes, n_len,
+					e_bytes, e_len, rebuilt_public, sizeof(rebuilt_public),
+					&rebuilt_public_len) == 0);
+
+			/* Sign with the rebuilt private, verify with the rebuilt
+			 * public — fully decoupled from the original DER. */
+			assert(jscrypto_rsa_pkcs1_v1_5_sign(rebuilt_private,
+					rebuilt_private_len, JSCRYPTO_DIGEST_SHA256, message,
+					sizeof(message), signature, sizeof(signature),
+					&sig_len) == 0);
+			assert(jscrypto_rsa_pkcs1_v1_5_verify(rebuilt_public,
+					rebuilt_public_len, JSCRYPTO_DIGEST_SHA256, message,
+					sizeof(message), signature, sig_len, &matches) == 0);
+			assert(matches == 1);
+
+			/* Public-only JWK extraction round-trips too. */
+			assert(jscrypto_rsa_public_jwk_components(public_der,
+					public_len, n_bytes, sizeof(n_bytes), &n_len,
+					e_bytes, sizeof(e_bytes), &e_len) == 0);
+			assert(e_len == 3);
+		}
+
+		/* 3072-bit spot check: generate → sign → verify with SHA-256.
+		 * Slightly slower than 2048 but still well under a second. */
+		{
+			uint8_t priv3[4096];
+			uint8_t pub3[1024];
+			size_t priv3_len = 0;
+			size_t pub3_len = 0;
+			uint8_t sig3[512];
+			size_t sig3_len = 0;
+
+			assert(jscrypto_rsa_pkcs1_v1_5_generate(3072, priv3,
+					sizeof(priv3), &priv3_len) == 0);
+			assert(jscrypto_rsa_public_from_private(priv3, priv3_len, pub3,
+					sizeof(pub3), &pub3_len) == 0);
+			assert(jscrypto_rsa_pkcs1_v1_5_sign(priv3, priv3_len,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message), sig3,
+					sizeof(sig3), &sig3_len) == 0);
+			assert(sig3_len == 384);
+			assert(jscrypto_rsa_pkcs1_v1_5_verify(pub3, pub3_len,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message), sig3,
+					sig3_len, &matches) == 0);
+			assert(matches == 1);
+		}
+
+		/* Reject unsupported modulus sizes. */
+		{
+			uint8_t tmp[16];
+			size_t tmp_len = 0;
+
+			assert(jscrypto_rsa_pkcs1_v1_5_generate(1024, tmp, sizeof(tmp),
+					&tmp_len) == -1);
+			assert(errno == ENOTSUP);
+		}
+	}
 #else
 	uint8_t byte = 0;
 	int matches = 0;

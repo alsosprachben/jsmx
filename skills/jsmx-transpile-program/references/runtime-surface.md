@@ -47,12 +47,16 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       `exportKey(...)` over `raw` (SEC1 uncompressed public key) and
       `jwk`, and `sign(...)` / `verify(...)` with SHA-256/384/512
       hashes emitting and consuming IEEE P1363 fixed-width `r||s`
-      signatures
+      signatures, plus RSASSA-PKCS1-v1_5 `generateKey(...)` returning
+      a `{publicKey, privateKey}` pair, `importKey(...)` /
+      `exportKey(...)` over `jwk` only at 2048/3072/4096-bit modulus
+      lengths with public exponent 65537, and `sign(...)` /
+      `verify(...)` with SHA-256/384/512 hashes
     - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, AES-CBC,
       AES-KW, PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk`
-      where applicable, plus ECDSA P-256 asymmetric public/private
-      `CryptoKey` values and `CryptoKeyPair` objects returned from
-      `generateKey`
+      where applicable, plus ECDSA P-256 and RSASSA-PKCS1-v1_5
+      asymmetric public/private `CryptoKey` values and `CryptoKeyPair`
+      objects returned from `generateKey`
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -109,8 +113,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
-      HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, and
-      ECDSA `BufferSource` inputs
+      HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, ECDSA,
+      and RSASSA-PKCS1-v1_5 `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -218,15 +222,18 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
     HMAC, AES-GCM, AES-CTR, or AES-CBC, HKDF
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
-    HMAC, AES-GCM, AES-CTR, or AES-CBC, and ECDSA P-256
+    HMAC, AES-GCM, AES-CTR, or AES-CBC, ECDSA P-256
     `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
     `sign(...)` / `verify(...)` over `raw` (SEC1 uncompressed public
-    only) and `jwk` key formats with SHA-256/384/512 hashes. Other
-    wrapping algorithms for `wrapKey`/`unwrapKey` (RSA-OAEP), other
-    ECDSA curves (P-384, P-521), and the asymmetric algorithms
-    RSA-PSS / RSA-OAEP / RSASSA-PKCS1-v1_5 / Ed25519 / ECDH are still
-    pending. `spki` and `pkcs8` key formats are also pending across
-    all asymmetric surfaces.
+    only) and `jwk` key formats with SHA-256/384/512 hashes, and
+    RSASSA-PKCS1-v1_5 `generateKey(...)` / `importKey(...)` /
+    `exportKey(...)` / `sign(...)` / `verify(...)` over `jwk` only at
+    2048/3072/4096-bit modulus lengths with public exponent 65537 and
+    SHA-256/384/512 hashes. Other wrapping algorithms for
+    `wrapKey`/`unwrapKey` (RSA-OAEP), other ECDSA curves (P-384,
+    P-521), and the remaining asymmetric algorithms (RSA-PSS,
+    RSA-OAEP, Ed25519, ECDH) are still pending. `spki` and `pkcs8`
+    key formats are also pending across all asymmetric surfaces.
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

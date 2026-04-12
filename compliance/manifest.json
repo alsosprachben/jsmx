@@ -4799,6 +4799,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC ECDSA P-256 rejection fixture for unsupported curve, sign-with-public-key, verify-with-private-key, and malformed EC JWK crv."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-rsassa-pkcs1-v1-5-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-rsassa-pkcs1-v1-5-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-rsassa-pkcs1-v1-5-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC RSASSA-PKCS1-v1_5 fixture: 2048-bit generateKey returns a CryptoKeyPair, sign/verify round-trip with SHA-256 (256-byte signature), jwk export of both halves, reimport public, verify the original signature against the reimported key."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-rsassa-pkcs1-v1-5-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-rsassa-pkcs1-v1-5-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-rsassa-pkcs1-v1-5-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC RSASSA-PKCS1-v1_5 rejection fixture for unsupported modulusLength (1024), sign-with-public-key, verify-with-private-key, and malformed RSA JWK (kty=oct)."
     }
   ]
 }

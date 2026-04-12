@@ -16,6 +16,7 @@
 #include <openssl/kdf.h>
 #include <openssl/obj_mac.h>
 #include <openssl/rand.h>
+#include <openssl/rsa.h>
 #endif
 
 static uint8_t
@@ -1717,6 +1718,637 @@ jscrypto_ecdsa_p256_verify(const uint8_t public_in_xy[64],
 		}
 		errno = EIO;
 		return -1;
+	}
+#endif
+}
+
+/*
+ * RSASSA-PKCS1-v1_5 support. Keys are stored as PKCS#1 DER blobs
+ * (RSAPublicKey / RSAPrivateKey SEQUENCEs) and re-parsed on each
+ * operation. This leverages OpenSSL's existing ASN.1 machinery and
+ * keeps the runtime arena allocator happy. Like the ECDSA block above,
+ * RSA_new / RSA_generate_key_ex / d2i_RSA*Key / EVP_PKEY_assign_RSA are
+ * all deprecated in OpenSSL 3.0 but still functional — the pragma block
+ * suppresses the warnings.
+ */
+
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+
+static RSA *
+jscrypto_rsa_from_private_der(const uint8_t *der, size_t der_len)
+{
+	const uint8_t *cursor = der;
+
+	if (der == NULL || der_len == 0 || der_len > LONG_MAX) {
+		errno = EINVAL;
+		return NULL;
+	}
+	{
+		RSA *rsa = d2i_RSAPrivateKey(NULL, &cursor, (long)der_len);
+		if (rsa == NULL) {
+			errno = EIO;
+		}
+		return rsa;
+	}
+}
+
+static RSA *
+jscrypto_rsa_from_public_der(const uint8_t *der, size_t der_len)
+{
+	const uint8_t *cursor = der;
+
+	if (der == NULL || der_len == 0 || der_len > LONG_MAX) {
+		errno = EINVAL;
+		return NULL;
+	}
+	{
+		RSA *rsa = d2i_RSAPublicKey(NULL, &cursor, (long)der_len);
+		if (rsa == NULL) {
+			errno = EIO;
+		}
+		return rsa;
+	}
+}
+
+static int
+jscrypto_rsa_bn_to_bytes(const BIGNUM *bn, uint8_t *out, size_t cap,
+		size_t *len_out)
+{
+	int needed;
+
+	if (bn == NULL || len_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	needed = BN_num_bytes(bn);
+	if (needed < 0) {
+		errno = EIO;
+		return -1;
+	}
+	*len_out = (size_t)needed;
+	if (out == NULL) {
+		return 0;
+	}
+	if ((size_t)needed > cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (BN_bn2bin(bn, out) != needed) {
+		errno = EIO;
+		return -1;
+	}
+	return 0;
+}
+
+#endif /* JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL */
+
+int
+jscrypto_rsa_pkcs1_v1_5_generate(uint32_t modulus_bits,
+		uint8_t *private_der_out, size_t private_cap,
+		size_t *private_len_out)
+{
+	if (private_len_out == NULL
+			|| (private_der_out == NULL && private_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (modulus_bits != 2048 && modulus_bits != 3072
+			&& modulus_bits != 4096) {
+		errno = ENOTSUP;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)private_der_out;
+	(void)private_cap;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = RSA_new();
+		BIGNUM *e = BN_new();
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (rsa == NULL || e == NULL || BN_set_word(e, RSA_F4) != 1
+				|| RSA_generate_key_ex(rsa, (int)modulus_bits, e, NULL)
+					!= 1) {
+			BN_free(e);
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		BN_free(e);
+		der_len = i2d_RSAPrivateKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*private_len_out = (size_t)der_len;
+		if (private_der_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > private_cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(private_der_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_public_from_private(const uint8_t *private_der,
+		size_t private_len, uint8_t *public_der_out, size_t public_cap,
+		size_t *public_len_out)
+{
+	if (public_len_out == NULL
+			|| (public_der_out == NULL && public_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)private_der;
+	(void)private_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = jscrypto_rsa_from_private_der(private_der, private_len);
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		der_len = i2d_RSAPublicKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*public_len_out = (size_t)der_len;
+		if (public_der_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > public_cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(public_der_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_modulus_bits(const uint8_t *der, size_t der_len, int is_private,
+		uint32_t *bits_out)
+{
+	if (bits_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)der;
+	(void)der_len;
+	(void)is_private;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = is_private
+				? jscrypto_rsa_from_private_der(der, der_len)
+				: jscrypto_rsa_from_public_der(der, der_len);
+		const BIGNUM *n = NULL;
+		int bits;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		RSA_get0_key(rsa, &n, NULL, NULL);
+		if (n == NULL) {
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		bits = BN_num_bits(n);
+		RSA_free(rsa);
+		if (bits <= 0) {
+			errno = EIO;
+			return -1;
+		}
+		*bits_out = (uint32_t)bits;
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_pkcs1_v1_5_sign(const uint8_t *private_der, size_t private_len,
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		uint8_t *signature_out, size_t sig_cap, size_t *sig_len_out)
+{
+	if (signature_out == NULL || sig_len_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)private_der;
+	(void)private_len;
+	(void)hash;
+	(void)sig_cap;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		RSA *rsa = NULL;
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		size_t out_len = sig_cap;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		rsa = jscrypto_rsa_from_private_der(private_der, private_len);
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		/* pkey now owns rsa. */
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestSignInit(ctx, NULL, md, NULL, pkey) != 1
+				|| EVP_DigestSignUpdate(ctx, data, data_len) != 1
+				|| EVP_DigestSignFinal(ctx, signature_out, &out_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		*sig_len_out = out_len;
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_pkcs1_v1_5_verify(const uint8_t *public_der, size_t public_len,
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		const uint8_t *signature, size_t signature_len, int *matches_out)
+{
+	if (matches_out == NULL || signature == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*matches_out = 0;
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)public_der;
+	(void)public_len;
+	(void)hash;
+	(void)signature_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		RSA *rsa = NULL;
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		int verify_rc;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		rsa = jscrypto_rsa_from_public_der(public_der, public_len);
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestVerifyInit(ctx, NULL, md, NULL, pkey) != 1
+				|| EVP_DigestVerifyUpdate(ctx, data, data_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		verify_rc = EVP_DigestVerifyFinal(ctx, signature, signature_len);
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		if (verify_rc == 1) {
+			*matches_out = 1;
+			return 0;
+		}
+		if (verify_rc == 0) {
+			*matches_out = 0;
+			return 0;
+		}
+		errno = EIO;
+		return -1;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_public_jwk_components(const uint8_t *public_der, size_t public_len,
+		uint8_t *n_out, size_t n_cap, size_t *n_len,
+		uint8_t *e_out, size_t e_cap, size_t *e_len)
+{
+	if (n_len == NULL || e_len == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)public_der;
+	(void)public_len;
+	(void)n_out;
+	(void)n_cap;
+	(void)e_out;
+	(void)e_cap;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = jscrypto_rsa_from_public_der(public_der, public_len);
+		const BIGNUM *n = NULL;
+		const BIGNUM *e = NULL;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		RSA_get0_key(rsa, &n, &e, NULL);
+		if (jscrypto_rsa_bn_to_bytes(n, n_out, n_cap, n_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(e, e_out, e_cap, e_len) < 0) {
+			RSA_free(rsa);
+			return -1;
+		}
+		RSA_free(rsa);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_private_jwk_components(const uint8_t *private_der,
+		size_t private_len,
+		uint8_t *n_out, size_t n_cap, size_t *n_len,
+		uint8_t *e_out, size_t e_cap, size_t *e_len,
+		uint8_t *d_out, size_t d_cap, size_t *d_len,
+		uint8_t *p_out, size_t p_cap, size_t *p_len,
+		uint8_t *q_out, size_t q_cap, size_t *q_len,
+		uint8_t *dp_out, size_t dp_cap, size_t *dp_len,
+		uint8_t *dq_out, size_t dq_cap, size_t *dq_len,
+		uint8_t *qi_out, size_t qi_cap, size_t *qi_len)
+{
+	if (n_len == NULL || e_len == NULL || d_len == NULL || p_len == NULL
+			|| q_len == NULL || dp_len == NULL || dq_len == NULL
+			|| qi_len == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)private_der;
+	(void)private_len;
+	(void)n_out;
+	(void)n_cap;
+	(void)e_out;
+	(void)e_cap;
+	(void)d_out;
+	(void)d_cap;
+	(void)p_out;
+	(void)p_cap;
+	(void)q_out;
+	(void)q_cap;
+	(void)dp_out;
+	(void)dp_cap;
+	(void)dq_out;
+	(void)dq_cap;
+	(void)qi_out;
+	(void)qi_cap;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = jscrypto_rsa_from_private_der(private_der, private_len);
+		const BIGNUM *n = NULL;
+		const BIGNUM *e = NULL;
+		const BIGNUM *d = NULL;
+		const BIGNUM *p = NULL;
+		const BIGNUM *q = NULL;
+		const BIGNUM *dp = NULL;
+		const BIGNUM *dq = NULL;
+		const BIGNUM *qi = NULL;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		RSA_get0_key(rsa, &n, &e, &d);
+		RSA_get0_factors(rsa, &p, &q);
+		RSA_get0_crt_params(rsa, &dp, &dq, &qi);
+		if (jscrypto_rsa_bn_to_bytes(n, n_out, n_cap, n_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(e, e_out, e_cap, e_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(d, d_out, d_cap, d_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(p, p_out, p_cap, p_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(q, q_out, q_cap, q_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(dp, dp_out, dp_cap, dp_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(dq, dq_out, dq_cap, dq_len) < 0
+				|| jscrypto_rsa_bn_to_bytes(qi, qi_out, qi_cap, qi_len) < 0) {
+			RSA_free(rsa);
+			return -1;
+		}
+		RSA_free(rsa);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_public_from_jwk_components(const uint8_t *n, size_t n_len,
+		const uint8_t *e, size_t e_len, uint8_t *public_der_out, size_t cap,
+		size_t *len_out)
+{
+	if (n == NULL || e == NULL || len_out == NULL
+			|| (public_der_out == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)n_len;
+	(void)e_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = RSA_new();
+		BIGNUM *n_bn = BN_bin2bn(n, (int)n_len, NULL);
+		BIGNUM *e_bn = BN_bin2bn(e, (int)e_len, NULL);
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (rsa == NULL || n_bn == NULL || e_bn == NULL
+				|| RSA_set0_key(rsa, n_bn, e_bn, NULL) != 1) {
+			BN_free(n_bn);
+			BN_free(e_bn);
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		/* rsa now owns n_bn/e_bn. */
+		der_len = i2d_RSAPublicKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*len_out = (size_t)der_len;
+		if (public_der_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(public_der_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_private_from_jwk_components(
+		const uint8_t *n, size_t n_len, const uint8_t *e, size_t e_len,
+		const uint8_t *d, size_t d_len,
+		const uint8_t *p, size_t p_len, const uint8_t *q, size_t q_len,
+		const uint8_t *dp, size_t dp_len, const uint8_t *dq, size_t dq_len,
+		const uint8_t *qi, size_t qi_len,
+		uint8_t *private_der_out, size_t cap, size_t *len_out)
+{
+	if (n == NULL || e == NULL || d == NULL || p == NULL || q == NULL
+			|| dp == NULL || dq == NULL || qi == NULL || len_out == NULL
+			|| (private_der_out == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)n_len;
+	(void)e_len;
+	(void)d_len;
+	(void)p_len;
+	(void)q_len;
+	(void)dp_len;
+	(void)dq_len;
+	(void)qi_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = RSA_new();
+		BIGNUM *n_bn = BN_bin2bn(n, (int)n_len, NULL);
+		BIGNUM *e_bn = BN_bin2bn(e, (int)e_len, NULL);
+		BIGNUM *d_bn = BN_bin2bn(d, (int)d_len, NULL);
+		BIGNUM *p_bn = BN_bin2bn(p, (int)p_len, NULL);
+		BIGNUM *q_bn = BN_bin2bn(q, (int)q_len, NULL);
+		BIGNUM *dp_bn = BN_bin2bn(dp, (int)dp_len, NULL);
+		BIGNUM *dq_bn = BN_bin2bn(dq, (int)dq_len, NULL);
+		BIGNUM *qi_bn = BN_bin2bn(qi, (int)qi_len, NULL);
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (rsa == NULL || n_bn == NULL || e_bn == NULL || d_bn == NULL
+				|| p_bn == NULL || q_bn == NULL || dp_bn == NULL
+				|| dq_bn == NULL || qi_bn == NULL
+				|| RSA_set0_key(rsa, n_bn, e_bn, d_bn) != 1) {
+			BN_free(n_bn);
+			BN_free(e_bn);
+			BN_free(d_bn);
+			BN_free(p_bn);
+			BN_free(q_bn);
+			BN_free(dp_bn);
+			BN_free(dq_bn);
+			BN_free(qi_bn);
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		/* rsa now owns n_bn/e_bn/d_bn. */
+		if (RSA_set0_factors(rsa, p_bn, q_bn) != 1) {
+			BN_free(p_bn);
+			BN_free(q_bn);
+			BN_free(dp_bn);
+			BN_free(dq_bn);
+			BN_free(qi_bn);
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		/* rsa now owns p_bn/q_bn. */
+		if (RSA_set0_crt_params(rsa, dp_bn, dq_bn, qi_bn) != 1) {
+			BN_free(dp_bn);
+			BN_free(dq_bn);
+			BN_free(qi_bn);
+			RSA_free(rsa);
+			errno = EIO;
+			return -1;
+		}
+		/* rsa now owns dp_bn/dq_bn/qi_bn. */
+		der_len = i2d_RSAPrivateKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*len_out = (size_t)der_len;
+		if (private_der_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(private_der_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
 	}
 #endif
 }
