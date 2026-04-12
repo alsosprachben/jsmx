@@ -70,7 +70,8 @@ typedef enum jsval_crypto_algorithm_kind_e {
 	JSVAL_CRYPTO_ALGORITHM_PBKDF2 = 3,
 	JSVAL_CRYPTO_ALGORITHM_HKDF = 4,
 	JSVAL_CRYPTO_ALGORITHM_AES_CTR = 5,
-	JSVAL_CRYPTO_ALGORITHM_AES_CBC = 6
+	JSVAL_CRYPTO_ALGORITHM_AES_CBC = 6,
+	JSVAL_CRYPTO_ALGORITHM_AES_KW = 7
 } jsval_crypto_algorithm_kind_t;
 
 typedef struct jsval_native_crypto_key_s {
@@ -240,7 +241,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_PBKDF2 = 5,
 	JSVAL_MICROTASK_KIND_SUBTLE_HKDF = 6,
 	JSVAL_MICROTASK_KIND_SUBTLE_AES_CTR = 7,
-	JSVAL_MICROTASK_KIND_SUBTLE_AES_CBC = 8
+	JSVAL_MICROTASK_KIND_SUBTLE_AES_CBC = 8,
+	JSVAL_MICROTASK_KIND_SUBTLE_AES_KW = 9
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -364,6 +366,33 @@ typedef struct jsval_native_microtask_subtle_aes_cbc_s {
 	uint8_t extractable;
 	uint8_t reserved[5];
 } jsval_native_microtask_subtle_aes_cbc_t;
+
+typedef enum jsval_subtle_aes_kw_task_op_e {
+	JSVAL_SUBTLE_AES_KW_TASK_GENERATE = 0,
+	JSVAL_SUBTLE_AES_KW_TASK_IMPORT = 1,
+	JSVAL_SUBTLE_AES_KW_TASK_EXPORT = 2,
+	JSVAL_SUBTLE_AES_KW_TASK_WRAP = 3,
+	JSVAL_SUBTLE_AES_KW_TASK_UNWRAP = 4
+} jsval_subtle_aes_kw_task_op_t;
+
+typedef struct jsval_native_microtask_subtle_aes_kw_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t key_off;
+	size_t data_len;
+	uint32_t key_bit_length;
+	uint32_t usages_mask;
+	/* Inner-key fields populated only on UNWRAP. */
+	uint32_t inner_key_bit_length;
+	uint32_t inner_usages_mask;
+	uint8_t operation;
+	uint8_t format;
+	uint8_t extractable;
+	uint8_t inner_algorithm_kind;
+	uint8_t inner_hash_algorithm;
+	uint8_t inner_extractable;
+	uint8_t reserved[2];
+} jsval_native_microtask_subtle_aes_kw_t;
 
 typedef enum jsval_subtle_pbkdf2_task_op_e {
 	JSVAL_SUBTLE_PBKDF2_TASK_IMPORT = 0,
@@ -816,6 +845,12 @@ static uint8_t *jsval_native_microtask_subtle_aes_cbc_iv(
 		jsval_native_microtask_subtle_aes_cbc_t *task)
 {
 	return jsval_native_microtask_subtle_aes_cbc_data(task) + task->data_len;
+}
+
+static uint8_t *jsval_native_microtask_subtle_aes_kw_data(
+		jsval_native_microtask_subtle_aes_kw_t *task)
+{
+	return (uint8_t *)(task + 1);
 }
 
 static uint8_t *jsval_native_microtask_subtle_aes_gcm_aad(
@@ -8265,6 +8300,21 @@ jsval_subtle_crypto_aes_cbc_jwk_alg(uint32_t key_bit_length)
 	}
 }
 
+static const char *
+jsval_subtle_crypto_aes_kw_jwk_alg(uint32_t key_bit_length)
+{
+	switch (key_bit_length) {
+	case 128:
+		return "A128KW";
+	case 192:
+		return "A192KW";
+	case 256:
+		return "A256KW";
+	default:
+		return NULL;
+	}
+}
+
 static int
 jsval_string_eq_ascii(jsval_region_t *region, jsval_t value,
 		const char *expected)
@@ -8420,6 +8470,22 @@ jsval_subtle_crypto_parse_usages(jsval_region_t *region, jsval_t usages_value,
 		}
 		if (eq > 0) {
 			mask |= JSVAL_CRYPTO_KEY_USAGE_DERIVE_KEY;
+			continue;
+		}
+		eq = jsval_string_eq_ascii(region, value, "wrapKey");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq > 0) {
+			mask |= JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY;
+			continue;
+		}
+		eq = jsval_string_eq_ascii(region, value, "unwrapKey");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq > 0) {
+			mask |= JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY;
 			continue;
 		}
 		return jsval_webcrypto_error_set(error, "SyntaxError",
@@ -8693,6 +8759,12 @@ jsval_subtle_crypto_usages_array_new(jsval_region_t *region,
 	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_DERIVE_KEY) {
 		cap++;
 	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY) {
+		cap++;
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY) {
+		cap++;
+	}
 	if (jsval_array_new(region, cap, &array) < 0) {
 		return -1;
 	}
@@ -8733,6 +8805,20 @@ jsval_subtle_crypto_usages_array_new(jsval_region_t *region,
 	}
 	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_DERIVE_KEY) {
 		if (jsval_string_new_utf8(region, (const uint8_t *)"deriveKey", 9,
+				&value) < 0
+				|| jsval_array_push(region, array, value) < 0) {
+			return -1;
+		}
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"wrapKey", 7,
+				&value) < 0
+				|| jsval_array_push(region, array, value) < 0) {
+			return -1;
+		}
+	}
+	if (usages_mask & JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"unwrapKey", 9,
 				&value) < 0
 				|| jsval_array_push(region, array, value) < 0) {
 			return -1;
@@ -8803,6 +8889,30 @@ jsval_subtle_crypto_aes_cbc_algorithm_object_new(jsval_region_t *region,
 	}
 	if (jsval_object_new(region, 2, &object) < 0
 			|| jsval_string_new_utf8(region, (const uint8_t *)"AES-CBC", 7,
+				&name_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name", 4,
+				name_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"length", 6,
+				jsval_number((double)bit_length)) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_aes_kw_algorithm_object_new(jsval_region_t *region,
+		uint32_t bit_length, jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t name_value;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 2, &object) < 0
+			|| jsval_string_new_utf8(region, (const uint8_t *)"AES-KW", 6,
 				&name_value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name", 4,
 				name_value) < 0
@@ -9163,6 +9273,17 @@ jsval_subtle_crypto_aes_cbc_params_parse_alg(jsval_region_t *region,
 {
 	return jsval_subtle_crypto_aes_params_parse_name(region, algorithm_value,
 			"AES-CBC", allow_string_name, require_length, length_ptr,
+			has_length_ptr, error);
+}
+
+static int
+jsval_subtle_crypto_aes_kw_params_parse_alg(jsval_region_t *region,
+		jsval_t algorithm_value, int allow_string_name, int require_length,
+		uint32_t *length_ptr, int *has_length_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	return jsval_subtle_crypto_aes_params_parse_name(region, algorithm_value,
+			"AES-KW", allow_string_name, require_length, length_ptr,
 			has_length_ptr, error);
 }
 
@@ -9703,6 +9824,47 @@ jsval_subtle_crypto_new_aes_cbc_task(jsval_region_t *region,
 }
 
 static int
+jsval_subtle_crypto_new_aes_kw_task(jsval_region_t *region,
+		jsval_t promise_value, jsval_subtle_aes_kw_task_op_t operation,
+		jsval_off_t key_off, jsval_subtle_crypto_key_format_t format,
+		int extractable, uint32_t usages_mask, uint32_t key_bit_length,
+		size_t data_len, jsval_off_t *off_ptr,
+		jsval_native_microtask_subtle_aes_kw_t **task_ptr)
+{
+	jsval_native_microtask_subtle_aes_kw_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| off_ptr == NULL || task_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (data_len > SIZE_MAX - sizeof(*task)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + data_len;
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_SUBTLE_AES_KW;
+	task->promise_off = promise_value.off;
+	task->key_off = key_off;
+	task->data_len = data_len;
+	task->key_bit_length = key_bit_length;
+	task->usages_mask = usages_mask;
+	task->operation = (uint8_t)operation;
+	task->format = (uint8_t)format;
+	task->extractable = extractable ? 1 : 0;
+	*off_ptr = off;
+	*task_ptr = task;
+	return 0;
+}
+
+static int
 jsval_subtle_crypto_new_pbkdf2_task(jsval_region_t *region,
 		jsval_t promise_value, jsval_subtle_pbkdf2_task_op_t operation,
 		jsval_off_t key_off, jscrypto_digest_algorithm_t hash_algorithm,
@@ -9894,6 +10056,43 @@ jsval_subtle_crypto_aes_cbc_key_validate(jsval_region_t *region,
 			|| jsval_native_crypto_key_bytes(region, native) == NULL) {
 		return jsval_webcrypto_error_set(error, "InvalidAccessError",
 				"expected AES-CBC secret key");
+	}
+	if (required_usages != 0
+			&& (native->usages_mask & required_usages) != required_usages) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"key does not support requested usage");
+	}
+	if (require_extractable && !native->extractable) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"key is not extractable");
+	}
+	if (native_ptr != NULL) {
+		*native_ptr = native;
+	}
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_aes_kw_key_validate(jsval_region_t *region,
+		jsval_t key_value, uint32_t required_usages, int require_extractable,
+		jsval_native_crypto_key_t **native_ptr,
+		jsval_webcrypto_error_t *error)
+{
+	jsval_native_crypto_key_t *native;
+
+	native = jsval_native_crypto_key(region, key_value);
+	if (native == NULL) {
+		return jsval_webcrypto_error_set(error, "TypeError",
+				"expected CryptoKey value");
+	}
+	if ((jsval_crypto_key_type_t)native->type != JSVAL_CRYPTO_KEY_TYPE_SECRET
+			|| (jsval_crypto_algorithm_kind_t)native->algorithm_kind
+				!= JSVAL_CRYPTO_ALGORITHM_AES_KW
+			|| !jsval_subtle_crypto_aes_key_length_valid(native->key_bit_length)
+			|| native->key_byte_length == 0
+			|| jsval_native_crypto_key_bytes(region, native) == NULL) {
+		return jsval_webcrypto_error_set(error, "InvalidAccessError",
+				"expected AES-KW secret key");
 	}
 	if (required_usages != 0
 			&& (native->usages_mask & required_usages) != required_usages) {
@@ -10260,6 +10459,77 @@ jsval_subtle_crypto_run_aes_ctr(jsval_region_t *region,
 }
 
 static int
+jsval_subtle_crypto_aes_kw_build_export_jwk(jsval_region_t *region,
+		jsval_native_crypto_key_t *key, jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t value;
+	jsval_t key_ops;
+	uint8_t b64[256];
+	size_t key_len;
+	size_t b64_len = 0;
+	const uint8_t *key_bytes;
+	const char *alg_name;
+
+	if (region == NULL || key == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	key_bytes = jsval_native_crypto_key_bytes(region, key);
+	key_len = key->key_byte_length;
+	if (key_bytes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_base64url_encode(key_bytes, key_len, NULL, 0, &b64_len) < 0) {
+		return -1;
+	}
+	if (b64_len > sizeof(b64)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	if (jsval_base64url_encode(key_bytes, key_len, b64, sizeof(b64), NULL) < 0) {
+		return -1;
+	}
+	alg_name = jsval_subtle_crypto_aes_kw_jwk_alg(key->key_bit_length);
+	if (alg_name == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 5, &object) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"oct", 3, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"kty", 3,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, b64, b64_len, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"k", 1,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)alg_name,
+			strlen(alg_name), &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"alg", 3,
+				value) < 0) {
+		return -1;
+	}
+	if (jsval_subtle_crypto_usages_array_new(region, key->usages_mask,
+			&key_ops) < 0
+			|| jsval_object_set_utf8(region, object,
+				(const uint8_t *)"key_ops", 7, key_ops) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, object, (const uint8_t *)"ext", 3,
+			jsval_bool(key->extractable ? 1 : 0)) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
 jsval_subtle_crypto_aes_cbc_build_export_jwk(jsval_region_t *region,
 		jsval_native_crypto_key_t *key, jsval_t *value_ptr)
 {
@@ -10328,6 +10598,250 @@ jsval_subtle_crypto_aes_cbc_build_export_jwk(jsval_region_t *region,
 	}
 	*value_ptr = object;
 	return 0;
+}
+
+static int
+jsval_subtle_crypto_run_aes_kw(jsval_region_t *region,
+		jsval_native_microtask_subtle_aes_kw_t *task)
+{
+	static const char operation_error_name[] = "OperationError";
+	static const char operation_error_message[] = "AES-KW operation failed";
+	jsval_t promise_value;
+	jsval_t result;
+	jsval_t reason;
+	jsval_native_crypto_key_t *key;
+	jsval_webcrypto_error_t error;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	switch ((jsval_subtle_aes_kw_task_op_t)task->operation) {
+	case JSVAL_SUBTLE_AES_KW_TASK_GENERATE:
+	{
+		uint8_t *bytes = jsval_native_microtask_subtle_aes_kw_data(task);
+
+		if (jscrypto_random_bytes(bytes, task->data_len) < 0
+				|| jsval_subtle_crypto_aes_kw_algorithm_object_new(region,
+					task->key_bit_length, &result) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_SECRET, task->extractable != 0,
+					result, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_AES_KW, 0,
+					task->key_bit_length, bytes, task->data_len,
+					&result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_AES_KW_TASK_IMPORT:
+		if (jsval_subtle_crypto_aes_kw_algorithm_object_new(region,
+				task->key_bit_length, &result) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_SECRET, task->extractable != 0,
+					result, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_AES_KW, 0,
+					task->key_bit_length,
+					jsval_native_microtask_subtle_aes_kw_data(task),
+					task->data_len, &result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	case JSVAL_SUBTLE_AES_KW_TASK_EXPORT:
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_aes_kw_key_validate(region,
+				jsval_crypto_key_value(task->key_off), 0, 1, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+			jsval_native_array_buffer_t *buffer;
+			uint8_t *out;
+
+			if (jsval_array_buffer_new(region, key->key_byte_length, &result) < 0) {
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			out = jsval_native_array_buffer_bytes(buffer);
+			memcpy(out, jsval_native_crypto_key_bytes(region, key),
+					key->key_byte_length);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		if (jsval_subtle_crypto_aes_kw_build_export_jwk(region, key,
+				&result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	case JSVAL_SUBTLE_AES_KW_TASK_WRAP:
+	{
+		size_t output_len = 0;
+
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_aes_kw_key_validate(region,
+				jsval_crypto_key_value(task->key_off),
+				JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY, 0, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jscrypto_aes_kw_wrap(jsval_native_crypto_key_bytes(region, key),
+				key->key_byte_length,
+				jsval_native_microtask_subtle_aes_kw_data(task), task->data_len,
+				NULL, 0, &output_len) < 0
+				|| jsval_array_buffer_new(region, output_len, &result) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		if (jscrypto_aes_kw_wrap(jsval_native_crypto_key_bytes(region, key),
+				key->key_byte_length,
+				jsval_native_microtask_subtle_aes_kw_data(task), task->data_len,
+				jsval_native_array_buffer_bytes(
+					jsval_native_array_buffer(region, result)),
+				output_len, NULL) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_AES_KW_TASK_UNWRAP:
+	{
+		void *scratch_ptr = NULL;
+		size_t inner_len = task->data_len - 8u;
+		jsval_t inner_alg;
+
+		error.name = NULL;
+		error.message = NULL;
+		if (jsval_subtle_crypto_aes_kw_key_validate(region,
+				jsval_crypto_key_value(task->key_off),
+				JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY, 0, &key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_region_alloc(region, inner_len, 1, &scratch_ptr) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		if (jscrypto_aes_kw_unwrap(jsval_native_crypto_key_bytes(region, key),
+				key->key_byte_length,
+				jsval_native_microtask_subtle_aes_kw_data(task), task->data_len,
+				(uint8_t *)scratch_ptr, inner_len, NULL) < 0) {
+			if (jsval_dom_exception_new_utf8(region, operation_error_name,
+					operation_error_message, &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		switch ((jsval_crypto_algorithm_kind_t)task->inner_algorithm_kind) {
+		case JSVAL_CRYPTO_ALGORITHM_HMAC:
+			if (jsval_subtle_crypto_hmac_algorithm_object_new(region,
+					(jscrypto_digest_algorithm_t)task->inner_hash_algorithm,
+					task->inner_key_bit_length, &inner_alg) < 0
+					|| jsval_crypto_key_new_internal(region,
+						JSVAL_CRYPTO_KEY_TYPE_SECRET,
+						task->inner_extractable != 0, inner_alg,
+						task->inner_usages_mask,
+						JSVAL_CRYPTO_ALGORITHM_HMAC,
+						(jscrypto_digest_algorithm_t)task->inner_hash_algorithm,
+						task->inner_key_bit_length, (const uint8_t *)scratch_ptr,
+						inner_len, &result) < 0) {
+				goto unwrap_fail;
+			}
+			return jsval_promise_resolve(region, promise_value, result);
+		case JSVAL_CRYPTO_ALGORITHM_AES_GCM:
+			if (jsval_subtle_crypto_aes_gcm_algorithm_object_new(region,
+					task->inner_key_bit_length, &inner_alg) < 0
+					|| jsval_crypto_key_new_internal(region,
+						JSVAL_CRYPTO_KEY_TYPE_SECRET,
+						task->inner_extractable != 0, inner_alg,
+						task->inner_usages_mask,
+						JSVAL_CRYPTO_ALGORITHM_AES_GCM, 0,
+						task->inner_key_bit_length, (const uint8_t *)scratch_ptr,
+						inner_len, &result) < 0) {
+				goto unwrap_fail;
+			}
+			return jsval_promise_resolve(region, promise_value, result);
+		case JSVAL_CRYPTO_ALGORITHM_AES_CTR:
+			if (jsval_subtle_crypto_aes_ctr_algorithm_object_new(region,
+					task->inner_key_bit_length, &inner_alg) < 0
+					|| jsval_crypto_key_new_internal(region,
+						JSVAL_CRYPTO_KEY_TYPE_SECRET,
+						task->inner_extractable != 0, inner_alg,
+						task->inner_usages_mask,
+						JSVAL_CRYPTO_ALGORITHM_AES_CTR, 0,
+						task->inner_key_bit_length, (const uint8_t *)scratch_ptr,
+						inner_len, &result) < 0) {
+				goto unwrap_fail;
+			}
+			return jsval_promise_resolve(region, promise_value, result);
+		case JSVAL_CRYPTO_ALGORITHM_AES_CBC:
+			if (jsval_subtle_crypto_aes_cbc_algorithm_object_new(region,
+					task->inner_key_bit_length, &inner_alg) < 0
+					|| jsval_crypto_key_new_internal(region,
+						JSVAL_CRYPTO_KEY_TYPE_SECRET,
+						task->inner_extractable != 0, inner_alg,
+						task->inner_usages_mask,
+						JSVAL_CRYPTO_ALGORITHM_AES_CBC, 0,
+						task->inner_key_bit_length, (const uint8_t *)scratch_ptr,
+						inner_len, &result) < 0) {
+				goto unwrap_fail;
+			}
+			return jsval_promise_resolve(region, promise_value, result);
+		case JSVAL_CRYPTO_ALGORITHM_AES_KW:
+			if (jsval_subtle_crypto_aes_kw_algorithm_object_new(region,
+					task->inner_key_bit_length, &inner_alg) < 0
+					|| jsval_crypto_key_new_internal(region,
+						JSVAL_CRYPTO_KEY_TYPE_SECRET,
+						task->inner_extractable != 0, inner_alg,
+						task->inner_usages_mask,
+						JSVAL_CRYPTO_ALGORITHM_AES_KW, 0,
+						task->inner_key_bit_length, (const uint8_t *)scratch_ptr,
+						inner_len, &result) < 0) {
+				goto unwrap_fail;
+			}
+			return jsval_promise_resolve(region, promise_value, result);
+		default:
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "unsupported unwrapped key algorithm");
+		}
+unwrap_fail:
+		if (jsval_dom_exception_new_utf8(region, operation_error_name,
+				operation_error_message, &reason) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, reason);
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
 }
 
 static int
@@ -11676,7 +12190,9 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-GCM key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -11708,7 +12224,9 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-CTR key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -11740,7 +12258,9 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-CBC key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -11753,6 +12273,38 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 			return -1;
 		}
 		return jsval_microtask_push(region, off, &cbc_task->base);
+	}
+	eq = jsval_string_eq_ascii(region, name_value, "AES-KW");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_aes_kw_t *kw_task;
+
+		if (jsval_subtle_crypto_aes_kw_params_parse_alg(region, algorithm_value,
+				0, 1, &key_bit_length, &has_length, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (!jsval_subtle_crypto_aes_key_length_valid(key_bit_length)) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid AES-KW key length");
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
+				1, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		key_byte_length = key_bit_length / 8u;
+		if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+				JSVAL_SUBTLE_AES_KW_TASK_GENERATE, 0,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW, extractable, usages_mask,
+				key_bit_length, key_byte_length, &off, &kw_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &kw_task->base);
 	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported algorithm");
@@ -12054,7 +12606,9 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					error.message);
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -12248,6 +12802,22 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 						present_mask |= JSVAL_CRYPTO_KEY_USAGE_DECRYPT;
 						continue;
 					}
+					eq2 = jsval_string_eq_ascii(region, item, "wrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY;
+						continue;
+					}
+					eq2 = jsval_string_eq_ascii(region, item, "unwrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY;
+						continue;
+					}
 					return jsval_subtle_crypto_reject(region, promise_value,
 							"DataError", "invalid JWK key_ops");
 				}
@@ -12272,7 +12842,9 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					error.message);
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -12466,6 +13038,22 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 						present_mask |= JSVAL_CRYPTO_KEY_USAGE_DECRYPT;
 						continue;
 					}
+					eq2 = jsval_string_eq_ascii(region, item, "wrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY;
+						continue;
+					}
+					eq2 = jsval_string_eq_ascii(region, item, "unwrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY;
+						continue;
+					}
 					return jsval_subtle_crypto_reject(region, promise_value,
 							"DataError", "invalid JWK key_ops");
 				}
@@ -12490,7 +13078,9 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					error.message);
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -12683,6 +13273,22 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 						present_mask |= JSVAL_CRYPTO_KEY_USAGE_DECRYPT;
 						continue;
 					}
+					eq2 = jsval_string_eq_ascii(region, item, "wrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY;
+						continue;
+					}
+					eq2 = jsval_string_eq_ascii(region, item, "unwrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY;
+						continue;
+					}
 					return jsval_subtle_crypto_reject(region, promise_value,
 							"DataError", "invalid JWK key_ops");
 				}
@@ -12692,6 +13298,224 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 				}
 			}
 			return jsval_microtask_push(region, off, &cbc_task->base);
+		}
+	}
+	eq = jsval_string_eq_ascii(region, name_value, "AES-KW");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_aes_kw_t *kw_task;
+
+		if (jsval_subtle_crypto_aes_kw_params_parse_alg(region, algorithm_value,
+				1, 0, &key_bit_length, &has_length, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
+				1, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if (!has_length) {
+				key_bit_length = (uint32_t)(byte_length * 8u);
+			}
+			if (!jsval_subtle_crypto_aes_key_length_valid(key_bit_length)
+					|| byte_length != key_bit_length / 8u) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid AES-KW key material");
+			}
+			if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+					JSVAL_SUBTLE_AES_KW_TASK_IMPORT, 0, format, extractable,
+					usages_mask, key_bit_length, byte_length, &off,
+					&kw_task) < 0) {
+				return -1;
+			}
+			memcpy(jsval_native_microtask_subtle_aes_kw_data(kw_task), bytes,
+					byte_length);
+			return jsval_microtask_push(region, off, &kw_task->base);
+		}
+		if (key_data_value.kind != JSVAL_KIND_OBJECT) {
+			return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+					"expected JWK object");
+		}
+		{
+			jsval_t field;
+			size_t encoded_len = 0;
+			size_t decoded_len = 0;
+			int eq2;
+
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"kty", 3, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_STRING) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK kty");
+			}
+			eq2 = jsval_string_eq_ascii(region, field, "oct");
+			if (eq2 < 0) {
+				return -1;
+			}
+			if (eq2 == 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK kty");
+			}
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"use", 3, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_UNDEFINED) {
+				if (field.kind != JSVAL_KIND_STRING) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK use");
+				}
+				eq2 = jsval_string_eq_ascii(region, field, "enc");
+				if (eq2 < 0) {
+					return -1;
+				}
+				if (eq2 == 0) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK use");
+				}
+			}
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"ext", 3, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_UNDEFINED) {
+				if (field.kind != JSVAL_KIND_BOOL) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK ext");
+				}
+				if (!field.as.boolean && extractable) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "inconsistent JWK extractability");
+				}
+			}
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"k", 1, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_STRING) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key material");
+			}
+			if (jsval_string_copy_utf8(region, field, NULL, 0, &encoded_len) < 0) {
+				return -1;
+			}
+			if (encoded_len == 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key material");
+			}
+			if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+					JSVAL_SUBTLE_AES_KW_TASK_IMPORT, 0, format, extractable,
+					usages_mask, 0, encoded_len, &off, &kw_task) < 0) {
+				return -1;
+			}
+			if (jsval_string_copy_utf8(region, field,
+					jsval_native_microtask_subtle_aes_kw_data(kw_task),
+					encoded_len, NULL) < 0) {
+				return -1;
+			}
+			if (jsval_base64url_decode(
+					jsval_native_microtask_subtle_aes_kw_data(kw_task),
+					encoded_len,
+					jsval_native_microtask_subtle_aes_kw_data(kw_task),
+					encoded_len, &decoded_len) < 0 || decoded_len == 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid JWK key material");
+			}
+			kw_task->data_len = decoded_len;
+			if (!has_length) {
+				kw_task->key_bit_length = (uint32_t)(decoded_len * 8u);
+			} else {
+				kw_task->key_bit_length = key_bit_length;
+			}
+			if (!jsval_subtle_crypto_aes_key_length_valid(
+						kw_task->key_bit_length)
+					|| kw_task->data_len != kw_task->key_bit_length / 8u) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid AES-KW key material");
+			}
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"alg", 3, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_UNDEFINED) {
+				const char *expected = jsval_subtle_crypto_aes_kw_jwk_alg(
+						kw_task->key_bit_length);
+
+				if (field.kind != JSVAL_KIND_STRING || expected == NULL) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK algorithm");
+				}
+				eq2 = jsval_string_eq_ascii(region, field, expected);
+				if (eq2 < 0) {
+					return -1;
+				}
+				if (eq2 == 0) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK algorithm");
+				}
+			}
+			if (jsval_object_get_utf8(region, key_data_value,
+					(const uint8_t *)"key_ops", 7, &field) < 0) {
+				return -1;
+			}
+			if (field.kind != JSVAL_KIND_UNDEFINED) {
+				size_t i;
+				size_t len;
+				uint32_t present_mask = 0;
+
+				if (field.kind != JSVAL_KIND_ARRAY) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK key_ops");
+				}
+				len = jsval_array_length(region, field);
+				for (i = 0; i < len; i++) {
+					jsval_t item;
+
+					if (jsval_array_get(region, field, i, &item) < 0) {
+						return -1;
+					}
+					if (item.kind != JSVAL_KIND_STRING) {
+						return jsval_subtle_crypto_reject(region, promise_value,
+								"DataError", "invalid JWK key_ops");
+					}
+					eq2 = jsval_string_eq_ascii(region, item, "wrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY;
+						continue;
+					}
+					eq2 = jsval_string_eq_ascii(region, item, "unwrapKey");
+					if (eq2 < 0) {
+						return -1;
+					}
+					if (eq2 > 0) {
+						present_mask |= JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY;
+						continue;
+					}
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK key_ops");
+				}
+				if ((usages_mask & ~present_mask) != 0) {
+					return jsval_subtle_crypto_reject(region, promise_value,
+							"DataError", "invalid JWK key_ops");
+				}
+			}
+			return jsval_microtask_push(region, off, &kw_task->base);
 		}
 	}
 	eq = jsval_string_eq_ascii(region, name_value, "PBKDF2");
@@ -12865,6 +13689,23 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 			return -1;
 		}
 		return jsval_microtask_push(region, off, &cbc_task->base);
+	}
+	case JSVAL_CRYPTO_ALGORITHM_AES_KW:
+	{
+		jsval_native_microtask_subtle_aes_kw_t *kw_task;
+
+		if (jsval_subtle_crypto_aes_kw_key_validate(region, key_value, 0, 1,
+				&key, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+				JSVAL_SUBTLE_AES_KW_TASK_EXPORT, key_value.off, format,
+				key->extractable != 0, key->usages_mask, key->key_bit_length, 0,
+				&off, &kw_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &kw_task->base);
 	}
 	default:
 		return jsval_subtle_crypto_reject(region, promise_value,
@@ -13503,7 +14344,9 @@ jsval_subtle_crypto_derive_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-GCM key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &target_usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -13559,7 +14402,9 @@ jsval_subtle_crypto_derive_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-CTR key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &target_usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -13615,7 +14460,9 @@ jsval_subtle_crypto_derive_key(jsval_region_t *region, jsval_t subtle_value,
 					"DataError", "invalid AES-CBC key length");
 		}
 		if (jsval_subtle_crypto_parse_usages(region, usages_value,
-				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY,
 				1, &target_usages_mask, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value, error.name,
 					error.message);
@@ -13657,6 +14504,316 @@ jsval_subtle_crypto_derive_key(jsval_region_t *region, jsval_t subtle_value,
 	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported derived key algorithm");
+#endif
+}
+
+int
+jsval_subtle_crypto_wrap_key(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t format_value, jsval_t key_value, jsval_t wrapping_key_value,
+		jsval_t wrap_algorithm_value, jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_subtle_crypto_key_format_t format;
+	jsval_native_crypto_key_t *wrapping_key;
+	jsval_native_crypto_key_t *key;
+	const uint8_t *key_bytes;
+	size_t key_byte_length;
+	uint32_t length_unused = 0;
+	int has_length_unused = 0;
+	jsval_off_t off;
+	jsval_native_microtask_subtle_aes_kw_t *task;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)format_value;
+	(void)key_value;
+	(void)wrapping_key_value;
+	(void)wrap_algorithm_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_parse_format(region, format_value, &format,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"NotSupportedError", "unsupported wrap format");
+	}
+	if (jsval_subtle_crypto_aes_kw_key_validate(region, wrapping_key_value,
+			JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY, 0, &wrapping_key, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_aes_kw_params_parse_alg(region,
+			wrap_algorithm_value, 1, 0, &length_unused, &has_length_unused,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	key = jsval_native_crypto_key(region, key_value);
+	if (key == NULL) {
+		return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+				"expected CryptoKey value");
+	}
+	if (!key->extractable) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"InvalidAccessError", "wrapped key is not extractable");
+	}
+	key_bytes = jsval_native_crypto_key_bytes(region, key);
+	key_byte_length = key->key_byte_length;
+	if (key_bytes == NULL || key_byte_length == 0) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"InvalidAccessError",
+				"wrapped key has no raw export representation");
+	}
+	if (key_byte_length < 16u || (key_byte_length % 8u) != 0u) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"OperationError", "wrapped key length not valid for AES-KW");
+	}
+	if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+			JSVAL_SUBTLE_AES_KW_TASK_WRAP, wrapping_key_value.off,
+			JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW, wrapping_key->extractable != 0,
+			wrapping_key->usages_mask, wrapping_key->key_bit_length,
+			key_byte_length, &off, &task) < 0) {
+		return -1;
+	}
+	memcpy(jsval_native_microtask_subtle_aes_kw_data(task), key_bytes,
+			key_byte_length);
+	return jsval_microtask_push(region, off, &task->base);
+#endif
+}
+
+int
+jsval_subtle_crypto_unwrap_key(jsval_region_t *region, jsval_t subtle_value,
+		jsval_t format_value, jsval_t wrapped_key_value,
+		jsval_t unwrapping_key_value, jsval_t unwrap_algorithm_value,
+		jsval_t unwrapped_key_algorithm_value, int extractable,
+		jsval_t key_usages_value, jsval_t *promise_ptr)
+{
+	jsval_webcrypto_error_t error = { NULL, NULL };
+	jsval_t promise_value;
+	jsval_t name_value;
+	jsval_subtle_crypto_key_format_t format;
+	jsval_native_crypto_key_t *unwrapping_key;
+	const uint8_t *wrapped_bytes = NULL;
+	size_t wrapped_len = 0;
+	uint32_t length_unused = 0;
+	int has_length_unused = 0;
+	uint32_t inner_usages_mask = 0;
+	uint32_t inner_key_bit_length = 0;
+	uint8_t inner_algorithm_kind = 0;
+	uint8_t inner_hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+	int inner_has_length = 0;
+	int eq;
+	jsval_off_t off;
+	jsval_native_microtask_subtle_aes_kw_t *task;
+
+	if (region == NULL || promise_ptr == NULL
+			|| jsval_native_subtle_crypto(region, subtle_value) == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)format_value;
+	(void)wrapped_key_value;
+	(void)unwrapping_key_value;
+	(void)unwrap_algorithm_value;
+	(void)unwrapped_key_algorithm_value;
+	(void)extractable;
+	(void)key_usages_value;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (jsval_promise_new(region, &promise_value) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise_value;
+	if (jsval_subtle_crypto_parse_format(region, format_value, &format,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"NotSupportedError", "unsupported unwrap format");
+	}
+	if (jsval_subtle_crypto_aes_kw_key_validate(region, unwrapping_key_value,
+			JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY, 0, &unwrapping_key, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_aes_kw_params_parse_alg(region,
+			unwrap_algorithm_value, 1, 0, &length_unused, &has_length_unused,
+			&error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	if (jsval_subtle_crypto_algorithm_name_value(region,
+			unwrapped_key_algorithm_value, 1, &name_value, &error) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, error.name,
+				error.message);
+	}
+	/* Inner-algorithm dispatch: parse the inner algorithm dictionary into
+	 * the fields needed to construct the unwrapped CryptoKey. */
+	eq = jsval_string_eq_ascii(region, name_value, "HMAC");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jscrypto_digest_algorithm_t hash_algorithm = JSCRYPTO_DIGEST_SHA256;
+		uint32_t hmac_length = 0;
+		int has_hmac_length = 0;
+
+		if (jsval_subtle_crypto_hmac_params_parse(region,
+				unwrapped_key_algorithm_value, 1, 0, 1, &hash_algorithm, NULL,
+				&hmac_length, &has_hmac_length, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, key_usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY, 1,
+				&inner_usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		inner_algorithm_kind = (uint8_t)JSVAL_CRYPTO_ALGORITHM_HMAC;
+		inner_hash_algorithm = (uint8_t)hash_algorithm;
+		inner_key_bit_length = hmac_length;
+		inner_has_length = has_hmac_length;
+	} else {
+		const char *aes_name = NULL;
+
+		eq = jsval_string_eq_ascii(region, name_value, "AES-GCM");
+		if (eq < 0) {
+			return -1;
+		}
+		if (eq > 0) {
+			aes_name = "AES-GCM";
+			inner_algorithm_kind = (uint8_t)JSVAL_CRYPTO_ALGORITHM_AES_GCM;
+		}
+		if (aes_name == NULL) {
+			eq = jsval_string_eq_ascii(region, name_value, "AES-CTR");
+			if (eq < 0) {
+				return -1;
+			}
+			if (eq > 0) {
+				aes_name = "AES-CTR";
+				inner_algorithm_kind = (uint8_t)JSVAL_CRYPTO_ALGORITHM_AES_CTR;
+			}
+		}
+		if (aes_name == NULL) {
+			eq = jsval_string_eq_ascii(region, name_value, "AES-CBC");
+			if (eq < 0) {
+				return -1;
+			}
+			if (eq > 0) {
+				aes_name = "AES-CBC";
+				inner_algorithm_kind = (uint8_t)JSVAL_CRYPTO_ALGORITHM_AES_CBC;
+			}
+		}
+		if (aes_name == NULL) {
+			eq = jsval_string_eq_ascii(region, name_value, "AES-KW");
+			if (eq < 0) {
+				return -1;
+			}
+			if (eq > 0) {
+				aes_name = "AES-KW";
+				inner_algorithm_kind = (uint8_t)JSVAL_CRYPTO_ALGORITHM_AES_KW;
+			}
+		}
+		if (aes_name == NULL) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError", "unsupported unwrapped key algorithm");
+		}
+		if (jsval_subtle_crypto_aes_params_parse_name(region,
+				unwrapped_key_algorithm_value, aes_name, 1, 0,
+				&inner_key_bit_length, &inner_has_length, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+		if (inner_algorithm_kind
+				== (uint8_t)JSVAL_CRYPTO_ALGORITHM_AES_KW) {
+			if (jsval_subtle_crypto_parse_usages(region, key_usages_value,
+					JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+						| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY, 1,
+					&inner_usages_mask, &error) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						error.name, error.message);
+			}
+		} else if (jsval_subtle_crypto_parse_usages(region, key_usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_ENCRYPT | JSVAL_CRYPTO_KEY_USAGE_DECRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY, 1,
+				&inner_usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value, error.name,
+					error.message);
+		}
+	}
+	if (jsval_buffer_source_bytes(region, wrapped_key_value, &wrapped_bytes,
+			&wrapped_len) < 0) {
+		return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
+				"expected BufferSource wrapped key");
+	}
+	if (wrapped_len < 24u || (wrapped_len % 8u) != 0u) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"OperationError", "invalid AES-KW wrapped key length");
+	}
+	/* For AES-* inner keys, the unwrapped length is determined by the
+	 * wrapped buffer length minus 8. If the caller supplied a `length`
+	 * field, validate that it matches; otherwise infer it. */
+	if (inner_algorithm_kind != (uint8_t)JSVAL_CRYPTO_ALGORITHM_HMAC) {
+		uint32_t inferred = (uint32_t)((wrapped_len - 8u) * 8u);
+
+		if (inner_has_length) {
+			if (inner_key_bit_length != inferred) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"AES key length does not match wrapped key length");
+			}
+		} else {
+			inner_key_bit_length = inferred;
+		}
+		if (!jsval_subtle_crypto_aes_key_length_valid(inner_key_bit_length)) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid AES key length");
+		}
+	} else {
+		uint32_t inferred = (uint32_t)((wrapped_len - 8u) * 8u);
+
+		if (!inner_has_length) {
+			inner_key_bit_length = inferred;
+		}
+		if (inner_key_bit_length == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"DataError", "invalid HMAC key length");
+		}
+	}
+	if (jsval_subtle_crypto_new_aes_kw_task(region, promise_value,
+			JSVAL_SUBTLE_AES_KW_TASK_UNWRAP, unwrapping_key_value.off,
+			JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+			unwrapping_key->extractable != 0, unwrapping_key->usages_mask,
+			unwrapping_key->key_bit_length, wrapped_len, &off, &task) < 0) {
+		return -1;
+	}
+	memcpy(jsval_native_microtask_subtle_aes_kw_data(task), wrapped_bytes,
+			wrapped_len);
+	task->inner_algorithm_kind = inner_algorithm_kind;
+	task->inner_hash_algorithm = inner_hash_algorithm;
+	task->inner_key_bit_length = inner_key_bit_length;
+	task->inner_usages_mask = inner_usages_mask;
+	task->inner_extractable = extractable ? 1 : 0;
+	return jsval_microtask_push(region, off, &task->base);
 #endif
 }
 
@@ -14387,6 +15544,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 				(jsval_native_microtask_subtle_aes_cbc_t *)task;
 
 			if (jsval_subtle_crypto_run_aes_cbc(region, cbc_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_SUBTLE_AES_KW:
+		{
+			jsval_native_microtask_subtle_aes_kw_t *kw_task =
+				(jsval_native_microtask_subtle_aes_kw_t *)task;
+
+			if (jsval_subtle_crypto_run_aes_kw(region, kw_task) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}

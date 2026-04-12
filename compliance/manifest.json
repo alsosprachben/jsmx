@@ -4713,6 +4713,28 @@
       "notes": "Repo-authored idiomatic WinterTC AES-CBC rejection fixture for unsupported formats, malformed JWKs, invalid iv length, and non-extractable exports."
     },
     {
+      "id": "jsmx-wintertc-crypto-subtle-aes-kw-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-kw-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-kw-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-KW fixture for Promise-backed generateKey/importKey/exportKey over `raw` and `jwk`, plus subtle.wrapKey and subtle.unwrapKey round-trip on an AES-GCM inner key."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-aes-kw-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-kw-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-kw-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-KW + wrapKey/unwrapKey rejection fixture for unsupported formats, malformed JWKs, non-extractable exports, short wrapped buffers, and unsupported inner algorithms."
+    },
+    {
       "id": "jsmx-wintertc-crypto-subtle-pbkdf2-parity",
       "suite": "wintertc",
       "source": "compliance/js/wintertc/jsmx/crypto-subtle-pbkdf2-parity.js",

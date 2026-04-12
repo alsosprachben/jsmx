@@ -114,7 +114,7 @@ make_unsupported_algorithm(jsval_region_t *region, jsval_t *value_ptr)
 	jsval_t value;
 
 	if (jsval_object_new(region, 2, &object) < 0
-			|| make_string(region, "AES-KW", &value) < 0
+			|| make_string(region, "RSA-OAEP", &value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name", 4,
 				value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"length", 6,

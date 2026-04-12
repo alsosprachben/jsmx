@@ -167,12 +167,18 @@ That makes semantic correctness more important than surface familiarity:
     - Promise-backed AES-CBC `generateKey(...)`, `importKey(...)`,
       `exportKey(...)`, `encrypt(...)`, and `decrypt(...)` over `raw` and
       `jwk` key formats with PKCS#7 padding
+    - Promise-backed AES-KW `generateKey(...)`, `importKey(...)`, and
+      `exportKey(...)` over `raw` and `jwk` key formats
+    - Promise-backed `subtle.wrapKey(...)` and `subtle.unwrapKey(...)`
+      using an AES-KW wrapping key over the `raw` format, wrapping any
+      currently-supported HMAC or AES-GCM/CTR/CBC/KW key
     - Promise-backed PBKDF2 `importKey("raw", ...)`, `deriveBits(...)`, and
       `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - Promise-backed HKDF `importKey("raw", ...)`, `deriveBits(...)`, and
       `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - native `CryptoKey` and `DOMException` support for the current digest,
-      HMAC, AES-GCM, AES-CTR, AES-CBC, PBKDF2, and HKDF WebCrypto slices
+      HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, and HKDF WebCrypto
+      slices
   - native Promise helpers for:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
@@ -555,6 +561,12 @@ Current WinterTC-oriented crypto coverage is:
   `crypto.subtle.importKey(...)`, `crypto.subtle.exportKey(...)`,
   `crypto.subtle.encrypt(...)`, and `crypto.subtle.decrypt(...)` over `raw`
   and `jwk` with PKCS#7 padding
+- Promise-backed AES-KW `crypto.subtle.generateKey(...)`,
+  `crypto.subtle.importKey(...)`, and `crypto.subtle.exportKey(...)` over
+  `raw` and `jwk`
+- Promise-backed `crypto.subtle.wrapKey(...)` and
+  `crypto.subtle.unwrapKey(...)` using an AES-KW wrapping key over the
+  `raw` format, wrapping any currently-supported HMAC or AES-* key
 - Promise-backed PBKDF2 `crypto.subtle.importKey("raw", ...)`,
   `crypto.subtle.deriveBits(...)`, and `crypto.subtle.deriveKey(...)` to
   HMAC, AES-GCM, AES-CTR, or AES-CBC
@@ -564,7 +576,8 @@ Current WinterTC-oriented crypto coverage is:
 
 The Promise substrate needed for later async WebCrypto methods now exists in
 `jsval`. Other `SubtleCrypto` algorithms beyond digest, HMAC, AES-GCM,
-AES-CTR, AES-CBC, PBKDF2, and HKDF are still later slices.
+AES-CTR, AES-CBC, AES-KW, PBKDF2, and HKDF are still later slices, as is
+the `jwk` format for `wrapKey`/`unwrapKey`.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

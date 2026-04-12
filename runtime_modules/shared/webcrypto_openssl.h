@@ -136,4 +136,22 @@ runtime_webcrypto_aes_cbc_decrypt(const uint8_t *key, size_t key_len,
 			input_len, output, cap, len_ptr);
 }
 
+static inline int
+runtime_webcrypto_aes_kw_wrap(const uint8_t *key, size_t key_len,
+		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
+		size_t *len_ptr)
+{
+	return jscrypto_aes_kw_wrap(key, key_len, input, input_len, output, cap,
+			len_ptr);
+}
+
+static inline int
+runtime_webcrypto_aes_kw_unwrap(const uint8_t *key, size_t key_len,
+		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
+		size_t *len_ptr)
+{
+	return jscrypto_aes_kw_unwrap(key, key_len, input, input_len, output, cap,
+			len_ptr);
+}
+
 #endif

@@ -200,6 +200,21 @@ jscrypto_aes_cbc_evp(size_t key_len)
 		return NULL;
 	}
 }
+
+static const EVP_CIPHER *
+jscrypto_aes_kw_evp(size_t key_len)
+{
+	switch (key_len) {
+	case 16:
+		return EVP_aes_128_wrap();
+	case 24:
+		return EVP_aes_192_wrap();
+	case 32:
+		return EVP_aes_256_wrap();
+	default:
+		return NULL;
+	}
+}
 #endif
 
 static void
@@ -1099,6 +1114,183 @@ jscrypto_aes_cbc_decrypt(const uint8_t *key, size_t key_len, const uint8_t *iv,
 		EVP_CIPHER_CTX_free(ctx);
 		if (len_ptr != NULL) {
 			*len_ptr = (size_t)total;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_kw_wrap(const uint8_t *key, size_t key_len, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	size_t output_len;
+
+	if ((key == NULL && key_len > 0) || (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	/*
+	 * RFC 3394 requires the input to be at least two 64-bit blocks and a
+	 * multiple of 8 bytes. Output is 8 bytes longer than input.
+	 */
+	if (input_len < 16u || (input_len % 8u) != 0u
+			|| input_len > SIZE_MAX - 8u) {
+		errno = EINVAL;
+		return -1;
+	}
+	output_len = input_len + 8u;
+	if (len_ptr != NULL) {
+		*len_ptr = output_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < output_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_kw_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || input_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		/* OpenSSL disables the AES-KW ciphers by default; opt in. */
+		EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
+		if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_EncryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if ((size_t)total != output_len) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_kw_unwrap(const uint8_t *key, size_t key_len, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr)
+{
+	size_t output_len;
+
+	if ((key == NULL && key_len > 0) || (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (input_len < 24u || (input_len % 8u) != 0u) {
+		errno = EINVAL;
+		return -1;
+	}
+	output_len = input_len - 8u;
+	if (len_ptr != NULL) {
+		*len_ptr = output_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < output_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_kw_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || input_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		EVP_CIPHER_CTX_set_flags(ctx, EVP_CIPHER_CTX_FLAG_WRAP_ALLOW);
+		if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		/*
+		 * For the AES-KW cipher OpenSSL processes the entire wrap input
+		 * in EVP_DecryptUpdate and detects the AIV mismatch there
+		 * (EVP_DecryptFinal_ex is effectively a no-op). Map any Update
+		 * or Final failure to EINVAL so the runtime surfaces it as
+		 * OperationError.
+		 */
+		if (EVP_DecryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EINVAL;
+			return -1;
+		}
+		total = written;
+		if (EVP_DecryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EINVAL;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if ((size_t)total != output_len) {
+			errno = EIO;
+			return -1;
 		}
 		return 0;
 	}

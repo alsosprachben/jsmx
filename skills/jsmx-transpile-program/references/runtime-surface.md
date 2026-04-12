@@ -35,14 +35,16 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       `generateKey(...)`, `importKey(...)`, `exportKey(...)`,
       `encrypt(...)`, and `decrypt(...)`, AES-CBC `generateKey(...)`,
       `importKey(...)`, `exportKey(...)`, `encrypt(...)`, and
-      `decrypt(...)` (with PKCS#7 padding), plus PBKDF2
-      `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
-      HMAC, AES-GCM, AES-CTR, or AES-CBC, plus HKDF
-      `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
-      HMAC, AES-GCM, AES-CTR, or AES-CBC
+      `decrypt(...)` (with PKCS#7 padding), AES-KW `generateKey(...)`,
+      `importKey(...)`, and `exportKey(...)`, `subtle.wrapKey(...)` and
+      `subtle.unwrapKey(...)` using an AES-KW wrapping key over the
+      `raw` format, plus PBKDF2 `importKey("raw", ...)`,
+      `deriveBits(...)`, and `deriveKey(...)` to HMAC, AES-GCM, AES-CTR,
+      or AES-CBC, plus HKDF `importKey("raw", ...)`, `deriveBits(...)`,
+      and `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, AES-CBC,
-      PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk` where
-      applicable
+      AES-KW, PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk`
+      where applicable
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -99,8 +101,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
-      HMAC, AES-GCM, AES-CTR, AES-CBC, PBKDF2, and HKDF `BufferSource`
-      inputs
+      HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, and HKDF
+      `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -201,10 +203,15 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     AES-CTR `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
     `encrypt(...)` / `decrypt(...)`, AES-CBC `generateKey(...)` /
     `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
-    plus PBKDF2 `importKey("raw", ...)` / `deriveBits(...)` /
-    `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC, and HKDF
+    AES-KW `generateKey(...)` / `importKey(...)` / `exportKey(...)`,
+    `subtle.wrapKey(...)` / `subtle.unwrapKey(...)` using an AES-KW
+    wrapping key over the `raw` format, plus PBKDF2
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
-    HMAC, AES-GCM, AES-CTR, or AES-CBC
+    HMAC, AES-GCM, AES-CTR, or AES-CBC, and HKDF
+    `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
+    HMAC, AES-GCM, AES-CTR, or AES-CBC. The `jwk` format for
+    `wrapKey`/`unwrapKey` and other wrapping algorithms (AES-GCM, RSA-OAEP)
+    are still pending.
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

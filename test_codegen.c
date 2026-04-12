@@ -4255,6 +4255,143 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/* AES-KW transpiled smoke: generateKey + wrap an AES-GCM
+				 * key with the AES-KW key, then unwrap it back. */
+				jsval_t kw_usages;
+				jsval_t kw_algorithm;
+				jsval_t kw_name;
+				jsval_t kw_generated_promise;
+				jsval_t kw_generated_key;
+				jsval_t inner_aes_alg;
+				jsval_t inner_aes_usages;
+				jsval_t inner_aes_promise;
+				jsval_t inner_aes_key;
+				jsval_t kw_wrap_promise;
+				jsval_t kw_wrapped;
+				jsval_t kw_unwrap_promise;
+				jsval_t kw_unwrapped_key;
+
+				if (jsval_array_new(&region, 2, &kw_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"wrapKey", 7, &result) < 0
+						|| jsval_array_push(&region, kw_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"unwrapKey", 9, &result) < 0
+						|| jsval_array_push(&region, kw_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AES-KW", 6, &kw_name) < 0
+						|| jsval_object_new(&region, 2, &kw_algorithm) < 0
+						|| jsval_object_set_utf8(&region, kw_algorithm,
+							(const uint8_t *)"name", 4, kw_name) < 0
+						|| jsval_object_set_utf8(&region, kw_algorithm,
+							(const uint8_t *)"length", 6, jsval_number(128.0)) < 0) {
+					return generated_fail_errno(detail, cap, "aes-kw setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						kw_algorithm, 1, kw_usages,
+						&kw_generated_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(aes-kw)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, kw_generated_promise,
+							&kw_generated_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw generateKey drain/result");
+				}
+				if (kw_generated_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected AES-KW generateKey to resolve CryptoKey");
+				}
+				if (jsval_array_new(&region, 2, &inner_aes_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"encrypt", 7, &result) < 0
+						|| jsval_array_push(&region, inner_aes_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"decrypt", 7, &result) < 0
+						|| jsval_array_push(&region, inner_aes_usages, result) < 0
+						|| jsval_object_new(&region, 2, &inner_aes_alg) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AES-GCM", 7, &result) < 0
+						|| jsval_object_set_utf8(&region, inner_aes_alg,
+							(const uint8_t *)"name", 4, result) < 0
+						|| jsval_object_set_utf8(&region, inner_aes_alg,
+							(const uint8_t *)"length", 6,
+							jsval_number(128.0)) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw inner aes-gcm setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						inner_aes_alg, 1, inner_aes_usages,
+						&inner_aes_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw inner generateKey");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, inner_aes_promise,
+							&inner_aes_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw inner drain/result");
+				}
+				if (jsval_subtle_crypto_wrap_key(&region, subtle_a, raw_format,
+						inner_aes_key, kw_generated_key, kw_algorithm,
+						&kw_wrap_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_wrap_key");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, kw_wrap_promise,
+							&kw_wrapped) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw wrap drain/result");
+				}
+				if (kw_wrapped.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, kw_wrapped,
+							&len) < 0
+						|| len != 24) {
+					return generated_failf(detail, cap,
+							"expected 24-byte AES-KW wrap of an AES-128 key");
+				}
+				if (jsval_subtle_crypto_unwrap_key(&region, subtle_a, raw_format,
+						kw_wrapped, kw_generated_key, kw_algorithm,
+						inner_aes_alg, 1, inner_aes_usages,
+						&kw_unwrap_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_unwrap_key");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, kw_unwrap_promise,
+							&kw_unwrapped_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-kw unwrap drain/result");
+				}
+				if (kw_unwrapped_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected unwrapped AES-GCM CryptoKey");
+				}
+				if (jsval_crypto_key_algorithm(&region, kw_unwrapped_key,
+						&result) < 0
+						|| result.kind != JSVAL_KIND_OBJECT) {
+					return generated_fail_errno(detail, cap,
+							"unwrapped AES-GCM key algorithm");
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"name", 4, &prop) < 0) {
+					return generated_fail_errno(detail, cap,
+							"unwrapped name");
+				}
+				status = generated_expect_string(&region, prop,
+						(const uint8_t *)"AES-GCM", 7, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;
@@ -4554,7 +4691,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 					return status;
 				}
 				if (jsval_object_new(&region, 2, &unsupported_algorithm) < 0
-						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"RSA-OAEP", 8,
 							&result) < 0
 						|| jsval_object_set_utf8(&region, unsupported_algorithm,
 							(const uint8_t *)"name", 4, result) < 0
@@ -4896,7 +5033,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 					return status;
 				}
 				if (jsval_object_new(&region, 2, &unsupported_algorithm) < 0
-						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"RSA-OAEP", 8,
 							&result) < 0
 						|| jsval_object_set_utf8(&region, unsupported_algorithm,
 							(const uint8_t *)"name", 4, result) < 0
