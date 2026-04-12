@@ -3919,6 +3919,179 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/* AES-CTR transpiled smoke: generateKey, encrypt/decrypt
+				 * round-trip on a zero plaintext, exportKey raw. */
+				jsval_t ctr_usages;
+				jsval_t ctr_algorithm;
+				jsval_t ctr_import_algorithm;
+				jsval_t ctr_params;
+				jsval_t ctr_name;
+				jsval_t ctr_counter;
+				jsval_t ctr_counter_buffer;
+				jsval_t ctr_generated_promise;
+				jsval_t ctr_generated_key;
+				jsval_t ctr_export_raw_promise;
+				jsval_t ctr_encrypt_promise;
+				jsval_t ctr_decrypt_promise;
+				jsval_t ctr_bad_counter_params;
+				jsval_t ctr_bad_counter;
+				jsval_t ctr_bad_counter_buffer;
+				jsval_t ctr_bad_counter_promise;
+
+				if (jsval_array_new(&region, 2, &ctr_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"encrypt", 7, &result) < 0
+						|| jsval_array_push(&region, ctr_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"decrypt", 7, &result) < 0
+						|| jsval_array_push(&region, ctr_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AES-CTR", 7, &ctr_name) < 0
+						|| jsval_object_new(&region, 2, &ctr_algorithm) < 0
+						|| jsval_object_set_utf8(&region, ctr_algorithm,
+							(const uint8_t *)"name", 4, ctr_name) < 0
+						|| jsval_object_set_utf8(&region, ctr_algorithm,
+							(const uint8_t *)"length", 6, jsval_number(128.0)) < 0
+						|| jsval_object_new(&region, 1, &ctr_import_algorithm) < 0
+						|| jsval_object_set_utf8(&region, ctr_import_algorithm,
+							(const uint8_t *)"name", 4, ctr_name) < 0
+						|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+							16, &ctr_counter) < 0
+						|| jsval_typed_array_buffer(&region, ctr_counter,
+							&ctr_counter_buffer) < 0
+						|| jsval_object_new(&region, 3, &ctr_params) < 0
+						|| jsval_object_set_utf8(&region, ctr_params,
+							(const uint8_t *)"name", 4, ctr_name) < 0
+						|| jsval_object_set_utf8(&region, ctr_params,
+							(const uint8_t *)"counter", 7, ctr_counter_buffer) < 0
+						|| jsval_object_set_utf8(&region, ctr_params,
+							(const uint8_t *)"length", 6, jsval_number(128.0)) < 0) {
+					return generated_fail_errno(detail, cap, "aes-ctr setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						ctr_algorithm, 1, ctr_usages,
+						&ctr_generated_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(aes-ctr)");
+				}
+				if (jsval_promise_state(&region, ctr_generated_promise,
+						&promise_state) < 0
+						|| promise_state != JSVAL_PROMISE_STATE_PENDING) {
+					return generated_failf(detail, cap,
+							"expected AES-CTR generateKey promise to stay pending");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ctr_generated_promise,
+							&ctr_generated_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr generateKey drain/result");
+				}
+				if (ctr_generated_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected AES-CTR generateKey to resolve CryptoKey");
+				}
+				if (jsval_crypto_key_algorithm(&region, ctr_generated_key,
+						&result) < 0
+						|| result.kind != JSVAL_KIND_OBJECT) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr key algorithm");
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"name", 4, &prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes-ctr name");
+				}
+				status = generated_expect_string(&region, prop,
+						(const uint8_t *)"AES-CTR", 7, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						ctr_generated_key, &ctr_export_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr exportKey raw");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ctr_export_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr export raw drain/result");
+				}
+				if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+						|| len != 16) {
+					return generated_failf(detail, cap,
+							"expected 16-byte exported AES-CTR raw key");
+				}
+				if (jsval_subtle_crypto_encrypt(&region, subtle_a, ctr_params,
+						ctr_generated_key, digest_input_buffer,
+						&ctr_encrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_encrypt(aes-ctr)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ctr_encrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr encrypt drain/result");
+				}
+				if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+						|| len != 16) {
+					return generated_failf(detail, cap,
+							"expected 16-byte AES-CTR ciphertext");
+				}
+				if (jsval_subtle_crypto_decrypt(&region, subtle_a, ctr_params,
+						ctr_generated_key, result, &ctr_decrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_decrypt(aes-ctr)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ctr_decrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr decrypt drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						zero_key_16, sizeof(zero_key_16), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+						&ctr_bad_counter) < 0
+						|| jsval_typed_array_buffer(&region, ctr_bad_counter,
+							&ctr_bad_counter_buffer) < 0
+						|| jsval_object_new(&region, 3,
+							&ctr_bad_counter_params) < 0
+						|| jsval_object_set_utf8(&region, ctr_bad_counter_params,
+							(const uint8_t *)"name", 4, ctr_name) < 0
+						|| jsval_object_set_utf8(&region, ctr_bad_counter_params,
+							(const uint8_t *)"counter", 7, ctr_bad_counter_buffer) < 0
+						|| jsval_object_set_utf8(&region, ctr_bad_counter_params,
+							(const uint8_t *)"length", 6, jsval_number(64.0)) < 0
+						|| jsval_subtle_crypto_encrypt(&region, subtle_a,
+							ctr_bad_counter_params, ctr_generated_key,
+							digest_input_buffer, &ctr_bad_counter_promise) < 0
+						|| jsval_promise_result(&region, ctr_bad_counter_promise,
+							&dom_exception) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr bad counter setup");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-ctr bad counter exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"OperationError", 14, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;

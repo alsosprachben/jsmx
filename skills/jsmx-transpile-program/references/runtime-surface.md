@@ -31,12 +31,14 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `SubtleCrypto`, including Promise-backed `digest(...)`, HMAC
       `generateKey(...)`, `importKey(...)`, `exportKey(...)`, `sign(...)`,
       and `verify(...)`, AES-GCM `generateKey(...)`, `importKey(...)`,
-      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`, plus PBKDF2
+      `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`, AES-CTR
+      `generateKey(...)`, `importKey(...)`, `exportKey(...)`,
+      `encrypt(...)`, and `decrypt(...)`, plus PBKDF2
       `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
-      HMAC or AES-GCM, plus HKDF `importKey("raw", ...)`, `deriveBits(...)`,
-      and `deriveKey(...)` to HMAC or AES-GCM
-    - `CryptoKey` values for the current HMAC, AES-GCM, PBKDF2, and HKDF
-      secret-key surfaces over `raw` and `jwk` where applicable
+      HMAC, AES-GCM, or AES-CTR, plus HKDF `importKey("raw", ...)`,
+      `deriveBits(...)`, and `deriveKey(...)` to HMAC, AES-GCM, or AES-CTR
+    - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, PBKDF2,
+      and HKDF secret-key surfaces over `raw` and `jwk` where applicable
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -93,7 +95,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
-      HMAC, AES-GCM, PBKDF2, and HKDF `BufferSource` inputs
+      HMAC, AES-GCM, AES-CTR, PBKDF2, and HKDF `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -189,11 +191,13 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     beyond the bounded ISO + libc-local Date helpers
   - `SubtleCrypto` methods beyond `digest(...)`, HMAC
     `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
-    `sign(...)` / `verify(...)`, and AES-GCM `generateKey(...)` /
+    `sign(...)` / `verify(...)`, AES-GCM `generateKey(...)` /
     `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
-    plus PBKDF2 `importKey("raw", ...)` / `deriveBits(...)` /
-    `deriveKey(...)` to HMAC or AES-GCM, and HKDF `importKey("raw", ...)` /
-    `deriveBits(...)` / `deriveKey(...)` to HMAC or AES-GCM
+    AES-CTR `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
+    `encrypt(...)` / `decrypt(...)`, plus PBKDF2
+    `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
+    HMAC, AES-GCM, or AES-CTR, and HKDF `importKey("raw", ...)` /
+    `deriveBits(...)` / `deriveKey(...)` to HMAC, AES-GCM, or AES-CTR
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

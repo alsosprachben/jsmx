@@ -155,7 +155,64 @@ jscrypto_aes_gcm_evp(size_t key_len)
 		return NULL;
 	}
 }
+
+static const EVP_CIPHER *
+jscrypto_aes_ctr_evp(size_t key_len)
+{
+	switch (key_len) {
+	case 16:
+		return EVP_aes_128_ctr();
+	case 24:
+		return EVP_aes_192_ctr();
+	case 32:
+		return EVP_aes_256_ctr();
+	default:
+		return NULL;
+	}
+}
+
+static const EVP_CIPHER *
+jscrypto_aes_ecb_evp(size_t key_len)
+{
+	switch (key_len) {
+	case 16:
+		return EVP_aes_128_ecb();
+	case 24:
+		return EVP_aes_192_ecb();
+	case 32:
+		return EVP_aes_256_ecb();
+	default:
+		return NULL;
+	}
+}
 #endif
+
+static void
+jscrypto_aes_ctr_increment(uint8_t *block, uint32_t length_bits)
+{
+	/*
+	 * WebCrypto AES-CTR treats the rightmost length_bits of the 16-byte
+	 * counter block as the counter and the leftmost (128 - length_bits)
+	 * bits as a fixed nonce. Increment by 1 modulo 2^length_bits, with
+	 * carries confined to the counter portion.
+	 */
+	uint32_t i;
+	uint32_t carry = 1u;
+
+	for (i = 0; i < length_bits && carry != 0u; i++) {
+		uint32_t byte_index = 15u - (i / 8u);
+		uint32_t bit_mask = 1u << (i % 8u);
+
+		if ((block[byte_index] & bit_mask) == 0u) {
+			block[byte_index] = (uint8_t)(block[byte_index] | bit_mask);
+			carry = 0u;
+		} else {
+			block[byte_index] = (uint8_t)(block[byte_index] & ~bit_mask);
+		}
+	}
+	/* If carry is still 1 the counter wrapped to zero, which is correct
+	 * mod 2^length_bits — every bit in the counter region is already 0. */
+}
 
 int
 jscrypto_random_bytes(uint8_t *buf, size_t len)
@@ -356,6 +413,9 @@ jscrypto_pbkdf2(jscrypto_digest_algorithm_t algorithm, const uint8_t *password,
 		errno = EINVAL;
 		return -1;
 	}
+	if (output_len == 0) {
+		return 0;
+	}
 	if (output_len > (size_t)INT_MAX || iterations > (uint32_t)INT_MAX) {
 		errno = EOVERFLOW;
 		return -1;
@@ -402,6 +462,9 @@ jscrypto_hkdf(jscrypto_digest_algorithm_t algorithm, const uint8_t *key,
 			|| (info == NULL && info_len > 0) || (output == NULL && output_len > 0)) {
 		errno = EINVAL;
 		return -1;
+	}
+	if (output_len == 0) {
+		return 0;
 	}
 	if (key_len > (size_t)INT_MAX || salt_len > (size_t)INT_MAX
 			|| info_len > (size_t)INT_MAX) {
@@ -483,7 +546,7 @@ jscrypto_aes_gcm_encrypt(const uint8_t *key, size_t key_len,
 		errno = EINVAL;
 		return -1;
 	}
-	if (key_len != 16 && key_len != 24 && key_len != 32) {
+	if ((key_len != 16 && key_len != 24 && key_len != 32) || iv_len == 0) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -589,7 +652,7 @@ jscrypto_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
 		errno = EINVAL;
 		return -1;
 	}
-	if (key_len != 16 && key_len != 24 && key_len != 32) {
+	if ((key_len != 16 && key_len != 24 && key_len != 32) || iv_len == 0) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -676,6 +739,168 @@ jscrypto_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
 			errno = EIO;
 			return -1;
 		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_ctr_crypt(const uint8_t *key, size_t key_len,
+		const uint8_t *counter, size_t counter_len, uint32_t length_bits,
+		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
+		size_t *len_ptr)
+{
+	if ((key == NULL && key_len > 0) || (counter == NULL && counter_len > 0)
+			|| (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (counter_len != 16) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (length_bits == 0 || length_bits > 128) {
+		errno = EINVAL;
+		return -1;
+	}
+	/*
+	 * WebCrypto AES-CTR step 1: input must not be longer than
+	 * 2^length_bits counter blocks of 16 bytes. The check is only
+	 * meaningful when 2^length_bits * 16 fits in size_t; otherwise
+	 * size_t already constrains the input.
+	 */
+	if (length_bits < 60) {
+		uint64_t max_blocks = (uint64_t)1 << length_bits;
+		uint64_t input_blocks = (uint64_t)((input_len + 15u) / 16u);
+
+		if (input_blocks > max_blocks) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = input_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < input_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)counter;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	if (input_len == 0) {
+		return 0;
+	}
+	if (length_bits == 128) {
+		/*
+		 * Fast path: when the entire 16-byte block is the counter,
+		 * WebCrypto's "increment mod 2^128" matches OpenSSL CTR exactly.
+		 */
+		const EVP_CIPHER *cipher = jscrypto_aes_ctr_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || input_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, counter) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_EncryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if ((size_t)total != input_len) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+	{
+		/*
+		 * length_bits < 128: OpenSSL CTR would carry across the nonce
+		 * boundary on overflow, but WebCrypto requires the carry to wrap
+		 * inside the rightmost length_bits only. Drive AES-ECB block by
+		 * block and increment the counter ourselves.
+		 */
+		const EVP_CIPHER *cipher = jscrypto_aes_ecb_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		uint8_t counter_block[16];
+		uint8_t keystream[16];
+		size_t pos = 0;
+
+		if (cipher == NULL) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		EVP_CIPHER_CTX_set_padding(ctx, 0);
+		memcpy(counter_block, counter, 16);
+		while (pos < input_len) {
+			int written = 0;
+			size_t chunk = input_len - pos;
+			size_t i;
+
+			if (chunk > 16u) {
+				chunk = 16u;
+			}
+			if (EVP_EncryptUpdate(ctx, keystream, &written, counter_block,
+					16) != 1 || written != 16) {
+				EVP_CIPHER_CTX_free(ctx);
+				errno = EIO;
+				return -1;
+			}
+			for (i = 0; i < chunk; i++) {
+				output[pos + i] = (uint8_t)(input[pos + i] ^ keystream[i]);
+			}
+			pos += chunk;
+			if (pos < input_len) {
+				jscrypto_aes_ctr_increment(counter_block, length_bits);
+			}
+		}
+		EVP_CIPHER_CTX_free(ctx);
 		return 0;
 	}
 #endif

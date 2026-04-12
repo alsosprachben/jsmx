@@ -108,4 +108,14 @@ runtime_webcrypto_aes_gcm_decrypt(const uint8_t *key, size_t key_len,
 			tag_bits, input, input_len, output, cap, len_ptr);
 }
 
+static inline int
+runtime_webcrypto_aes_ctr_crypt(const uint8_t *key, size_t key_len,
+		const uint8_t *counter, size_t counter_len, uint32_t length_bits,
+		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
+		size_t *len_ptr)
+{
+	return jscrypto_aes_ctr_crypt(key, key_len, counter, counter_len,
+			length_bits, input, input_len, output, cap, len_ptr);
+}
+
 #endif

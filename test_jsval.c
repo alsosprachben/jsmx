@@ -1550,6 +1550,232 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * AES-CTR Promise-backed surface. Round-trips zero buffers
+		 * through the runtime (vector exactness lives in test_jscrypto.c
+		 * since the runtime has no public typed-array mutator).
+		 */
+		jsval_t ctr_usages;
+		jsval_t ctr_algorithm;
+		jsval_t ctr_import_algorithm;
+		jsval_t ctr_params;
+		jsval_t ctr_bad_params;
+		jsval_t plaintext_input;
+		jsval_t plaintext_buffer;
+		jsval_t counter_input;
+		jsval_t counter_buffer;
+		jsval_t generated_promise;
+		jsval_t generated_key;
+		jsval_t exported_raw_promise;
+		jsval_t imported_raw_promise;
+		jsval_t imported_raw_key;
+		jsval_t encrypt_promise;
+		jsval_t decrypt_promise;
+		jsval_t exported_jwk_promise;
+		jsval_t jwk_object;
+		jsval_t jwk_imported_promise;
+		jsval_t jwk_imported_key;
+		jsval_t bad_counter_promise;
+		jsval_t bad_length_promise;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t name_string;
+		jsval_t alg_value;
+		jsval_t ciphertext;
+		uint32_t ctr_usages_mask = 0;
+
+		assert(jsval_array_new(&region, 2, &ctr_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"encrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ctr_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"decrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ctr_usages, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &ctr_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CTR", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_algorithm,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_object_new(&region, 1, &ctr_import_algorithm) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_import_algorithm,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&plaintext_input) == 0);
+		assert(jsval_typed_array_buffer(&region, plaintext_input,
+				&plaintext_buffer) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&counter_input) == 0);
+		assert(jsval_typed_array_buffer(&region, counter_input,
+				&counter_buffer) == 0);
+		assert(jsval_object_new(&region, 3, &ctr_params) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_params,
+				(const uint8_t *)"counter", 7, counter_buffer) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_params,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+
+		/* generateKey resolves to an AES-CTR CryptoKey of the right shape. */
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a, ctr_algorithm,
+				1, ctr_usages, &generated_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, generated_promise,
+				&generated_key) == 0);
+		assert(generated_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, generated_key,
+				&alg_value) == 0);
+		assert_object_string_prop(&region, alg_value, "name", "AES-CTR");
+		assert_object_number_prop(&region, alg_value, "length", 128.0);
+		assert(jsval_crypto_key_usages(&region, generated_key,
+				&ctr_usages_mask) == 0);
+		assert(ctr_usages_mask
+				== (JSVAL_CRYPTO_KEY_USAGE_ENCRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_DECRYPT));
+
+		/* exportKey raw on generated key returns 16 bytes. */
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				generated_key, &exported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 16);
+
+		/* importKey raw (zero key) + encrypt then decrypt round-trip. */
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				plaintext_buffer, ctr_import_algorithm, 1, ctr_usages,
+				&imported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, imported_raw_promise,
+				&imported_raw_key) == 0);
+		assert(imported_raw_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, ctr_params,
+				imported_raw_key, plaintext_buffer, &encrypt_promise) == 0);
+		assert(jsval_promise_state(&region, encrypt_promise, &promise_state)
+				== 0);
+		assert(promise_state == JSVAL_PROMISE_STATE_PENDING);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_promise, &ciphertext) == 0);
+		assert(ciphertext.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, ciphertext, &len) == 0);
+		assert(len == 16);
+
+		/* decrypt round-trips back to the zero plaintext. */
+		assert(jsval_subtle_crypto_decrypt(&region, subtle_a, ctr_params,
+				imported_raw_key, ciphertext, &decrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, decrypt_promise, &result) == 0);
+		{
+			static const uint8_t zero16[16] = { 0 };
+			assert_array_buffer_bytes(&region, result, zero16, sizeof(zero16));
+		}
+
+		/* exportKey jwk -> A128CTR alg, encrypt/decrypt key_ops. */
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				imported_raw_key, &exported_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_jwk_promise, &result)
+				== 0);
+		assert_object_string_prop(&region, result, "alg", "A128CTR");
+		assert_object_string_prop(&region, result, "kty", "oct");
+
+		/* importKey jwk for the all-zero key (k = sixteen zero bytes
+		 * base64url-encoded). */
+		assert(jsval_object_new(&region, 5, &jwk_object) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"oct", 3,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"kty", 3, name_string) == 0);
+		assert(jsval_string_new_utf8(&region,
+				(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAA", 22, &name_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"k", 1, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"A128CTR", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"alg", 3, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"ext", 3, jsval_bool(1)) == 0);
+		assert(jsval_object_set_utf8(&region, jwk_object,
+				(const uint8_t *)"key_ops", 7, ctr_usages) == 0);
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+				jwk_object, ctr_import_algorithm, 1, ctr_usages,
+				&jwk_imported_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, jwk_imported_promise,
+				&jwk_imported_key) == 0);
+		assert(jwk_imported_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, ctr_params,
+				jwk_imported_key, plaintext_buffer, &encrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 16);
+
+		/* counter that is not 16 bytes -> TypeError */
+		assert(jsval_object_new(&region, 3, &ctr_bad_params) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_bad_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		{
+			jsval_t bad_counter;
+			jsval_t bad_counter_buf;
+			assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+					&bad_counter) == 0);
+			assert(jsval_typed_array_buffer(&region, bad_counter,
+					&bad_counter_buf) == 0);
+			assert(jsval_object_set_utf8(&region, ctr_bad_params,
+					(const uint8_t *)"counter", 7, bad_counter_buf) == 0);
+		}
+		assert(jsval_object_set_utf8(&region, ctr_bad_params,
+				(const uint8_t *)"length", 6, jsval_number(64.0)) == 0);
+		/* Reset name field on ctr_bad_params (clobbered above). */
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CTR", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ctr_bad_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, ctr_bad_params,
+				imported_raw_key, plaintext_buffer, &bad_counter_promise) == 0);
+		assert(jsval_promise_result(&region, bad_counter_promise, &result) == 0);
+		assert_dom_exception(&region, result, "OperationError",
+				"invalid AES-CTR counter length");
+
+		/* length=0 -> TypeError */
+		{
+			jsval_t bad_length_params;
+			assert(jsval_object_new(&region, 3, &bad_length_params) == 0);
+			assert(jsval_object_set_utf8(&region, bad_length_params,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_length_params,
+					(const uint8_t *)"counter", 7, counter_buffer) == 0);
+			assert(jsval_object_set_utf8(&region, bad_length_params,
+					(const uint8_t *)"length", 6, jsval_number(0.0)) == 0);
+			assert(jsval_subtle_crypto_encrypt(&region, subtle_a,
+					bad_length_params, imported_raw_key, plaintext_buffer,
+					&bad_length_promise) == 0);
+			assert(jsval_promise_result(&region, bad_length_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "OperationError",
+					"invalid AES-CTR length");
+		}
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;
