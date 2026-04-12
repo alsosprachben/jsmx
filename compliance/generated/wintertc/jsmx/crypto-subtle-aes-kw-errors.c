@@ -289,5 +289,29 @@ main(void)
 			"NotSupportedError", "unwrapKey unsupported inner")
 			== GENERATED_TEST_PASS, SUITE, CASE_NAME,
 			"unexpected unsupported-inner unwrap rejection");
+
+	/*
+	 * JWK unwrap with garbage ciphertext: supply an all-zero 24-byte
+	 * buffer which the AES-KW unwrap will likely reject at the AIV
+	 * check. Even if AIV passes, the decrypted bytes won't parse as
+	 * JSON. Either way the result is a DOMException rejection.
+	 */
+	{
+		jsval_t jwk_garbage_promise;
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_unwrap_key(&region,
+				subtle_value, jwk_format, valid_wrapped_buffer, generated_key,
+				kw_algorithm, aes_gcm_algorithm, 1, enc_usages,
+				&jwk_garbage_promise) == 0, SUITE, CASE_NAME,
+				"failed to call unwrapKey(jwk) with garbage ciphertext");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME,
+				"failed to drain unwrapKey(jwk) garbage");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region, jwk_garbage_promise,
+				&result) == 0 && result.kind == JSVAL_KIND_DOM_EXCEPTION,
+				SUITE, CASE_NAME,
+				"expected DOMException for garbage jwk unwrap");
+	}
 	return generated_test_pass(SUITE, CASE_NAME);
 }

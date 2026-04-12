@@ -302,5 +302,52 @@ main(void)
 	GENERATED_TEST_ASSERT(expect_string(&region, prop, "AES-GCM",
 			"unwrapped algorithm.name") == GENERATED_TEST_PASS, SUITE,
 			CASE_NAME, "unexpected unwrapped algorithm name");
+
+	/*
+	 * JWK format wrap + unwrap round-trip. Wraps the AES-GCM inner key
+	 * as a JWK, decrypts it back, verifies the unwrapped key's
+	 * algorithm metadata.
+	 */
+	{
+		jsval_t jwk_wrap_promise;
+		jsval_t jwk_wrapped;
+		jsval_t jwk_unwrap_promise;
+		jsval_t jwk_unwrapped_key;
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_wrap_key(&region, subtle_value,
+				jwk_format, inner_key, generated_key, kw_algorithm,
+				&jwk_wrap_promise) == 0, SUITE, CASE_NAME,
+				"failed to call wrapKey(jwk)");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain wrapKey(jwk)");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region, jwk_wrap_promise,
+				&jwk_wrapped) == 0
+				&& jwk_wrapped.kind == JSVAL_KIND_ARRAY_BUFFER, SUITE,
+				CASE_NAME, "expected wrapKey(jwk) ArrayBuffer");
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_unwrap_key(&region,
+				subtle_value, jwk_format, jwk_wrapped, generated_key,
+				kw_algorithm, aes_gcm_algorithm, 1, enc_usages,
+				&jwk_unwrap_promise) == 0, SUITE, CASE_NAME,
+				"failed to call unwrapKey(jwk)");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain unwrapKey(jwk)");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region, jwk_unwrap_promise,
+				&jwk_unwrapped_key) == 0
+				&& jwk_unwrapped_key.kind == JSVAL_KIND_CRYPTO_KEY, SUITE,
+				CASE_NAME, "expected unwrapKey(jwk) CryptoKey");
+		GENERATED_TEST_ASSERT(jsval_crypto_key_algorithm(&region,
+				jwk_unwrapped_key, &result) == 0
+				&& result.kind == JSVAL_KIND_OBJECT, SUITE, CASE_NAME,
+				"expected jwk-unwrapped AES-GCM algorithm object");
+		GENERATED_TEST_ASSERT(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"name", 4, &prop) == 0, SUITE, CASE_NAME,
+				"failed to read jwk-unwrapped algorithm name");
+		GENERATED_TEST_ASSERT(expect_string(&region, prop, "AES-GCM",
+				"jwk-unwrapped algorithm.name") == GENERATED_TEST_PASS, SUITE,
+				CASE_NAME, "unexpected jwk-unwrapped algorithm name");
+	}
 	return generated_test_pass(SUITE, CASE_NAME);
 }

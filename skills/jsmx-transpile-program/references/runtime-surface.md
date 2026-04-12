@@ -38,7 +38,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       `decrypt(...)` (with PKCS#7 padding), AES-KW `generateKey(...)`,
       `importKey(...)`, and `exportKey(...)`, `subtle.wrapKey(...)` and
       `subtle.unwrapKey(...)` using an AES-KW wrapping key over the
-      `raw` format, plus PBKDF2 `importKey("raw", ...)`,
+      `raw` and `jwk` formats, plus PBKDF2 `importKey("raw", ...)`,
       `deriveBits(...)`, and `deriveKey(...)` to HMAC, AES-GCM, AES-CTR,
       or AES-CBC, plus HKDF `importKey("raw", ...)`, `deriveBits(...)`,
       and `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
@@ -205,13 +205,13 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
     AES-KW `generateKey(...)` / `importKey(...)` / `exportKey(...)`,
     `subtle.wrapKey(...)` / `subtle.unwrapKey(...)` using an AES-KW
-    wrapping key over the `raw` format, plus PBKDF2
+    wrapping key over the `raw` and `jwk` formats, plus PBKDF2
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
     HMAC, AES-GCM, AES-CTR, or AES-CBC, and HKDF
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
-    HMAC, AES-GCM, AES-CTR, or AES-CBC. The `jwk` format for
-    `wrapKey`/`unwrapKey` and other wrapping algorithms (AES-GCM, RSA-OAEP)
-    are still pending.
+    HMAC, AES-GCM, AES-CTR, or AES-CBC. Other wrapping
+    algorithms for `wrapKey`/`unwrapKey` (AES-GCM, RSA-OAEP) are still
+    pending.
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

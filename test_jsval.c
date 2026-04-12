@@ -2195,6 +2195,103 @@ static void test_crypto_semantics(void)
 			assert_dom_exception(&region, result, "NotSupportedError",
 					"unsupported unwrapped key algorithm");
 		}
+
+		/*
+		 * JWK format wrap/unwrap round-trip. The wrap path serialises
+		 * the wrapped key's JWK (preserving algorithm metadata across
+		 * the wrap boundary), pads to the AES-KW 8-byte block, and
+		 * encrypts. The unwrap path decrypts, parses JSON, validates
+		 * the JWK per inner algorithm, and reconstructs the CryptoKey.
+		 */
+		{
+			jsval_t jwk_format;
+			jsval_t jwk_wrap_promise;
+			jsval_t jwk_wrapped;
+			jsval_t jwk_unwrap_promise;
+			jsval_t jwk_unwrapped_hmac;
+			jsval_t jwk_alg_for_unwrap;
+			jsval_t jwk_aes_wrap_promise;
+			jsval_t jwk_aes_wrapped;
+			jsval_t jwk_aes_unwrap_promise;
+			jsval_t jwk_aes_unwrapped;
+			jsval_t hmac_hash_obj_jwk;
+
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+					&jwk_format) == 0);
+
+			/* Wrap the HMAC key as JWK then unwrap back. */
+			assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, jwk_format,
+					hmac_inner_key, generated_key, kw_algorithm,
+					&jwk_wrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_wrap_promise,
+					&jwk_wrapped) == 0);
+			assert(jwk_wrapped.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, jwk_wrapped, &len)
+					== 0);
+			/* Wrapped JWK is at least 24 bytes (3 blocks of 8 including the
+			 * 8-byte AIV). */
+			assert(len >= 24 && (len % 8u) == 0);
+
+			/* Build an HMAC alg-for-unwrap object (need fresh hash obj since
+			 * object sharing was already used). */
+			assert(jsval_object_new(&region, 1, &hmac_hash_obj_jwk) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, hmac_hash_obj_jwk,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_new(&region, 2, &jwk_alg_for_unwrap) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, jwk_alg_for_unwrap,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, jwk_alg_for_unwrap,
+					(const uint8_t *)"hash", 4, hmac_hash_obj_jwk) == 0);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, jwk_format,
+					jwk_wrapped, generated_key, kw_algorithm,
+					jwk_alg_for_unwrap, 1, hmac_gen_usages,
+					&jwk_unwrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_unwrap_promise,
+					&jwk_unwrapped_hmac) == 0);
+			assert(jwk_unwrapped_hmac.kind == JSVAL_KIND_CRYPTO_KEY);
+			assert(jsval_crypto_key_algorithm(&region, jwk_unwrapped_hmac,
+					&alg_value) == 0);
+			assert_object_string_prop(&region, alg_value, "name", "HMAC");
+			{
+				jsval_t hash_prop;
+				assert(jsval_object_get_utf8(&region, alg_value,
+						(const uint8_t *)"hash", 4, &hash_prop) == 0);
+				assert_object_string_prop(&region, hash_prop, "name",
+						"SHA-256");
+			}
+
+			/* Wrap the AES-GCM inner key as JWK then unwrap. This proves
+			 * the path works for an AES inner algorithm too. */
+			assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, jwk_format,
+					aes_gcm_inner_key, generated_key, kw_algorithm,
+					&jwk_aes_wrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_aes_wrap_promise,
+					&jwk_aes_wrapped) == 0);
+			assert(jwk_aes_wrapped.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, jwk_format,
+					jwk_aes_wrapped, generated_key, kw_algorithm,
+					aes_gcm_alg_for_unwrap, 1, aes_gcm_inner_usages,
+					&jwk_aes_unwrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_aes_unwrap_promise,
+					&jwk_aes_unwrapped) == 0);
+			assert(jwk_aes_unwrapped.kind == JSVAL_KIND_CRYPTO_KEY);
+			assert(jsval_crypto_key_algorithm(&region, jwk_aes_unwrapped,
+					&alg_value) == 0);
+			assert_object_string_prop(&region, alg_value, "name", "AES-GCM");
+			assert_object_number_prop(&region, alg_value, "length", 128.0);
+		}
 	}
 
 	{

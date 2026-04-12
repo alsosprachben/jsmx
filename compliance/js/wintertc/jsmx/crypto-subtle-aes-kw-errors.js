@@ -52,4 +52,13 @@ const wrappingKey = subtle.generateKey(
     true,
     ["encrypt", "decrypt"],
   ),
+  subtle.unwrapKey(
+    "jwk",
+    new Uint8Array(24),
+    wrappingKey,
+    { name: "AES-KW" },
+    { name: "AES-GCM", length: 128 },
+    true,
+    ["encrypt", "decrypt"],
+  ),
 ];

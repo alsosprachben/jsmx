@@ -4389,6 +4389,72 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 				if (status != GENERATED_PASS) {
 					return status;
 				}
+
+				/*
+				 * JWK format round-trip: wrap the same inner AES-GCM
+				 * key in JWK format, then unwrap it back and verify
+				 * the algorithm metadata round-trips through the JWK.
+				 */
+				{
+					jsval_t jwk_format_value;
+					jsval_t kw_jwk_wrap_promise;
+					jsval_t kw_jwk_wrapped;
+					jsval_t kw_jwk_unwrap_promise;
+					jsval_t kw_jwk_unwrapped_key;
+
+					if (jsval_string_new_utf8(&region,
+							(const uint8_t *)"jwk", 3, &jwk_format_value) < 0
+							|| jsval_subtle_crypto_wrap_key(&region, subtle_a,
+								jwk_format_value, inner_aes_key,
+								kw_generated_key, kw_algorithm,
+								&kw_jwk_wrap_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-kw jwk wrap setup");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								kw_jwk_wrap_promise, &kw_jwk_wrapped) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-kw jwk wrap drain/result");
+					}
+					if (kw_jwk_wrapped.kind != JSVAL_KIND_ARRAY_BUFFER) {
+						return generated_failf(detail, cap,
+								"expected AES-KW jwk wrap ArrayBuffer");
+					}
+					if (jsval_subtle_crypto_unwrap_key(&region, subtle_a,
+							jwk_format_value, kw_jwk_wrapped, kw_generated_key,
+							kw_algorithm, inner_aes_alg, 1, inner_aes_usages,
+							&kw_jwk_unwrap_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-kw jwk unwrap setup");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								kw_jwk_unwrap_promise,
+								&kw_jwk_unwrapped_key) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-kw jwk unwrap drain/result");
+					}
+					if (kw_jwk_unwrapped_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+						return generated_failf(detail, cap,
+								"expected AES-KW jwk unwrap CryptoKey");
+					}
+					if (jsval_crypto_key_algorithm(&region,
+							kw_jwk_unwrapped_key, &result) < 0
+							|| result.kind != JSVAL_KIND_OBJECT
+							|| jsval_object_get_utf8(&region, result,
+								(const uint8_t *)"name", 4, &prop) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-kw jwk unwrap name");
+					}
+					status = generated_expect_string(&region, prop,
+							(const uint8_t *)"AES-GCM", 7, detail, cap);
+					if (status != GENERATED_PASS) {
+						return status;
+					}
+				}
 			}
 
 			{

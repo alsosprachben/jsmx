@@ -41,5 +41,11 @@ const unwrapped = subtle.unwrapKey(
   true,
   ["encrypt", "decrypt"],
 );
+const jwkWrapped = subtle.wrapKey(
+  "jwk",
+  innerKey,
+  wrappingKey,
+  { name: "AES-KW" },
+);
 
-[wrappingKey, rawImported, jwkImported, wrapped, unwrapped];
+[wrappingKey, rawImported, jwkImported, wrapped, unwrapped, jwkWrapped];
