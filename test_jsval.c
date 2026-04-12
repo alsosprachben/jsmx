@@ -1491,7 +1491,7 @@ static void test_crypto_semantics(void)
 		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, invalid_tag_params,
 				import_key, digest_input_buffer, &invalid_tag_promise) == 0);
 		assert(jsval_promise_result(&region, invalid_tag_promise, &result) == 0);
-		assert_dom_exception(&region, result, "TypeError",
+		assert_dom_exception(&region, result, "OperationError",
 				"invalid AES-GCM tagLength");
 
 		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
@@ -1989,8 +1989,32 @@ static void test_crypto_semantics(void)
 				base_key, jsval_number(255.0), &invalid_length_promise) == 0);
 		assert(jsval_promise_result(&region, invalid_length_promise, &result)
 				== 0);
-		assert_dom_exception(&region, result, "TypeError",
+		assert_dom_exception(&region, result, "OperationError",
 				"expected PBKDF2 length");
+
+		{
+			jsval_t zero_iterations_params;
+			jsval_t zero_iterations_promise;
+
+			assert(jsval_object_new(&region, 4, &zero_iterations_params) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"PBKDF2", 6,
+					&usage_string) == 0);
+			assert(jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"name", 4, usage_string) == 0);
+			assert(jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"hash", 4, hash_object) == 0);
+			assert(jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"salt", 4, salt_input) == 0);
+			assert(jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"iterations", 10, jsval_number(0.0)) == 0);
+			assert(jsval_subtle_crypto_derive_bits(&region, subtle_a,
+					zero_iterations_params, base_key, jsval_number(256.0),
+					&zero_iterations_promise) == 0);
+			assert(jsval_promise_result(&region, zero_iterations_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "OperationError",
+					"expected PBKDF2 iterations");
+		}
 
 		assert(jsval_object_new(&region, 3, &pbkdf2_invalid_params) == 0);
 		assert(jsval_string_new_utf8(&region, (const uint8_t *)"PBKDF2", 6,
@@ -2242,7 +2266,7 @@ static void test_crypto_semantics(void)
 				base_key, jsval_number(255.0), &invalid_length_promise) == 0);
 		assert(jsval_promise_result(&region, invalid_length_promise, &result)
 				== 0);
-		assert_dom_exception(&region, result, "TypeError",
+		assert_dom_exception(&region, result, "OperationError",
 				"expected HKDF length");
 
 		assert(jsval_object_new(&region, 3, &hkdf_missing_salt) == 0);

@@ -3830,7 +3830,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 							"aes invalid tag exception name");
 				}
 				status = generated_expect_string(&region, result,
-						(const uint8_t *)"TypeError", 9, detail, cap);
+						(const uint8_t *)"OperationError", 14, detail, cap);
 				if (status != GENERATED_PASS) {
 					return status;
 				}
@@ -4362,7 +4362,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 							"pbkdf2 invalid length");
 				}
 				status = generated_expect_string(&region, result,
-						(const uint8_t *)"TypeError", 9, detail, cap);
+						(const uint8_t *)"OperationError", 14, detail, cap);
 				if (status != GENERATED_PASS) {
 					return status;
 				}
@@ -4684,7 +4684,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 					return generated_fail_errno(detail, cap, "hkdf invalid length");
 				}
 				status = generated_expect_string(&region, result,
-						(const uint8_t *)"TypeError", 9, detail, cap);
+						(const uint8_t *)"OperationError", 14, detail, cap);
 				if (status != GENERATED_PASS) {
 					return status;
 				}

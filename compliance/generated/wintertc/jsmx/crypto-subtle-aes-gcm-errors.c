@@ -266,8 +266,9 @@ main(void)
 	GENERATED_TEST_ASSERT(jsval_promise_result(&region, invalid_tag_promise,
 			&result) == 0, SUITE, CASE_NAME,
 			"failed to read invalid-tag rejection");
-	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result, "TypeError",
-			"encrypt invalid tagLength") == GENERATED_TEST_PASS, SUITE, CASE_NAME,
+	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
+			"OperationError", "encrypt invalid tagLength")
+			== GENERATED_TEST_PASS, SUITE, CASE_NAME,
 			"unexpected AES invalid-tag rejection");
 
 	GENERATED_TEST_ASSERT(jsval_subtle_crypto_generate_key(&region, subtle_value,

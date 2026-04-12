@@ -9148,7 +9148,7 @@ jsval_subtle_crypto_aes_gcm_params_parse(jsval_region_t *region,
 			return -1;
 		}
 		if (!jsval_subtle_crypto_aes_gcm_tag_length_valid(tag_length)) {
-			return jsval_webcrypto_error_set(error, "TypeError",
+			return jsval_webcrypto_error_set(error, "OperationError",
 					"invalid AES-GCM tagLength");
 		}
 	}
@@ -9295,7 +9295,7 @@ jsval_subtle_crypto_pbkdf2_params_parse(jsval_region_t *region,
 		return -1;
 	}
 	if (iterations == 0) {
-		return jsval_webcrypto_error_set(error, "TypeError",
+		return jsval_webcrypto_error_set(error, "OperationError",
 				"expected PBKDF2 iterations");
 	}
 	*iterations_ptr = iterations;
@@ -12462,8 +12462,8 @@ jsval_subtle_crypto_derive_bits(jsval_region_t *region, jsval_t subtle_value,
 					error.message);
 		}
 		if (length_bits == 0 || (length_bits & 7u) != 0) {
-			return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
-					"expected PBKDF2 length");
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"OperationError", "expected PBKDF2 length");
 		}
 		if (jsval_subtle_crypto_new_pbkdf2_task(region, promise_value,
 				JSVAL_SUBTLE_PBKDF2_TASK_DERIVE_BITS, base_key_value.off,
@@ -12500,8 +12500,8 @@ jsval_subtle_crypto_derive_bits(jsval_region_t *region, jsval_t subtle_value,
 					error.message);
 		}
 		if (length_bits == 0 || (length_bits & 7u) != 0) {
-			return jsval_subtle_crypto_reject(region, promise_value, "TypeError",
-					"expected HKDF length");
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"OperationError", "expected HKDF length");
 		}
 		if (jsval_subtle_crypto_new_hkdf_task(region, promise_value,
 				JSVAL_SUBTLE_HKDF_TASK_DERIVE_BITS, base_key_value.off,

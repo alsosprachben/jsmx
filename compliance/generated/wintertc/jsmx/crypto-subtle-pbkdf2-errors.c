@@ -291,8 +291,41 @@ main(void)
 			== 0, SUITE, CASE_NAME,
 			"failed to read deriveBits invalid-length rejection");
 	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
-			"TypeError", "deriveBits invalid length") == GENERATED_TEST_PASS,
-			SUITE, CASE_NAME, "unexpected deriveBits invalid-length rejection");
+			"OperationError", "deriveBits invalid length")
+			== GENERATED_TEST_PASS, SUITE, CASE_NAME,
+			"unexpected deriveBits invalid-length rejection");
+
+	{
+		jsval_t zero_iterations_params;
+		jsval_t hash_object;
+		jsval_t name_value;
+
+		GENERATED_TEST_ASSERT(jsval_object_new(&region, 4,
+				&zero_iterations_params) == 0, SUITE, CASE_NAME,
+				"failed to allocate zero-iterations params");
+		GENERATED_TEST_ASSERT(make_string(&region, "PBKDF2", &name_value) == 0
+				&& jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"name", 4, name_value) == 0
+				&& make_hash_object(&region, &hash_object) == 0
+				&& jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"hash", 4, hash_object) == 0
+				&& jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"salt", 4, salt_buffer) == 0
+				&& jsval_object_set_utf8(&region, zero_iterations_params,
+					(const uint8_t *)"iterations", 10, jsval_number(0.0)) == 0,
+				SUITE, CASE_NAME, "failed to populate zero-iterations params");
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_derive_bits(&region,
+				subtle_value, zero_iterations_params, base_key,
+				jsval_number(256.0), &promise_value) == 0, SUITE, CASE_NAME,
+				"failed to call deriveBits with zero iterations");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region, promise_value,
+				&result) == 0, SUITE, CASE_NAME,
+				"failed to read deriveBits zero-iterations rejection");
+		GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
+				"OperationError", "deriveBits zero iterations")
+				== GENERATED_TEST_PASS, SUITE, CASE_NAME,
+				"unexpected deriveBits zero-iterations rejection");
+	}
 
 	GENERATED_TEST_ASSERT(jsval_subtle_crypto_derive_key(&region, subtle_value,
 			pbkdf2_params, base_key, unsupported_algorithm, 1, encrypt_usages,

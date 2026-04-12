@@ -282,7 +282,7 @@ main(void)
 	GENERATED_TEST_ASSERT(jsval_promise_result(&region, promise_value, &result)
 			== 0, SUITE, CASE_NAME, "failed to read HKDF invalid-length result");
 	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
-			"TypeError", "hkdf invalid length") == GENERATED_TEST_PASS,
+			"OperationError", "hkdf invalid length") == GENERATED_TEST_PASS,
 			SUITE, CASE_NAME, "unexpected HKDF invalid-length error");
 
 	GENERATED_TEST_ASSERT(jsval_subtle_crypto_derive_bits(&region, subtle_value,

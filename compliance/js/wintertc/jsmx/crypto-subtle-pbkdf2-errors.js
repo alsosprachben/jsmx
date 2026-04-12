@@ -22,6 +22,16 @@ const deriveKeyOnly = subtle.importKey(
     deriveKeyOnly,
     256,
   ),
+  subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: { name: "SHA-256" },
+      salt: new Uint8Array(8),
+      iterations: 0,
+    },
+    deriveKeyOnly,
+    256,
+  ),
   subtle.deriveKey(
     params,
     deriveKeyOnly,
