@@ -4655,7 +4655,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic WinterTC AES-GCM fixture for Promise-backed generateKey/importKey/exportKey/encrypt/decrypt over `raw` and `jwk` formats."
+      "notes": "Repo-authored idiomatic WinterTC AES-GCM fixture for Promise-backed generateKey/importKey/exportKey/encrypt/decrypt over `raw` and `jwk` formats, plus AES-GCM as a wrap cipher round-tripping an HMAC inner key through wrapKey/unwrapKey."
     },
     {
       "id": "jsmx-wintertc-crypto-subtle-aes-gcm-errors",
@@ -4666,7 +4666,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic WinterTC AES-GCM rejection fixture for unsupported formats, malformed JWKs, missing IV, invalid tagLength, non-extractable exports, and authentication failure."
+      "notes": "Repo-authored idiomatic WinterTC AES-GCM rejection fixture for unsupported formats, malformed JWKs, missing IV, invalid tagLength, non-extractable exports, authentication failure, and AES-GCM wrapKey called on a non-wrap key."
     },
     {
       "id": "jsmx-wintertc-crypto-subtle-aes-ctr-parity",

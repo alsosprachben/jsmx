@@ -29,4 +29,25 @@ const jwkImported = subtle.importKey(
 );
 const encrypted = subtle.encrypt(params, rawImported, new Uint8Array(16));
 
-[generated, rawImported, jwkImported, encrypted];
+const wrappingKey = subtle.generateKey(
+  { name: "AES-GCM", length: 128 },
+  true,
+  ["wrapKey", "unwrapKey"],
+);
+const innerHmac = subtle.generateKey(
+  { name: "HMAC", hash: { name: "SHA-256" } },
+  true,
+  ["sign", "verify"],
+);
+const wrapped = subtle.wrapKey("raw", innerHmac, wrappingKey, params);
+const unwrapped = subtle.unwrapKey(
+  "raw",
+  wrapped,
+  wrappingKey,
+  params,
+  { name: "HMAC", hash: { name: "SHA-256" } },
+  true,
+  ["sign", "verify"],
+);
+
+[generated, rawImported, jwkImported, encrypted, wrapped, unwrapped];

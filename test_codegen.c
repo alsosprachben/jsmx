@@ -3916,6 +3916,153 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 				if (status != GENERATED_PASS) {
 					return status;
 				}
+
+				/*
+				 * AES-GCM as a wrapping cipher: wrap an HMAC inner
+				 * key with an AES-GCM wrapping key, unwrap it back,
+				 * and verify the algorithm name round-trips.
+				 */
+				{
+					jsval_t gcm_wrap_usages;
+					jsval_t gcm_wrap_alg;
+					jsval_t gcm_wrap_key_promise;
+					jsval_t gcm_wrap_key;
+					jsval_t hmac_inner_alg;
+					jsval_t hmac_inner_hash_obj;
+					jsval_t hmac_inner_usages;
+					jsval_t hmac_inner_promise;
+					jsval_t hmac_inner_key;
+					jsval_t gcm_wrap_promise;
+					jsval_t gcm_wrapped;
+					jsval_t gcm_unwrap_promise;
+					jsval_t gcm_unwrapped_key;
+
+					if (jsval_array_new(&region, 2, &gcm_wrap_usages) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"wrapKey", 7, &result) < 0
+							|| jsval_array_push(&region, gcm_wrap_usages,
+								result) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"unwrapKey", 9, &result) < 0
+							|| jsval_array_push(&region, gcm_wrap_usages,
+								result) < 0
+							|| jsval_object_new(&region, 2, &gcm_wrap_alg) < 0
+							|| jsval_object_set_utf8(&region, gcm_wrap_alg,
+								(const uint8_t *)"name", 4, aes_name) < 0
+							|| jsval_object_set_utf8(&region, gcm_wrap_alg,
+								(const uint8_t *)"length", 6,
+								jsval_number(128.0)) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap setup");
+					}
+					if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+							gcm_wrap_alg, 1, gcm_wrap_usages,
+							&gcm_wrap_key_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap generate");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								gcm_wrap_key_promise, &gcm_wrap_key) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap drain");
+					}
+					if (jsval_object_new(&region, 1,
+							&hmac_inner_hash_obj) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"SHA-256", 7, &result) < 0
+							|| jsval_object_set_utf8(&region,
+								hmac_inner_hash_obj,
+								(const uint8_t *)"name", 4, result) < 0
+							|| jsval_object_new(&region, 2,
+								&hmac_inner_alg) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"HMAC", 4, &result) < 0
+							|| jsval_object_set_utf8(&region, hmac_inner_alg,
+								(const uint8_t *)"name", 4, result) < 0
+							|| jsval_object_set_utf8(&region, hmac_inner_alg,
+								(const uint8_t *)"hash", 4,
+								hmac_inner_hash_obj) < 0
+							|| jsval_array_new(&region, 2,
+								&hmac_inner_usages) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"sign", 4, &result) < 0
+							|| jsval_array_push(&region, hmac_inner_usages,
+								result) < 0
+							|| jsval_string_new_utf8(&region,
+								(const uint8_t *)"verify", 6, &result) < 0
+							|| jsval_array_push(&region, hmac_inner_usages,
+								result) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap inner setup");
+					}
+					if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+							hmac_inner_alg, 1, hmac_inner_usages,
+							&hmac_inner_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap inner generate");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								hmac_inner_promise,
+								&hmac_inner_key) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap inner drain");
+					}
+					if (jsval_subtle_crypto_wrap_key(&region, subtle_a,
+							raw_format, hmac_inner_key, gcm_wrap_key,
+							aes_params, &gcm_wrap_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"jsval_subtle_crypto_wrap_key(aes-gcm)");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								gcm_wrap_promise, &gcm_wrapped) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm wrap drain/result");
+					}
+					if (gcm_wrapped.kind != JSVAL_KIND_ARRAY_BUFFER
+							|| jsval_array_buffer_byte_length(&region,
+								gcm_wrapped, &len) < 0
+							|| len != 80) {
+						return generated_failf(detail, cap,
+								"expected 80-byte AES-GCM wrap of HMAC-256");
+					}
+					if (jsval_subtle_crypto_unwrap_key(&region, subtle_a,
+							raw_format, gcm_wrapped, gcm_wrap_key,
+							aes_params, hmac_inner_alg, 1, hmac_inner_usages,
+							&gcm_unwrap_promise) < 0) {
+						return generated_fail_errno(detail, cap,
+								"jsval_subtle_crypto_unwrap_key(aes-gcm)");
+					}
+					memset(&error, 0, sizeof(error));
+					if (jsval_microtask_drain(&region, &error) < 0
+							|| jsval_promise_result(&region,
+								gcm_unwrap_promise,
+								&gcm_unwrapped_key) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm unwrap drain/result");
+					}
+					if (gcm_unwrapped_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+						return generated_failf(detail, cap,
+								"expected unwrapped HMAC CryptoKey");
+					}
+					if (jsval_crypto_key_algorithm(&region,
+							gcm_unwrapped_key, &result) < 0
+							|| jsval_object_get_utf8(&region, result,
+								(const uint8_t *)"name", 4, &prop) < 0) {
+						return generated_fail_errno(detail, cap,
+								"aes-gcm unwrap algorithm");
+					}
+					status = generated_expect_string(&region, prop,
+							(const uint8_t *)"HMAC", 4, detail, cap);
+					if (status != GENERATED_PASS) {
+						return status;
+					}
+				}
 			}
 
 			{

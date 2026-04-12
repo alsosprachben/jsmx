@@ -2295,6 +2295,328 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * AES-GCM as a wrapping cipher. Generate an AES-GCM wrap key
+		 * with wrapKey|unwrapKey usages, then wrap an HMAC and an
+		 * AES-GCM inner key in both raw and jwk formats and round-trip
+		 * back through unwrap. Plus negative cases: missing IV
+		 * (TypeError), tampered ciphertext (OperationError via tag
+		 * check), and unsupported inner algorithm name
+		 * (NotSupportedError).
+		 */
+		jsval_t gcm_wrap_usages;
+		jsval_t gcm_wrap_alg;
+		jsval_t gcm_wrap_key_promise;
+		jsval_t gcm_wrap_key;
+		jsval_t hmac_hash_obj;
+		jsval_t hmac_inner_alg;
+		jsval_t hmac_inner_usages;
+		jsval_t hmac_inner_promise;
+		jsval_t hmac_inner_key;
+		jsval_t aes_inner_alg;
+		jsval_t aes_inner_usages;
+		jsval_t aes_inner_promise;
+		jsval_t aes_inner_key;
+		jsval_t iv_typed;
+		jsval_t iv_buffer;
+		jsval_t gcm_params;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t hmac_alg_for_unwrap;
+		jsval_t hmac_hash_obj_unwrap;
+		jsval_t aes_alg_for_unwrap;
+		jsval_t wrap_promise;
+		jsval_t wrapped_buf;
+		jsval_t unwrap_promise;
+		jsval_t unwrapped_key;
+		jsval_t name_string;
+		jsval_t alg_value;
+		uint32_t gcm_wrap_usages_mask = 0;
+
+		assert(jsval_array_new(&region, 2, &gcm_wrap_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"wrapKey", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, gcm_wrap_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"unwrapKey", 9,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, gcm_wrap_usages, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &gcm_wrap_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, gcm_wrap_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, gcm_wrap_alg,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a, gcm_wrap_alg,
+				1, gcm_wrap_usages, &gcm_wrap_key_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, gcm_wrap_key_promise,
+				&gcm_wrap_key) == 0);
+		assert(gcm_wrap_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_usages(&region, gcm_wrap_key,
+				&gcm_wrap_usages_mask) == 0);
+		assert(gcm_wrap_usages_mask
+				== (JSVAL_CRYPTO_KEY_USAGE_WRAP_KEY
+					| JSVAL_CRYPTO_KEY_USAGE_UNWRAP_KEY));
+
+		assert(jsval_object_new(&region, 1, &hmac_hash_obj) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_hash_obj,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &hmac_inner_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_inner_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_inner_alg,
+				(const uint8_t *)"hash", 4, hmac_hash_obj) == 0);
+		assert(jsval_array_new(&region, 2, &hmac_inner_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, hmac_inner_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, hmac_inner_usages, name_string) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				hmac_inner_alg, 1, hmac_inner_usages,
+				&hmac_inner_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, hmac_inner_promise,
+				&hmac_inner_key) == 0);
+		assert(hmac_inner_key.kind == JSVAL_KIND_CRYPTO_KEY);
+
+		assert(jsval_object_new(&region, 2, &aes_inner_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_inner_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, aes_inner_alg,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_array_new(&region, 2, &aes_inner_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"encrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, aes_inner_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"decrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, aes_inner_usages, name_string) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+				aes_inner_alg, 1, aes_inner_usages,
+				&aes_inner_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, aes_inner_promise,
+				&aes_inner_key) == 0);
+		assert(aes_inner_key.kind == JSVAL_KIND_CRYPTO_KEY);
+
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+				&iv_typed) == 0);
+		assert(jsval_typed_array_buffer(&region, iv_typed, &iv_buffer) == 0);
+		assert(jsval_object_new(&region, 2, &gcm_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, gcm_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, gcm_params,
+				(const uint8_t *)"iv", 2, iv_buffer) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+
+		/* raw wrap/unwrap of HMAC inner key. */
+		assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, raw_format,
+				hmac_inner_key, gcm_wrap_key, gcm_params,
+				&wrap_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, wrap_promise, &wrapped_buf) == 0);
+		assert(wrapped_buf.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, wrapped_buf, &len) == 0);
+		/* HMAC SHA-256 raw key is 64 bytes; AES-GCM ciphertext = plaintext
+		 * + 16-byte tag = 80. */
+		assert(len == 80);
+
+		assert(jsval_object_new(&region, 1, &hmac_hash_obj_unwrap) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_hash_obj_unwrap,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &hmac_alg_for_unwrap) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_alg_for_unwrap,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, hmac_alg_for_unwrap,
+				(const uint8_t *)"hash", 4, hmac_hash_obj_unwrap) == 0);
+		assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, raw_format,
+				wrapped_buf, gcm_wrap_key, gcm_params, hmac_alg_for_unwrap,
+				1, hmac_inner_usages, &unwrap_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, unwrap_promise,
+				&unwrapped_key) == 0);
+		assert(unwrapped_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, unwrapped_key,
+				&alg_value) == 0);
+		assert_object_string_prop(&region, alg_value, "name", "HMAC");
+
+		/* raw wrap/unwrap of AES-GCM inner key (self-wrap). */
+		{
+			jsval_t aes_wrap_promise;
+			jsval_t aes_wrapped_buf;
+			jsval_t aes_unwrap_promise;
+			jsval_t aes_unwrapped_key;
+			assert(jsval_object_new(&region, 2, &aes_alg_for_unwrap) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, aes_alg_for_unwrap,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, aes_alg_for_unwrap,
+					(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+			assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, raw_format,
+					aes_inner_key, gcm_wrap_key, gcm_params,
+					&aes_wrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, aes_wrap_promise,
+					&aes_wrapped_buf) == 0);
+			assert(aes_wrapped_buf.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, aes_wrapped_buf,
+					&len) == 0);
+			/* AES-128 key is 16 bytes; ciphertext = 16 + 16-byte tag = 32. */
+			assert(len == 32);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, raw_format,
+					aes_wrapped_buf, gcm_wrap_key, gcm_params,
+					aes_alg_for_unwrap, 1, aes_inner_usages,
+					&aes_unwrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, aes_unwrap_promise,
+					&aes_unwrapped_key) == 0);
+			assert(aes_unwrapped_key.kind == JSVAL_KIND_CRYPTO_KEY);
+			assert(jsval_crypto_key_algorithm(&region, aes_unwrapped_key,
+					&alg_value) == 0);
+			assert_object_string_prop(&region, alg_value, "name", "AES-GCM");
+			assert_object_number_prop(&region, alg_value, "length", 128.0);
+		}
+
+		/* jwk wrap/unwrap of HMAC inner key. */
+		{
+			jsval_t jwk_wrap_promise;
+			jsval_t jwk_wrapped_buf;
+			jsval_t jwk_unwrap_promise;
+			jsval_t jwk_unwrapped;
+			jsval_t jwk_hash_obj;
+			jsval_t jwk_alg_for_unwrap;
+
+			assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, jwk_format,
+					hmac_inner_key, gcm_wrap_key, gcm_params,
+					&jwk_wrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_wrap_promise,
+					&jwk_wrapped_buf) == 0);
+			assert(jwk_wrapped_buf.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			assert(jsval_object_new(&region, 1, &jwk_hash_obj) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, jwk_hash_obj,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_new(&region, 2, &jwk_alg_for_unwrap) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"HMAC", 4,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, jwk_alg_for_unwrap,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, jwk_alg_for_unwrap,
+					(const uint8_t *)"hash", 4, jwk_hash_obj) == 0);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, jwk_format,
+					jwk_wrapped_buf, gcm_wrap_key, gcm_params,
+					jwk_alg_for_unwrap, 1, hmac_inner_usages,
+					&jwk_unwrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_unwrap_promise,
+					&jwk_unwrapped) == 0);
+			assert(jwk_unwrapped.kind == JSVAL_KIND_CRYPTO_KEY);
+			assert(jsval_crypto_key_algorithm(&region, jwk_unwrapped,
+					&alg_value) == 0);
+			assert_object_string_prop(&region, alg_value, "name", "HMAC");
+			{
+				jsval_t hash_prop;
+				assert(jsval_object_get_utf8(&region, alg_value,
+						(const uint8_t *)"hash", 4, &hash_prop) == 0);
+				assert_object_string_prop(&region, hash_prop, "name",
+						"SHA-256");
+			}
+		}
+
+		/* Negative: missing iv on wrap params -> TypeError. */
+		{
+			jsval_t no_iv_params;
+			jsval_t no_iv_promise;
+			assert(jsval_object_new(&region, 1, &no_iv_params) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-GCM",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, no_iv_params,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_subtle_crypto_wrap_key(&region, subtle_a, raw_format,
+					hmac_inner_key, gcm_wrap_key, no_iv_params,
+					&no_iv_promise) == 0);
+			assert(jsval_promise_result(&region, no_iv_promise, &result) == 0);
+			assert_dom_exception(&region, result, "TypeError",
+					"expected AES-GCM iv");
+		}
+
+		/* Negative: all-zero ciphertext-shaped buffer -> OperationError
+		 * on unwrap (tag check failure). The runtime has no public
+		 * typed-array mutator, so rather than flipping a byte we use a
+		 * fresh zero-filled buffer of the right shape. The tag check
+		 * still fails for the same reason, exercising the same error
+		 * path. */
+		{
+			jsval_t tamper_typed;
+			jsval_t tamper_buffer;
+			jsval_t tamper_unwrap_promise;
+			assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+					80, &tamper_typed) == 0);
+			assert(jsval_typed_array_buffer(&region, tamper_typed,
+					&tamper_buffer) == 0);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, raw_format,
+					tamper_buffer, gcm_wrap_key, gcm_params,
+					hmac_alg_for_unwrap, 1, hmac_inner_usages,
+					&tamper_unwrap_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, tamper_unwrap_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "OperationError",
+					"AES-GCM operation failed");
+		}
+
+		/* Negative: unsupported inner algorithm name -> NotSupportedError. */
+		{
+			jsval_t bad_inner_alg;
+			jsval_t bad_unwrap_promise;
+			assert(jsval_object_new(&region, 1, &bad_inner_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"RSA-OAEP",
+					8, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_inner_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_subtle_crypto_unwrap_key(&region, subtle_a, raw_format,
+					wrapped_buf, gcm_wrap_key, gcm_params, bad_inner_alg, 1,
+					hmac_inner_usages, &bad_unwrap_promise) == 0);
+			assert(jsval_promise_result(&region, bad_unwrap_promise, &result)
+					== 0);
+			assert_dom_exception(&region, result, "NotSupportedError",
+					"unsupported unwrapped key algorithm");
+		}
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;

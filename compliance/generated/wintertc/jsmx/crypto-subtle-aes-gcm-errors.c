@@ -120,6 +120,7 @@ main(void)
 	jsval_t bad_decrypt_key;
 	jsval_t encrypt_promise;
 	jsval_t bad_decrypt_promise;
+	jsval_t wrap_no_usage_promise;
 	jsval_t jwk_object;
 	jsval_t result;
 	jsmethod_error_t error;
@@ -301,5 +302,22 @@ main(void)
 	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
 			"OperationError", "decrypt wrong key") == GENERATED_TEST_PASS,
 			SUITE, CASE_NAME, "unexpected AES wrong-key rejection");
+
+	/*
+	 * AES-GCM as a wrapping cipher: a key with only encrypt/decrypt
+	 * usages must reject wrapKey with InvalidAccessError before any
+	 * cipher work runs.
+	 */
+	GENERATED_TEST_ASSERT(jsval_subtle_crypto_wrap_key(&region, subtle_value,
+			raw_format, raw_import_key, raw_import_key, params,
+			&wrap_no_usage_promise) == 0, SUITE, CASE_NAME,
+			"failed to call AES-GCM wrapKey on non-wrap key");
+	GENERATED_TEST_ASSERT(jsval_promise_result(&region, wrap_no_usage_promise,
+			&result) == 0, SUITE, CASE_NAME,
+			"failed to read AES-GCM wrapKey rejection");
+	GENERATED_TEST_ASSERT(expect_dom_exception_name(&region, result,
+			"InvalidAccessError", "wrapKey missing wrapKey usage")
+			== GENERATED_TEST_PASS, SUITE, CASE_NAME,
+			"unexpected AES-GCM wrapKey rejection");
 	return generated_test_pass(SUITE, CASE_NAME);
 }

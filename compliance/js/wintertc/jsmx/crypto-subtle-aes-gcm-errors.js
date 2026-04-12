@@ -42,4 +42,10 @@ const rawImported = subtle.importKey(
     rawImported,
     new Uint8Array(16),
   ),
+  subtle.wrapKey(
+    "raw",
+    rawImported,
+    rawImported,
+    { name: "AES-GCM" },
+  ),
 ];

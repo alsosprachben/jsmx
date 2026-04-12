@@ -208,6 +208,19 @@ main(void)
 	jsval_t exported_jwk_promise;
 	jsval_t encrypt_promise;
 	jsval_t decrypt_promise;
+	jsval_t wrap_usages;
+	jsval_t wrap_alg;
+	jsval_t wrap_key_promise;
+	jsval_t wrap_key;
+	jsval_t hmac_usages;
+	jsval_t hmac_hash_obj;
+	jsval_t hmac_alg;
+	jsval_t hmac_inner_promise;
+	jsval_t hmac_inner_key;
+	jsval_t wrap_promise;
+	jsval_t wrapped_value;
+	jsval_t unwrap_promise;
+	jsval_t unwrapped_key;
 	jsval_t result;
 	jsval_t prop;
 	jsval_promise_state_t state;
@@ -388,5 +401,94 @@ main(void)
 	GENERATED_TEST_ASSERT(expect_array_buffer_bytes(&region, result, zero_key_16,
 			sizeof(zero_key_16), "decrypt") == GENERATED_TEST_PASS, SUITE,
 			CASE_NAME, "unexpected AES decrypt bytes");
+
+	/*
+	 * AES-GCM as a wrapping cipher: generate a wrap-capable AES-GCM
+	 * key, generate an HMAC inner key, wrap it raw with the AES-GCM
+	 * params, unwrap it back, and verify the round-tripped algorithm
+	 * is HMAC.
+	 */
+	GENERATED_TEST_ASSERT(jsval_array_new(&region, 2, &wrap_usages) == 0
+			&& make_string(&region, "wrapKey", &result) == 0
+			&& jsval_array_push(&region, wrap_usages, result) == 0
+			&& make_string(&region, "unwrapKey", &result) == 0
+			&& jsval_array_push(&region, wrap_usages, result) == 0, SUITE,
+			CASE_NAME, "failed to build wrap usages");
+	GENERATED_TEST_ASSERT(make_aes_algorithm(&region, 1, 128.0, &wrap_alg) == 0,
+			SUITE, CASE_NAME, "failed to build AES-GCM wrap algorithm");
+	GENERATED_TEST_ASSERT(jsval_subtle_crypto_generate_key(&region, subtle_value,
+			wrap_alg, 1, wrap_usages, &wrap_key_promise) == 0, SUITE, CASE_NAME,
+			"failed to call AES-GCM wrap generateKey");
+	memset(&error, 0, sizeof(error));
+	GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0, SUITE,
+			CASE_NAME, "failed to drain AES-GCM wrap generateKey");
+	GENERATED_TEST_ASSERT(jsval_promise_result(&region, wrap_key_promise,
+			&wrap_key) == 0 && wrap_key.kind == JSVAL_KIND_CRYPTO_KEY, SUITE,
+			CASE_NAME, "expected AES-GCM wrap CryptoKey");
+
+	GENERATED_TEST_ASSERT(jsval_object_new(&region, 1, &hmac_hash_obj) == 0
+			&& make_string(&region, "SHA-256", &result) == 0
+			&& jsval_object_set_utf8(&region, hmac_hash_obj,
+				(const uint8_t *)"name", 4, result) == 0, SUITE, CASE_NAME,
+			"failed to build HMAC hash object");
+	GENERATED_TEST_ASSERT(jsval_object_new(&region, 2, &hmac_alg) == 0
+			&& make_string(&region, "HMAC", &result) == 0
+			&& jsval_object_set_utf8(&region, hmac_alg,
+				(const uint8_t *)"name", 4, result) == 0
+			&& jsval_object_set_utf8(&region, hmac_alg,
+				(const uint8_t *)"hash", 4, hmac_hash_obj) == 0, SUITE,
+			CASE_NAME, "failed to build HMAC algorithm");
+	GENERATED_TEST_ASSERT(jsval_array_new(&region, 2, &hmac_usages) == 0
+			&& make_string(&region, "sign", &result) == 0
+			&& jsval_array_push(&region, hmac_usages, result) == 0
+			&& make_string(&region, "verify", &result) == 0
+			&& jsval_array_push(&region, hmac_usages, result) == 0, SUITE,
+			CASE_NAME, "failed to build HMAC usages");
+	GENERATED_TEST_ASSERT(jsval_subtle_crypto_generate_key(&region, subtle_value,
+			hmac_alg, 1, hmac_usages, &hmac_inner_promise) == 0, SUITE,
+			CASE_NAME, "failed to call HMAC generateKey");
+	memset(&error, 0, sizeof(error));
+	GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0, SUITE,
+			CASE_NAME, "failed to drain HMAC generateKey");
+	GENERATED_TEST_ASSERT(jsval_promise_result(&region, hmac_inner_promise,
+			&hmac_inner_key) == 0
+			&& hmac_inner_key.kind == JSVAL_KIND_CRYPTO_KEY, SUITE, CASE_NAME,
+			"expected HMAC inner CryptoKey");
+
+	GENERATED_TEST_ASSERT(jsval_subtle_crypto_wrap_key(&region, subtle_value,
+			raw_format, hmac_inner_key, wrap_key, aes_params,
+			&wrap_promise) == 0, SUITE, CASE_NAME,
+			"failed to call AES-GCM wrapKey");
+	memset(&error, 0, sizeof(error));
+	GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0, SUITE,
+			CASE_NAME, "failed to drain AES-GCM wrapKey");
+	GENERATED_TEST_ASSERT(jsval_promise_result(&region, wrap_promise,
+			&wrapped_value) == 0
+			&& wrapped_value.kind == JSVAL_KIND_ARRAY_BUFFER, SUITE, CASE_NAME,
+			"expected AES-GCM wrap ArrayBuffer");
+	GENERATED_TEST_ASSERT(jsval_array_buffer_byte_length(&region, wrapped_value,
+			&byte_length) == 0 && byte_length == 80, SUITE, CASE_NAME,
+			"expected 80-byte AES-GCM wrap of HMAC-256 raw key");
+
+	GENERATED_TEST_ASSERT(jsval_subtle_crypto_unwrap_key(&region, subtle_value,
+			raw_format, wrapped_value, wrap_key, aes_params, hmac_alg, 1,
+			hmac_usages, &unwrap_promise) == 0, SUITE, CASE_NAME,
+			"failed to call AES-GCM unwrapKey");
+	memset(&error, 0, sizeof(error));
+	GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0, SUITE,
+			CASE_NAME, "failed to drain AES-GCM unwrapKey");
+	GENERATED_TEST_ASSERT(jsval_promise_result(&region, unwrap_promise,
+			&unwrapped_key) == 0
+			&& unwrapped_key.kind == JSVAL_KIND_CRYPTO_KEY, SUITE, CASE_NAME,
+			"expected AES-GCM unwrap CryptoKey");
+	GENERATED_TEST_ASSERT(jsval_crypto_key_algorithm(&region, unwrapped_key,
+			&result) == 0 && result.kind == JSVAL_KIND_OBJECT, SUITE, CASE_NAME,
+			"expected unwrapped algorithm object");
+	GENERATED_TEST_ASSERT(jsval_object_get_utf8(&region, result,
+			(const uint8_t *)"name", 4, &prop) == 0, SUITE, CASE_NAME,
+			"failed to read unwrapped algorithm name");
+	GENERATED_TEST_ASSERT(expect_string(&region, prop, "HMAC",
+			"unwrapped algorithm name") == GENERATED_TEST_PASS, SUITE, CASE_NAME,
+			"unexpected unwrapped algorithm name");
 	return generated_test_pass(SUITE, CASE_NAME);
 }
