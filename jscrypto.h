@@ -50,5 +50,11 @@ int jscrypto_aes_ctr_crypt(const uint8_t *key, size_t key_len,
 		const uint8_t *counter, size_t counter_len, uint32_t length_bits,
 		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
 		size_t *len_ptr);
+int jscrypto_aes_cbc_encrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr);
+int jscrypto_aes_cbc_decrypt(const uint8_t *key, size_t key_len,
+		const uint8_t *iv, size_t iv_len, const uint8_t *input,
+		size_t input_len, uint8_t *output, size_t cap, size_t *len_ptr);
 
 #endif

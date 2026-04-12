@@ -4092,6 +4092,169 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/* AES-CBC transpiled smoke: generateKey, exportKey raw,
+				 * encrypt/decrypt round-trip on a zero plaintext, invalid
+				 * iv length rejection. */
+				jsval_t cbc_usages;
+				jsval_t cbc_algorithm;
+				jsval_t cbc_import_algorithm;
+				jsval_t cbc_params;
+				jsval_t cbc_name;
+				jsval_t cbc_iv;
+				jsval_t cbc_iv_buffer;
+				jsval_t cbc_generated_promise;
+				jsval_t cbc_generated_key;
+				jsval_t cbc_export_raw_promise;
+				jsval_t cbc_encrypt_promise;
+				jsval_t cbc_decrypt_promise;
+				jsval_t cbc_bad_iv_params;
+				jsval_t cbc_bad_iv;
+				jsval_t cbc_bad_iv_buffer;
+				jsval_t cbc_bad_iv_promise;
+
+				if (jsval_array_new(&region, 2, &cbc_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"encrypt", 7, &result) < 0
+						|| jsval_array_push(&region, cbc_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"decrypt", 7, &result) < 0
+						|| jsval_array_push(&region, cbc_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"AES-CBC", 7, &cbc_name) < 0
+						|| jsval_object_new(&region, 2, &cbc_algorithm) < 0
+						|| jsval_object_set_utf8(&region, cbc_algorithm,
+							(const uint8_t *)"name", 4, cbc_name) < 0
+						|| jsval_object_set_utf8(&region, cbc_algorithm,
+							(const uint8_t *)"length", 6, jsval_number(128.0)) < 0
+						|| jsval_object_new(&region, 1, &cbc_import_algorithm) < 0
+						|| jsval_object_set_utf8(&region, cbc_import_algorithm,
+							(const uint8_t *)"name", 4, cbc_name) < 0
+						|| jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+							16, &cbc_iv) < 0
+						|| jsval_typed_array_buffer(&region, cbc_iv,
+							&cbc_iv_buffer) < 0
+						|| jsval_object_new(&region, 2, &cbc_params) < 0
+						|| jsval_object_set_utf8(&region, cbc_params,
+							(const uint8_t *)"name", 4, cbc_name) < 0
+						|| jsval_object_set_utf8(&region, cbc_params,
+							(const uint8_t *)"iv", 2, cbc_iv_buffer) < 0) {
+					return generated_fail_errno(detail, cap, "aes-cbc setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						cbc_algorithm, 1, cbc_usages,
+						&cbc_generated_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(aes-cbc)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, cbc_generated_promise,
+							&cbc_generated_key) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc generateKey drain/result");
+				}
+				if (cbc_generated_key.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected AES-CBC generateKey to resolve CryptoKey");
+				}
+				if (jsval_crypto_key_algorithm(&region, cbc_generated_key,
+						&result) < 0
+						|| result.kind != JSVAL_KIND_OBJECT) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc key algorithm");
+				}
+				if (jsval_object_get_utf8(&region, result,
+						(const uint8_t *)"name", 4, &prop) < 0) {
+					return generated_fail_errno(detail, cap, "aes-cbc name");
+				}
+				status = generated_expect_string(&region, prop,
+						(const uint8_t *)"AES-CBC", 7, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+						cbc_generated_key, &cbc_export_raw_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc exportKey raw");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, cbc_export_raw_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc export raw drain/result");
+				}
+				if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+						|| len != 16) {
+					return generated_failf(detail, cap,
+							"expected 16-byte exported AES-CBC raw key");
+				}
+				if (jsval_subtle_crypto_encrypt(&region, subtle_a, cbc_params,
+						cbc_generated_key, digest_input_buffer,
+						&cbc_encrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_encrypt(aes-cbc)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, cbc_encrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc encrypt drain/result");
+				}
+				if (result.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, result, &len) < 0
+						|| len != 32) {
+					return generated_failf(detail, cap,
+							"expected 32-byte AES-CBC ciphertext");
+				}
+				if (jsval_subtle_crypto_decrypt(&region, subtle_a, cbc_params,
+						cbc_generated_key, result, &cbc_decrypt_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_decrypt(aes-cbc)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, cbc_decrypt_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc decrypt drain/result");
+				}
+				status = generated_expect_array_buffer_bytes(&region, result,
+						zero_key_16, sizeof(zero_key_16), detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+						&cbc_bad_iv) < 0
+						|| jsval_typed_array_buffer(&region, cbc_bad_iv,
+							&cbc_bad_iv_buffer) < 0
+						|| jsval_object_new(&region, 2, &cbc_bad_iv_params) < 0
+						|| jsval_object_set_utf8(&region, cbc_bad_iv_params,
+							(const uint8_t *)"name", 4, cbc_name) < 0
+						|| jsval_object_set_utf8(&region, cbc_bad_iv_params,
+							(const uint8_t *)"iv", 2, cbc_bad_iv_buffer) < 0
+						|| jsval_subtle_crypto_encrypt(&region, subtle_a,
+							cbc_bad_iv_params, cbc_generated_key,
+							digest_input_buffer, &cbc_bad_iv_promise) < 0
+						|| jsval_promise_result(&region, cbc_bad_iv_promise,
+							&dom_exception) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc bad iv setup");
+				}
+				if (jsval_dom_exception_name(&region, dom_exception, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"aes-cbc bad iv exception name");
+				}
+				status = generated_expect_string(&region, result,
+						(const uint8_t *)"OperationError", 14, detail, cap);
+				if (status != GENERATED_PASS) {
+					return status;
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;
@@ -4391,7 +4554,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 					return status;
 				}
 				if (jsval_object_new(&region, 2, &unsupported_algorithm) < 0
-						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
 							&result) < 0
 						|| jsval_object_set_utf8(&region, unsupported_algorithm,
 							(const uint8_t *)"name", 4, result) < 0
@@ -4733,7 +4896,7 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 					return status;
 				}
 				if (jsval_object_new(&region, 2, &unsupported_algorithm) < 0
-						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+						|| jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
 							&result) < 0
 						|| jsval_object_set_utf8(&region, unsupported_algorithm,
 							(const uint8_t *)"name", 4, result) < 0

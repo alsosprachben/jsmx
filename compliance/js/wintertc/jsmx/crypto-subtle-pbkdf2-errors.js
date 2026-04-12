@@ -35,7 +35,7 @@ const deriveKeyOnly = subtle.importKey(
   subtle.deriveKey(
     params,
     deriveKeyOnly,
-    { name: "AES-CBC", length: 128 },
+    { name: "AES-KW", length: 128 },
     true,
     ["encrypt"],
   ),

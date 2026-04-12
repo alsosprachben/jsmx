@@ -33,12 +33,16 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       and `verify(...)`, AES-GCM `generateKey(...)`, `importKey(...)`,
       `exportKey(...)`, `encrypt(...)`, and `decrypt(...)`, AES-CTR
       `generateKey(...)`, `importKey(...)`, `exportKey(...)`,
-      `encrypt(...)`, and `decrypt(...)`, plus PBKDF2
+      `encrypt(...)`, and `decrypt(...)`, AES-CBC `generateKey(...)`,
+      `importKey(...)`, `exportKey(...)`, `encrypt(...)`, and
+      `decrypt(...)` (with PKCS#7 padding), plus PBKDF2
       `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
-      HMAC, AES-GCM, or AES-CTR, plus HKDF `importKey("raw", ...)`,
-      `deriveBits(...)`, and `deriveKey(...)` to HMAC, AES-GCM, or AES-CTR
-    - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, PBKDF2,
-      and HKDF secret-key surfaces over `raw` and `jwk` where applicable
+      HMAC, AES-GCM, AES-CTR, or AES-CBC, plus HKDF
+      `importKey("raw", ...)`, `deriveBits(...)`, and `deriveKey(...)` to
+      HMAC, AES-GCM, AES-CTR, or AES-CBC
+    - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, AES-CBC,
+      PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk` where
+      applicable
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -95,7 +99,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_crypto_random_uuid(...)`
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
-      HMAC, AES-GCM, AES-CTR, PBKDF2, and HKDF `BufferSource` inputs
+      HMAC, AES-GCM, AES-CTR, AES-CBC, PBKDF2, and HKDF `BufferSource`
+      inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -194,10 +199,12 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     `sign(...)` / `verify(...)`, AES-GCM `generateKey(...)` /
     `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
     AES-CTR `generateKey(...)` / `importKey(...)` / `exportKey(...)` /
-    `encrypt(...)` / `decrypt(...)`, plus PBKDF2
+    `encrypt(...)` / `decrypt(...)`, AES-CBC `generateKey(...)` /
+    `importKey(...)` / `exportKey(...)` / `encrypt(...)` / `decrypt(...)`,
+    plus PBKDF2 `importKey("raw", ...)` / `deriveBits(...)` /
+    `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC, and HKDF
     `importKey("raw", ...)` / `deriveBits(...)` / `deriveKey(...)` to
-    HMAC, AES-GCM, or AES-CTR, and HKDF `importKey("raw", ...)` /
-    `deriveBits(...)` / `deriveKey(...)` to HMAC, AES-GCM, or AES-CTR
+    HMAC, AES-GCM, AES-CTR, or AES-CBC
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

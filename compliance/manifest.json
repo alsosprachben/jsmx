@@ -4691,6 +4691,28 @@
       "notes": "Repo-authored idiomatic WinterTC AES-CTR rejection fixture for unsupported formats, malformed JWKs, invalid counter length, length=0, and non-extractable exports."
     },
     {
+      "id": "jsmx-wintertc-crypto-subtle-aes-cbc-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-cbc-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-cbc-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-CBC fixture for Promise-backed generateKey/importKey/exportKey/encrypt/decrypt over `raw` and `jwk` formats with PKCS#7 padding."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-aes-cbc-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-aes-cbc-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-aes-cbc-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC AES-CBC rejection fixture for unsupported formats, malformed JWKs, invalid iv length, and non-extractable exports."
+    },
+    {
       "id": "jsmx-wintertc-crypto-subtle-pbkdf2-parity",
       "suite": "wintertc",
       "source": "compliance/js/wintertc/jsmx/crypto-subtle-pbkdf2-parity.js",

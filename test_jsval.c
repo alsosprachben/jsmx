@@ -1776,6 +1776,160 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * AES-CBC Promise-backed surface. Round-trips zero buffers
+		 * through the runtime; vector exactness lives in test_jscrypto.c
+		 * since the runtime has no public typed-array mutator.
+		 */
+		jsval_t cbc_usages;
+		jsval_t cbc_algorithm;
+		jsval_t cbc_import_algorithm;
+		jsval_t cbc_params;
+		jsval_t cbc_bad_params;
+		jsval_t plaintext_input;
+		jsval_t plaintext_buffer;
+		jsval_t iv_input;
+		jsval_t iv_buffer;
+		jsval_t generated_promise;
+		jsval_t generated_key;
+		jsval_t exported_raw_promise;
+		jsval_t imported_raw_promise;
+		jsval_t imported_raw_key;
+		jsval_t encrypt_promise;
+		jsval_t decrypt_promise;
+		jsval_t exported_jwk_promise;
+		jsval_t bad_iv_promise;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t name_string;
+		jsval_t alg_value;
+		jsval_t ciphertext;
+		uint32_t cbc_usages_mask = 0;
+
+		assert(jsval_array_new(&region, 2, &cbc_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"encrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, cbc_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"decrypt", 7,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, cbc_usages, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &cbc_algorithm) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_algorithm,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_algorithm,
+				(const uint8_t *)"length", 6, jsval_number(128.0)) == 0);
+		assert(jsval_object_new(&region, 1, &cbc_import_algorithm) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_import_algorithm,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&plaintext_input) == 0);
+		assert(jsval_typed_array_buffer(&region, plaintext_input,
+				&plaintext_buffer) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&iv_input) == 0);
+		assert(jsval_typed_array_buffer(&region, iv_input, &iv_buffer) == 0);
+		assert(jsval_object_new(&region, 2, &cbc_params) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_params,
+				(const uint8_t *)"iv", 2, iv_buffer) == 0);
+
+		/* generateKey resolves to an AES-CBC CryptoKey of the right shape. */
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a, cbc_algorithm,
+				1, cbc_usages, &generated_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, generated_promise,
+				&generated_key) == 0);
+		assert(generated_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, generated_key,
+				&alg_value) == 0);
+		assert_object_string_prop(&region, alg_value, "name", "AES-CBC");
+		assert_object_number_prop(&region, alg_value, "length", 128.0);
+		assert(jsval_crypto_key_usages(&region, generated_key,
+				&cbc_usages_mask) == 0);
+		assert(cbc_usages_mask
+				== (JSVAL_CRYPTO_KEY_USAGE_ENCRYPT
+					| JSVAL_CRYPTO_KEY_USAGE_DECRYPT));
+
+		/* exportKey raw on generated key returns 16 bytes. */
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, raw_format,
+				generated_key, &exported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_raw_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+		assert(len == 16);
+
+		/* importKey raw (zero key) + encrypt/decrypt round-trip on a zero
+		 * 16-byte plaintext. PKCS#7 padding makes the ciphertext 32 bytes
+		 * (the trailing block is one full padding block). */
+		assert(jsval_subtle_crypto_import_key(&region, subtle_a, raw_format,
+				plaintext_buffer, cbc_import_algorithm, 1, cbc_usages,
+				&imported_raw_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, imported_raw_promise,
+				&imported_raw_key) == 0);
+		assert(imported_raw_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, cbc_params,
+				imported_raw_key, plaintext_buffer, &encrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, encrypt_promise, &ciphertext) == 0);
+		assert(ciphertext.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, ciphertext, &len) == 0);
+		assert(len == 32);
+		assert(jsval_subtle_crypto_decrypt(&region, subtle_a, cbc_params,
+				imported_raw_key, ciphertext, &decrypt_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, decrypt_promise, &result) == 0);
+		{
+			static const uint8_t zero16[16] = { 0 };
+			assert_array_buffer_bytes(&region, result, zero16, sizeof(zero16));
+		}
+
+		/* exportKey jwk -> A128CBC alg, encrypt/decrypt key_ops. */
+		assert(jsval_subtle_crypto_export_key(&region, subtle_a, jwk_format,
+				imported_raw_key, &exported_jwk_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, exported_jwk_promise, &result)
+				== 0);
+		assert_object_string_prop(&region, result, "alg", "A128CBC");
+		assert_object_string_prop(&region, result, "kty", "oct");
+
+		/* iv length != 16 -> OperationError */
+		assert(jsval_object_new(&region, 2, &cbc_bad_params) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, cbc_bad_params,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		{
+			jsval_t bad_iv;
+			jsval_t bad_iv_buf;
+			assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 12,
+					&bad_iv) == 0);
+			assert(jsval_typed_array_buffer(&region, bad_iv, &bad_iv_buf) == 0);
+			assert(jsval_object_set_utf8(&region, cbc_bad_params,
+					(const uint8_t *)"iv", 2, bad_iv_buf) == 0);
+		}
+		assert(jsval_subtle_crypto_encrypt(&region, subtle_a, cbc_bad_params,
+				imported_raw_key, plaintext_buffer, &bad_iv_promise) == 0);
+		assert(jsval_promise_result(&region, bad_iv_promise, &result) == 0);
+		assert_dom_exception(&region, result, "OperationError",
+				"invalid AES-CBC iv length");
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;
@@ -2033,7 +2187,7 @@ static void test_crypto_semantics(void)
 				"expected PBKDF2 salt");
 
 		assert(jsval_object_new(&region, 2, &unsupported_algorithm) == 0);
-		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
 				&usage_string) == 0);
 		assert(jsval_object_set_utf8(&region, unsupported_algorithm,
 				(const uint8_t *)"name", 4, usage_string) == 0);
@@ -2302,7 +2456,7 @@ static void test_crypto_semantics(void)
 				"expected HKDF info");
 
 		assert(jsval_object_new(&region, 2, &unsupported_algorithm) == 0);
-		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-CBC", 7,
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"AES-KW", 6,
 				&usage_string) == 0);
 		assert(jsval_object_set_utf8(&region, unsupported_algorithm,
 				(const uint8_t *)"name", 4, usage_string) == 0);

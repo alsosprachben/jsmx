@@ -185,6 +185,21 @@ jscrypto_aes_ecb_evp(size_t key_len)
 		return NULL;
 	}
 }
+
+static const EVP_CIPHER *
+jscrypto_aes_cbc_evp(size_t key_len)
+{
+	switch (key_len) {
+	case 16:
+		return EVP_aes_128_cbc();
+	case 24:
+		return EVP_aes_192_cbc();
+	case 32:
+		return EVP_aes_256_cbc();
+	default:
+		return NULL;
+	}
+}
 #endif
 
 static void
@@ -901,6 +916,190 @@ jscrypto_aes_ctr_crypt(const uint8_t *key, size_t key_len,
 			}
 		}
 		EVP_CIPHER_CTX_free(ctx);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_cbc_encrypt(const uint8_t *key, size_t key_len, const uint8_t *iv,
+		size_t iv_len, const uint8_t *input, size_t input_len, uint8_t *output,
+		size_t cap, size_t *len_ptr)
+{
+	size_t output_len;
+
+	if ((key == NULL && key_len > 0) || (iv == NULL && iv_len > 0)
+			|| (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (iv_len != 16) {
+		errno = EINVAL;
+		return -1;
+	}
+	/*
+	 * PKCS#7 padding always appends at least one byte and rounds the
+	 * ciphertext up to a full block multiple, so an N-byte input becomes
+	 * ((N / 16) + 1) * 16 bytes of ciphertext.
+	 */
+	if (input_len > SIZE_MAX - 16u) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	output_len = ((input_len / 16u) + 1u) * 16u;
+	if (len_ptr != NULL) {
+		*len_ptr = output_len;
+	}
+	if (output == NULL) {
+		return 0;
+	}
+	if (cap < output_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)iv;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_cbc_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || input_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (input_len > 0 && EVP_EncryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_EncryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if ((size_t)total != output_len) {
+			errno = EIO;
+			return -1;
+		}
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_aes_cbc_decrypt(const uint8_t *key, size_t key_len, const uint8_t *iv,
+		size_t iv_len, const uint8_t *input, size_t input_len, uint8_t *output,
+		size_t cap, size_t *len_ptr)
+{
+	if ((key == NULL && key_len > 0) || (iv == NULL && iv_len > 0)
+			|| (input == NULL && input_len > 0)
+			|| (output == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (key_len != 16 && key_len != 24 && key_len != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (iv_len != 16) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (input_len == 0 || (input_len % 16u) != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	/*
+	 * Plaintext length is unknown until PKCS#7 padding is stripped, but
+	 * the OpenSSL intermediate write may temporarily hold up to input_len
+	 * bytes in the output buffer before Final strips the trailing block.
+	 * The sizing call therefore reports input_len as the required cap,
+	 * and the real call writes the post-strip length to len_ptr.
+	 */
+	if (output == NULL) {
+		if (len_ptr != NULL) {
+			*len_ptr = input_len;
+		}
+		return 0;
+	}
+	if (cap < input_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)key;
+	(void)iv;
+	(void)input;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_CIPHER *cipher = jscrypto_aes_cbc_evp(key_len);
+		EVP_CIPHER_CTX *ctx = NULL;
+		int written = 0;
+		int total = 0;
+		int final_len = 0;
+
+		if (cipher == NULL || input_len > (size_t)INT_MAX) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		ctx = EVP_CIPHER_CTX_new();
+		if (ctx == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_DecryptUpdate(ctx, output, &written, input,
+				(int)input_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EIO;
+			return -1;
+		}
+		total = written;
+		if (EVP_DecryptFinal_ex(ctx, output + total, &final_len) != 1) {
+			EVP_CIPHER_CTX_free(ctx);
+			errno = EINVAL;
+			return -1;
+		}
+		total += final_len;
+		EVP_CIPHER_CTX_free(ctx);
+		if (len_ptr != NULL) {
+			*len_ptr = (size_t)total;
+		}
 		return 0;
 	}
 #endif
