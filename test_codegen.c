@@ -4605,6 +4605,135 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/*
+				 * ECDSA P-256 transpiled smoke: generateKey returns a
+				 * {publicKey, privateKey} object, sign a 16-byte
+				 * payload with the private key, verify with the public
+				 * key, and confirm the verify resolves to true.
+				 */
+				jsval_t ecdsa_usages;
+				jsval_t ecdsa_algorithm;
+				jsval_t ecdsa_name;
+				jsval_t ecdsa_curve;
+				jsval_t ecdsa_generate_promise;
+				jsval_t ecdsa_keypair;
+				jsval_t ecdsa_public;
+				jsval_t ecdsa_private;
+				jsval_t sign_algorithm;
+				jsval_t sign_hash_name;
+				jsval_t sign_data;
+				jsval_t sign_data_buffer;
+				jsval_t ecdsa_sign_promise;
+				jsval_t ecdsa_signature;
+				jsval_t ecdsa_verify_promise;
+
+				if (jsval_array_new(&region, 2, &ecdsa_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"sign", 4, &result) < 0
+						|| jsval_array_push(&region, ecdsa_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"verify", 6, &result) < 0
+						|| jsval_array_push(&region, ecdsa_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"ECDSA", 5, &ecdsa_name) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"P-256", 5, &ecdsa_curve) < 0
+						|| jsval_object_new(&region, 2, &ecdsa_algorithm) < 0
+						|| jsval_object_set_utf8(&region, ecdsa_algorithm,
+							(const uint8_t *)"name", 4, ecdsa_name) < 0
+						|| jsval_object_set_utf8(&region, ecdsa_algorithm,
+							(const uint8_t *)"namedCurve", 10,
+							ecdsa_curve) < 0) {
+					return generated_fail_errno(detail, cap, "ecdsa setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						ecdsa_algorithm, 1, ecdsa_usages,
+						&ecdsa_generate_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(ECDSA)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region,
+							ecdsa_generate_promise, &ecdsa_keypair) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa generate drain/result");
+				}
+				if (ecdsa_keypair.kind != JSVAL_KIND_OBJECT) {
+					return generated_failf(detail, cap,
+							"expected ECDSA generateKey key pair object");
+				}
+				if (jsval_object_get_utf8(&region, ecdsa_keypair,
+						(const uint8_t *)"publicKey", 9, &ecdsa_public) < 0
+						|| jsval_object_get_utf8(&region, ecdsa_keypair,
+							(const uint8_t *)"privateKey", 10,
+							&ecdsa_private) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa pair accessors");
+				}
+				if (ecdsa_public.kind != JSVAL_KIND_CRYPTO_KEY
+						|| ecdsa_private.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected ECDSA pair to hold CryptoKey values");
+				}
+				if (jsval_object_new(&region, 2, &sign_algorithm) < 0
+						|| jsval_object_set_utf8(&region, sign_algorithm,
+							(const uint8_t *)"name", 4, ecdsa_name) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"SHA-256", 7,
+							&sign_hash_name) < 0
+						|| jsval_object_set_utf8(&region, sign_algorithm,
+							(const uint8_t *)"hash", 4, sign_hash_name) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa sign alg setup");
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+						&sign_data) < 0
+						|| jsval_typed_array_buffer(&region, sign_data,
+							&sign_data_buffer) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa data buffer");
+				}
+				if (jsval_subtle_crypto_sign(&region, subtle_a, sign_algorithm,
+						ecdsa_private, sign_data_buffer,
+						&ecdsa_sign_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_sign(ECDSA)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ecdsa_sign_promise,
+							&ecdsa_signature) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa sign drain/result");
+				}
+				if (ecdsa_signature.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region,
+							ecdsa_signature, &len) < 0 || len != 64) {
+					return generated_failf(detail, cap,
+							"expected 64-byte ECDSA signature");
+				}
+				if (jsval_subtle_crypto_verify(&region, subtle_a,
+						sign_algorithm, ecdsa_public, ecdsa_signature,
+						sign_data_buffer, &ecdsa_verify_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_verify(ECDSA)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region,
+							ecdsa_verify_promise, &result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ecdsa verify drain/result");
+				}
+				if (result.kind != JSVAL_KIND_BOOL
+						|| result.as.boolean != 1) {
+					return generated_failf(detail, cap,
+							"expected ECDSA verify to resolve true");
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;

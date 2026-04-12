@@ -846,6 +846,99 @@ main(void)
 				&out_len) == -1);
 		assert(errno == EINVAL);
 	}
+
+	/* ECDSA P-256: generate, sign, verify round trip + negatives. Also
+	 * verifies the DER<->P1363 conversion implicitly (every sign emits
+	 * DER internally and converts). */
+	{
+		uint8_t private_key[32];
+		uint8_t public_key[64];
+		uint8_t derived_public[64];
+		uint8_t signature[64];
+		uint8_t message[32];
+		size_t i;
+		int matches = 0;
+
+		for (i = 0; i < sizeof(message); i++) {
+			message[i] = (uint8_t)i;
+		}
+		assert(jscrypto_ecdsa_p256_generate(private_key, public_key) == 0);
+		assert(jscrypto_ecdsa_p256_public_from_private(private_key,
+				derived_public) == 0);
+		assert(memcmp(public_key, derived_public, 64) == 0);
+
+		assert(jscrypto_ecdsa_p256_sign(private_key, JSCRYPTO_DIGEST_SHA256,
+				message, sizeof(message), signature) == 0);
+		assert(jscrypto_ecdsa_p256_verify(public_key, JSCRYPTO_DIGEST_SHA256,
+				message, sizeof(message), signature, &matches) == 0);
+		assert(matches == 1);
+
+		/* Flipped signature byte -> verify resolves false, no error. */
+		signature[0] ^= 0x80u;
+		assert(jscrypto_ecdsa_p256_verify(public_key, JSCRYPTO_DIGEST_SHA256,
+				message, sizeof(message), signature, &matches) == 0);
+		assert(matches == 0);
+
+		/* SHA-384 and SHA-512 round-trip. */
+		assert(jscrypto_ecdsa_p256_sign(private_key, JSCRYPTO_DIGEST_SHA384,
+				message, sizeof(message), signature) == 0);
+		assert(jscrypto_ecdsa_p256_verify(public_key, JSCRYPTO_DIGEST_SHA384,
+				message, sizeof(message), signature, &matches) == 0);
+		assert(matches == 1);
+		assert(jscrypto_ecdsa_p256_sign(private_key, JSCRYPTO_DIGEST_SHA512,
+				message, sizeof(message), signature) == 0);
+		assert(jscrypto_ecdsa_p256_verify(public_key, JSCRYPTO_DIGEST_SHA512,
+				message, sizeof(message), signature, &matches) == 0);
+		assert(matches == 1);
+
+		/* Message tamper -> verify resolves false. */
+		assert(jscrypto_ecdsa_p256_sign(private_key, JSCRYPTO_DIGEST_SHA256,
+				message, sizeof(message), signature) == 0);
+		message[7] ^= 0x01u;
+		assert(jscrypto_ecdsa_p256_verify(public_key, JSCRYPTO_DIGEST_SHA256,
+				message, sizeof(message), signature, &matches) == 0);
+		assert(matches == 0);
+		message[7] ^= 0x01u;
+
+		/* Different key -> verify resolves false. */
+		{
+			uint8_t other_private[32];
+			uint8_t other_public[64];
+
+			assert(jscrypto_ecdsa_p256_generate(other_private,
+					other_public) == 0);
+			assert(jscrypto_ecdsa_p256_sign(private_key,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					signature) == 0);
+			assert(jscrypto_ecdsa_p256_verify(other_public,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					signature, &matches) == 0);
+			assert(matches == 0);
+		}
+
+		/* Signatures are fresh-random across calls (DER<->P1363 doesn't
+		 * lose entropy). Sign twice and confirm the signatures differ. */
+		{
+			uint8_t sig_a[64];
+			uint8_t sig_b[64];
+
+			assert(jscrypto_ecdsa_p256_sign(private_key,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					sig_a) == 0);
+			assert(jscrypto_ecdsa_p256_sign(private_key,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					sig_b) == 0);
+			assert(memcmp(sig_a, sig_b, 64) != 0);
+			assert(jscrypto_ecdsa_p256_verify(public_key,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					sig_a, &matches) == 0);
+			assert(matches == 1);
+			assert(jscrypto_ecdsa_p256_verify(public_key,
+					JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+					sig_b, &matches) == 0);
+			assert(matches == 1);
+		}
+	}
 #else
 	uint8_t byte = 0;
 	int matches = 0;

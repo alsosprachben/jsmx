@@ -4777,6 +4777,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC HKDF rejection fixture for unsupported formats, usage mismatches, missing params, invalid lengths, and unsupported derived-key targets."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-ecdsa-p256-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-ecdsa-p256-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-ecdsa-p256-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC ECDSA P-256 fixture: generateKey returns a CryptoKeyPair, sign/verify round-trip over SHA-256, raw and jwk exports of the public key, jwk export of the private key, and reimport-then-verify."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-ecdsa-p256-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-ecdsa-p256-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-ecdsa-p256-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC ECDSA P-256 rejection fixture for unsupported curve, sign-with-public-key, verify-with-private-key, and malformed EC JWK crv."
     }
   ]
 }

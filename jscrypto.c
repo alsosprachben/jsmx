@@ -7,10 +7,14 @@
 #include "utf8.h"
 
 #if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+#include <openssl/bn.h>
 #include <openssl/crypto.h>
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/kdf.h>
+#include <openssl/obj_mac.h>
 #include <openssl/rand.h>
 #endif
 
@@ -1333,3 +1337,390 @@ jscrypto_random_uuid(uint8_t *buf, size_t cap, size_t *len_ptr)
 	}
 	return 0;
 }
+
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+
+/*
+ * ECDSA P-256. WebCrypto requires IEEE P1363 fixed-width `r || s` signature
+ * format (64 bytes for P-256), while OpenSSL emits DER. These helpers convert
+ * between the two; der_to_p1363 parses the DER SEQUENCE and zero-pads each
+ * coordinate to the fixed width, p1363_to_der does the reverse.
+ *
+ * The EC_KEY / EVP_PKEY_assign_EC_KEY API is marked deprecated in
+ * OpenSSL 3.0 but still functions correctly. The replacement EVP_PKEY
+ * / OSSL_PARAM path would require a substantial rewrite; suppress the
+ * deprecation warnings here until there's a cross-cutting migration.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+static int
+jscrypto_ecdsa_der_to_p1363(const uint8_t *der, size_t der_len,
+		size_t coord_len, uint8_t *out)
+{
+	const uint8_t *cursor = der;
+	ECDSA_SIG *sig = d2i_ECDSA_SIG(NULL, &cursor, (long)der_len);
+	const BIGNUM *r = NULL;
+	const BIGNUM *s = NULL;
+
+	if (sig == NULL) {
+		errno = EIO;
+		return -1;
+	}
+	ECDSA_SIG_get0(sig, &r, &s);
+	if (BN_bn2binpad(r, out, (int)coord_len) != (int)coord_len
+			|| BN_bn2binpad(s, out + coord_len, (int)coord_len)
+				!= (int)coord_len) {
+		ECDSA_SIG_free(sig);
+		errno = EIO;
+		return -1;
+	}
+	ECDSA_SIG_free(sig);
+	return 0;
+}
+
+static int
+jscrypto_ecdsa_p1363_to_der(const uint8_t *p1363, size_t coord_len,
+		uint8_t **der_out, int *der_len_out)
+{
+	ECDSA_SIG *sig = ECDSA_SIG_new();
+	BIGNUM *r = NULL;
+	BIGNUM *s = NULL;
+	int len;
+	uint8_t *out = NULL;
+
+	if (sig == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	r = BN_bin2bn(p1363, (int)coord_len, NULL);
+	s = BN_bin2bn(p1363 + coord_len, (int)coord_len, NULL);
+	if (r == NULL || s == NULL || ECDSA_SIG_set0(sig, r, s) != 1) {
+		BN_free(r);
+		BN_free(s);
+		ECDSA_SIG_free(sig);
+		errno = EIO;
+		return -1;
+	}
+	/* sig now owns r and s. */
+	len = i2d_ECDSA_SIG(sig, &out);
+	ECDSA_SIG_free(sig);
+	if (len <= 0 || out == NULL) {
+		errno = EIO;
+		return -1;
+	}
+	*der_out = out;
+	*der_len_out = len;
+	return 0;
+}
+
+static EVP_PKEY *
+jscrypto_ecdsa_pkey_from_xy(const uint8_t public_xy[64])
+{
+	EC_KEY *ec = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+	EVP_PKEY *pkey = NULL;
+	uint8_t uncompressed[65];
+
+	if (ec == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	uncompressed[0] = 0x04;
+	memcpy(uncompressed + 1, public_xy, 64);
+	if (EC_KEY_oct2key(ec, uncompressed, sizeof(uncompressed), NULL) != 1) {
+		EC_KEY_free(ec);
+		errno = EIO;
+		return NULL;
+	}
+	pkey = EVP_PKEY_new();
+	if (pkey == NULL || EVP_PKEY_assign_EC_KEY(pkey, ec) != 1) {
+		EVP_PKEY_free(pkey);
+		EC_KEY_free(ec);
+		errno = ENOMEM;
+		return NULL;
+	}
+	/* pkey now owns ec. */
+	return pkey;
+}
+
+static EVP_PKEY *
+jscrypto_ecdsa_pkey_from_scalar(const uint8_t private_in[32])
+{
+	EC_KEY *ec = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+	BIGNUM *priv_bn = NULL;
+	const EC_GROUP *group = NULL;
+	EC_POINT *pub = NULL;
+	EVP_PKEY *pkey = NULL;
+
+	if (ec == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+	priv_bn = BN_bin2bn(private_in, 32, NULL);
+	if (priv_bn == NULL || EC_KEY_set_private_key(ec, priv_bn) != 1) {
+		BN_free(priv_bn);
+		EC_KEY_free(ec);
+		errno = EIO;
+		return NULL;
+	}
+	group = EC_KEY_get0_group(ec);
+	pub = EC_POINT_new(group);
+	if (pub == NULL
+			|| EC_POINT_mul(group, pub, priv_bn, NULL, NULL, NULL) != 1
+			|| EC_KEY_set_public_key(ec, pub) != 1) {
+		EC_POINT_free(pub);
+		BN_free(priv_bn);
+		EC_KEY_free(ec);
+		errno = EIO;
+		return NULL;
+	}
+	EC_POINT_free(pub);
+	BN_free(priv_bn);
+	pkey = EVP_PKEY_new();
+	if (pkey == NULL || EVP_PKEY_assign_EC_KEY(pkey, ec) != 1) {
+		EVP_PKEY_free(pkey);
+		EC_KEY_free(ec);
+		errno = ENOMEM;
+		return NULL;
+	}
+	return pkey;
+}
+
+static int
+jscrypto_ecdsa_extract_public_xy(const EC_KEY *ec, uint8_t out_xy[64])
+{
+	const EC_GROUP *group = EC_KEY_get0_group(ec);
+	const EC_POINT *point = EC_KEY_get0_public_key(ec);
+	BIGNUM *x = BN_new();
+	BIGNUM *y = BN_new();
+	int rc = -1;
+
+	if (group == NULL || point == NULL || x == NULL || y == NULL) {
+		goto out;
+	}
+	if (EC_POINT_get_affine_coordinates(group, point, x, y, NULL) != 1) {
+		goto out;
+	}
+	if (BN_bn2binpad(x, out_xy, 32) != 32
+			|| BN_bn2binpad(y, out_xy + 32, 32) != 32) {
+		goto out;
+	}
+	rc = 0;
+out:
+	BN_free(x);
+	BN_free(y);
+	if (rc < 0) {
+		errno = EIO;
+	}
+	return rc;
+}
+
+#pragma GCC diagnostic pop
+
+#endif /* JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL */
+
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
+int
+jscrypto_ecdsa_p256_generate(uint8_t private_out[32], uint8_t public_out_xy[64])
+{
+	if (private_out == NULL || public_out_xy == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EC_KEY *ec = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+		const BIGNUM *priv_bn = NULL;
+
+		if (ec == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EC_KEY_generate_key(ec) != 1) {
+			EC_KEY_free(ec);
+			errno = EIO;
+			return -1;
+		}
+		priv_bn = EC_KEY_get0_private_key(ec);
+		if (priv_bn == NULL
+				|| BN_bn2binpad(priv_bn, private_out, 32) != 32) {
+			EC_KEY_free(ec);
+			errno = EIO;
+			return -1;
+		}
+		if (jscrypto_ecdsa_extract_public_xy(ec, public_out_xy) < 0) {
+			EC_KEY_free(ec);
+			return -1;
+		}
+		EC_KEY_free(ec);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_public_from_private(const uint8_t private_in[32],
+		uint8_t public_out_xy[64])
+{
+	if (private_in == NULL || public_out_xy == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_ecdsa_pkey_from_scalar(private_in);
+		const EC_KEY *ec = NULL;
+		int rc;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		ec = EVP_PKEY_get0_EC_KEY(pkey);
+		if (ec == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		rc = jscrypto_ecdsa_extract_public_xy(ec, public_out_xy);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_sign(const uint8_t private_in[32],
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		uint8_t signature_out[64])
+{
+	if (private_in == NULL || signature_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)hash;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		uint8_t der[96];
+		size_t der_len = sizeof(der);
+		int rc = -1;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		pkey = jscrypto_ecdsa_pkey_from_scalar(private_in);
+		if (pkey == NULL) {
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestSignInit(ctx, NULL, md, NULL, pkey) != 1
+				|| EVP_DigestSignUpdate(ctx, data, data_len) != 1
+				|| EVP_DigestSignFinal(ctx, der, &der_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		rc = jscrypto_ecdsa_der_to_p1363(der, der_len, 32, signature_out);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_verify(const uint8_t public_in_xy[64],
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		const uint8_t signature_in[64], int *matches_out)
+{
+	if (public_in_xy == NULL || signature_in == NULL || matches_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*matches_out = 0;
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)hash;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		uint8_t *der = NULL;
+		int der_len = 0;
+		int verify_rc;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jscrypto_ecdsa_p1363_to_der(signature_in, 32, &der,
+				&der_len) < 0) {
+			return -1;
+		}
+		pkey = jscrypto_ecdsa_pkey_from_xy(public_in_xy);
+		if (pkey == NULL) {
+			OPENSSL_free(der);
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			OPENSSL_free(der);
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestVerifyInit(ctx, NULL, md, NULL, pkey) != 1
+				|| EVP_DigestVerifyUpdate(ctx, data, data_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			OPENSSL_free(der);
+			errno = EIO;
+			return -1;
+		}
+		verify_rc = EVP_DigestVerifyFinal(ctx, der, (size_t)der_len);
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		OPENSSL_free(der);
+		if (verify_rc == 1) {
+			*matches_out = 1;
+			return 0;
+		}
+		if (verify_rc == 0) {
+			*matches_out = 0;
+			return 0;
+		}
+		errno = EIO;
+		return -1;
+	}
+#endif
+}
+
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+#pragma GCC diagnostic pop
+#endif

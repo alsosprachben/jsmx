@@ -2617,6 +2617,319 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * ECDSA P-256 — the first asymmetric WebCrypto algorithm.
+		 * generateKey resolves to a {publicKey, privateKey} object;
+		 * sign/verify round-trips over raw and jwk key formats; the
+		 * verify path resolves false on mismatch rather than rejecting.
+		 * Plus negative cases: sign with a public key → InvalidAccessError,
+		 * malformed JWK crv → DataError, unsupported curve →
+		 * NotSupportedError.
+		 */
+		jsval_t ecdsa_usages;
+		jsval_t ecdsa_alg;
+		jsval_t ecdsa_gen_promise;
+		jsval_t ecdsa_pair;
+		jsval_t public_key;
+		jsval_t private_key;
+		jsval_t name_string;
+		jsval_t alg_value;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t sign_alg;
+		jsval_t sign_promise;
+		jsval_t signature;
+		jsval_t verify_promise;
+		jsval_t data_typed;
+		jsval_t data_buffer;
+		uint32_t public_usages_mask = 0;
+		uint32_t private_usages_mask = 0;
+
+		assert(jsval_array_new(&region, 2, &ecdsa_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ecdsa_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ecdsa_usages, name_string) == 0);
+		assert(jsval_object_new(&region, 2, &ecdsa_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"ECDSA", 5,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ecdsa_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"P-256", 5,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ecdsa_alg,
+				(const uint8_t *)"namedCurve", 10, name_string) == 0);
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a, ecdsa_alg,
+				1, ecdsa_usages, &ecdsa_gen_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, ecdsa_gen_promise,
+				&ecdsa_pair) == 0);
+		assert(ecdsa_pair.kind == JSVAL_KIND_OBJECT);
+		assert(jsval_object_get_utf8(&region, ecdsa_pair,
+				(const uint8_t *)"publicKey", 9, &public_key) == 0);
+		assert(jsval_object_get_utf8(&region, ecdsa_pair,
+				(const uint8_t *)"privateKey", 10, &private_key) == 0);
+		assert(public_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(private_key.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_usages(&region, public_key,
+				&public_usages_mask) == 0);
+		assert(public_usages_mask == JSVAL_CRYPTO_KEY_USAGE_VERIFY);
+		assert(jsval_crypto_key_usages(&region, private_key,
+				&private_usages_mask) == 0);
+		assert(private_usages_mask == JSVAL_CRYPTO_KEY_USAGE_SIGN);
+		assert(jsval_crypto_key_algorithm(&region, public_key,
+				&alg_value) == 0);
+		assert_object_string_prop(&region, alg_value, "name", "ECDSA");
+		assert_object_string_prop(&region, alg_value, "namedCurve", "P-256");
+
+		/* sign/verify round-trip over a 16-byte payload with SHA-256. */
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&data_typed) == 0);
+		assert(jsval_typed_array_buffer(&region, data_typed,
+				&data_buffer) == 0);
+		assert(jsval_object_new(&region, 2, &sign_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"ECDSA", 5,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, sign_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, sign_alg,
+				(const uint8_t *)"hash", 4, name_string) == 0);
+		assert(jsval_subtle_crypto_sign(&region, subtle_a, sign_alg,
+				private_key, data_buffer, &sign_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, sign_promise, &signature) == 0);
+		assert(signature.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, signature, &len) == 0);
+		assert(len == 64);
+
+		assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+				public_key, signature, data_buffer, &verify_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, verify_promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_BOOL);
+		assert(result.as.boolean == 1);
+
+		/* Mismatch path: verify a fresh zero-buffer signature (wrong bytes)
+		 * resolves false without rejecting. */
+		{
+			jsval_t bogus_typed;
+			jsval_t bogus_buffer;
+			jsval_t bogus_verify_promise;
+
+			assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 64,
+					&bogus_typed) == 0);
+			assert(jsval_typed_array_buffer(&region, bogus_typed,
+					&bogus_buffer) == 0);
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+					public_key, bogus_buffer, data_buffer,
+					&bogus_verify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, bogus_verify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL);
+			assert(result.as.boolean == 0);
+		}
+
+		/* exportKey raw on the public key -> 65 bytes (SEC1 uncompressed). */
+		{
+			jsval_t export_raw_promise;
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					raw_format, public_key, &export_raw_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, export_raw_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, result, &len) == 0);
+			assert(len == 65);
+			{
+				uint8_t sec1[65];
+				size_t sec1_len = 0;
+				assert(jsval_array_buffer_copy_bytes(&region, result, sec1,
+						sizeof(sec1), &sec1_len) == 0);
+				assert(sec1_len == 65);
+				assert(sec1[0] == 0x04u);
+			}
+		}
+
+		/* exportKey raw on the private key -> NotSupportedError. */
+		{
+			jsval_t export_priv_raw_promise;
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					raw_format, private_key, &export_priv_raw_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, export_priv_raw_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "NotSupportedError",
+					"raw export requires EC public key");
+		}
+
+		/* exportKey jwk on public and private, then importKey jwk back. */
+		{
+			jsval_t export_pub_jwk_promise;
+			jsval_t export_priv_jwk_promise;
+			jsval_t pub_jwk;
+			jsval_t priv_jwk;
+			jsval_t reimport_public_promise;
+			jsval_t reimport_public;
+			jsval_t verify_sign_usages;
+			jsval_t verify_only_usages;
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					jwk_format, public_key, &export_pub_jwk_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, export_pub_jwk_promise,
+					&pub_jwk) == 0);
+			assert(pub_jwk.kind == JSVAL_KIND_OBJECT);
+			assert_object_string_prop(&region, pub_jwk, "kty", "EC");
+			assert_object_string_prop(&region, pub_jwk, "crv", "P-256");
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					jwk_format, private_key, &export_priv_jwk_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, export_priv_jwk_promise,
+					&priv_jwk) == 0);
+			assert(priv_jwk.kind == JSVAL_KIND_OBJECT);
+			assert_object_string_prop(&region, priv_jwk, "kty", "EC");
+			{
+				jsval_t d_prop;
+				assert(jsval_object_get_utf8(&region, priv_jwk,
+						(const uint8_t *)"d", 1, &d_prop) == 0);
+				assert(d_prop.kind == JSVAL_KIND_STRING);
+			}
+
+			/* Reimport the public JWK and verify the signature. */
+			assert(jsval_array_new(&region, 1, &verify_only_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, verify_only_usages,
+					name_string) == 0);
+			(void)verify_sign_usages;
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a, jwk_format,
+					pub_jwk, ecdsa_alg, 1, verify_only_usages,
+					&reimport_public_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_public_promise,
+					&reimport_public) == 0);
+			assert(reimport_public.kind == JSVAL_KIND_CRYPTO_KEY);
+			{
+				jsval_t verify_reimport_promise;
+
+				assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+						reimport_public, signature, data_buffer,
+						&verify_reimport_promise) == 0);
+				memset(&error, 0, sizeof(error));
+				assert(jsval_microtask_drain(&region, &error) == 0);
+				assert(jsval_promise_result(&region, verify_reimport_promise,
+						&result) == 0);
+				assert(result.kind == JSVAL_KIND_BOOL);
+				assert(result.as.boolean == 1);
+			}
+		}
+
+		/* Negative: sign with a public key -> InvalidAccessError. */
+		{
+			jsval_t bad_sign_promise;
+
+			assert(jsval_subtle_crypto_sign(&region, subtle_a, sign_alg,
+					public_key, data_buffer, &bad_sign_promise) == 0);
+			assert(jsval_promise_result(&region, bad_sign_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "InvalidAccessError",
+					"key does not support sign");
+		}
+
+		/* Negative: verify with a private key -> InvalidAccessError. */
+		{
+			jsval_t bad_verify_promise;
+
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+					private_key, signature, data_buffer,
+					&bad_verify_promise) == 0);
+			assert(jsval_promise_result(&region, bad_verify_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "InvalidAccessError",
+					"key does not support verify");
+		}
+
+		/* Negative: unsupported namedCurve -> NotSupportedError. */
+		{
+			jsval_t bad_alg;
+			jsval_t bad_curve_promise;
+
+			assert(jsval_object_new(&region, 2, &bad_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"ECDSA", 5,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"P-521", 5,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_alg,
+					(const uint8_t *)"namedCurve", 10, name_string) == 0);
+			assert(jsval_subtle_crypto_generate_key(&region, subtle_a, bad_alg,
+					1, ecdsa_usages, &bad_curve_promise) == 0);
+			assert(jsval_promise_result(&region, bad_curve_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "NotSupportedError",
+					"unsupported ECDSA curve");
+		}
+
+		/* Negative: importKey jwk with wrong crv -> DataError. */
+		{
+			jsval_t bad_jwk;
+			jsval_t bad_import_promise;
+			jsval_t verify_only_usages;
+
+			assert(jsval_array_new(&region, 1, &verify_only_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, verify_only_usages,
+					name_string) == 0);
+			assert(jsval_object_new(&region, 4, &bad_jwk) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"EC", 2,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"kty", 3, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"P-384", 5,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"crv", 3, name_string) == 0);
+			assert(jsval_string_new_utf8(&region,
+					(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+					43, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"x", 1, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"y", 1, name_string) == 0);
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					jwk_format, bad_jwk, ecdsa_alg, 1, verify_only_usages,
+					&bad_import_promise) == 0);
+			assert(jsval_promise_result(&region, bad_import_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "DataError",
+					"invalid EC JWK crv");
+		}
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;

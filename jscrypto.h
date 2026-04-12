@@ -63,4 +63,15 @@ int jscrypto_aes_kw_unwrap(const uint8_t *key, size_t key_len,
 		const uint8_t *input, size_t input_len, uint8_t *output, size_t cap,
 		size_t *len_ptr);
 
+int jscrypto_ecdsa_p256_generate(uint8_t private_out[32],
+		uint8_t public_out_xy[64]);
+int jscrypto_ecdsa_p256_public_from_private(const uint8_t private_in[32],
+		uint8_t public_out_xy[64]);
+int jscrypto_ecdsa_p256_sign(const uint8_t private_in[32],
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		uint8_t signature_out[64]);
+int jscrypto_ecdsa_p256_verify(const uint8_t public_in_xy[64],
+		jscrypto_digest_algorithm_t hash, const uint8_t *data, size_t data_len,
+		const uint8_t signature_in[64], int *matches_out);
+
 #endif
