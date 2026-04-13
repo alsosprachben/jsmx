@@ -3946,6 +3946,328 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * Ed25519 — the last JWT signing algorithm. Parameterless,
+		 * deterministic, 32-byte keys, 64-byte signatures. Round-
+		 * trip all four formats (raw, jwk, spki, pkcs8) plus the
+		 * usual negatives.
+		 */
+		jsval_t ed_alg;
+		jsval_t ed_op_alg;
+		jsval_t ed_usages;
+		jsval_t ed_verify_usages;
+		jsval_t ed_sign_only_usages;
+		jsval_t ed_gen_promise;
+		jsval_t ed_pair;
+		jsval_t ed_public;
+		jsval_t ed_private;
+		jsval_t ed_data_typed;
+		jsval_t ed_data_buffer;
+		jsval_t ed_sign_promise;
+		jsval_t ed_signature;
+		jsval_t ed_verify_promise;
+		jsval_t raw_format;
+		jsval_t jwk_format;
+		jsval_t spki_format;
+		jsval_t pkcs8_format;
+		jsval_t name_string;
+		jsval_t alg_value;
+
+		assert(jsval_array_new(&region, 2, &ed_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ed_usages, name_string) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ed_usages, name_string) == 0);
+		assert(jsval_array_new(&region, 1, &ed_verify_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify", 6,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ed_verify_usages, name_string) == 0);
+		assert(jsval_array_new(&region, 1, &ed_sign_only_usages) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+				&name_string) == 0);
+		assert(jsval_array_push(&region, ed_sign_only_usages,
+				name_string) == 0);
+
+		assert(jsval_object_new(&region, 1, &ed_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"Ed25519", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ed_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+		assert(jsval_object_new(&region, 1, &ed_op_alg) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"Ed25519", 7,
+				&name_string) == 0);
+		assert(jsval_object_set_utf8(&region, ed_op_alg,
+				(const uint8_t *)"name", 4, name_string) == 0);
+
+		assert(jsval_subtle_crypto_generate_key(&region, subtle_a, ed_alg, 1,
+				ed_usages, &ed_gen_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, ed_gen_promise,
+				&ed_pair) == 0);
+		assert(ed_pair.kind == JSVAL_KIND_OBJECT);
+		assert(jsval_object_get_utf8(&region, ed_pair,
+				(const uint8_t *)"publicKey", 9, &ed_public) == 0);
+		assert(jsval_object_get_utf8(&region, ed_pair,
+				(const uint8_t *)"privateKey", 10, &ed_private) == 0);
+		assert(ed_public.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(ed_private.kind == JSVAL_KIND_CRYPTO_KEY);
+		assert(jsval_crypto_key_algorithm(&region, ed_public,
+				&alg_value) == 0);
+		assert_object_string_prop(&region, alg_value, "name", "Ed25519");
+
+		/* sign/verify round trip. */
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&ed_data_typed) == 0);
+		assert(jsval_typed_array_buffer(&region, ed_data_typed,
+				&ed_data_buffer) == 0);
+		assert(jsval_subtle_crypto_sign(&region, subtle_a, ed_op_alg,
+				ed_private, ed_data_buffer, &ed_sign_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, ed_sign_promise,
+				&ed_signature) == 0);
+		assert(ed_signature.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, ed_signature,
+				&len) == 0);
+		assert(len == 64);
+		assert(jsval_subtle_crypto_verify(&region, subtle_a, ed_op_alg,
+				ed_public, ed_signature, ed_data_buffer,
+				&ed_verify_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_result(&region, ed_verify_promise,
+				&result) == 0);
+		assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+		/* Four-format export + reimport + reverify round trip. */
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"raw", 3,
+				&raw_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"jwk", 3,
+				&jwk_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"spki", 4,
+				&spki_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+				&pkcs8_format) == 0);
+
+		{
+			jsval_t raw_promise;
+			jsval_t raw_bytes;
+			jsval_t jwk_public_promise;
+			jsval_t jwk_public;
+			jsval_t jwk_private_promise;
+			jsval_t jwk_private;
+			jsval_t spki_promise;
+			jsval_t spki_bytes;
+			jsval_t pkcs8_promise;
+			jsval_t pkcs8_bytes;
+			jsval_t reimport_raw_promise;
+			jsval_t reimport_raw;
+			jsval_t reimport_jwk_promise;
+			jsval_t reimport_jwk;
+			jsval_t reimport_spki_promise;
+			jsval_t reimport_spki;
+			jsval_t reimport_pkcs8_promise;
+			jsval_t reimport_pkcs8;
+			jsval_t reverify_promise;
+
+			/* raw: 32 bytes, public only. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					raw_format, ed_public, &raw_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, raw_promise,
+					&raw_bytes) == 0);
+			assert(raw_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, raw_bytes,
+					&len) == 0);
+			assert(len == 32);
+
+			/* jwk public. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					jwk_format, ed_public, &jwk_public_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_public_promise,
+					&jwk_public) == 0);
+			assert(jwk_public.kind == JSVAL_KIND_OBJECT);
+			assert_object_string_prop(&region, jwk_public, "kty", "OKP");
+			assert_object_string_prop(&region, jwk_public, "crv", "Ed25519");
+			assert_object_string_prop(&region, jwk_public, "alg", "EdDSA");
+
+			/* jwk private (has d). */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					jwk_format, ed_private, &jwk_private_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, jwk_private_promise,
+					&jwk_private) == 0);
+			assert(jwk_private.kind == JSVAL_KIND_OBJECT);
+			{
+				jsval_t d_prop;
+				assert(jsval_object_get_utf8(&region, jwk_private,
+						(const uint8_t *)"d", 1, &d_prop) == 0);
+				assert(d_prop.kind == JSVAL_KIND_STRING);
+			}
+
+			/* spki public. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					spki_format, ed_public, &spki_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, spki_promise,
+					&spki_bytes) == 0);
+			assert(spki_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			/* pkcs8 private. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					pkcs8_format, ed_private, &pkcs8_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, pkcs8_promise,
+					&pkcs8_bytes) == 0);
+			assert(pkcs8_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			/* Reimport all four and verify the original signature
+			 * against each reimported public key (or re-sign with
+			 * the reimported private key and verify against the
+			 * original public). */
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					raw_format, raw_bytes, ed_alg, 1, ed_verify_usages,
+					&reimport_raw_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_raw_promise,
+					&reimport_raw) == 0);
+			assert(reimport_raw.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					jwk_format, jwk_public, ed_alg, 1, ed_verify_usages,
+					&reimport_jwk_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_jwk_promise,
+					&reimport_jwk) == 0);
+			assert(reimport_jwk.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					spki_format, spki_bytes, ed_alg, 1, ed_verify_usages,
+					&reimport_spki_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_spki_promise,
+					&reimport_spki) == 0);
+			assert(reimport_spki.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					pkcs8_format, pkcs8_bytes, ed_alg, 1,
+					ed_sign_only_usages, &reimport_pkcs8_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_pkcs8_promise,
+					&reimport_pkcs8) == 0);
+			assert(reimport_pkcs8.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			/* Verify the original signature with each reimported
+			 * public key. */
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, ed_op_alg,
+					reimport_raw, ed_signature, ed_data_buffer,
+					&reverify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reverify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, ed_op_alg,
+					reimport_jwk, ed_signature, ed_data_buffer,
+					&reverify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reverify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, ed_op_alg,
+					reimport_spki, ed_signature, ed_data_buffer,
+					&reverify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reverify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+			/* Ed25519 is deterministic — the reimported private key
+			 * must produce the exact same signature as the original. */
+			{
+				jsval_t resign_promise;
+				jsval_t resigned;
+				uint8_t orig[64];
+				uint8_t again[64];
+				size_t orig_len = 0;
+				size_t again_len = 0;
+
+				assert(jsval_subtle_crypto_sign(&region, subtle_a,
+						ed_op_alg, reimport_pkcs8, ed_data_buffer,
+						&resign_promise) == 0);
+				memset(&error, 0, sizeof(error));
+				assert(jsval_microtask_drain(&region, &error) == 0);
+				assert(jsval_promise_result(&region, resign_promise,
+						&resigned) == 0);
+				assert(resigned.kind == JSVAL_KIND_ARRAY_BUFFER);
+				assert(jsval_array_buffer_copy_bytes(&region, ed_signature,
+						orig, sizeof(orig), &orig_len) == 0);
+				assert(jsval_array_buffer_copy_bytes(&region, resigned,
+						again, sizeof(again), &again_len) == 0);
+				assert(orig_len == 64 && again_len == 64);
+				assert(memcmp(orig, again, 64) == 0);
+			}
+		}
+
+		/* Negative: sign with public key -> InvalidAccessError. */
+		{
+			jsval_t bad_sign_promise;
+
+			assert(jsval_subtle_crypto_sign(&region, subtle_a, ed_op_alg,
+					ed_public, ed_data_buffer, &bad_sign_promise) == 0);
+			assert(jsval_promise_result(&region, bad_sign_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "InvalidAccessError",
+					"key does not support sign");
+		}
+
+		/* Negative: malformed OKP JWK (wrong crv) -> DataError. */
+		{
+			jsval_t bad_jwk;
+			jsval_t bad_import_promise;
+
+			assert(jsval_object_new(&region, 4, &bad_jwk) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"OKP", 3,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"kty", 3, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"X25519",
+					6, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"crv", 3, name_string) == 0);
+			assert(jsval_string_new_utf8(&region,
+					(const uint8_t *)"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+					43, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, bad_jwk,
+					(const uint8_t *)"x", 1, name_string) == 0);
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					jwk_format, bad_jwk, ed_alg, 1, ed_verify_usages,
+					&bad_import_promise) == 0);
+			assert(jsval_promise_result(&region, bad_import_promise,
+					&result) == 0);
+			assert_dom_exception(&region, result, "DataError",
+					"invalid OKP JWK crv");
+		}
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;

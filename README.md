@@ -195,10 +195,17 @@ That makes semantic correctness more important than surface familiarity:
       compliance
     - `spki` (SubjectPublicKeyInfo) and `pkcs8` (PKCS#8 PrivateKeyInfo)
       key transport formats for `importKey(...)` and `exportKey(...)`
-      on all three asymmetric algorithms above — unblocks RFC 7523
+      on all four asymmetric algorithms — unblocks RFC 7523
       private-key JWT client authentication flows (Google Cloud
       service accounts, GitHub Apps, Apple App Store Connect, etc.)
       that ship DER-encoded key material
+    - Promise-backed Ed25519 (RFC 8032 PureEdDSA, WebCrypto §25)
+      `generateKey(...)` (resolving to a `{publicKey, privateKey}`
+      pair), `importKey(...)` / `exportKey(...)` over `raw`, `jwk`
+      (RFC 8037 `OKP` / `Ed25519`), `spki`, and `pkcs8`, plus
+      `sign(...)` / `verify(...)` — parameterless, deterministic,
+      64-byte signatures, closing the last standardized JWT
+      signing algorithm gap (EdDSA)
     - Promise-backed PBKDF2 `importKey("raw", ...)`, `deriveBits(...)`, and
       `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - Promise-backed HKDF `importKey("raw", ...)`, `deriveBits(...)`, and
@@ -618,13 +625,22 @@ Current WinterTC-oriented crypto coverage is:
   signatures, FIPS 186-5 / PSD2 / PCI DSS v4 compliant
 - `spki` and `pkcs8` key transport formats for
   `crypto.subtle.importKey(...)` / `crypto.subtle.exportKey(...)` on
-  all three asymmetric algorithms. The DER bytes must be passed as
+  all four asymmetric algorithms. The DER bytes must be passed as
   a BufferSource — PEM files need a userland "strip `-----BEGIN/END-----`
   markers then base64-decode the body" helper before the import.
   Unblocks RFC 7523 private-key JWT client authentication against
   Google Cloud service accounts (their `private_key` ships as a
   PKCS#8 PEM), GitHub Apps (RSA PEM), Apple App Store Connect (EC
   PEM `.p8` file), Salesforce, Snowflake, and similar SaaS APIs.
+- Promise-backed Ed25519 (RFC 8032 PureEdDSA) `crypto.subtle.generateKey(...)`
+  / `crypto.subtle.importKey(...)` / `crypto.subtle.exportKey(...)` /
+  `crypto.subtle.sign(...)` / `crypto.subtle.verify(...)` over `raw`
+  (32-byte public), `jwk` (RFC 8037 `OKP`/`Ed25519`), `spki`, and
+  `pkcs8` — parameterless algorithm (no hash, no salt, no curve),
+  deterministic 64-byte signatures. Closes the last JWT signing
+  algorithm gap (EdDSA) — Keycloak, Authentik, GitHub Actions OIDC,
+  Matrix homeserver federation, and Apple device-attested tokens
+  are now verifiable.
 - Promise-backed PBKDF2 `crypto.subtle.importKey("raw", ...)`,
   `crypto.subtle.deriveBits(...)`, and `crypto.subtle.deriveKey(...)` to
   HMAC, AES-GCM, AES-CTR, or AES-CBC
@@ -635,12 +651,13 @@ Current WinterTC-oriented crypto coverage is:
 The Promise substrate needed for later async WebCrypto methods now exists in
 `jsval`. Other `SubtleCrypto` algorithms beyond digest, HMAC, AES-GCM,
 AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, ECDSA P-256,
-RSASSA-PKCS1-v1_5, and RSA-PSS are still later slices, and
+RSASSA-PKCS1-v1_5, RSA-PSS, and Ed25519 are still later slices, and
 `wrapKey`/`unwrapKey` currently dispatch to either an AES-KW or
 AES-GCM wrapping cipher (other wrapping algorithms are future
-slices). Asymmetric JWT support beyond ES256/384/512,
-RS256/384/512, and PS256/384/512 (RSA-OAEP, Ed25519) is still
-pending.
+slices). The JWT signing algorithm family is now complete —
+ES256/384/512, RS256/384/512, PS256/384/512, and EdDSA all
+verify. Remaining crypto gaps: RSA-OAEP encryption, ECDH / X25519
+key agreement, and P-384/P-521 curves.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
 ## Boundary

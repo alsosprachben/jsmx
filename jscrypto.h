@@ -144,4 +144,22 @@ int jscrypto_rsa_private_pkcs1_to_pkcs8(const uint8_t *pkcs1,
 		size_t pkcs1_len, uint8_t *pkcs8_out, size_t pkcs8_cap,
 		size_t *pkcs8_len_out);
 
+int jscrypto_ed25519_generate(uint8_t private_out[32],
+		uint8_t public_out[32]);
+int jscrypto_ed25519_public_from_private(const uint8_t private_in[32],
+		uint8_t public_out[32]);
+int jscrypto_ed25519_sign(const uint8_t private_in[32],
+		const uint8_t *data, size_t data_len, uint8_t signature_out[64]);
+int jscrypto_ed25519_verify(const uint8_t public_in[32],
+		const uint8_t *data, size_t data_len,
+		const uint8_t signature_in[64], int *matches_out);
+int jscrypto_ed25519_spki_to_public(const uint8_t *der, size_t der_len,
+		uint8_t public_out[32]);
+int jscrypto_ed25519_public_to_spki(const uint8_t public_in[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out);
+int jscrypto_ed25519_pkcs8_to_private(const uint8_t *der, size_t der_len,
+		uint8_t private_out[32]);
+int jscrypto_ed25519_private_to_pkcs8(const uint8_t private_in[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out);
+
 #endif

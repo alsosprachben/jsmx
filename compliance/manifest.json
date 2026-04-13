@@ -4843,6 +4843,28 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC RSA-PSS rejection fixture for unsupported modulusLength (1024), sign-with-public-key, verify-with-private-key, and malformed RSA JWK (kty=oct)."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-ed25519-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-ed25519-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-ed25519-parity.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC Ed25519 fixture: parameterless generateKey returns a CryptoKeyPair, sign/verify round-trip (64-byte deterministic signature), export to raw/jwk (kty=OKP)/spki/pkcs8, SPKI reimport then verify the original signature."
+    },
+    {
+      "id": "jsmx-wintertc-crypto-subtle-ed25519-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/crypto-subtle-ed25519-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/crypto-subtle-ed25519-errors.c",
+      "required_features": ["crypto"],
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WinterTC Ed25519 rejection fixture for sign-with-public-key, verify-with-private-key, raw import with wrong length, and OKP JWK with wrong crv."
     }
   ]
 }

@@ -74,7 +74,8 @@ typedef enum jsval_crypto_algorithm_kind_e {
 	JSVAL_CRYPTO_ALGORITHM_AES_KW = 7,
 	JSVAL_CRYPTO_ALGORITHM_ECDSA_P256 = 8,
 	JSVAL_CRYPTO_ALGORITHM_RSASSA_PKCS1_V1_5 = 9,
-	JSVAL_CRYPTO_ALGORITHM_RSA_PSS = 10
+	JSVAL_CRYPTO_ALGORITHM_RSA_PSS = 10,
+	JSVAL_CRYPTO_ALGORITHM_ED25519 = 11
 } jsval_crypto_algorithm_kind_t;
 
 typedef struct jsval_native_crypto_key_s {
@@ -248,7 +249,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_AES_KW = 9,
 	JSVAL_MICROTASK_KIND_SUBTLE_ECDSA = 10,
 	JSVAL_MICROTASK_KIND_SUBTLE_RSASSA_PKCS1_V1_5 = 11,
-	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12
+	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12,
+	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -481,6 +483,28 @@ typedef struct jsval_native_microtask_subtle_rsa_pss_s {
 	uint8_t extractable;
 	uint8_t reserved[3];
 } jsval_native_microtask_subtle_rsa_pss_t;
+
+typedef enum jsval_subtle_ed25519_task_op_e {
+	JSVAL_SUBTLE_ED25519_TASK_GENERATE = 0,
+	JSVAL_SUBTLE_ED25519_TASK_IMPORT = 1,
+	JSVAL_SUBTLE_ED25519_TASK_EXPORT = 2,
+	JSVAL_SUBTLE_ED25519_TASK_SIGN = 3,
+	JSVAL_SUBTLE_ED25519_TASK_VERIFY = 4
+} jsval_subtle_ed25519_task_op_t;
+
+typedef struct jsval_native_microtask_subtle_ed25519_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t key_off;
+	size_t data_len;             /* raw/DER on import; payload on sign/verify */
+	size_t signature_len;        /* verify only */
+	uint32_t usages_mask;
+	uint8_t operation;
+	uint8_t format;
+	uint8_t key_type;            /* PUBLIC/PRIVATE */
+	uint8_t extractable;
+	uint8_t reserved[4];
+} jsval_native_microtask_subtle_ed25519_t;
 
 typedef enum jsval_subtle_pbkdf2_task_op_e {
 	JSVAL_SUBTLE_PBKDF2_TASK_IMPORT = 0,
@@ -976,6 +1000,18 @@ static uint8_t *jsval_native_microtask_subtle_rsa_pss_signature(
 		jsval_native_microtask_subtle_rsa_pss_t *task)
 {
 	return jsval_native_microtask_subtle_rsa_pss_data(task) + task->data_len;
+}
+
+static uint8_t *jsval_native_microtask_subtle_ed25519_data(
+		jsval_native_microtask_subtle_ed25519_t *task)
+{
+	return (uint8_t *)(task + 1);
+}
+
+static uint8_t *jsval_native_microtask_subtle_ed25519_signature(
+		jsval_native_microtask_subtle_ed25519_t *task)
+{
+	return jsval_native_microtask_subtle_ed25519_data(task) + task->data_len;
 }
 
 static uint8_t *jsval_native_microtask_subtle_aes_gcm_aad(
@@ -10453,6 +10489,50 @@ jsval_subtle_crypto_new_rsa_pss_task(jsval_region_t *region,
 }
 
 static int
+jsval_subtle_crypto_new_ed25519_task(jsval_region_t *region,
+		jsval_t promise_value, jsval_subtle_ed25519_task_op_t operation,
+		jsval_off_t key_off, jsval_subtle_crypto_key_format_t format,
+		jsval_crypto_key_type_t key_type, int extractable,
+		uint32_t usages_mask, size_t data_len, size_t signature_len,
+		jsval_off_t *off_ptr,
+		jsval_native_microtask_subtle_ed25519_t **task_ptr)
+{
+	jsval_native_microtask_subtle_ed25519_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| off_ptr == NULL || task_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (data_len > SIZE_MAX - sizeof(*task)
+			|| signature_len > SIZE_MAX - sizeof(*task) - data_len) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + data_len + signature_len;
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_SUBTLE_ED25519;
+	task->promise_off = promise_value.off;
+	task->key_off = key_off;
+	task->data_len = data_len;
+	task->signature_len = signature_len;
+	task->usages_mask = usages_mask;
+	task->operation = (uint8_t)operation;
+	task->format = (uint8_t)format;
+	task->key_type = (uint8_t)key_type;
+	task->extractable = extractable ? 1 : 0;
+	*off_ptr = off;
+	*task_ptr = task;
+	return 0;
+}
+
+static int
 jsval_subtle_crypto_new_pbkdf2_task(jsval_region_t *region,
 		jsval_t promise_value, jsval_subtle_pbkdf2_task_op_t operation,
 		jsval_off_t key_off, jscrypto_digest_algorithm_t hash_algorithm,
@@ -14404,6 +14484,500 @@ operation_error:
 	return jsval_promise_reject(region, promise_value, reason);
 }
 
+/*
+ * Ed25519 helpers. The algorithm is parameterless: no namedCurve, no
+ * hash, no salt length, no modulus. The JWK shape uses the RFC 8037
+ * "OKP" (Octet Key Pair) kty with crv="Ed25519". Storage is a flat
+ * 32-byte blob — public point or private seed, distinguished by the
+ * CryptoKey type field.
+ */
+
+static int
+jsval_subtle_crypto_ed25519_algorithm_object_new(jsval_region_t *region,
+		jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t name_value;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_new(region, 1, &object) < 0
+			|| jsval_string_new_utf8(region, (const uint8_t *)"Ed25519", 7,
+				&name_value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name",
+				4, name_value) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+/*
+ * Parse an Ed25519 algorithm-object argument. Accepts either a plain
+ * string "Ed25519" or an object with name:"Ed25519". The helper
+ * jsval_subtle_crypto_algorithm_name_value at the entry point has
+ * already extracted the name by the time we get here, so this is
+ * mostly a no-op; it exists for symmetry with the other params
+ * parsers and in case the spec grows an optional future field.
+ */
+static int
+jsval_subtle_crypto_ed25519_params_parse(jsval_region_t *region,
+		jsval_t algorithm_value, jsval_webcrypto_error_t *error)
+{
+	(void)region;
+	(void)algorithm_value;
+	(void)error;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_build_okp_jwk_export(jsval_region_t *region,
+		jsval_native_crypto_key_t *key, jsval_t *value_ptr)
+{
+	jsval_t object;
+	jsval_t value;
+	jsval_t key_ops;
+	uint8_t x_bytes[32];
+	uint8_t b64[64];
+	const uint8_t *key_bytes;
+	size_t b64_len = 0;
+	int is_private;
+
+	if (region == NULL || key == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	key_bytes = jsval_native_crypto_key_bytes(region, key);
+	if (key_bytes == NULL || key->key_byte_length != 32) {
+		errno = EINVAL;
+		return -1;
+	}
+	is_private = (jsval_crypto_key_type_t)key->type
+			== JSVAL_CRYPTO_KEY_TYPE_PRIVATE;
+	if (is_private) {
+		if (jscrypto_ed25519_public_from_private(key_bytes, x_bytes) < 0) {
+			return -1;
+		}
+	} else {
+		memcpy(x_bytes, key_bytes, 32);
+	}
+	if (jsval_object_new(region, is_private ? 7 : 6, &object) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"OKP", 3, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"kty",
+				3, value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"Ed25519", 7,
+				&value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"crv",
+				3, value) < 0) {
+		return -1;
+	}
+	if (jsval_base64url_encode(x_bytes, 32, b64, sizeof(b64), &b64_len) < 0
+			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"x", 1,
+				value) < 0) {
+		return -1;
+	}
+	if (is_private) {
+		if (jsval_base64url_encode(key_bytes, 32, b64, sizeof(b64),
+				&b64_len) < 0
+				|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
+				|| jsval_object_set_utf8(region, object,
+					(const uint8_t *)"d", 1, value) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"EdDSA", 5,
+				&value) < 0
+			|| jsval_object_set_utf8(region, object, (const uint8_t *)"alg",
+				3, value) < 0) {
+		return -1;
+	}
+	if (jsval_subtle_crypto_usages_array_new(region, key->usages_mask,
+				&key_ops) < 0
+			|| jsval_object_set_utf8(region, object,
+				(const uint8_t *)"key_ops", 7, key_ops) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, object, (const uint8_t *)"ext", 3,
+				jsval_bool(key->extractable ? 1 : 0)) < 0) {
+		return -1;
+	}
+	*value_ptr = object;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_parse_jwk_okp_key(jsval_region_t *region,
+		jsval_t jwk_value, uint32_t declared_usages, uint8_t out_bytes[32],
+		int *is_private_out, jsval_webcrypto_error_t *error)
+{
+	jsval_t kty;
+	jsval_t crv;
+	jsval_t x_value;
+	jsval_t d_value;
+	jsval_t alg_value;
+	jsval_t key_ops_value;
+	uint8_t x_buf[96];
+	size_t x_len = 0;
+	uint8_t decoded_x[33];
+	uint8_t decoded_d[33];
+	size_t decoded_len = 0;
+	int is_private = 0;
+
+	if (jwk_value.kind != JSVAL_KIND_OBJECT) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"expected OKP JWK object");
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"kty", 3,
+			&kty) < 0) {
+		return -1;
+	}
+	if (kty.kind != JSVAL_KIND_STRING
+			|| jsval_string_eq_ascii(region, kty, "OKP") <= 0) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"invalid OKP JWK kty");
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"crv", 3,
+			&crv) < 0) {
+		return -1;
+	}
+	if (crv.kind != JSVAL_KIND_STRING
+			|| jsval_string_eq_ascii(region, crv, "Ed25519") <= 0) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"invalid OKP JWK crv");
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"x", 1,
+			&x_value) < 0) {
+		return -1;
+	}
+	if (x_value.kind != JSVAL_KIND_STRING) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"missing OKP JWK x");
+	}
+	if (jsval_string_copy_utf8(region, x_value, NULL, 0, &x_len) < 0
+			|| x_len > sizeof(x_buf)
+			|| jsval_string_copy_utf8(region, x_value, x_buf, sizeof(x_buf),
+				NULL) < 0) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"invalid OKP JWK x");
+	}
+	decoded_len = 0;
+	if (jsval_base64url_decode(x_buf, x_len, decoded_x, sizeof(decoded_x),
+			&decoded_len) < 0 || decoded_len != 32) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"invalid OKP JWK x");
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"d", 1,
+			&d_value) < 0) {
+		return -1;
+	}
+	if (d_value.kind == JSVAL_KIND_STRING) {
+		uint8_t d_buf[96];
+		size_t d_len = 0;
+
+		if (jsval_string_copy_utf8(region, d_value, NULL, 0, &d_len) < 0
+				|| d_len > sizeof(d_buf)
+				|| jsval_string_copy_utf8(region, d_value, d_buf,
+					sizeof(d_buf), NULL) < 0) {
+			return jsval_webcrypto_error_set(error, "DataError",
+					"invalid OKP JWK d");
+		}
+		decoded_len = 0;
+		if (jsval_base64url_decode(d_buf, d_len, decoded_d,
+				sizeof(decoded_d), &decoded_len) < 0 || decoded_len != 32) {
+			return jsval_webcrypto_error_set(error, "DataError",
+					"invalid OKP JWK d");
+		}
+		is_private = 1;
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"alg", 3,
+			&alg_value) < 0) {
+		return -1;
+	}
+	if (alg_value.kind == JSVAL_KIND_STRING
+			&& jsval_string_eq_ascii(region, alg_value, "EdDSA") <= 0) {
+		return jsval_webcrypto_error_set(error, "DataError",
+				"unsupported OKP JWK alg");
+	}
+	if (jsval_object_get_utf8(region, jwk_value, (const uint8_t *)"key_ops",
+			7, &key_ops_value) < 0) {
+		return -1;
+	}
+	if (key_ops_value.kind != JSVAL_KIND_UNDEFINED
+			&& jsval_subtle_crypto_parse_jwk_oct_key_ops(region,
+				key_ops_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY,
+				declared_usages, error) < 0) {
+		return -1;
+	}
+	if (is_private) {
+		if ((declared_usages & ~JSVAL_CRYPTO_KEY_USAGE_SIGN) != 0) {
+			return jsval_webcrypto_error_set(error, "DataError",
+					"Ed25519 private key usages must be sign");
+		}
+		memcpy(out_bytes, decoded_d, 32);
+	} else {
+		if ((declared_usages & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+			return jsval_webcrypto_error_set(error, "DataError",
+					"Ed25519 public key usages must be verify");
+		}
+		memcpy(out_bytes, decoded_x, 32);
+	}
+	*is_private_out = is_private;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_run_ed25519(jsval_region_t *region,
+		jsval_native_microtask_subtle_ed25519_t *task)
+{
+	static const char operation_error_name[] = "OperationError";
+	static const char operation_error_message[] = "Ed25519 operation failed";
+	jsval_t promise_value;
+	jsval_t reason;
+	jsval_t result;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	switch ((jsval_subtle_ed25519_task_op_t)task->operation) {
+	case JSVAL_SUBTLE_ED25519_TASK_GENERATE:
+	{
+		uint8_t private_key[32];
+		uint8_t public_key[32];
+		jsval_t private_alg;
+		jsval_t public_alg;
+		jsval_t private_value;
+		jsval_t public_value;
+		jsval_t pair;
+		uint32_t sign_mask;
+		uint32_t verify_mask;
+
+		if (jscrypto_ed25519_generate(private_key, public_key) < 0) {
+			goto operation_error;
+		}
+		sign_mask = task->usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN;
+		verify_mask = task->usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY;
+		if (jsval_subtle_crypto_ed25519_algorithm_object_new(region,
+				&private_alg) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_PRIVATE, task->extractable != 0,
+					private_alg, sign_mask,
+					JSVAL_CRYPTO_ALGORITHM_ED25519, 0, 256, private_key, 32,
+					&private_value) < 0
+				|| jsval_subtle_crypto_ed25519_algorithm_object_new(region,
+					&public_alg) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_PUBLIC, 1, public_alg, verify_mask,
+					JSVAL_CRYPTO_ALGORITHM_ED25519, 0, 256, public_key, 32,
+					&public_value) < 0) {
+			goto operation_error;
+		}
+		if (jsval_object_new(region, 2, &pair) < 0
+				|| jsval_object_set_utf8(region, pair,
+					(const uint8_t *)"publicKey", 9, public_value) < 0
+				|| jsval_object_set_utf8(region, pair,
+					(const uint8_t *)"privateKey", 10, private_value) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, pair);
+	}
+	case JSVAL_SUBTLE_ED25519_TASK_IMPORT:
+	{
+		uint8_t *bytes = jsval_native_microtask_subtle_ed25519_data(task);
+		jsval_t alg;
+		jsval_crypto_key_type_t kt =
+				(jsval_crypto_key_type_t)task->key_type;
+
+		if (jsval_subtle_crypto_ed25519_algorithm_object_new(region,
+				&alg) < 0
+				|| jsval_crypto_key_new_internal(region, kt,
+					task->extractable != 0, alg, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_ED25519, 0, 256, bytes, 32,
+					&result) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_ED25519_TASK_EXPORT:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+		const uint8_t *src;
+
+		if (key == NULL) {
+			goto operation_error;
+		}
+		if (!key->extractable) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError", "key is not extractable");
+		}
+		src = jsval_native_crypto_key_bytes(region, key);
+		if (src == NULL || key->key_byte_length != 32) {
+			goto operation_error;
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+			jsval_native_array_buffer_t *buffer;
+
+			if ((jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"NotSupportedError",
+						"raw export requires Ed25519 public key");
+			}
+			if (jsval_array_buffer_new(region, 32, &result) < 0) {
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				goto operation_error;
+			}
+			memcpy(jsval_native_array_buffer_bytes(buffer), src, 32);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			uint8_t scratch[128];
+			size_t scratch_len = 0;
+			jsval_native_array_buffer_t *buffer;
+
+			if ((jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+				goto operation_error;
+			}
+			if (jscrypto_ed25519_public_to_spki(src, scratch,
+					sizeof(scratch), &scratch_len) < 0
+					|| jsval_array_buffer_new(region, scratch_len,
+						&result) < 0) {
+				goto operation_error;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				goto operation_error;
+			}
+			memcpy(jsval_native_array_buffer_bytes(buffer), scratch,
+					scratch_len);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			uint8_t scratch[128];
+			size_t scratch_len = 0;
+			jsval_native_array_buffer_t *buffer;
+
+			if ((jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+				goto operation_error;
+			}
+			if (jscrypto_ed25519_private_to_pkcs8(src, scratch,
+					sizeof(scratch), &scratch_len) < 0
+					|| jsval_array_buffer_new(region, scratch_len,
+						&result) < 0) {
+				goto operation_error;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				goto operation_error;
+			}
+			memcpy(jsval_native_array_buffer_bytes(buffer), scratch,
+					scratch_len);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		/* JWK path. */
+		if (jsval_subtle_crypto_build_okp_jwk_export(region, key,
+				&result) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_ED25519_TASK_SIGN:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+		const uint8_t *seed;
+		jsval_native_array_buffer_t *buffer;
+
+		if (key == NULL
+				|| (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+				|| key->key_byte_length != 32) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"expected Ed25519 private key");
+		}
+		seed = jsval_native_crypto_key_bytes(region, key);
+		if (seed == NULL) {
+			goto operation_error;
+		}
+		if (jsval_array_buffer_new(region, 64, &result) < 0) {
+			return -1;
+		}
+		buffer = jsval_native_array_buffer(region, result);
+		if (buffer == NULL) {
+			goto operation_error;
+		}
+		if (jscrypto_ed25519_sign(seed,
+				jsval_native_microtask_subtle_ed25519_data(task),
+				task->data_len,
+				jsval_native_array_buffer_bytes(buffer)) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_ED25519_TASK_VERIFY:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+		const uint8_t *point;
+		int matches = 0;
+
+		if (key == NULL
+				|| (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC
+				|| key->key_byte_length != 32) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"expected Ed25519 public key");
+		}
+		point = jsval_native_crypto_key_bytes(region, key);
+		if (point == NULL) {
+			goto operation_error;
+		}
+		if (task->signature_len != 64) {
+			return jsval_promise_resolve(region, promise_value,
+					jsval_bool(0));
+		}
+		if (jscrypto_ed25519_verify(point,
+				jsval_native_microtask_subtle_ed25519_data(task),
+				task->data_len,
+				jsval_native_microtask_subtle_ed25519_signature(task),
+				&matches) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value,
+				jsval_bool(matches ? 1 : 0));
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+operation_error:
+	if (jsval_dom_exception_new_utf8(region, operation_error_name,
+			operation_error_message, &reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
 static int
 jsval_subtle_crypto_run_hmac(jsval_region_t *region,
 		jsval_native_microtask_subtle_hmac_t *task)
@@ -15001,6 +15575,33 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 		}
 		return jsval_microtask_push(region, off, &pss_task->base);
 	}
+	eq = jsval_string_eq_ascii(region, name_value, "Ed25519");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_ed25519_t *ed_task;
+
+		if (jsval_subtle_crypto_ed25519_params_parse(region, algorithm_value,
+				&error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY,
+				1, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_new_ed25519_task(region, promise_value,
+				JSVAL_SUBTLE_ED25519_TASK_GENERATE, 0,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+				JSVAL_CRYPTO_KEY_TYPE_PRIVATE, extractable, usages_mask, 0,
+				0, &off, &ed_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &ed_task->base);
+	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported algorithm");
 #endif
@@ -15068,7 +15669,8 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 			&& jsval_string_eq_ascii(region, name_value, "ECDSA") <= 0
 			&& jsval_string_eq_ascii(region, name_value,
 				"RSASSA-PKCS1-v1_5") <= 0
-			&& jsval_string_eq_ascii(region, name_value, "RSA-PSS") <= 0) {
+			&& jsval_string_eq_ascii(region, name_value, "RSA-PSS") <= 0
+			&& jsval_string_eq_ascii(region, name_value, "Ed25519") <= 0) {
 		return jsval_subtle_crypto_reject(region, promise_value,
 				"NotSupportedError", "unsupported key format");
 	}
@@ -16390,6 +16992,98 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 				pss_der, pss_der_len);
 		return jsval_microtask_push(region, off, &pss_task->base);
 	}
+	eq = jsval_string_eq_ascii(region, name_value, "Ed25519");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_ed25519_t *ed_task;
+		uint8_t ed_bytes[32];
+		int is_private = 0;
+
+		if (jsval_subtle_crypto_ed25519_params_parse(region, algorithm_value,
+				&error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY,
+				0, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if (byte_length != 32) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid Ed25519 raw public key");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"Ed25519 raw import requires verify usages");
+			}
+			memcpy(ed_bytes, bytes, 32);
+			is_private = 0;
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+			if (jsval_subtle_crypto_parse_jwk_okp_key(region, key_data_value,
+					usages_mask, ed_bytes, &is_private, &error) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						error.name, error.message);
+			}
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"Ed25519 SPKI import requires verify usages");
+			}
+			if (jscrypto_ed25519_spki_to_public(bytes, byte_length,
+					ed_bytes) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid Ed25519 SPKI");
+			}
+			is_private = 0;
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_SIGN) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"Ed25519 PKCS#8 import requires sign usages");
+			}
+			if (jscrypto_ed25519_pkcs8_to_private(bytes, byte_length,
+					ed_bytes) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid Ed25519 PKCS#8");
+			}
+			is_private = 1;
+		} else {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError", "unsupported key format");
+		}
+		if (jsval_subtle_crypto_new_ed25519_task(region, promise_value,
+				JSVAL_SUBTLE_ED25519_TASK_IMPORT, 0, format,
+				is_private ? JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+					: JSVAL_CRYPTO_KEY_TYPE_PUBLIC,
+				extractable, usages_mask, 32, 0, &off, &ed_task) < 0) {
+			return -1;
+		}
+		memcpy(jsval_native_microtask_subtle_ed25519_data(ed_task),
+				ed_bytes, 32);
+		return jsval_microtask_push(region, off, &ed_task->base);
+	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported algorithm");
 #endif
@@ -16626,6 +17320,43 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 		}
 		return jsval_microtask_push(region, off, &pss_task->base);
 	}
+	case JSVAL_CRYPTO_ALGORITHM_ED25519:
+	{
+		jsval_native_microtask_subtle_ed25519_t *ed_task;
+
+		if (!key->extractable) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError", "key is not extractable");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"raw export requires Ed25519 public key");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"spki export requires Ed25519 public key");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"pkcs8 export requires Ed25519 private key");
+		}
+		if (jsval_subtle_crypto_new_ed25519_task(region, promise_value,
+				JSVAL_SUBTLE_ED25519_TASK_EXPORT, key_value.off, format,
+				(jsval_crypto_key_type_t)key->type, key->extractable != 0,
+				key->usages_mask, 0, 0, &off, &ed_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &ed_task->base);
+	}
 	default:
 		return jsval_subtle_crypto_reject(region, promise_value,
 				"InvalidAccessError", "unsupported CryptoKey algorithm");
@@ -16747,6 +17478,44 @@ jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
 					rsa_task), bytes, byte_length);
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
+			== JSVAL_CRYPTO_ALGORITHM_ED25519) {
+		jsval_native_microtask_subtle_ed25519_t *ed_task;
+		jsval_t op_name_value;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+				|| (key->usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN) == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"key does not support sign");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"Ed25519") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
+		}
+		if (jsval_buffer_source_bytes(region, data_value, &bytes,
+				&byte_length) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"TypeError", "expected BufferSource input");
+		}
+		if (jsval_subtle_crypto_new_ed25519_task(region, promise_value,
+				JSVAL_SUBTLE_ED25519_TASK_SIGN, key_value.off,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+				JSVAL_CRYPTO_KEY_TYPE_PRIVATE, key->extractable != 0,
+				key->usages_mask, byte_length, 0, &off, &ed_task) < 0) {
+			return -1;
+		}
+		if (byte_length > 0) {
+			memcpy(jsval_native_microtask_subtle_ed25519_data(ed_task),
+					bytes, byte_length);
+		}
+		return jsval_microtask_push(region, off, &ed_task->base);
 	}
 	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
 			== JSVAL_CRYPTO_ALGORITHM_RSA_PSS) {
@@ -16969,6 +17738,51 @@ jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
 					rsa_task), signature_bytes, signature_len);
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
+			== JSVAL_CRYPTO_ALGORITHM_ED25519) {
+		jsval_native_microtask_subtle_ed25519_t *ed_task;
+		jsval_t op_name_value;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC
+				|| (key->usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY) == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"key does not support verify");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"Ed25519") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
+		}
+		if (jsval_buffer_source_bytes(region, signature_value,
+				&signature_bytes, &signature_len) < 0
+				|| jsval_buffer_source_bytes(region, data_value, &data_bytes,
+					&data_len) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"TypeError", "expected BufferSource input");
+		}
+		if (jsval_subtle_crypto_new_ed25519_task(region, promise_value,
+				JSVAL_SUBTLE_ED25519_TASK_VERIFY, key_value.off,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+				JSVAL_CRYPTO_KEY_TYPE_PUBLIC, key->extractable != 0,
+				key->usages_mask, data_len, signature_len, &off,
+				&ed_task) < 0) {
+			return -1;
+		}
+		if (data_len > 0) {
+			memcpy(jsval_native_microtask_subtle_ed25519_data(ed_task),
+					data_bytes, data_len);
+		}
+		if (signature_len > 0) {
+			memcpy(jsval_native_microtask_subtle_ed25519_signature(ed_task),
+					signature_bytes, signature_len);
+		}
+		return jsval_microtask_push(region, off, &ed_task->base);
 	}
 	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
 			== JSVAL_CRYPTO_ALGORITHM_RSA_PSS) {
@@ -19027,6 +19841,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 				(jsval_native_microtask_subtle_rsa_pss_t *)task;
 
 			if (jsval_subtle_crypto_run_rsa_pss(region, pss_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_SUBTLE_ED25519:
+		{
+			jsval_native_microtask_subtle_ed25519_t *ed_task =
+				(jsval_native_microtask_subtle_ed25519_t *)task;
+
+			if (jsval_subtle_crypto_run_ed25519(region, ed_task) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}

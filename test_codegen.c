@@ -5144,6 +5144,109 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/*
+				 * Ed25519 transpiled smoke. Parameterless keypair
+				 * generation, sign a 16-byte payload, verify.
+				 * Confirms the full Ed25519 stack is reachable from
+				 * transpiled-C programs.
+				 */
+				jsval_t ed_usages;
+				jsval_t ed_alg;
+				jsval_t ed_name;
+				jsval_t ed_gen_promise;
+				jsval_t ed_pair;
+				jsval_t ed_public;
+				jsval_t ed_private;
+				jsval_t ed_data_typed;
+				jsval_t ed_data_buffer;
+				jsval_t ed_sign_promise;
+				jsval_t ed_signature;
+				jsval_t ed_verify_promise;
+
+				if (jsval_array_new(&region, 2, &ed_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"sign", 4, &result) < 0
+						|| jsval_array_push(&region, ed_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"verify", 6, &result) < 0
+						|| jsval_array_push(&region, ed_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"Ed25519", 7, &ed_name) < 0
+						|| jsval_object_new(&region, 1, &ed_alg) < 0
+						|| jsval_object_set_utf8(&region, ed_alg,
+							(const uint8_t *)"name", 4, ed_name) < 0) {
+					return generated_fail_errno(detail, cap, "ed setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						ed_alg, 1, ed_usages, &ed_gen_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(Ed25519)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ed_gen_promise,
+							&ed_pair) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ed generate drain/result");
+				}
+				if (ed_pair.kind != JSVAL_KIND_OBJECT
+						|| jsval_object_get_utf8(&region, ed_pair,
+							(const uint8_t *)"publicKey", 9, &ed_public) < 0
+						|| jsval_object_get_utf8(&region, ed_pair,
+							(const uint8_t *)"privateKey", 10,
+							&ed_private) < 0
+						|| ed_public.kind != JSVAL_KIND_CRYPTO_KEY
+						|| ed_private.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected Ed25519 pair");
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+						16, &ed_data_typed) < 0
+						|| jsval_typed_array_buffer(&region, ed_data_typed,
+							&ed_data_buffer) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ed data buffer");
+				}
+				if (jsval_subtle_crypto_sign(&region, subtle_a, ed_alg,
+						ed_private, ed_data_buffer,
+						&ed_sign_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_sign(Ed25519)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ed_sign_promise,
+							&ed_signature) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ed sign drain/result");
+				}
+				if (ed_signature.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region,
+							ed_signature, &len) < 0 || len != 64) {
+					return generated_failf(detail, cap,
+							"expected 64-byte Ed25519 signature");
+				}
+				if (jsval_subtle_crypto_verify(&region, subtle_a, ed_alg,
+						ed_public, ed_signature, ed_data_buffer,
+						&ed_verify_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_verify(Ed25519)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, ed_verify_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"ed verify drain/result");
+				}
+				if (result.kind != JSVAL_KIND_BOOL
+						|| result.as.boolean != 1) {
+					return generated_failf(detail, cap,
+							"expected Ed25519 verify to resolve true");
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;

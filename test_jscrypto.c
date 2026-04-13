@@ -1315,6 +1315,134 @@ main(void)
 			assert(matches == 1);
 		}
 	}
+
+	/* Ed25519: generate, sign, verify round trip + RFC 8032 §7.1
+	 * TEST 1 exact-bytes interop check. Ed25519 is deterministic
+	 * so two signatures of the same message are byte-identical. */
+	{
+		uint8_t private_key[32];
+		uint8_t public_key[32];
+		uint8_t derived_public[32];
+		uint8_t signature[64];
+		uint8_t message[32];
+		size_t i;
+		int matches = 0;
+
+		for (i = 0; i < sizeof(message); i++) {
+			message[i] = (uint8_t)(i * 11u);
+		}
+		assert(jscrypto_ed25519_generate(private_key, public_key) == 0);
+		assert(jscrypto_ed25519_public_from_private(private_key,
+				derived_public) == 0);
+		assert(memcmp(public_key, derived_public, 32) == 0);
+
+		assert(jscrypto_ed25519_sign(private_key, message, sizeof(message),
+				signature) == 0);
+		assert(jscrypto_ed25519_verify(public_key, message, sizeof(message),
+				signature, &matches) == 0);
+		assert(matches == 1);
+
+		/* Deterministic: sign twice, bytes match. */
+		{
+			uint8_t sig2[64];
+
+			assert(jscrypto_ed25519_sign(private_key, message,
+					sizeof(message), sig2) == 0);
+			assert(memcmp(signature, sig2, 64) == 0);
+		}
+
+		/* Flip a signature byte -> verify resolves false. */
+		signature[0] ^= 0x40u;
+		assert(jscrypto_ed25519_verify(public_key, message, sizeof(message),
+				signature, &matches) == 0);
+		assert(matches == 0);
+		signature[0] ^= 0x40u;
+
+		/* Message tamper. */
+		message[5] ^= 0x01u;
+		assert(jscrypto_ed25519_verify(public_key, message, sizeof(message),
+				signature, &matches) == 0);
+		assert(matches == 0);
+		message[5] ^= 0x01u;
+
+		/* Different key -> verify resolves false. */
+		{
+			uint8_t other_private[32];
+			uint8_t other_public[32];
+
+			assert(jscrypto_ed25519_generate(other_private,
+					other_public) == 0);
+			assert(jscrypto_ed25519_verify(other_public, message,
+					sizeof(message), signature, &matches) == 0);
+			assert(matches == 0);
+		}
+
+		/* RFC 8032 §7.1 TEST 1: empty message, known seed, known
+		 * public key, known signature. Proves byte-level interop
+		 * with every other Ed25519 implementation on the planet. */
+		{
+			static const uint8_t rfc8032_seed[32] = {
+				0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
+				0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0xc4,
+				0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19,
+				0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60
+			};
+			static const uint8_t rfc8032_public[32] = {
+				0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7,
+				0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64, 0x07, 0x3a,
+				0x0e, 0xe1, 0x72, 0xf3, 0xda, 0xa6, 0x23, 0x25,
+				0xaf, 0x02, 0x1a, 0x68, 0xf7, 0x07, 0x51, 0x1a
+			};
+			static const uint8_t rfc8032_sig[64] = {
+				0xe5, 0x56, 0x43, 0x00, 0xc3, 0x60, 0xac, 0x72,
+				0x90, 0x86, 0xe2, 0xcc, 0x80, 0x6e, 0x82, 0x8a,
+				0x84, 0x87, 0x7f, 0x1e, 0xb8, 0xe5, 0xd9, 0x74,
+				0xd8, 0x73, 0xe0, 0x65, 0x22, 0x49, 0x01, 0x55,
+				0x5f, 0xb8, 0x82, 0x15, 0x90, 0xa3, 0x3b, 0xac,
+				0xc6, 0x1e, 0x39, 0x70, 0x1c, 0xf9, 0xb4, 0x6b,
+				0xd2, 0x5b, 0xf5, 0xf0, 0x59, 0x5b, 0xbe, 0x24,
+				0x65, 0x51, 0x41, 0x43, 0x8e, 0x7a, 0x10, 0x0b
+			};
+			uint8_t derived_public2[32];
+			uint8_t rfc_sig_out[64];
+
+			assert(jscrypto_ed25519_public_from_private(rfc8032_seed,
+					derived_public2) == 0);
+			assert(memcmp(derived_public2, rfc8032_public, 32) == 0);
+
+			assert(jscrypto_ed25519_sign(rfc8032_seed, NULL, 0,
+					rfc_sig_out) == 0);
+			assert(memcmp(rfc_sig_out, rfc8032_sig, 64) == 0);
+
+			assert(jscrypto_ed25519_verify(rfc8032_public, NULL, 0,
+					rfc8032_sig, &matches) == 0);
+			assert(matches == 1);
+		}
+
+		/* SPKI / PKCS#8 round trip. */
+		{
+			uint8_t spki[128];
+			uint8_t pkcs8[128];
+			uint8_t reimport_public[32];
+			uint8_t reimport_private[32];
+			size_t spki_len = 0;
+			size_t pkcs8_len = 0;
+
+			assert(jscrypto_ed25519_public_to_spki(public_key, spki,
+					sizeof(spki), &spki_len) == 0);
+			assert(spki_len > 30 && spki_len < 80);
+			assert(jscrypto_ed25519_spki_to_public(spki, spki_len,
+					reimport_public) == 0);
+			assert(memcmp(reimport_public, public_key, 32) == 0);
+
+			assert(jscrypto_ed25519_private_to_pkcs8(private_key, pkcs8,
+					sizeof(pkcs8), &pkcs8_len) == 0);
+			assert(pkcs8_len > 30 && pkcs8_len < 100);
+			assert(jscrypto_ed25519_pkcs8_to_private(pkcs8, pkcs8_len,
+					reimport_private) == 0);
+			assert(memcmp(reimport_private, private_key, 32) == 0);
+		}
+	}
 #else
 	uint8_t byte = 0;
 	int matches = 0;

@@ -53,14 +53,18 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       lengths with public exponent 65537, and `sign(...)` /
       `verify(...)` with SHA-256/384/512 hashes, plus RSA-PSS with
       the same key/modulus/hash policy and per-operation `saltLength`
-      (default: digest output length). All three asymmetric
-      algorithms support `jwk`, `spki` (public DER), and `pkcs8`
-      (private DER) key transport formats
+      (default: digest output length), plus Ed25519 (RFC 8032
+      PureEdDSA) `generateKey(...)` / `importKey(...)` /
+      `exportKey(...)` / `sign(...)` / `verify(...)` — parameterless,
+      deterministic 64-byte signatures, 32-byte keys. The
+      asymmetric algorithms support `jwk`, `spki` (public DER),
+      and `pkcs8` (private DER) key transport formats; Ed25519
+      additionally supports `raw` (32-byte public)
     - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, AES-CBC,
       AES-KW, PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk`
-      where applicable, plus ECDSA P-256, RSASSA-PKCS1-v1_5, and
-      RSA-PSS asymmetric public/private `CryptoKey` values and
-      `CryptoKeyPair` objects returned from `generateKey`
+      where applicable, plus ECDSA P-256, RSASSA-PKCS1-v1_5,
+      RSA-PSS, and Ed25519 asymmetric public/private `CryptoKey`
+      values and `CryptoKeyPair` objects returned from `generateKey`
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -118,7 +122,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_crypto_get_random_values(...)`
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
       HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, ECDSA,
-      RSASSA-PKCS1-v1_5, and RSA-PSS `BufferSource` inputs
+      RSASSA-PKCS1-v1_5, RSA-PSS, and Ed25519 `BufferSource` inputs
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -233,13 +237,15 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     RSASSA-PKCS1-v1_5 `generateKey(...)` / `importKey(...)` /
     `exportKey(...)` / `sign(...)` / `verify(...)` at 2048/3072/4096-bit
     modulus lengths with public exponent 65537 and SHA-256/384/512
-    hashes, and RSA-PSS over the same key/modulus/hash policy with
-    per-operation `saltLength` (default: digest output length). All
-    three asymmetric algorithms above accept `jwk`, `spki`, and
-    `pkcs8` formats for `importKey`/`exportKey`. Other wrapping
-    algorithms for `wrapKey`/`unwrapKey` (RSA-OAEP), other ECDSA
-    curves (P-384, P-521), and the remaining asymmetric algorithms
-    (RSA-OAEP, Ed25519, ECDH) are still pending.
+    hashes, RSA-PSS over the same key/modulus/hash policy with
+    per-operation `saltLength` (default: digest output length), and
+    Ed25519 (RFC 8032 PureEdDSA) with deterministic 64-byte
+    signatures. All four asymmetric algorithms accept `jwk`, `spki`,
+    and `pkcs8` formats for `importKey`/`exportKey`; Ed25519 also
+    accepts `raw`. Other wrapping algorithms for
+    `wrapKey`/`unwrapKey` (RSA-OAEP), other ECDSA curves (P-384,
+    P-521), and the remaining asymmetric algorithms (RSA-OAEP,
+    ECDH, X25519) are still pending.
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

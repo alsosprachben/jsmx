@@ -2981,3 +2981,327 @@ jscrypto_rsa_private_pkcs1_to_pkcs8(const uint8_t *pkcs1, size_t pkcs1_len,
 #if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
 #pragma GCC diagnostic pop
 #endif
+
+/*
+ * Ed25519 (RFC 8032 PureEdDSA). Uses OpenSSL's raw-key API
+ * (EVP_PKEY_new_raw_private_key / _public_key), which is the modern
+ * non-deprecated path — no pragma block needed. Signatures are
+ * deterministic and exactly 64 bytes (R || S). Signing and
+ * verification must use the one-shot EVP_DigestSign / EVP_DigestVerify
+ * form with md=NULL; the Update/Final pattern used by RSA/ECDSA does
+ * NOT work for Ed25519 because PureEdDSA needs the whole message at
+ * once to compute the nonce.
+ */
+
+int
+jscrypto_ed25519_generate(uint8_t private_out[32], uint8_t public_out[32])
+{
+	if (private_out == NULL || public_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
+		EVP_PKEY *pkey = NULL;
+		size_t out_len;
+
+		if (pctx == NULL) {
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_PKEY_keygen_init(pctx) != 1
+				|| EVP_PKEY_keygen(pctx, &pkey) != 1 || pkey == NULL) {
+			EVP_PKEY_CTX_free(pctx);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_CTX_free(pctx);
+		out_len = 32;
+		if (EVP_PKEY_get_raw_private_key(pkey, private_out, &out_len) != 1
+				|| out_len != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		out_len = 32;
+		if (EVP_PKEY_get_raw_public_key(pkey, public_out, &out_len) != 1
+				|| out_len != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_public_from_private(const uint8_t private_in[32],
+		uint8_t public_out[32])
+{
+	if (private_in == NULL || public_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		/* EVP_PKEY_new_raw_private_key automatically derives and caches
+		 * the public key inside the EVP_PKEY; get_raw_public_key just
+		 * reads it back. No explicit scalar multiplication needed. */
+		EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519,
+				NULL, private_in, 32);
+		size_t out_len = 32;
+
+		if (pkey == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		if (EVP_PKEY_get_raw_public_key(pkey, public_out, &out_len) != 1
+				|| out_len != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_sign(const uint8_t private_in[32], const uint8_t *data,
+		size_t data_len, uint8_t signature_out[64])
+{
+	if (private_in == NULL || signature_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519,
+				NULL, private_in, 32);
+		EVP_MD_CTX *ctx = NULL;
+		size_t sig_len = 64;
+
+		if (pkey == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		/* md=NULL: Ed25519 hashes internally with SHA-512, not an
+		 * external digest. EVP_DigestSign is one-shot — do NOT
+		 * "fix" this to Update/Final, PureEdDSA needs the whole
+		 * message at once. */
+		if (EVP_DigestSignInit(ctx, NULL, NULL, NULL, pkey) != 1
+				|| EVP_DigestSign(ctx, signature_out, &sig_len, data,
+					data_len) != 1
+				|| sig_len != 64) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_verify(const uint8_t public_in[32], const uint8_t *data,
+		size_t data_len, const uint8_t signature_in[64], int *matches_out)
+{
+	if (public_in == NULL || signature_in == NULL || matches_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*matches_out = 0;
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519,
+				NULL, public_in, 32);
+		EVP_MD_CTX *ctx = NULL;
+		int verify_rc;
+
+		if (pkey == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestVerifyInit(ctx, NULL, NULL, NULL, pkey) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		verify_rc = EVP_DigestVerify(ctx, signature_in, 64, data, data_len);
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		if (verify_rc == 1) {
+			*matches_out = 1;
+			return 0;
+		}
+		if (verify_rc == 0) {
+			*matches_out = 0;
+			return 0;
+		}
+		errno = EIO;
+		return -1;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_spki_to_public(const uint8_t *der, size_t der_len,
+		uint8_t public_out[32])
+{
+	if (public_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)der;
+	(void)der_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_spki_bytes(der, der_len,
+				EVP_PKEY_ED25519);
+		size_t out_len = 32;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		if (EVP_PKEY_get_raw_public_key(pkey, public_out, &out_len) != 1
+				|| out_len != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_public_to_spki(const uint8_t public_in[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out)
+{
+	if (public_in == NULL || der_len_out == NULL
+			|| (der_out == NULL && der_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519,
+				NULL, public_in, 32);
+		int rc;
+
+		if (pkey == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		rc = jscrypto_pkey_to_spki_bytes(pkey, der_out, der_cap,
+				der_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_pkcs8_to_private(const uint8_t *der, size_t der_len,
+		uint8_t private_out[32])
+{
+	if (private_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)der;
+	(void)der_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_pkcs8_bytes(der, der_len,
+				EVP_PKEY_ED25519);
+		size_t out_len = 32;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		if (EVP_PKEY_get_raw_private_key(pkey, private_out, &out_len) != 1
+				|| out_len != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ed25519_private_to_pkcs8(const uint8_t private_in[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out)
+{
+	if (private_in == NULL || der_len_out == NULL
+			|| (der_out == NULL && der_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519,
+				NULL, private_in, 32);
+		int rc;
+
+		if (pkey == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		rc = jscrypto_pkey_to_pkcs8_bytes(pkey, der_out, der_cap,
+				der_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
