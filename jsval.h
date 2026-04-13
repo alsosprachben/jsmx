@@ -1141,4 +1141,80 @@ int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 int jsval_fetch(jsval_region_t *region, jsval_t input_value,
 		jsval_t init_value, int have_init, jsval_t *promise_ptr);
 
+/*
+ * Body source abstraction for lazy Request / Response bodies.
+ *
+ * An embedder (today: test harness; tomorrow: mnvkd vk_socket adapter)
+ * implements this vtable to feed bytes into the Body mixin asynchronously.
+ * The drain microtask pumps the source until it reports EOF, then resolves
+ * the body-consumption promise.
+ *
+ * The read callback runs inside the jsmx microtask drain loop. It must not
+ * yield or allocate, and it must return quickly. A single read fills a
+ * scratch buffer; the drain re-enqueues itself to keep draining.
+ */
+
+typedef enum jsval_body_source_status_e {
+	JSVAL_BODY_SOURCE_STATUS_READY = 0,
+	JSVAL_BODY_SOURCE_STATUS_PENDING = 1,
+	JSVAL_BODY_SOURCE_STATUS_EOF = 2,
+	JSVAL_BODY_SOURCE_STATUS_ERROR = 3
+} jsval_body_source_status_t;
+
+typedef struct jsval_body_source_vtable_s {
+	int (*read)(void *userdata, uint8_t *buf, size_t cap,
+			size_t *out_len, jsval_body_source_status_t *status_ptr);
+	void (*close)(void *userdata);
+} jsval_body_source_vtable_t;
+
+typedef enum jsval_body_consume_mode_e {
+	JSVAL_BODY_CONSUME_TEXT = 0,
+	JSVAL_BODY_CONSUME_JSON = 1,
+	JSVAL_BODY_CONSUME_ARRAY_BUFFER = 2,
+	JSVAL_BODY_CONSUME_BYTES = 3
+} jsval_body_consume_mode_t;
+
+#define JSVAL_FETCH_BODY_DEFAULT_LIMIT ((size_t)(16u * 1024u * 1024u))
+
+typedef int (*jsval_fetch_header_emit_fn)(
+		void *userdata,
+		const uint8_t *name, size_t name_len,
+		const uint8_t *value, size_t value_len);
+
+/*
+ * Context passed as userdata to jsval_fetch_emit_header_into. The caller
+ * fills both fields and passes &ctx as the emit callback's userdata.
+ */
+typedef struct jsval_fetch_header_emit_ctx_s {
+	jsval_region_t *region;
+	jsval_t headers;
+} jsval_fetch_header_emit_ctx_t;
+
+int jsval_fetch_emit_header_into(void *userdata,
+		const uint8_t *name, size_t name_len,
+		const uint8_t *value, size_t value_len);
+
+/*
+ * method_value must be a string jsval containing a standard HTTP method
+ * name (case-insensitive). Forbidden methods (CONNECT/TRACE/TRACK) are
+ * rejected. An undefined method_value defaults to GET.
+ */
+int jsval_request_new_from_parts(jsval_region_t *region,
+		jsval_t method_value,
+		jsval_t url_value,
+		jsval_t headers_value,
+		const jsval_body_source_vtable_t *body_vtable,
+		void *body_userdata,
+		size_t content_length_hint,
+		jsval_t *value_ptr);
+
+int jsval_response_new_from_parts(jsval_region_t *region,
+		uint16_t status,
+		jsval_t status_text_value,
+		jsval_t headers_value,
+		const jsval_body_source_vtable_t *body_vtable,
+		void *body_userdata,
+		size_t content_length_hint,
+		jsval_t *value_ptr);
+
 #endif

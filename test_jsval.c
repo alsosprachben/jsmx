@@ -12101,6 +12101,267 @@ static void test_fetch_api_semantics(void)
 	}
 }
 
+typedef struct fake_body_source_s {
+	const uint8_t *data;
+	size_t total;
+	size_t cursor;
+	int chunk_size;       /* bytes per read; 0 = unlimited */
+	int fail_after;       /* -1 = never; >=0 = return ERROR after N reads */
+	int reads;
+	int close_calls;
+} fake_body_source_t;
+
+static int fake_body_read(void *userdata, uint8_t *buf, size_t cap,
+		size_t *out_len, jsval_body_source_status_t *status_ptr)
+{
+	fake_body_source_t *src = (fake_body_source_t *)userdata;
+	size_t remaining;
+	size_t n;
+
+	src->reads++;
+	if (src->fail_after >= 0 && src->reads > src->fail_after) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
+		return 0;
+	}
+	remaining = src->total - src->cursor;
+	n = remaining;
+	if (src->chunk_size > 0 && (size_t)src->chunk_size < n) {
+		n = (size_t)src->chunk_size;
+	}
+	if (n > cap) { n = cap; }
+	if (n > 0) {
+		memcpy(buf, src->data + src->cursor, n);
+		src->cursor += n;
+	}
+	*out_len = n;
+	*status_ptr = (src->cursor >= src->total)
+			? JSVAL_BODY_SOURCE_STATUS_EOF
+			: JSVAL_BODY_SOURCE_STATUS_READY;
+	return 0;
+}
+
+static void fake_body_close(void *userdata)
+{
+	fake_body_source_t *src = (fake_body_source_t *)userdata;
+	src->close_calls++;
+}
+
+static const jsval_body_source_vtable_t fake_body_vtable = {
+	fake_body_read,
+	fake_body_close,
+};
+
+static jsval_t fetch_drain_str(jsval_region_t *region, const char *s)
+{
+	jsval_t v;
+	assert(jsval_string_new_utf8(region, (const uint8_t *)s, strlen(s), &v)
+			== 0);
+	return v;
+}
+
+static int fetch_drain_str_equals(jsval_region_t *region, jsval_t v,
+		const char *s)
+{
+	size_t len = 0;
+	size_t want = strlen(s);
+	if (v.kind != JSVAL_KIND_STRING) { return 0; }
+	if (jsval_string_copy_utf8(region, v, NULL, 0, &len) < 0) { return 0; }
+	if (len != want) { return 0; }
+	{
+		uint8_t buf[want ? want : 1];
+		if (want > 0
+				&& jsval_string_copy_utf8(region, v, buf, want, NULL) < 0) {
+			return 0;
+		}
+		return memcmp(buf, s, want) == 0;
+	}
+}
+
+static void test_fetch_body_drain_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsval_t headers;
+	jsval_t request;
+	jsval_t response;
+	jsval_t got;
+	jsval_t promise;
+	jsval_promise_state_t state;
+	int used = 0;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Happy-path text() drain. */
+	{
+		static const uint8_t body[] = "hello";
+		fake_body_source_t src = {
+			.data = body, .total = 5, .cursor = 0,
+			.chunk_size = 0, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_REQUEST,
+				&headers) == 0);
+		assert(jsval_request_new_from_parts(&region,
+				fetch_drain_str(&region, "POST"),
+				fetch_drain_str(&region, "https://ex.com"),
+				headers, &fake_body_vtable, &src, 5, &request) == 0);
+		assert(jsval_request_body_used(&region, request, &used) == 0);
+		assert(used == 0);
+		assert(jsval_request_text(&region, request, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(fetch_drain_str_equals(&region, got, "hello"));
+		assert(src.close_calls == 1);
+		assert(jsval_request_body_used(&region, request, &used) == 0);
+		assert(used == 1);
+
+		/* Second consumption rejects. */
+		assert(jsval_request_text(&region, request, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		/* close is not called again */
+		assert(src.close_calls == 1);
+	}
+
+	/* 2. arrayBuffer() drain across stuttered reads. */
+	{
+		static const uint8_t body[] =
+				"The quick brown fox jumps over the lazy dog.";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 3, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, sizeof(body) - 1,
+				&response) == 0);
+		assert(jsval_response_array_buffer(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		{
+			size_t bl = 0;
+			uint8_t buf[sizeof(body) - 1];
+			assert(jsval_array_buffer_byte_length(&region, got, &bl) == 0);
+			assert(bl == sizeof(body) - 1);
+			assert(jsval_array_buffer_copy_bytes(&region, got, buf, bl,
+					NULL) == 0);
+			assert(memcmp(buf, body, bl) == 0);
+		}
+		assert(src.close_calls == 1);
+		/* And the source was called multiple times (stuttered). */
+		assert(src.reads > 1);
+	}
+
+	/* 3. bytes() returns Uint8Array. */
+	{
+		static const uint8_t body[] = {0xde, 0xad, 0xbe, 0xef};
+		fake_body_source_t src = {
+			.data = body, .total = 4, .cursor = 0,
+			.chunk_size = 2, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, 4, &response) == 0);
+		assert(jsval_response_bytes(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_TYPED_ARRAY);
+		{
+			uint8_t buf[4];
+			size_t bl = 0;
+			assert(jsval_typed_array_byte_length(&region, got, &bl) == 0);
+			assert(bl == 4);
+			assert(jsval_typed_array_copy_bytes(&region, got, buf, bl,
+					NULL) == 0);
+			assert(memcmp(buf, body, 4) == 0);
+		}
+		assert(src.close_calls == 1);
+	}
+
+	/* 4. json() parses drained body. */
+	{
+		static const uint8_t body[] = "{\"ok\":true}";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 0, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, sizeof(body) - 1,
+				&response) == 0);
+		assert(jsval_response_json_body(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_OBJECT);
+		assert(src.close_calls == 1);
+	}
+
+	/* 5. Over-budget rejection: hint says 4, source produces 10. */
+	{
+		static const uint8_t body[] = "0123456789";
+		fake_body_source_t src = {
+			.data = body, .total = 10, .cursor = 0,
+			.chunk_size = 0, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, 4, &response) == 0);
+		assert(jsval_response_text(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(src.close_calls == 1);
+	}
+
+	/* 6. Mid-stream error: source returns ERROR after first read. */
+	{
+		static const uint8_t body[] = "hello world";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 4, .fail_after = 1,
+			.reads = 0, .close_calls = 0,
+		};
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, SIZE_MAX, &response) == 0);
+		assert(jsval_response_text(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(src.close_calls == 1);
+	}
+}
+
 int main(void)
 {
 	test_region_alloc_helpers();
@@ -12177,6 +12438,7 @@ int main(void)
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
+	test_fetch_body_drain_semantics();
 	puts("test_jsval: ok");
 	return 0;
 }

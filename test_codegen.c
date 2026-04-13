@@ -13974,6 +13974,109 @@ static generated_status_t generated_smoke_jsval_fetch(char *detail, size_t cap)
 	return GENERATED_PASS;
 }
 
+typedef struct generated_fake_body_source_s {
+	const uint8_t *data;
+	size_t total;
+	size_t cursor;
+	int close_calls;
+} generated_fake_body_source_t;
+
+static int generated_fake_body_read(void *userdata, uint8_t *buf, size_t cap,
+		size_t *out_len, jsval_body_source_status_t *status_ptr)
+{
+	generated_fake_body_source_t *src =
+			(generated_fake_body_source_t *)userdata;
+	size_t remaining = src->total - src->cursor;
+	size_t n = remaining < cap ? remaining : cap;
+
+	if (n > 0) {
+		memcpy(buf, src->data + src->cursor, n);
+		src->cursor += n;
+	}
+	*out_len = n;
+	*status_ptr = src->cursor >= src->total
+			? JSVAL_BODY_SOURCE_STATUS_EOF
+			: JSVAL_BODY_SOURCE_STATUS_READY;
+	return 0;
+}
+
+static void generated_fake_body_close(void *userdata)
+{
+	generated_fake_body_source_t *src =
+			(generated_fake_body_source_t *)userdata;
+	src->close_calls++;
+}
+
+static const jsval_body_source_vtable_t generated_fake_body_vtable = {
+	generated_fake_body_read,
+	generated_fake_body_close,
+};
+
+static generated_status_t generated_smoke_jsval_fetch_body_drain(char *detail,
+		size_t cap)
+{
+	static const uint8_t body[] = "hello, drain";
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t headers;
+	jsval_t request;
+	jsval_t method_name;
+	jsval_t url;
+	jsval_t promise;
+	jsval_t got;
+	jsval_promise_state_t state;
+	jsmethod_error_t error;
+	generated_fake_body_source_t src = {
+		.data = body, .total = sizeof(body) - 1, .cursor = 0,
+		.close_calls = 0,
+	};
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_headers_new(&region, JSVAL_HEADERS_GUARD_REQUEST, &headers) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_headers_new");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"POST", 4,
+			&method_name) < 0) {
+		return generated_fail_errno(detail, cap, "method string");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"https://ex.com", 14,
+			&url) < 0) {
+		return generated_fail_errno(detail, cap, "url string");
+	}
+	if (jsval_request_new_from_parts(&region, method_name, url, headers,
+			&generated_fake_body_vtable, &src, sizeof(body) - 1,
+			&request) < 0) {
+		return generated_fail_errno(detail, cap, "request_new_from_parts");
+	}
+	if (jsval_request_text(&region, request, &promise) < 0) {
+		return generated_fail_errno(detail, cap, "request_text");
+	}
+	memset(&error, 0, sizeof(error));
+	if (jsval_microtask_drain(&region, &error) < 0) {
+		return generated_fail_errno(detail, cap, "microtask_drain");
+	}
+	if (jsval_promise_state(&region, promise, &state) < 0) {
+		return generated_fail_errno(detail, cap, "promise_state");
+	}
+	if (state != JSVAL_PROMISE_STATE_FULFILLED) {
+		return generated_failf(detail, cap, "expected fulfilled, got %d",
+				(int)state);
+	}
+	if (jsval_promise_result(&region, promise, &got) < 0) {
+		return generated_fail_errno(detail, cap, "promise_result");
+	}
+	if (generated_expect_string(&region, got, body, sizeof(body) - 1,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+	if (src.close_calls != 1) {
+		return generated_failf(detail, cap,
+				"expected 1 close call, got %d", src.close_calls);
+	}
+	return GENERATED_PASS;
+}
+
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
@@ -14081,6 +14184,7 @@ static const generated_case_t generated_cases[] = {
 	{"smoke", "jsmethod_regex_search_abrupt", generated_smoke_jsmethod_regex_search_abrupt},
 #endif
 	{"smoke", "jsval_fetch", generated_smoke_jsval_fetch},
+	{"smoke", "jsval_fetch_body_drain", generated_smoke_jsval_fetch_body_drain},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

@@ -276,6 +276,7 @@ typedef struct jsval_native_request_s {
 	jsval_t url;
 	jsval_t headers;
 	jsval_t body_buffer;
+	jsval_off_t body_source_off;
 	uint8_t method;
 	uint8_t mode;
 	uint8_t credentials;
@@ -286,7 +287,8 @@ typedef struct jsval_native_request_s {
 	uint8_t keepalive;
 	uint8_t body_used;
 	uint8_t has_body;
-	uint8_t reserved[6];
+	uint8_t body_is_streaming;
+	uint8_t reserved[1];
 } jsval_native_request_t;
 
 typedef struct jsval_native_response_s {
@@ -294,12 +296,14 @@ typedef struct jsval_native_response_s {
 	jsval_t headers;
 	jsval_t status_text;
 	jsval_t body_buffer;
+	jsval_off_t body_source_off;
 	uint16_t status;
 	uint8_t type;
 	uint8_t redirected;
 	uint8_t body_used;
 	uint8_t has_body;
-	uint8_t reserved[2];
+	uint8_t body_is_streaming;
+	uint8_t reserved[5];
 } jsval_native_response_t;
 
 typedef enum jsval_microtask_kind_e {
@@ -316,7 +320,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_ECDSA = 10,
 	JSVAL_MICROTASK_KIND_SUBTLE_RSASSA_PKCS1_V1_5 = 11,
 	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12,
-	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13
+	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13,
+	JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN = 14
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -618,6 +623,30 @@ typedef struct jsval_native_microtask_subtle_hkdf_s {
 	uint8_t reserved[3];
 } jsval_native_microtask_subtle_hkdf_t;
 
+/*
+ * Lazy-body source stored inside the region. Carries a vtable pointer,
+ * opaque userdata, a content-length hint (SIZE_MAX if unknown), and a
+ * `closed` flag so the drain handler can enforce close-once semantics.
+ */
+typedef struct jsval_native_body_source_s {
+	const jsval_body_source_vtable_t *vtable;
+	void *userdata;
+	size_t content_length_hint;
+	uint8_t closed;
+	uint8_t reserved[7];
+} jsval_native_body_source_t;
+
+typedef struct jsval_native_microtask_fetch_body_drain_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t buffer_off;
+	jsval_off_t source_off;
+	size_t written_len;
+	size_t budget;
+	uint8_t consume_mode;
+	uint8_t reserved[7];
+} jsval_native_microtask_fetch_body_drain_t;
+
 typedef struct jsval_native_prop_s {
 	jsval_t name;
 	jsval_t value;
@@ -715,6 +744,13 @@ static int jsval_microtask_push(jsval_region_t *region, jsval_off_t task_off,
 		jsval_native_microtask_t *task);
 static int jsval_promise_schedule_reactions(jsval_region_t *region,
 		jsval_t promise_value);
+static jsval_native_body_source_t *jsval_native_body_source(
+		jsval_region_t *region, jsval_off_t off);
+static int jsval_body_consume_streaming(jsval_region_t *region,
+		jsval_off_t source_off, size_t budget, uint8_t consume_mode,
+		jsval_t *promise_out);
+static int jsval_fetch_run_body_drain(jsval_region_t *region,
+		jsval_native_microtask_fetch_body_drain_t *task, jsval_off_t task_off);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -19974,6 +20010,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			}
 			break;
 		}
+		case JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN:
+		{
+			jsval_native_microtask_fetch_body_drain_t *drain_task =
+				(jsval_native_microtask_fetch_body_drain_t *)task;
+
+			if (jsval_fetch_run_body_drain(region, drain_task, off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
 		default:
 			region->microtask_draining = 0;
 			errno = EINVAL;
@@ -34942,7 +34989,7 @@ int jsval_request_body_used(jsval_region_t *region, jsval_t request,
 
 static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_out, int (*resolver)(jsval_region_t *, jsval_t, int,
-				jsval_t *))
+				jsval_t *), uint8_t consume_mode)
 {
 	jsval_native_request_t *native = jsval_native_request(region, request);
 	jsval_t body_buffer;
@@ -34964,6 +35011,20 @@ static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
 		*promise_out = promise;
 		return 0;
 	}
+	if (native->body_is_streaming) {
+		jsval_off_t source_off = native->body_source_off;
+		jsval_native_body_source_t *src =
+				jsval_native_body_source(region, source_off);
+		size_t budget = JSVAL_FETCH_BODY_DEFAULT_LIMIT;
+
+		if (src != NULL && src->content_length_hint != SIZE_MAX
+				&& src->content_length_hint < budget) {
+			budget = src->content_length_hint;
+		}
+		native->body_used = 1;
+		return jsval_body_consume_streaming(region, source_off, budget,
+				consume_mode, promise_out);
+	}
 	body_buffer = native->body_buffer;
 	has_body = native->has_body ? 1 : 0;
 	native->body_used = 1;
@@ -34974,28 +35035,28 @@ int jsval_request_text(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr)
 {
 	return jsval_request_mark_used(region, request, promise_ptr,
-			jsval_body_resolve_text);
+			jsval_body_resolve_text, JSVAL_BODY_CONSUME_TEXT);
 }
 
 int jsval_request_json(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr)
 {
 	return jsval_request_mark_used(region, request, promise_ptr,
-			jsval_body_resolve_json);
+			jsval_body_resolve_json, JSVAL_BODY_CONSUME_JSON);
 }
 
 int jsval_request_array_buffer(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr)
 {
 	return jsval_request_mark_used(region, request, promise_ptr,
-			jsval_body_resolve_array_buffer);
+			jsval_body_resolve_array_buffer, JSVAL_BODY_CONSUME_ARRAY_BUFFER);
 }
 
 int jsval_request_bytes(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr)
 {
 	return jsval_request_mark_used(region, request, promise_ptr,
-			jsval_body_resolve_bytes);
+			jsval_body_resolve_bytes, JSVAL_BODY_CONSUME_BYTES);
 }
 
 static int jsval_request_enum_string(jsval_region_t *region, const char *s,
@@ -35458,7 +35519,7 @@ int jsval_response_clone(jsval_region_t *region, jsval_t response,
 
 static int jsval_response_mark_used(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_out, int (*resolver)(jsval_region_t *, jsval_t, int,
-				jsval_t *))
+				jsval_t *), uint8_t consume_mode)
 {
 	jsval_native_response_t *native = jsval_native_response(region, response);
 	jsval_t body_buffer;
@@ -35480,6 +35541,20 @@ static int jsval_response_mark_used(jsval_region_t *region, jsval_t response,
 		*promise_out = promise;
 		return 0;
 	}
+	if (native->body_is_streaming) {
+		jsval_off_t source_off = native->body_source_off;
+		jsval_native_body_source_t *src =
+				jsval_native_body_source(region, source_off);
+		size_t budget = JSVAL_FETCH_BODY_DEFAULT_LIMIT;
+
+		if (src != NULL && src->content_length_hint != SIZE_MAX
+				&& src->content_length_hint < budget) {
+			budget = src->content_length_hint;
+		}
+		native->body_used = 1;
+		return jsval_body_consume_streaming(region, source_off, budget,
+				consume_mode, promise_out);
+	}
 	body_buffer = native->body_buffer;
 	has_body = native->has_body ? 1 : 0;
 	native->body_used = 1;
@@ -35490,28 +35565,28 @@ int jsval_response_text(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr)
 {
 	return jsval_response_mark_used(region, response, promise_ptr,
-			jsval_body_resolve_text);
+			jsval_body_resolve_text, JSVAL_BODY_CONSUME_TEXT);
 }
 
 int jsval_response_json_body(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr)
 {
 	return jsval_response_mark_used(region, response, promise_ptr,
-			jsval_body_resolve_json);
+			jsval_body_resolve_json, JSVAL_BODY_CONSUME_JSON);
 }
 
 int jsval_response_array_buffer(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr)
 {
 	return jsval_response_mark_used(region, response, promise_ptr,
-			jsval_body_resolve_array_buffer);
+			jsval_body_resolve_array_buffer, JSVAL_BODY_CONSUME_ARRAY_BUFFER);
 }
 
 int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr)
 {
 	return jsval_response_mark_used(region, response, promise_ptr,
-			jsval_body_resolve_bytes);
+			jsval_body_resolve_bytes, JSVAL_BODY_CONSUME_BYTES);
 }
 
 /* -------------------- fetch() stub --------------------- */
@@ -35544,4 +35619,513 @@ int jsval_fetch(jsval_region_t *region, jsval_t input_value, jsval_t init_value,
 	}
 	*promise_ptr = promise;
 	return 0;
+}
+
+/* =========================================================================
+ * Lazy body sources + FETCH_BODY_DRAIN microtask
+ * ========================================================================= */
+
+#define JSVAL_FETCH_BODY_DRAIN_BATCH 4096
+
+int jsval_fetch_emit_header_into(void *userdata,
+		const uint8_t *name, size_t name_len,
+		const uint8_t *value, size_t value_len)
+{
+	jsval_fetch_header_emit_ctx_t *ctx;
+	jsval_t name_val;
+	jsval_t value_val;
+
+	if (userdata == NULL || name == NULL
+			|| (value == NULL && value_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	ctx = (jsval_fetch_header_emit_ctx_t *)userdata;
+	if (ctx->region == NULL || ctx->headers.kind != JSVAL_KIND_HEADERS
+			|| ctx->headers.repr != JSVAL_REPR_NATIVE) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf8(ctx->region, name, name_len, &name_val) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(ctx->region, value, value_len, &value_val) < 0) {
+		return -1;
+	}
+	return jsval_headers_append(ctx->region, ctx->headers, name_val,
+			value_val);
+}
+
+static jsval_native_body_source_t *
+jsval_native_body_source(jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_body_source_t *)jsval_region_ptr(region, off);
+}
+
+static int jsval_body_source_new(jsval_region_t *region,
+		const jsval_body_source_vtable_t *vtable, void *userdata,
+		size_t content_length_hint, jsval_off_t *off_ptr)
+{
+	jsval_native_body_source_t *src;
+	jsval_off_t off;
+
+	if (region == NULL || vtable == NULL || off_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*src), JSVAL_ALIGN, &off,
+			(void **)&src) < 0) {
+		return -1;
+	}
+	src->vtable = vtable;
+	src->userdata = userdata;
+	src->content_length_hint = content_length_hint;
+	src->closed = 0;
+	memset(src->reserved, 0, sizeof(src->reserved));
+	*off_ptr = off;
+	return 0;
+}
+
+static void jsval_body_source_close_once(jsval_native_body_source_t *src)
+{
+	if (src == NULL || src->closed) {
+		return;
+	}
+	src->closed = 1;
+	if (src->vtable != NULL && src->vtable->close != NULL) {
+		src->vtable->close(src->userdata);
+	}
+}
+
+int jsval_request_new_from_parts(jsval_region_t *region,
+		jsval_t method_value,
+		jsval_t url_value,
+		jsval_t headers_value,
+		const jsval_body_source_vtable_t *body_vtable,
+		void *body_userdata,
+		size_t content_length_hint,
+		jsval_t *value_ptr)
+{
+	jsval_native_request_t *native;
+	jsval_off_t off;
+	uint8_t method = JSVAL_HTTP_METHOD_GET;
+	jsval_off_t source_off = 0;
+	size_t budget = JSVAL_FETCH_BODY_DEFAULT_LIMIT;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (headers_value.kind != JSVAL_KIND_HEADERS
+			|| url_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (method_value.kind == JSVAL_KIND_STRING) {
+		if (jsval_http_method_from_string(region, method_value, &method) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_http_method_is_forbidden(method)) {
+		errno = EACCES;
+		return -1;
+	}
+	if (body_vtable != NULL) {
+		if (content_length_hint != SIZE_MAX
+				&& content_length_hint < budget) {
+			budget = content_length_hint;
+		}
+		if (jsval_body_source_new(region, body_vtable, body_userdata,
+				content_length_hint, &source_off) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+			(void **)&native) < 0) {
+		return -1;
+	}
+	memset(native, 0, sizeof(*native));
+	native->url = url_value;
+	native->headers = headers_value;
+	native->body_buffer = jsval_undefined();
+	native->body_source_off = source_off;
+	native->method = method;
+	native->has_body = source_off != 0 ? 1 : 0;
+	native->body_is_streaming = source_off != 0 ? 1 : 0;
+	(void)budget;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_REQUEST;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_response_new_from_parts(jsval_region_t *region,
+		uint16_t status,
+		jsval_t status_text_value,
+		jsval_t headers_value,
+		const jsval_body_source_vtable_t *body_vtable,
+		void *body_userdata,
+		size_t content_length_hint,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native;
+	jsval_off_t off;
+	jsval_off_t source_off = 0;
+	jsval_t status_text = status_text_value;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (headers_value.kind != JSVAL_KIND_HEADERS) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (status_text.kind != JSVAL_KIND_STRING) {
+		if (jsval_string_new_utf8(region, (const uint8_t *)"", 0,
+				&status_text) < 0) {
+			return -1;
+		}
+	}
+	if (body_vtable != NULL) {
+		if (jsval_body_source_new(region, body_vtable, body_userdata,
+				content_length_hint, &source_off) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+			(void **)&native) < 0) {
+		return -1;
+	}
+	memset(native, 0, sizeof(*native));
+	native->url = jsval_undefined();
+	native->headers = headers_value;
+	native->status_text = status_text;
+	native->body_buffer = jsval_undefined();
+	native->body_source_off = source_off;
+	native->status = status;
+	native->type = JSVAL_RESPONSE_TYPE_DEFAULT;
+	native->has_body = source_off != 0 ? 1 : 0;
+	native->body_is_streaming = source_off != 0 ? 1 : 0;
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_RESPONSE;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+/* Schedule a body drain microtask against `source_off`. Returns a pending
+ * promise in `*promise_out`. Stores `consume_mode` on the task. */
+static int jsval_body_drain_schedule(jsval_region_t *region,
+		jsval_off_t source_off, size_t budget, uint8_t consume_mode,
+		jsval_t *promise_out)
+{
+	jsval_native_microtask_fetch_body_drain_t *task;
+	jsval_off_t task_off;
+	jsval_t promise;
+	jsval_t initial_buffer;
+	size_t initial_cap;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	initial_cap = budget == 0 || budget == SIZE_MAX
+			? JSVAL_FETCH_BODY_DRAIN_BATCH
+			: (budget < JSVAL_FETCH_BODY_DRAIN_BATCH
+					? budget : JSVAL_FETCH_BODY_DRAIN_BATCH);
+	if (jsval_array_buffer_new(region, initial_cap, &initial_buffer) < 0) {
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN;
+	task->promise_off = promise.off;
+	task->buffer_off = initial_buffer.off;
+	task->source_off = source_off;
+	task->written_len = 0;
+	task->budget = budget;
+	task->consume_mode = consume_mode;
+	if (jsval_microtask_push(region, task_off, &task->base) < 0) {
+		return -1;
+	}
+	*promise_out = promise;
+	return 0;
+}
+
+static int jsval_body_drain_reject(jsval_region_t *region,
+		jsval_native_microtask_fetch_body_drain_t *task,
+		const char *message)
+{
+	jsval_t promise_value;
+	jsval_t reason;
+	jsval_native_body_source_t *src;
+
+	promise_value = jsval_promise_value(task->promise_off);
+	src = jsval_native_body_source(region, task->source_off);
+	jsval_body_source_close_once(src);
+	if (jsval_dom_exception_new_utf8(region, "TypeError", message,
+			&reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
+static int jsval_body_drain_resolve_eof(jsval_region_t *region,
+		jsval_native_microtask_fetch_body_drain_t *task)
+{
+	jsval_t promise_value;
+	jsval_t buffer_value;
+	jsval_t resolved = jsval_undefined();
+	jsval_native_array_buffer_t *buffer;
+	jsval_native_body_source_t *src;
+	size_t len = task->written_len;
+	uint8_t *bytes;
+
+	promise_value = jsval_promise_value(task->promise_off);
+	src = jsval_native_body_source(region, task->source_off);
+	jsval_body_source_close_once(src);
+
+	buffer_value = jsval_undefined();
+	buffer_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+	buffer_value.repr = JSVAL_REPR_NATIVE;
+	buffer_value.off = task->buffer_off;
+	buffer = jsval_native_array_buffer(region, buffer_value);
+	if (buffer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	bytes = jsval_native_array_buffer_bytes(buffer);
+
+	switch ((jsval_body_consume_mode_t)task->consume_mode) {
+	case JSVAL_BODY_CONSUME_TEXT:
+		if (jsval_string_new_utf8(region, bytes, len, &resolved) < 0) {
+			return -1;
+		}
+		break;
+	case JSVAL_BODY_CONSUME_JSON:
+	{
+		if (len == 0) {
+			jsval_t reason;
+			if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+					"empty body", &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		if (jsval_json_parse(region, bytes, len, 256, &resolved) < 0) {
+			jsval_t reason;
+			if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+					"invalid JSON", &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		break;
+	}
+	case JSVAL_BODY_CONSUME_ARRAY_BUFFER:
+	{
+		/* Materialize a fresh ArrayBuffer of exactly `len` bytes. */
+		jsval_t out;
+		if (jsval_array_buffer_new(region, len, &out) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, out);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			/* Re-fetch the drain's buffer (region may have grown). */
+			buffer = jsval_native_array_buffer(region, buffer_value);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst),
+					jsval_native_array_buffer_bytes(buffer), len);
+		}
+		resolved = out;
+		break;
+	}
+	case JSVAL_BODY_CONSUME_BYTES:
+	{
+		jsval_t typed;
+		if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8, len,
+				&typed) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_t backing;
+			jsval_native_array_buffer_t *dst;
+			if (jsval_typed_array_buffer(region, typed, &backing) < 0) {
+				return -1;
+			}
+			dst = jsval_native_array_buffer(region, backing);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, buffer_value);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst),
+					jsval_native_array_buffer_bytes(buffer), len);
+		}
+		resolved = typed;
+		break;
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_promise_resolve(region, promise_value, resolved);
+}
+
+/* Grow the drain's accumulating ArrayBuffer so that total capacity covers
+ * at least `need` bytes. Updates task->buffer_off on success. */
+static int jsval_body_drain_grow(jsval_region_t *region,
+		jsval_native_microtask_fetch_body_drain_t *task, size_t need)
+{
+	jsval_t old_value;
+	jsval_t new_value;
+	jsval_native_array_buffer_t *old_buf;
+	jsval_native_array_buffer_t *new_buf;
+	size_t old_cap = 0;
+	size_t new_cap;
+
+	old_value = jsval_undefined();
+	old_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+	old_value.repr = JSVAL_REPR_NATIVE;
+	old_value.off = task->buffer_off;
+	if (jsval_array_buffer_byte_length(region, old_value, &old_cap) < 0) {
+		return -1;
+	}
+	if (need <= old_cap) {
+		return 0;
+	}
+	new_cap = old_cap == 0 ? JSVAL_FETCH_BODY_DRAIN_BATCH : old_cap;
+	while (new_cap < need) {
+		if (new_cap > SIZE_MAX / 2) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		new_cap *= 2;
+	}
+	if (jsval_array_buffer_new(region, new_cap, &new_value) < 0) {
+		return -1;
+	}
+	new_buf = jsval_native_array_buffer(region, new_value);
+	if (new_buf == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	old_buf = jsval_native_array_buffer(region, old_value);
+	if (old_buf == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (task->written_len > 0) {
+		memcpy(jsval_native_array_buffer_bytes(new_buf),
+				jsval_native_array_buffer_bytes(old_buf), task->written_len);
+	}
+	task->buffer_off = new_value.off;
+	return 0;
+}
+
+static int jsval_fetch_run_body_drain(jsval_region_t *region,
+		jsval_native_microtask_fetch_body_drain_t *task, jsval_off_t task_off)
+{
+	uint8_t scratch[JSVAL_FETCH_BODY_DRAIN_BATCH];
+	size_t n = 0;
+	jsval_body_source_status_t status = JSVAL_BODY_SOURCE_STATUS_ERROR;
+	jsval_native_body_source_t *src;
+	int rc;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	src = jsval_native_body_source(region, task->source_off);
+	if (src == NULL || src->vtable == NULL || src->vtable->read == NULL) {
+		return jsval_body_drain_reject(region, task, "invalid body source");
+	}
+	rc = src->vtable->read(src->userdata, scratch, sizeof(scratch), &n,
+			&status);
+	if (rc < 0 || status == JSVAL_BODY_SOURCE_STATUS_ERROR) {
+		return jsval_body_drain_reject(region, task,
+				"network error reading body");
+	}
+	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING) {
+		/* No native scheduler integration yet: treat PENDING as a
+		 * re-poll by pushing the task back onto the tail. The caller is
+		 * expected not to produce PENDING indefinitely in the current
+		 * slice; real async integration lands with the mnvkd adapter. */
+		return jsval_microtask_push(region, task_off, &task->base);
+	}
+	if (n > 0) {
+		size_t new_total;
+		jsval_native_array_buffer_t *buf;
+		jsval_t buffer_value;
+
+		if (n > SIZE_MAX - task->written_len) {
+			return jsval_body_drain_reject(region, task,
+					"body exceeds length limit");
+		}
+		new_total = task->written_len + n;
+		if (new_total > task->budget) {
+			return jsval_body_drain_reject(region, task,
+					"body exceeds length limit");
+		}
+		if (jsval_body_drain_grow(region, task, new_total) < 0) {
+			if (errno == ENOBUFS) {
+				return jsval_body_drain_reject(region, task,
+						"body exceeds length limit");
+			}
+			return -1;
+		}
+		buffer_value = jsval_undefined();
+		buffer_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+		buffer_value.repr = JSVAL_REPR_NATIVE;
+		buffer_value.off = task->buffer_off;
+		buf = jsval_native_array_buffer(region, buffer_value);
+		if (buf == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memcpy(jsval_native_array_buffer_bytes(buf) + task->written_len,
+				scratch, n);
+		task->written_len = new_total;
+	}
+	if (status == JSVAL_BODY_SOURCE_STATUS_EOF) {
+		return jsval_body_drain_resolve_eof(region, task);
+	}
+	/* READY with more bytes expected — re-enqueue for another pump. */
+	return jsval_microtask_push(region, task_off, &task->base);
+}
+
+/* Streaming-path body consumption: schedule a drain microtask and hand back
+ * its pending promise. Shared between Request and Response. */
+static int jsval_body_consume_streaming(jsval_region_t *region,
+		jsval_off_t source_off, size_t budget, uint8_t consume_mode,
+		jsval_t *promise_out)
+{
+	if (source_off == 0 || promise_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_body_drain_schedule(region, source_off, budget, consume_mode,
+			promise_out);
 }
