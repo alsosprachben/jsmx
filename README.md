@@ -660,6 +660,39 @@ verify. Remaining crypto gaps: RSA-OAEP encryption, ECDH / X25519
 key agreement, and P-384/P-521 curves.
 - `-DJSMX_WITH_CRYPTO=1` in `CFLAGS`
 
+## Fetch API (object-model slice)
+
+The WHATWG Fetch JS object model is available independently of any network
+transport. This slice lives entirely inside `jsval.c` so the object shape
+can be exercised without I/O:
+
+- `Headers` with case-insensitive append/set/get/has/delete,
+  combine-with-comma reads, whitespace-trimming value normalization, token
+  validation on names, and `getSetCookie`.
+- `Request` accepting a URL-string or another `Request` plus an init
+  dictionary (`method`, `headers`, `body`). Method names are normalized
+  and the forbidden `CONNECT` / `TRACE` / `TRACK` methods are rejected
+  with `TypeError`. Bodies are snapshotted from strings, `ArrayBuffer`, or
+  `TypedArray` inputs into an in-memory `ArrayBuffer`.
+- `Response` with body, status, status text, headers, and `ok` derivation,
+  plus the static constructors `Response.error()`, `Response.redirect(url,
+  status)` (restricted to 301/302/303/307/308), and `Response.json(data,
+  init?)` (auto-sets `Content-Type: application/json`).
+- The `Body` mixin: `text()`, `json()`, `arrayBuffer()`, and `bytes()`,
+  all returning `Promise`s that resolve synchronously against the stored
+  bytes. `bodyUsed` locks after first consumption; a second attempt
+  rejects with `TypeError("body already used")`.
+- `fetch(input, init?)` is a value-constructor stub today: it parses
+  input/init into a `Request` and returns a `Promise` that rejects with
+  `DOMException{name: "TypeError", message: "network not implemented
+  yet"}`. The HTTP/1.1 wire serializer, response parser, and mnvkd
+  byte-pipe transport are separate future slices.
+
+Deferred from this slice: streaming `ReadableStream` / `WritableStream`
+bodies, `Blob`, `File`, `FormData`, `AbortController` / `AbortSignal`,
+per-header guard enforcement against the full policy flag set, redirect
+chain handling, and cookie-jar / `Set-Cookie` parsing.
+
 ## Boundary
 
 The boundary in [`docs/flattening-boundary.md`](docs/flattening-boundary.md)

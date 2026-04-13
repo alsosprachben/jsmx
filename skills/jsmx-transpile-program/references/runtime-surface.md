@@ -65,6 +65,24 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       where applicable, plus ECDSA P-256, RSASSA-PKCS1-v1_5,
       RSA-PSS, and Ed25519 asymmetric public/private `CryptoKey`
       values and `CryptoKeyPair` objects returned from `generateKey`
+  - optional feature-gated WHATWG Fetch JS object model values:
+    - `Headers` (case-insensitive append/set/get/has/delete,
+      combine-with-comma reads, value normalization, getSetCookie)
+    - `Request` (URL-string or Request input plus init dict with
+      method/headers/body; forbidden CONNECT/TRACE/TRACK methods
+      rejected; body captured as an in-memory byte snapshot)
+    - `Response` (body + status + statusText + headers, plus static
+      `Response.error(...)`, `Response.redirect(url, status)` restricted
+      to 301/302/303/307/308, and `Response.json(data, init?)` which
+      sets `Content-Type: application/json`)
+    - `Body` mixin `text(...)`, `json(...)`, `arrayBuffer(...)`, and
+      `bytes(...)` returning Promises that resolve synchronously against
+      the in-memory body; `bodyUsed` locks after first consumption
+    - `fetch(input, init?)` as a value-constructor stub: it parses
+      input/init into a `Request` and returns a Promise that rejects
+      with `DOMException{name: "TypeError", message: "network not
+      implemented yet"}` until the HTTP/1.1 serializer, response parser,
+      and mnvkd byte-pipe transport slices land
   - native static function values over translator-emitted call targets
   - native and JSON-backed objects and arrays
   - native `Set` and `Map` values
@@ -123,6 +141,28 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - typed-array / buffer helpers used by `getRandomValues(...)`, digest,
       HMAC, AES-GCM, AES-CTR, AES-CBC, AES-KW, PBKDF2, HKDF, ECDSA,
       RSASSA-PKCS1-v1_5, RSA-PSS, and Ed25519 `BufferSource` inputs
+  - optional feature-gated WHATWG Fetch JS object model through:
+    - `jsval_headers_new(...)`, `jsval_headers_new_from_init(...)`
+    - `jsval_headers_append(...)`, `jsval_headers_set(...)`,
+      `jsval_headers_delete(...)`, `jsval_headers_has(...)`,
+      `jsval_headers_get(...)`, `jsval_headers_get_set_cookie(...)`,
+      `jsval_headers_size(...)`, `jsval_headers_entry_at(...)`
+    - `jsval_request_new(...)` plus `jsval_request_method(...)`,
+      `jsval_request_url(...)`, `jsval_request_headers(...)`,
+      `jsval_request_body_used(...)`, `jsval_request_clone(...)`,
+      `jsval_request_text(...)`, `jsval_request_json(...)`,
+      `jsval_request_array_buffer(...)`, `jsval_request_bytes(...)`
+    - `jsval_response_new(...)`, `jsval_response_error(...)`,
+      `jsval_response_redirect(...)`, `jsval_response_json(...)`,
+      plus `jsval_response_status(...)`, `jsval_response_status_text(...)`,
+      `jsval_response_ok(...)`, `jsval_response_type(...)`,
+      `jsval_response_redirected(...)`, `jsval_response_url(...)`,
+      `jsval_response_headers(...)`, `jsval_response_body_used(...)`,
+      `jsval_response_clone(...)`, `jsval_response_text(...)`,
+      `jsval_response_json_body(...)`,
+      `jsval_response_array_buffer(...)`, `jsval_response_bytes(...)`
+    - `jsval_fetch(...)` — parses input/init into a Request and returns
+      a Promise rejected with TypeError until the transport slice lands
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`
@@ -253,6 +293,19 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     protocol semantics and iterable duck typing
   - functions as values with closure semantics, dynamic `this`, `arguments`,
     constructor behavior, or `bind` / `call` / `apply`
+- WHATWG Fetch surfaces beyond the current object-model slice:
+  - real HTTP/1.1 request serializer and response parser
+  - the mnvkd byte-pipe transport bridge
+    (`connect` / `read` / `write` / `close`)
+  - `fetch()` actually issuing a network request (today `fetch()`
+    always rejects with `TypeError("network not implemented yet")`)
+  - streaming request/response bodies (`ReadableStream`,
+    `WritableStream`), `Blob`, `File`, `FormData`, `body.blob()`,
+    `body.formData()`
+  - `AbortController` / `AbortSignal`
+  - redirect-chain handling, cookie jar / `Set-Cookie` parsing, CORS
+    preflight, and per-header guard enforcement against the
+    `vk_header_list` policy flags
 - host contracts with no clear current mapping:
   - exact `console.log` object formatting like Node `util.inspect`
   - arbitrary core-module behavior beyond the documented host bridges

@@ -13866,6 +13866,114 @@ static generated_status_t generated_string_to_well_formed_invalid_utf8(char *det
 	return generated_expect_jsstr8(&dest, expected, sizeof(expected), detail, cap);
 }
 
+static generated_status_t generated_smoke_jsval_fetch(char *detail, size_t cap)
+{
+	uint8_t storage[65536];
+	jsval_region_t region;
+	jsval_t headers;
+	jsval_t request;
+	jsval_t response;
+	jsval_t promise;
+	jsval_t name;
+	jsval_t value;
+	jsval_t got;
+	jsval_promise_state_t state;
+	uint32_t status_code = 0;
+	int ok = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	if (jsval_headers_new(&region, JSVAL_HEADERS_GUARD_NONE, &headers) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_headers_new");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"Content-Type", 12,
+			&name) < 0) {
+		return generated_fail_errno(detail, cap, "string name");
+	}
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"text/plain", 10,
+			&value) < 0) {
+		return generated_fail_errno(detail, cap, "string value");
+	}
+	if (jsval_headers_append(&region, headers, name, value) < 0) {
+		return generated_fail_errno(detail, cap, "headers append");
+	}
+	if (jsval_headers_get(&region, headers, name, &got) < 0) {
+		return generated_fail_errno(detail, cap, "headers get");
+	}
+	if (generated_expect_string(&region, got, (const uint8_t *)"text/plain",
+			10, detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"https://example.com",
+			19, &got) < 0) {
+		return generated_fail_errno(detail, cap, "url string");
+	}
+	if (jsval_request_new(&region, got, jsval_undefined(), 0, &request) < 0) {
+		return generated_fail_errno(detail, cap, "request new");
+	}
+	if (jsval_request_method(&region, request, &got) < 0) {
+		return generated_fail_errno(detail, cap, "request method");
+	}
+	if (generated_expect_string(&region, got, (const uint8_t *)"GET", 3,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"hello", 5, &got) < 0) {
+		return generated_fail_errno(detail, cap, "body string");
+	}
+	if (jsval_response_new(&region, got, 1, jsval_undefined(), 0,
+			&response) < 0) {
+		return generated_fail_errno(detail, cap, "response new");
+	}
+	if (jsval_response_status(&region, response, &status_code) < 0) {
+		return generated_fail_errno(detail, cap, "response status");
+	}
+	if (status_code != 200) {
+		return generated_failf(detail, cap, "expected status 200 got %u",
+				status_code);
+	}
+	if (jsval_response_ok(&region, response, &ok) < 0) {
+		return generated_fail_errno(detail, cap, "response ok");
+	}
+	if (ok != 1) {
+		return generated_failf(detail, cap, "expected ok=true");
+	}
+	if (jsval_response_text(&region, response, &promise) < 0) {
+		return generated_fail_errno(detail, cap, "response text");
+	}
+	if (jsval_promise_state(&region, promise, &state) < 0) {
+		return generated_fail_errno(detail, cap, "promise state");
+	}
+	if (state != JSVAL_PROMISE_STATE_FULFILLED) {
+		return generated_failf(detail, cap, "expected promise fulfilled");
+	}
+	if (jsval_promise_result(&region, promise, &got) < 0) {
+		return generated_fail_errno(detail, cap, "promise result");
+	}
+	if (generated_expect_string(&region, got, (const uint8_t *)"hello", 5,
+			detail, cap) != GENERATED_PASS) {
+		return GENERATED_WRONG_RESULT;
+	}
+
+	if (jsval_string_new_utf8(&region, (const uint8_t *)"https://example.com",
+			19, &got) < 0) {
+		return generated_fail_errno(detail, cap, "fetch url string");
+	}
+	if (jsval_fetch(&region, got, jsval_undefined(), 0, &promise) < 0) {
+		return generated_fail_errno(detail, cap, "jsval_fetch");
+	}
+	if (jsval_promise_state(&region, promise, &state) < 0) {
+		return generated_fail_errno(detail, cap, "fetch promise state");
+	}
+	if (state != JSVAL_PROMISE_STATE_REJECTED) {
+		return generated_failf(detail, cap, "expected fetch promise rejected");
+	}
+
+	return GENERATED_PASS;
+}
+
 static const generated_case_t generated_cases[] = {
 	{"smoke", "json_promote_emit", generated_smoke_json_promote_emit},
 	{"smoke", "jsval_values", generated_smoke_jsval_values},
@@ -13972,6 +14080,7 @@ static const generated_case_t generated_cases[] = {
 #if JSMX_WITH_REGEX
 	{"smoke", "jsmethod_regex_search_abrupt", generated_smoke_jsmethod_regex_search_abrupt},
 #endif
+	{"smoke", "jsval_fetch", generated_smoke_jsval_fetch},
 	{"strings", "normalize_nfc_combining_ring", generated_string_normalize_nfc_combining_ring},
 	{"strings", "utf16_length_surrogate_pair", generated_string_utf16_length_surrogate_pair},
 	{"strings", "concat_multibyte", generated_string_concat_multibyte},

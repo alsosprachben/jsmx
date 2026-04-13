@@ -4865,6 +4865,76 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WinterTC Ed25519 rejection fixture for sign-with-public-key, verify-with-private-key, raw import with wrong length, and OKP JWK with wrong crv."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-headers-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-headers-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-headers-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Headers fixture: case-insensitive append/has/get, combine-with-comma for duplicate names, value normalization (whitespace trim), null for missing names."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-headers-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-headers-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-headers-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Headers rejection fixture for non-token header names, newline-in-value, and empty name."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Request fixture: construction with method/headers/body init dict, method/url/headers accessors, text() body mixin resolves synchronously, bodyUsed flips after consumption."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Request rejection fixture for the forbidden CONNECT/TRACE/TRACK methods."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-response-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-response-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-response-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Response fixture: constructor with init status/statusText, text() body mixin, Response.json sets application/json, Response.error yields type=error and status=0."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-response-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-response-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-response-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch Response rejection fixture for Response.redirect with invalid status codes and Response constructor with out-of-range status."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-stub",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-stub.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-stub.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored idiomatic WHATWG Fetch stub fixture: fetch() constructs a Request and returns a Promise that rejects with TypeError(\"network not implemented yet\") until the HTTP transport slice lands."
     }
   ]
 }

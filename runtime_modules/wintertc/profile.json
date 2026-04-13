@@ -6,6 +6,16 @@
       "shared_c_bridge": "runtime_modules/shared/fs_sync.h",
       "notes": "The shared sync fs bridge is cataloged here to document overlap with future WinterTC-style profiles, but no WinterTC fs surface is claimed yet."
     },
+    "fetch": {
+      "status": "object_model_only",
+      "surface": [
+        "globalThis.Headers",
+        "globalThis.Request",
+        "globalThis.Response",
+        "globalThis.fetch"
+      ],
+      "notes": "WHATWG Fetch JS object model is available through jsval_headers_*, jsval_request_*, jsval_response_*, and jsval_fetch. Headers supports case-insensitive append/set/get/has/delete, combine-with-comma reads, whitespace normalization, token validation, and getSetCookie. Request accepts URL-string or Request input plus an init dict (method/headers/body) with forbidden-method (CONNECT/TRACE/TRACK) rejection. Response supports body, status, statusText, headers, plus static Response.error, Response.redirect (301/302/303/307/308 only), and Response.json. The Body mixin (text/json/arrayBuffer/bytes) resolves synchronously against in-memory bytes. fetch() parses the request and returns a Promise that rejects with DOMException{name:'TypeError', message:'network not implemented yet'}; the HTTP/1.1 wire serializer, response parser, and mnvkd byte-pipe transport are separate future slices. ReadableStream bodies, Blob, FormData, and AbortSignal are deferred."
+    },
     "crypto": {
       "status": "available",
       "shared_c_bridge": "runtime_modules/shared/webcrypto_openssl.h",
