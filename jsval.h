@@ -44,7 +44,10 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_SUBTLE_CRYPTO = 21,
 	JSVAL_KIND_CRYPTO_KEY = 22,
 	JSVAL_KIND_DOM_EXCEPTION = 23,
-	JSVAL_KIND_PROMISE = 24
+	JSVAL_KIND_PROMISE = 24,
+	JSVAL_KIND_HEADERS = 25,
+	JSVAL_KIND_REQUEST = 26,
+	JSVAL_KIND_RESPONSE = 27
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -1032,5 +1035,110 @@ int jsval_method_string_normalize(jsval_region_t *region, jsval_t this_value,
 		uint16_t *form_storage, size_t form_storage_cap,
 		uint32_t *workspace, size_t workspace_cap,
 		jsval_t *value_ptr, jsmethod_error_t *error);
+
+/*
+ * WHATWG Fetch API — JS object model.
+ *
+ * Public value kinds: JSVAL_KIND_HEADERS, JSVAL_KIND_REQUEST,
+ * JSVAL_KIND_RESPONSE. Implementation lives in jsval.c.
+ *
+ * Network transport (real fetch over HTTP/1.1) is a separate future
+ * slice; for now jsval_fetch returns a Promise that rejects with
+ * DOMException{name: "TypeError", message: "network not implemented yet"}.
+ */
+
+typedef enum jsval_headers_guard_e {
+	JSVAL_HEADERS_GUARD_NONE = 0,
+	JSVAL_HEADERS_GUARD_IMMUTABLE = 1,
+	JSVAL_HEADERS_GUARD_REQUEST = 2,
+	JSVAL_HEADERS_GUARD_REQUEST_NO_CORS = 3,
+	JSVAL_HEADERS_GUARD_RESPONSE = 4
+} jsval_headers_guard_t;
+
+int jsval_headers_new(jsval_region_t *region, jsval_headers_guard_t guard,
+		jsval_t *value_ptr);
+int jsval_headers_new_from_init(jsval_region_t *region,
+		jsval_headers_guard_t guard, jsval_t init_value, jsval_t *value_ptr);
+int jsval_headers_append(jsval_region_t *region, jsval_t headers,
+		jsval_t name, jsval_t value);
+int jsval_headers_set(jsval_region_t *region, jsval_t headers,
+		jsval_t name, jsval_t value);
+int jsval_headers_delete(jsval_region_t *region, jsval_t headers,
+		jsval_t name);
+int jsval_headers_has(jsval_region_t *region, jsval_t headers,
+		jsval_t name, int *has_ptr);
+int jsval_headers_get(jsval_region_t *region, jsval_t headers,
+		jsval_t name, jsval_t *value_ptr);
+int jsval_headers_get_set_cookie(jsval_region_t *region, jsval_t headers,
+		jsval_t *array_ptr);
+int jsval_headers_size(jsval_region_t *region, jsval_t headers,
+		size_t *size_ptr);
+int jsval_headers_entry_at(jsval_region_t *region, jsval_t headers,
+		size_t index, jsval_t *name_ptr, jsval_t *value_ptr);
+
+int jsval_request_new(jsval_region_t *region, jsval_t input_value,
+		jsval_t init_value, int have_init, jsval_t *value_ptr);
+int jsval_request_method(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_url(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_headers(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_body_used(jsval_region_t *region, jsval_t request,
+		int *used_ptr);
+int jsval_request_mode(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_credentials(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_cache(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_redirect(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_clone(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
+int jsval_request_text(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr);
+int jsval_request_json(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr);
+int jsval_request_array_buffer(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr);
+int jsval_request_bytes(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr);
+
+int jsval_response_new(jsval_region_t *region, jsval_t body_value,
+		int have_body, jsval_t init_value, int have_init, jsval_t *value_ptr);
+int jsval_response_error(jsval_region_t *region, jsval_t *value_ptr);
+int jsval_response_redirect(jsval_region_t *region, jsval_t url_value,
+		int have_status, uint32_t status, jsval_t *value_ptr);
+int jsval_response_json(jsval_region_t *region, jsval_t data_value,
+		int have_init, jsval_t init_value, jsval_t *value_ptr);
+int jsval_response_status(jsval_region_t *region, jsval_t response,
+		uint32_t *status_ptr);
+int jsval_response_status_text(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
+int jsval_response_ok(jsval_region_t *region, jsval_t response, int *ok_ptr);
+int jsval_response_type(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
+int jsval_response_redirected(jsval_region_t *region, jsval_t response,
+		int *redirected_ptr);
+int jsval_response_url(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
+int jsval_response_headers(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
+int jsval_response_body_used(jsval_region_t *region, jsval_t response,
+		int *used_ptr);
+int jsval_response_clone(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
+int jsval_response_text(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr);
+int jsval_response_json_body(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr);
+int jsval_response_array_buffer(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr);
+int jsval_response_bytes(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr);
+
+int jsval_fetch(jsval_region_t *region, jsval_t input_value,
+		jsval_t init_value, int have_init, jsval_t *promise_ptr);
 
 #endif

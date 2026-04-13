@@ -11885,6 +11885,222 @@ static void test_dense_array_observable_behavior(void)
 	assert_json(&region, parsed_array, "[7,2]");
 }
 
+static jsval_t fetch_test_str(jsval_region_t *region, const char *s)
+{
+	jsval_t v;
+	assert(jsval_string_new_utf8(region, (const uint8_t *)s, strlen(s), &v)
+			== 0);
+	return v;
+}
+
+static int fetch_test_str_equals(jsval_region_t *region, jsval_t v,
+		const char *s)
+{
+	size_t len = 0;
+	size_t want = strlen(s);
+	if (v.kind != JSVAL_KIND_STRING) { return 0; }
+	if (jsval_string_copy_utf8(region, v, NULL, 0, &len) < 0) { return 0; }
+	if (len != want) { return 0; }
+	{
+		uint8_t buf[want ? want : 1];
+		if (want > 0
+				&& jsval_string_copy_utf8(region, v, buf, want, NULL) < 0) {
+			return 0;
+		}
+		return memcmp(buf, s, want) == 0;
+	}
+}
+
+static void test_fetch_api_semantics(void)
+{
+	uint8_t storage[131072];
+	jsval_region_t region;
+	jsval_t headers;
+	jsval_t request;
+	jsval_t response;
+	jsval_t promise;
+	jsval_t got;
+	int has = 0;
+	int ok = 0;
+	uint32_t status = 0;
+	size_t size = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* Headers: append / get / has / set / delete. */
+	assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_NONE, &headers) == 0);
+	assert(jsval_headers_append(&region, headers,
+			fetch_test_str(&region, "Content-Type"),
+			fetch_test_str(&region, "application/json")) == 0);
+	assert(jsval_headers_append(&region, headers,
+			fetch_test_str(&region, "X-Custom"),
+			fetch_test_str(&region, "  spaces  ")) == 0);
+	assert(jsval_headers_has(&region, headers,
+			fetch_test_str(&region, "content-type"), &has) == 0);
+	assert(has == 1);
+	assert(jsval_headers_get(&region, headers,
+			fetch_test_str(&region, "CONTENT-TYPE"), &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "application/json"));
+	assert(jsval_headers_get(&region, headers,
+			fetch_test_str(&region, "x-custom"), &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "spaces"));
+	/* combine-with-comma */
+	assert(jsval_headers_append(&region, headers,
+			fetch_test_str(&region, "X-Custom"),
+			fetch_test_str(&region, "more")) == 0);
+	assert(jsval_headers_get(&region, headers,
+			fetch_test_str(&region, "x-custom"), &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "spaces, more"));
+	assert(jsval_headers_size(&region, headers, &size) == 0);
+	assert(size == 3);
+	/* set collapses duplicates */
+	assert(jsval_headers_set(&region, headers,
+			fetch_test_str(&region, "X-Custom"),
+			fetch_test_str(&region, "final")) == 0);
+	assert(jsval_headers_get(&region, headers,
+			fetch_test_str(&region, "x-custom"), &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "final"));
+	/* delete */
+	assert(jsval_headers_delete(&region, headers,
+			fetch_test_str(&region, "X-Custom")) == 0);
+	assert(jsval_headers_has(&region, headers,
+			fetch_test_str(&region, "x-custom"), &has) == 0);
+	assert(has == 0);
+	/* Forbidden name/value */
+	errno = 0;
+	assert(jsval_headers_append(&region, headers,
+			fetch_test_str(&region, "bad name"),
+			fetch_test_str(&region, "v")) < 0);
+
+	/* Request construction: default GET for a URL string. */
+	assert(jsval_request_new(&region, fetch_test_str(&region, "https://ex.com"),
+			jsval_undefined(), 0, &request) == 0);
+	assert(jsval_request_method(&region, request, &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "GET"));
+	assert(jsval_request_url(&region, request, &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "https://ex.com"));
+
+	/* Request with init dict. */
+	{
+		jsval_t init;
+		jsval_t method_name;
+		jsval_t body_text;
+
+		assert(jsval_object_new(&region, 8, &init) == 0);
+		method_name = fetch_test_str(&region, "POST");
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"method", 6, method_name) == 0);
+		body_text = fetch_test_str(&region, "{\"x\":1}");
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"body", 4, body_text) == 0);
+		assert(jsval_request_new(&region,
+				fetch_test_str(&region, "https://ex.com"), init, 1,
+				&request) == 0);
+	}
+	assert(jsval_request_method(&region, request, &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "POST"));
+	assert(jsval_request_body_used(&region, request, &has) == 0);
+	assert(has == 0);
+
+	/* Body consumption: text() resolves with the posted body. */
+	{
+		jsval_promise_state_t state;
+		assert(jsval_request_text(&region, request, &promise) == 0);
+		assert(promise.kind == JSVAL_KIND_PROMISE);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(fetch_test_str_equals(&region, got, "{\"x\":1}"));
+		assert(jsval_request_body_used(&region, request, &has) == 0);
+		assert(has == 1);
+
+		assert(jsval_request_text(&region, request, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	}
+
+	/* Forbidden method is rejected. */
+	{
+		jsval_t init;
+		jsval_t req2;
+		assert(jsval_object_new(&region, 4, &init) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"method", 6,
+				fetch_test_str(&region, "CONNECT")) == 0);
+		errno = 0;
+		assert(jsval_request_new(&region,
+				fetch_test_str(&region, "https://ex.com"), init, 1, &req2) < 0);
+	}
+
+	/* Response: default status 200, type "default", ok true. */
+	assert(jsval_response_new(&region, fetch_test_str(&region, "hello"), 1,
+			jsval_undefined(), 0, &response) == 0);
+	assert(jsval_response_status(&region, response, &status) == 0);
+	assert(status == 200);
+	assert(jsval_response_ok(&region, response, &ok) == 0);
+	assert(ok == 1);
+	{
+		jsval_promise_state_t state;
+		assert(jsval_response_text(&region, response, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(fetch_test_str_equals(&region, got, "hello"));
+	}
+
+	/* Response.json sets Content-Type and parses back. */
+	{
+		jsval_t data;
+		jsval_t parsed;
+		static const char src[] = "{\"ok\":true}";
+		assert(jsval_json_parse(&region, (const uint8_t *)src, sizeof(src) - 1,
+				16, &data) == 0);
+		assert(jsval_response_json(&region, data, 0, jsval_undefined(),
+				&response) == 0);
+		assert(jsval_response_headers(&region, response, &got) == 0);
+		{
+			jsval_t ct;
+			assert(jsval_headers_get(&region, got,
+					fetch_test_str(&region, "Content-Type"), &ct) == 0);
+			assert(fetch_test_str_equals(&region, ct, "application/json"));
+		}
+		{
+			jsval_promise_state_t state;
+			assert(jsval_response_json_body(&region, response, &promise) == 0);
+			assert(jsval_promise_state(&region, promise, &state) == 0);
+			assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region, promise, &parsed) == 0);
+			(void)parsed;
+		}
+	}
+
+	/* Response.error is status 0 and type "error". */
+	assert(jsval_response_error(&region, &response) == 0);
+	assert(jsval_response_status(&region, response, &status) == 0);
+	assert(status == 0);
+	assert(jsval_response_type(&region, response, &got) == 0);
+	assert(fetch_test_str_equals(&region, got, "error"));
+
+	/* Response.redirect rejects bad status. */
+	errno = 0;
+	assert(jsval_response_redirect(&region,
+			fetch_test_str(&region, "https://ex.com/"), 1, 200, &response) < 0);
+	assert(jsval_response_redirect(&region,
+			fetch_test_str(&region, "https://ex.com/"), 1, 301, &response) == 0);
+	assert(jsval_response_status(&region, response, &status) == 0);
+	assert(status == 301);
+
+	/* fetch() returns a rejected promise. */
+	{
+		jsval_promise_state_t state;
+		assert(jsval_fetch(&region, fetch_test_str(&region, "https://ex.com"),
+				jsval_undefined(), 0, &promise) == 0);
+		assert(promise.kind == JSVAL_KIND_PROMISE);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	}
+}
+
 int main(void)
 {
 	test_region_alloc_helpers();
@@ -11960,6 +12176,7 @@ int main(void)
 	test_shallow_planned_promotion();
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();
+	test_fetch_api_semantics();
 	puts("test_jsval: ok");
 	return 0;
 }

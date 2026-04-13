@@ -236,6 +236,72 @@ typedef struct jsval_native_match_iterator_s {
 	uint8_t reserved[4];
 } jsval_native_match_iterator_t;
 
+typedef enum jsval_http_method_internal_e {
+	JSVAL_HTTP_METHOD_CONNECT = 0,
+	JSVAL_HTTP_METHOD_DELETE = 1,
+	JSVAL_HTTP_METHOD_GET = 2,
+	JSVAL_HTTP_METHOD_HEAD = 3,
+	JSVAL_HTTP_METHOD_OPTIONS = 4,
+	JSVAL_HTTP_METHOD_PATCH = 5,
+	JSVAL_HTTP_METHOD_POST = 6,
+	JSVAL_HTTP_METHOD_PRI = 7,
+	JSVAL_HTTP_METHOD_PUT = 8,
+	JSVAL_HTTP_METHOD_TRACE = 9,
+	JSVAL_HTTP_METHOD_TRACK = 10,
+	JSVAL_HTTP_METHOD_NONE = 11
+} jsval_http_method_internal_t;
+
+typedef enum jsval_response_type_internal_e {
+	JSVAL_RESPONSE_TYPE_DEFAULT = 0,
+	JSVAL_RESPONSE_TYPE_BASIC = 1,
+	JSVAL_RESPONSE_TYPE_CORS = 2,
+	JSVAL_RESPONSE_TYPE_ERROR = 3,
+	JSVAL_RESPONSE_TYPE_OPAQUE = 4,
+	JSVAL_RESPONSE_TYPE_OPAQUE_REDIRECT = 5
+} jsval_response_type_internal_t;
+
+typedef struct jsval_native_headers_entry_s {
+	jsval_t name;
+	jsval_t value;
+} jsval_native_headers_entry_t;
+
+typedef struct jsval_native_headers_s {
+	size_t len;
+	size_t cap;
+	uint8_t guard;
+	uint8_t reserved[7];
+} jsval_native_headers_t;
+
+typedef struct jsval_native_request_s {
+	jsval_t url;
+	jsval_t headers;
+	jsval_t body_buffer;
+	uint8_t method;
+	uint8_t mode;
+	uint8_t credentials;
+	uint8_t cache;
+	uint8_t redirect;
+	uint8_t duplex;
+	uint8_t priority;
+	uint8_t keepalive;
+	uint8_t body_used;
+	uint8_t has_body;
+	uint8_t reserved[6];
+} jsval_native_request_t;
+
+typedef struct jsval_native_response_s {
+	jsval_t url;
+	jsval_t headers;
+	jsval_t status_text;
+	jsval_t body_buffer;
+	uint16_t status;
+	uint8_t type;
+	uint8_t redirected;
+	uint8_t body_used;
+	uint8_t has_body;
+	uint8_t reserved[2];
+} jsval_native_response_t;
+
 typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_FUNCTION_CALL = 0,
 	JSVAL_MICROTASK_KIND_PROMISE_REACTION = 1,
@@ -1782,6 +1848,39 @@ static jsval_native_iterator_t *jsval_native_iterator(jsval_region_t *region,
 	return (jsval_native_iterator_t *)jsval_region_ptr(region, value.off);
 }
 
+static jsval_native_headers_t *jsval_native_headers(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_HEADERS) {
+		return NULL;
+	}
+	return (jsval_native_headers_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_headers_entry_t *
+jsval_native_headers_entries(jsval_native_headers_t *h)
+{
+	return (jsval_native_headers_entry_t *)(h + 1);
+}
+
+static jsval_native_request_t *jsval_native_request(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_REQUEST) {
+		return NULL;
+	}
+	return (jsval_native_request_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_response_t *jsval_native_response(jsval_region_t *region,
+		jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_RESPONSE) {
+		return NULL;
+	}
+	return (jsval_native_response_t *)jsval_region_ptr(region, value.off);
+}
+
 static jsval_native_url_t *jsval_native_url(jsval_region_t *region, jsval_t value)
 {
 	if (value.repr != JSVAL_REPR_NATIVE || value.kind != JSVAL_KIND_URL) {
@@ -1822,6 +1921,9 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		return 1;
 	default:
 		return 0;
@@ -3388,6 +3490,9 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -3540,6 +3645,9 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3618,6 +3726,9 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3715,6 +3826,9 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -3890,6 +4004,9 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -31230,6 +31347,9 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -31331,6 +31451,9 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		return 1;
 	default:
 		return 0;
@@ -31419,6 +31542,9 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_CRYPTO_KEY:
 	case JSVAL_KIND_DOM_EXCEPTION:
 	case JSVAL_KIND_PROMISE:
+	case JSVAL_KIND_HEADERS:
+	case JSVAL_KIND_REQUEST:
+	case JSVAL_KIND_RESPONSE:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -33547,5 +33673,1875 @@ int jsval_region_promote_root(jsval_region_t *region, jsval_t *value_ptr)
 	if (value_ptr != NULL) {
 		*value_ptr = root;
 	}
+	return 0;
+}
+
+/* =========================================================================
+ * WHATWG Fetch API — JS object model
+ *
+ * Implements Headers, Request, Response, Body mixin, and a fetch() stub.
+ * Network transport is deferred: fetch() returns a Promise that rejects
+ * with TypeError("network not implemented yet").
+ *
+ * Invariants / simplifications for this slice:
+ * - Headers is a list of (name, value) pairs with a fixed capacity set at
+ *   construction time. Default cap = JSVAL_HEADERS_DEFAULT_CAP.
+ * - Guard is stored but not yet enforced (accepting any mutation).
+ * - `get()` combines all same-name values with ", ", except Set-Cookie
+ *   where `get()` returns the first value only and `getSetCookie()`
+ *   returns the full list.
+ * - Iteration order is storage (insertion) order, not the spec's
+ *   sort-and-combine order. Ships faithful enough for common use.
+ * - Body is stored as an ArrayBuffer jsval; text/bytes/json/arrayBuffer
+ *   are synchronously resolving promises.
+ * ========================================================================= */
+
+#define JSVAL_HEADERS_DEFAULT_CAP 32
+
+static int jsval_headers_alloc_with_cap(jsval_region_t *region,
+		jsval_headers_guard_t guard, size_t cap, jsval_t *value_ptr)
+{
+	jsval_native_headers_t *h;
+	jsval_off_t off;
+	size_t bytes_len;
+	size_t i;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (cap == 0) {
+		cap = JSVAL_HEADERS_DEFAULT_CAP;
+	}
+	if (cap > (SIZE_MAX - sizeof(*h)) / sizeof(jsval_native_headers_entry_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	bytes_len = sizeof(*h) + cap * sizeof(jsval_native_headers_entry_t);
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&h) < 0) {
+		return -1;
+	}
+	h->len = 0;
+	h->cap = cap;
+	h->guard = (uint8_t)guard;
+	for (i = 0; i < 7; i++) {
+		h->reserved[i] = 0;
+	}
+	for (i = 0; i < cap; i++) {
+		jsval_native_headers_entry_t *entry
+				= &jsval_native_headers_entries(h)[i];
+		entry->name = jsval_undefined();
+		entry->value = jsval_undefined();
+	}
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_HEADERS;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_headers_new(jsval_region_t *region, jsval_headers_guard_t guard,
+		jsval_t *value_ptr)
+{
+	return jsval_headers_alloc_with_cap(region, guard,
+			JSVAL_HEADERS_DEFAULT_CAP, value_ptr);
+}
+
+static int jsval_headers_name_equals_ci(jsval_region_t *region,
+		jsval_t a, jsval_t b, int *equal_ptr)
+{
+	size_t a_len = 0;
+	size_t b_len = 0;
+	size_t i;
+
+	if (a.kind != JSVAL_KIND_STRING || b.kind != JSVAL_KIND_STRING) {
+		*equal_ptr = 0;
+		return 0;
+	}
+	if (jsval_string_copy_utf8(region, a, NULL, 0, &a_len) < 0) {
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, b, NULL, 0, &b_len) < 0) {
+		return -1;
+	}
+	if (a_len != b_len) {
+		*equal_ptr = 0;
+		return 0;
+	}
+	{
+		uint8_t a_buf[a_len ? a_len : 1];
+		uint8_t b_buf[b_len ? b_len : 1];
+
+		if (jsval_string_copy_utf8(region, a, a_buf, a_len, NULL) < 0) {
+			return -1;
+		}
+		if (jsval_string_copy_utf8(region, b, b_buf, b_len, NULL) < 0) {
+			return -1;
+		}
+		for (i = 0; i < a_len; i++) {
+			uint8_t ca = a_buf[i];
+			uint8_t cb = b_buf[i];
+			if (ca >= 'A' && ca <= 'Z') { ca = (uint8_t)(ca + 32); }
+			if (cb >= 'A' && cb <= 'Z') { cb = (uint8_t)(cb + 32); }
+			if (ca != cb) {
+				*equal_ptr = 0;
+				return 0;
+			}
+		}
+	}
+	*equal_ptr = 1;
+	return 0;
+}
+
+static int jsval_headers_name_equals_ascii_ci(jsval_region_t *region,
+		jsval_t name, const char *ascii, int *equal_ptr)
+{
+	size_t n_len = 0;
+	size_t want_len = strlen(ascii);
+	size_t i;
+
+	if (name.kind != JSVAL_KIND_STRING) {
+		*equal_ptr = 0;
+		return 0;
+	}
+	if (jsval_string_copy_utf8(region, name, NULL, 0, &n_len) < 0) {
+		return -1;
+	}
+	if (n_len != want_len) {
+		*equal_ptr = 0;
+		return 0;
+	}
+	{
+		uint8_t buf[n_len ? n_len : 1];
+
+		if (jsval_string_copy_utf8(region, name, buf, n_len, NULL) < 0) {
+			return -1;
+		}
+		for (i = 0; i < n_len; i++) {
+			uint8_t a = buf[i];
+			uint8_t b = (uint8_t)ascii[i];
+			if (a >= 'A' && a <= 'Z') { a = (uint8_t)(a + 32); }
+			if (b >= 'A' && b <= 'Z') { b = (uint8_t)(b + 32); }
+			if (a != b) {
+				*equal_ptr = 0;
+				return 0;
+			}
+		}
+	}
+	*equal_ptr = 1;
+	return 0;
+}
+
+static int jsval_http_is_token_byte(uint8_t c)
+{
+	if (c >= '0' && c <= '9') { return 1; }
+	if (c >= 'A' && c <= 'Z') { return 1; }
+	if (c >= 'a' && c <= 'z') { return 1; }
+	switch (c) {
+	case '!': case '#': case '$': case '%': case '&': case '\'':
+	case '*': case '+': case '-': case '.': case '^': case '_':
+	case '`': case '|': case '~':
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int jsval_http_validate_header_name(jsval_region_t *region,
+		jsval_t name)
+{
+	size_t n_len = 0;
+	size_t i;
+
+	if (name.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, name, NULL, 0, &n_len) < 0) {
+		return -1;
+	}
+	if (n_len == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	{
+		uint8_t buf[n_len];
+
+		if (jsval_string_copy_utf8(region, name, buf, n_len, NULL) < 0) {
+			return -1;
+		}
+		for (i = 0; i < n_len; i++) {
+			if (!jsval_http_is_token_byte(buf[i])) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int jsval_http_validate_header_value(jsval_region_t *region,
+		jsval_t value)
+{
+	size_t v_len = 0;
+	size_t i;
+
+	if (value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, value, NULL, 0, &v_len) < 0) {
+		return -1;
+	}
+	if (v_len == 0) {
+		return 0;
+	}
+	{
+		uint8_t buf[v_len];
+
+		if (jsval_string_copy_utf8(region, value, buf, v_len, NULL) < 0) {
+			return -1;
+		}
+		for (i = 0; i < v_len; i++) {
+			if (buf[i] == 0 || buf[i] == '\r' || buf[i] == '\n') {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int jsval_http_normalize_header_value(jsval_region_t *region,
+		jsval_t in_value, jsval_t *out_value)
+{
+	size_t v_len = 0;
+	size_t start;
+	size_t end;
+
+	if (in_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, in_value, NULL, 0, &v_len) < 0) {
+		return -1;
+	}
+	{
+		uint8_t buf[v_len ? v_len : 1];
+
+		if (v_len > 0
+				&& jsval_string_copy_utf8(region, in_value, buf, v_len, NULL) < 0) {
+			return -1;
+		}
+		start = 0;
+		end = v_len;
+		while (start < end && (buf[start] == ' ' || buf[start] == '\t')) {
+			start++;
+		}
+		while (end > start && (buf[end - 1] == ' ' || buf[end - 1] == '\t')) {
+			end--;
+		}
+		return jsval_string_new_utf8(region, buf + start, end - start,
+				out_value);
+	}
+}
+
+int jsval_headers_append(jsval_region_t *region, jsval_t headers,
+		jsval_t name, jsval_t value)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	jsval_t normalized;
+
+	if (jsval_http_validate_header_name(region, name) < 0) {
+		return -1;
+	}
+	if (jsval_http_validate_header_value(region, value) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (h->guard == JSVAL_HEADERS_GUARD_IMMUTABLE) {
+		errno = EACCES;
+		return -1;
+	}
+	if (h->len >= h->cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	if (jsval_http_normalize_header_value(region, value, &normalized) < 0) {
+		return -1;
+	}
+	/* Re-fetch pointer — region may have grown. */
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	entries[h->len].name = name;
+	entries[h->len].value = normalized;
+	h->len++;
+	return 0;
+}
+
+int jsval_headers_set(jsval_region_t *region, jsval_t headers,
+		jsval_t name, jsval_t value)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	jsval_t normalized;
+	size_t i;
+	size_t first_match = SIZE_MAX;
+
+	if (jsval_http_validate_header_name(region, name) < 0) {
+		return -1;
+	}
+	if (jsval_http_validate_header_value(region, value) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (h->guard == JSVAL_HEADERS_GUARD_IMMUTABLE) {
+		errno = EACCES;
+		return -1;
+	}
+	if (jsval_http_normalize_header_value(region, value, &normalized) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	for (i = 0; i < h->len; ) {
+		int eq = 0;
+		if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+				&eq) < 0) {
+			return -1;
+		}
+		if (eq) {
+			if (first_match == SIZE_MAX) {
+				entries[i].value = normalized;
+				first_match = i;
+				i++;
+				continue;
+			}
+			if (i + 1 < h->len) {
+				memmove(entries + i, entries + i + 1,
+						(h->len - i - 1) * sizeof(*entries));
+			}
+			h->len--;
+			continue;
+		}
+		i++;
+	}
+	if (first_match == SIZE_MAX) {
+		if (h->len >= h->cap) {
+			errno = ENOBUFS;
+			return -1;
+		}
+		entries[h->len].name = name;
+		entries[h->len].value = normalized;
+		h->len++;
+	}
+	return 0;
+}
+
+int jsval_headers_delete(jsval_region_t *region, jsval_t headers, jsval_t name)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	size_t i;
+
+	if (jsval_http_validate_header_name(region, name) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (h->guard == JSVAL_HEADERS_GUARD_IMMUTABLE) {
+		errno = EACCES;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	for (i = 0; i < h->len; ) {
+		int eq = 0;
+		if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+				&eq) < 0) {
+			return -1;
+		}
+		if (eq) {
+			if (i + 1 < h->len) {
+				memmove(entries + i, entries + i + 1,
+						(h->len - i - 1) * sizeof(*entries));
+			}
+			h->len--;
+			continue;
+		}
+		i++;
+	}
+	return 0;
+}
+
+int jsval_headers_has(jsval_region_t *region, jsval_t headers, jsval_t name,
+		int *has_ptr)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	size_t i;
+
+	if (has_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_http_validate_header_name(region, name) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	for (i = 0; i < h->len; i++) {
+		int eq = 0;
+		if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+				&eq) < 0) {
+			return -1;
+		}
+		if (eq) {
+			*has_ptr = 1;
+			return 0;
+		}
+	}
+	*has_ptr = 0;
+	return 0;
+}
+
+int jsval_headers_get(jsval_region_t *region, jsval_t headers, jsval_t name,
+		jsval_t *value_ptr)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	size_t i;
+	int is_set_cookie = 0;
+	size_t total_len = 0;
+	size_t matches = 0;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_http_validate_header_name(region, name) < 0) {
+		return -1;
+	}
+	if (jsval_headers_name_equals_ascii_ci(region, name, "set-cookie",
+			&is_set_cookie) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+
+	if (is_set_cookie) {
+		for (i = 0; i < h->len; i++) {
+			int eq = 0;
+			if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+					&eq) < 0) {
+				return -1;
+			}
+			if (eq) {
+				*value_ptr = entries[i].value;
+				return 0;
+			}
+		}
+		*value_ptr = jsval_null();
+		return 0;
+	}
+
+	for (i = 0; i < h->len; i++) {
+		int eq = 0;
+		size_t v_len = 0;
+
+		if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+				&eq) < 0) {
+			return -1;
+		}
+		if (!eq) { continue; }
+		if (jsval_string_copy_utf8(region, entries[i].value, NULL, 0,
+				&v_len) < 0) {
+			return -1;
+		}
+		if (total_len > 0) {
+			total_len += 2; /* ", " */
+		}
+		total_len += v_len;
+		matches++;
+	}
+	if (matches == 0) {
+		*value_ptr = jsval_null();
+		return 0;
+	}
+	{
+		uint8_t buf[total_len ? total_len : 1];
+		size_t off = 0;
+		int first = 1;
+
+		for (i = 0; i < h->len; i++) {
+			int eq = 0;
+			size_t v_len = 0;
+
+			if (jsval_headers_name_equals_ci(region, entries[i].name, name,
+					&eq) < 0) {
+				return -1;
+			}
+			if (!eq) { continue; }
+			if (!first) {
+				buf[off++] = ',';
+				buf[off++] = ' ';
+			}
+			first = 0;
+			if (jsval_string_copy_utf8(region, entries[i].value, buf + off,
+					total_len - off, &v_len) < 0) {
+				return -1;
+			}
+			off += v_len;
+		}
+		return jsval_string_new_utf8(region, buf, off, value_ptr);
+	}
+}
+
+int jsval_headers_get_set_cookie(jsval_region_t *region, jsval_t headers,
+		jsval_t *array_ptr)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+	jsval_t name_key;
+	jsval_t array;
+	size_t i;
+	size_t count = 0;
+
+	if (array_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"set-cookie", 10,
+			&name_key) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	for (i = 0; i < h->len; i++) {
+		int eq = 0;
+		if (jsval_headers_name_equals_ci(region, entries[i].name, name_key,
+				&eq) < 0) {
+			return -1;
+		}
+		if (eq) { count++; }
+	}
+	if (jsval_array_new(region, count, &array) < 0) {
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	entries = jsval_native_headers_entries(h);
+	{
+		size_t idx = 0;
+		for (i = 0; i < h->len; i++) {
+			int eq = 0;
+			if (jsval_headers_name_equals_ci(region, entries[i].name, name_key,
+					&eq) < 0) {
+				return -1;
+			}
+			if (eq) {
+				if (jsval_array_set(region, array, idx, entries[i].value) < 0) {
+					return -1;
+				}
+				idx++;
+			}
+		}
+	}
+	*array_ptr = array;
+	return 0;
+}
+
+int jsval_headers_size(jsval_region_t *region, jsval_t headers,
+		size_t *size_ptr)
+{
+	jsval_native_headers_t *h;
+
+	if (size_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	h = jsval_native_headers(region, headers);
+	if (h == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*size_ptr = h->len;
+	return 0;
+}
+
+int jsval_headers_entry_at(jsval_region_t *region, jsval_t headers,
+		size_t index, jsval_t *name_ptr, jsval_t *value_ptr)
+{
+	jsval_native_headers_t *h;
+	jsval_native_headers_entry_t *entries;
+
+	h = jsval_native_headers(region, headers);
+	if (h == NULL || index >= h->len) {
+		errno = EINVAL;
+		return -1;
+	}
+	entries = jsval_native_headers_entries(h);
+	if (name_ptr != NULL) { *name_ptr = entries[index].name; }
+	if (value_ptr != NULL) { *value_ptr = entries[index].value; }
+	return 0;
+}
+
+int jsval_headers_new_from_init(jsval_region_t *region,
+		jsval_headers_guard_t guard, jsval_t init_value, jsval_t *value_ptr)
+{
+	jsval_t out;
+	size_t needed = JSVAL_HEADERS_DEFAULT_CAP;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (init_value.kind == JSVAL_KIND_ARRAY) {
+		size_t len = jsval_array_length(region, init_value);
+		if (len > needed) { needed = len * 2; }
+	} else if (init_value.kind == JSVAL_KIND_OBJECT) {
+		size_t len = jsval_object_size(region, init_value);
+		if (len > needed) { needed = len * 2; }
+	} else if (init_value.kind == JSVAL_KIND_HEADERS) {
+		jsval_native_headers_t *src = jsval_native_headers(region, init_value);
+		if (src != NULL && src->len > needed) { needed = src->len * 2; }
+	}
+	if (jsval_headers_alloc_with_cap(region, JSVAL_HEADERS_GUARD_NONE,
+			needed, &out) < 0) {
+		return -1;
+	}
+
+	if (init_value.kind == JSVAL_KIND_UNDEFINED
+			|| init_value.kind == JSVAL_KIND_NULL) {
+		/* nothing to populate */
+	} else if (init_value.kind == JSVAL_KIND_HEADERS) {
+		jsval_native_headers_t *src = jsval_native_headers(region, init_value);
+		jsval_native_headers_entry_t *src_entries;
+		size_t i;
+		size_t src_len;
+
+		if (src == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		src_len = src->len;
+		src_entries = jsval_native_headers_entries(src);
+		for (i = 0; i < src_len; i++) {
+			jsval_t n = src_entries[i].name;
+			jsval_t v = src_entries[i].value;
+			if (jsval_headers_append(region, out, n, v) < 0) {
+				return -1;
+			}
+			src = jsval_native_headers(region, init_value);
+			if (src == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			src_entries = jsval_native_headers_entries(src);
+		}
+	} else if (init_value.kind == JSVAL_KIND_ARRAY) {
+		size_t len = jsval_array_length(region, init_value);
+		size_t i;
+
+		for (i = 0; i < len; i++) {
+			jsval_t pair;
+			jsval_t n;
+			jsval_t v;
+			if (jsval_array_get(region, init_value, i, &pair) < 0) {
+				return -1;
+			}
+			if (pair.kind != JSVAL_KIND_ARRAY
+					|| jsval_array_length(region, pair) != 2) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_array_get(region, pair, 0, &n) < 0) { return -1; }
+			if (jsval_array_get(region, pair, 1, &v) < 0) { return -1; }
+			if (jsval_headers_append(region, out, n, v) < 0) {
+				return -1;
+			}
+		}
+	} else if (init_value.kind == JSVAL_KIND_OBJECT) {
+		size_t len = jsval_object_size(region, init_value);
+		size_t i;
+
+		for (i = 0; i < len; i++) {
+			jsval_t n;
+			jsval_t v;
+			if (jsval_object_key_at(region, init_value, i, &n) < 0) {
+				return -1;
+			}
+			if (jsval_object_value_at(region, init_value, i, &v) < 0) {
+				return -1;
+			}
+			if (jsval_headers_append(region, out, n, v) < 0) {
+				return -1;
+			}
+		}
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+	{
+		jsval_native_headers_t *h = jsval_native_headers(region, out);
+		if (h != NULL) { h->guard = (uint8_t)guard; }
+	}
+	*value_ptr = out;
+	return 0;
+}
+
+/* -------------------- Body helpers --------------------- */
+
+static int jsval_body_resolve_text(jsval_region_t *region, jsval_t body_buffer,
+		int has_body, jsval_t *promise_ptr)
+{
+	jsval_t promise;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (!has_body) {
+		jsval_t empty;
+		if (jsval_string_new_utf8(region, (const uint8_t *)"", 0, &empty) < 0) {
+			return -1;
+		}
+		if (jsval_promise_resolve(region, promise, empty) < 0) {
+			return -1;
+		}
+	} else {
+		size_t len = 0;
+		if (jsval_array_buffer_byte_length(region, body_buffer, &len) < 0) {
+			return -1;
+		}
+		{
+			uint8_t buf[len ? len : 1];
+			jsval_t out;
+			if (len > 0
+					&& jsval_array_buffer_copy_bytes(region, body_buffer, buf,
+							len, NULL) < 0) {
+				return -1;
+			}
+			if (jsval_string_new_utf8(region, buf, len, &out) < 0) {
+				return -1;
+			}
+			if (jsval_promise_resolve(region, promise, out) < 0) {
+				return -1;
+			}
+		}
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+static int jsval_body_resolve_array_buffer(jsval_region_t *region,
+		jsval_t body_buffer, int has_body, jsval_t *promise_ptr)
+{
+	jsval_t promise;
+	jsval_t out;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (!has_body) {
+		if (jsval_array_buffer_new(region, 0, &out) < 0) {
+			return -1;
+		}
+	} else {
+		size_t len = 0;
+		if (jsval_array_buffer_byte_length(region, body_buffer, &len) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_new(region, len, &out) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, out);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_array_buffer_copy_bytes(region, body_buffer,
+					jsval_native_array_buffer_bytes(dst), len, NULL) < 0) {
+				return -1;
+			}
+		}
+	}
+	if (jsval_promise_resolve(region, promise, out) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+static int jsval_body_resolve_bytes(jsval_region_t *region, jsval_t body_buffer,
+		int has_body, jsval_t *promise_ptr)
+{
+	jsval_t promise;
+	jsval_t typed;
+	size_t len = 0;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (has_body) {
+		if (jsval_array_buffer_byte_length(region, body_buffer, &len) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8, len, &typed) < 0) {
+		return -1;
+	}
+	if (len > 0) {
+		jsval_t backing;
+		jsval_native_array_buffer_t *dst;
+
+		if (jsval_typed_array_buffer(region, typed, &backing) < 0) {
+			return -1;
+		}
+		dst = jsval_native_array_buffer(region, backing);
+		if (dst == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_array_buffer_copy_bytes(region, body_buffer,
+				jsval_native_array_buffer_bytes(dst), len, NULL) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_promise_resolve(region, promise, typed) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+static int jsval_body_resolve_json(jsval_region_t *region, jsval_t body_buffer,
+		int has_body, jsval_t *promise_ptr)
+{
+	jsval_t promise;
+	size_t len = 0;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (!has_body) {
+		jsval_t reason;
+		if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+				"empty body", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (jsval_array_buffer_byte_length(region, body_buffer, &len) < 0) {
+		return -1;
+	}
+	{
+		uint8_t buf[len ? len : 1];
+		jsval_t parsed;
+		if (len > 0
+				&& jsval_array_buffer_copy_bytes(region, body_buffer, buf, len,
+						NULL) < 0) {
+			return -1;
+		}
+		if (jsval_json_parse(region, buf, len, 256, &parsed) < 0) {
+			jsval_t reason;
+			if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+					"invalid JSON", &reason) < 0) {
+				return -1;
+			}
+			if (jsval_promise_reject(region, promise, reason) < 0) {
+				return -1;
+			}
+			*promise_ptr = promise;
+			return 0;
+		}
+		if (jsval_promise_resolve(region, promise, parsed) < 0) {
+			return -1;
+		}
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+/* -------------------- Request --------------------- */
+
+static int jsval_http_method_from_string(jsval_region_t *region, jsval_t name,
+		uint8_t *method_out)
+{
+	static const struct {
+		const char *name;
+		uint8_t method;
+	} table[] = {
+		{ "CONNECT", JSVAL_HTTP_METHOD_CONNECT },
+		{ "DELETE",  JSVAL_HTTP_METHOD_DELETE },
+		{ "GET",     JSVAL_HTTP_METHOD_GET },
+		{ "HEAD",    JSVAL_HTTP_METHOD_HEAD },
+		{ "OPTIONS", JSVAL_HTTP_METHOD_OPTIONS },
+		{ "PATCH",   JSVAL_HTTP_METHOD_PATCH },
+		{ "POST",    JSVAL_HTTP_METHOD_POST },
+		{ "PUT",     JSVAL_HTTP_METHOD_PUT },
+		{ "TRACE",   JSVAL_HTTP_METHOD_TRACE },
+		{ "TRACK",   JSVAL_HTTP_METHOD_TRACK }
+	};
+	size_t i;
+	size_t n_len = 0;
+
+	if (name.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, name, NULL, 0, &n_len) < 0) {
+		return -1;
+	}
+	if (n_len == 0 || n_len > 16) {
+		errno = EINVAL;
+		return -1;
+	}
+	{
+		uint8_t buf[n_len];
+		if (jsval_string_copy_utf8(region, name, buf, n_len, NULL) < 0) {
+			return -1;
+		}
+		for (i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+			size_t tlen = strlen(table[i].name);
+			size_t j;
+			int ok;
+			if (tlen != n_len) { continue; }
+			ok = 1;
+			for (j = 0; j < n_len; j++) {
+				uint8_t a = buf[j];
+				uint8_t b = (uint8_t)table[i].name[j];
+				if (a >= 'a' && a <= 'z') { a = (uint8_t)(a - 32); }
+				if (a != b) { ok = 0; break; }
+			}
+			if (ok) {
+				*method_out = table[i].method;
+				return 0;
+			}
+		}
+		for (i = 0; i < n_len; i++) {
+			if (!jsval_http_is_token_byte(buf[i])) {
+				errno = EINVAL;
+				return -1;
+			}
+		}
+	}
+	*method_out = JSVAL_HTTP_METHOD_NONE;
+	return 0;
+}
+
+static const char *jsval_http_method_to_string(uint8_t method)
+{
+	switch (method) {
+	case JSVAL_HTTP_METHOD_CONNECT: return "CONNECT";
+	case JSVAL_HTTP_METHOD_DELETE:  return "DELETE";
+	case JSVAL_HTTP_METHOD_GET:     return "GET";
+	case JSVAL_HTTP_METHOD_HEAD:    return "HEAD";
+	case JSVAL_HTTP_METHOD_OPTIONS: return "OPTIONS";
+	case JSVAL_HTTP_METHOD_PATCH:   return "PATCH";
+	case JSVAL_HTTP_METHOD_POST:    return "POST";
+	case JSVAL_HTTP_METHOD_PUT:     return "PUT";
+	case JSVAL_HTTP_METHOD_TRACE:   return "TRACE";
+	case JSVAL_HTTP_METHOD_TRACK:   return "TRACK";
+	default:                        return "GET";
+	}
+}
+
+static int jsval_http_method_is_forbidden(uint8_t method)
+{
+	return method == JSVAL_HTTP_METHOD_CONNECT
+			|| method == JSVAL_HTTP_METHOD_TRACE
+			|| method == JSVAL_HTTP_METHOD_TRACK;
+}
+
+static int jsval_body_snapshot_from_value(jsval_region_t *region, jsval_t body,
+		jsval_t *buffer_out, int *has_out)
+{
+	*has_out = 0;
+	*buffer_out = jsval_undefined();
+
+	if (body.kind == JSVAL_KIND_UNDEFINED || body.kind == JSVAL_KIND_NULL) {
+		return 0;
+	}
+	if (body.kind == JSVAL_KIND_STRING) {
+		size_t len = 0;
+		jsval_t buf;
+
+		if (jsval_string_copy_utf8(region, body, NULL, 0, &len) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_new(region, len, &buf) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, buf);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_string_copy_utf8(region, body,
+					jsval_native_array_buffer_bytes(dst), len, NULL) < 0) {
+				return -1;
+			}
+		}
+		*buffer_out = buf;
+		*has_out = 1;
+		return 0;
+	}
+	if (body.kind == JSVAL_KIND_ARRAY_BUFFER) {
+		size_t len = 0;
+		jsval_t buf;
+
+		if (jsval_array_buffer_byte_length(region, body, &len) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_new(region, len, &buf) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, buf);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_array_buffer_copy_bytes(region, body,
+					jsval_native_array_buffer_bytes(dst), len, NULL) < 0) {
+				return -1;
+			}
+		}
+		*buffer_out = buf;
+		*has_out = 1;
+		return 0;
+	}
+	if (body.kind == JSVAL_KIND_TYPED_ARRAY) {
+		size_t len = 0;
+		jsval_t buf;
+
+		if (jsval_typed_array_byte_length(region, body, &len) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_new(region, len, &buf) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, buf);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_typed_array_copy_bytes(region, body,
+					jsval_native_array_buffer_bytes(dst), len, NULL) < 0) {
+				return -1;
+			}
+		}
+		*buffer_out = buf;
+		*has_out = 1;
+		return 0;
+	}
+	errno = ENOTSUP;
+	return -1;
+}
+
+int jsval_request_new(jsval_region_t *region, jsval_t input_value,
+		jsval_t init_value, int have_init, jsval_t *value_ptr)
+{
+	jsval_native_request_t *native;
+	jsval_off_t off;
+	jsval_t url_value;
+	jsval_t headers_value;
+	jsval_t body_buffer = jsval_undefined();
+	int has_body = 0;
+	uint8_t method = JSVAL_HTTP_METHOD_GET;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (input_value.kind == JSVAL_KIND_REQUEST) {
+		jsval_native_request_t *src =
+				jsval_native_request(region, input_value);
+		if (src == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		url_value = src->url;
+		method = src->method;
+		if (src->has_body) {
+			if (jsval_body_snapshot_from_value(region, src->body_buffer,
+					&body_buffer, &has_body) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_headers_new_from_init(region, JSVAL_HEADERS_GUARD_REQUEST,
+				src->headers, &headers_value) < 0) {
+			return -1;
+		}
+	} else if (input_value.kind == JSVAL_KIND_STRING) {
+		url_value = input_value;
+		if (jsval_headers_new(region, JSVAL_HEADERS_GUARD_REQUEST,
+				&headers_value) < 0) {
+			return -1;
+		}
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (have_init && init_value.kind == JSVAL_KIND_OBJECT) {
+		jsval_t method_val;
+		jsval_t headers_val;
+		jsval_t body_val;
+
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"method", 6, &method_val) < 0) {
+			return -1;
+		}
+		if (method_val.kind == JSVAL_KIND_STRING) {
+			if (jsval_http_method_from_string(region, method_val, &method) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_http_method_is_forbidden(method)) {
+			errno = EACCES;
+			return -1;
+		}
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"headers", 7, &headers_val) < 0) {
+			return -1;
+		}
+		if (headers_val.kind != JSVAL_KIND_UNDEFINED
+				&& headers_val.kind != JSVAL_KIND_NULL) {
+			if (jsval_headers_new_from_init(region,
+					JSVAL_HEADERS_GUARD_REQUEST, headers_val,
+					&headers_value) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"body", 4, &body_val) < 0) {
+			return -1;
+		}
+		if (body_val.kind != JSVAL_KIND_UNDEFINED
+				&& body_val.kind != JSVAL_KIND_NULL) {
+			if (jsval_body_snapshot_from_value(region, body_val,
+					&body_buffer, &has_body) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	{
+		size_t bytes_len = sizeof(*native);
+		if (jsval_region_reserve(region, bytes_len,
+				JSVAL_ALIGN, &off, (void **)&native) < 0) {
+			return -1;
+		}
+	}
+	memset(native, 0, sizeof(*native));
+	native->url = url_value;
+	native->headers = headers_value;
+	native->body_buffer = body_buffer;
+	native->method = method;
+	native->has_body = (uint8_t)(has_body ? 1 : 0);
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_REQUEST;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_request_method(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	jsval_native_request_t *native = jsval_native_request(region, request);
+	const char *s;
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	s = jsval_http_method_to_string(native->method);
+	return jsval_string_new_utf8(region, (const uint8_t *)s, strlen(s),
+			value_ptr);
+}
+
+int jsval_request_url(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	jsval_native_request_t *native = jsval_native_request(region, request);
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->url;
+	return 0;
+}
+
+int jsval_request_headers(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	jsval_native_request_t *native = jsval_native_request(region, request);
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->headers;
+	return 0;
+}
+
+int jsval_request_body_used(jsval_region_t *region, jsval_t request,
+		int *used_ptr)
+{
+	jsval_native_request_t *native = jsval_native_request(region, request);
+	if (native == NULL || used_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*used_ptr = native->body_used ? 1 : 0;
+	return 0;
+}
+
+static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_out, int (*resolver)(jsval_region_t *, jsval_t, int,
+				jsval_t *))
+{
+	jsval_native_request_t *native = jsval_native_request(region, request);
+	jsval_t body_buffer;
+	int has_body;
+
+	if (native == NULL || promise_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->body_used) {
+		jsval_t promise;
+		jsval_t reason;
+		if (jsval_promise_new(region, &promise) < 0) { return -1; }
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"body already used", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
+		*promise_out = promise;
+		return 0;
+	}
+	body_buffer = native->body_buffer;
+	has_body = native->has_body ? 1 : 0;
+	native->body_used = 1;
+	return resolver(region, body_buffer, has_body, promise_out);
+}
+
+int jsval_request_text(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr)
+{
+	return jsval_request_mark_used(region, request, promise_ptr,
+			jsval_body_resolve_text);
+}
+
+int jsval_request_json(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr)
+{
+	return jsval_request_mark_used(region, request, promise_ptr,
+			jsval_body_resolve_json);
+}
+
+int jsval_request_array_buffer(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr)
+{
+	return jsval_request_mark_used(region, request, promise_ptr,
+			jsval_body_resolve_array_buffer);
+}
+
+int jsval_request_bytes(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr)
+{
+	return jsval_request_mark_used(region, request, promise_ptr,
+			jsval_body_resolve_bytes);
+}
+
+static int jsval_request_enum_string(jsval_region_t *region, const char *s,
+		jsval_t *value_ptr)
+{
+	return jsval_string_new_utf8(region, (const uint8_t *)s, strlen(s),
+			value_ptr);
+}
+
+int jsval_request_mode(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	(void)request;
+	return jsval_request_enum_string(region, "cors", value_ptr);
+}
+
+int jsval_request_credentials(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	(void)request;
+	return jsval_request_enum_string(region, "same-origin", value_ptr);
+}
+
+int jsval_request_cache(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	(void)request;
+	return jsval_request_enum_string(region, "default", value_ptr);
+}
+
+int jsval_request_redirect(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	(void)request;
+	return jsval_request_enum_string(region, "follow", value_ptr);
+}
+
+int jsval_request_clone(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	return jsval_request_new(region, request, jsval_undefined(), 0, value_ptr);
+}
+
+/* -------------------- Response --------------------- */
+
+static const char *jsval_response_type_to_string(uint8_t type)
+{
+	switch (type) {
+	case JSVAL_RESPONSE_TYPE_BASIC:            return "basic";
+	case JSVAL_RESPONSE_TYPE_CORS:             return "cors";
+	case JSVAL_RESPONSE_TYPE_ERROR:            return "error";
+	case JSVAL_RESPONSE_TYPE_OPAQUE:           return "opaque";
+	case JSVAL_RESPONSE_TYPE_OPAQUE_REDIRECT:  return "opaqueredirect";
+	default:                                   return "default";
+	}
+}
+
+int jsval_response_new(jsval_region_t *region, jsval_t body_value,
+		int have_body, jsval_t init_value, int have_init, jsval_t *value_ptr)
+{
+	jsval_native_response_t *native;
+	jsval_off_t off;
+	jsval_t headers_value;
+	jsval_t status_text;
+	jsval_t body_buffer = jsval_undefined();
+	int has_body = 0;
+	uint16_t status = 200;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_headers_new(region, JSVAL_HEADERS_GUARD_RESPONSE,
+			&headers_value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)"", 0,
+			&status_text) < 0) {
+		return -1;
+	}
+
+	if (have_body) {
+		if (jsval_body_snapshot_from_value(region, body_value, &body_buffer,
+				&has_body) < 0) {
+			return -1;
+		}
+		if (has_body && body_value.kind == JSVAL_KIND_STRING) {
+			jsval_t name;
+			jsval_t val;
+			int already = 0;
+			if (jsval_string_new_utf8(region, (const uint8_t *)"Content-Type",
+					12, &name) < 0) {
+				return -1;
+			}
+			if (jsval_headers_has(region, headers_value, name, &already) < 0) {
+				return -1;
+			}
+			if (!already) {
+				if (jsval_string_new_utf8(region,
+						(const uint8_t *)"text/plain;charset=UTF-8", 24,
+						&val) < 0) {
+					return -1;
+				}
+				if (jsval_headers_append(region, headers_value, name,
+						val) < 0) {
+					return -1;
+				}
+			}
+		}
+	}
+
+	if (have_init && init_value.kind == JSVAL_KIND_OBJECT) {
+		jsval_t s_val;
+		jsval_t st_val;
+		jsval_t h_val;
+
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"status", 6, &s_val) < 0) {
+			return -1;
+		}
+		if (s_val.kind == JSVAL_KIND_NUMBER) {
+			double d = s_val.as.number;
+			if (d < 200.0 || d > 599.0) {
+				errno = ERANGE;
+				return -1;
+			}
+			status = (uint16_t)d;
+		}
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"statusText", 10, &st_val) < 0) {
+			return -1;
+		}
+		if (st_val.kind == JSVAL_KIND_STRING) {
+			status_text = st_val;
+		}
+		if (jsval_object_get_utf8(region, init_value,
+				(const uint8_t *)"headers", 7, &h_val) < 0) {
+			return -1;
+		}
+		if (h_val.kind != JSVAL_KIND_UNDEFINED
+				&& h_val.kind != JSVAL_KIND_NULL) {
+			if (jsval_headers_new_from_init(region,
+					JSVAL_HEADERS_GUARD_RESPONSE, h_val,
+					&headers_value) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	{
+		if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+				(void **)&native) < 0) {
+			return -1;
+		}
+	}
+	memset(native, 0, sizeof(*native));
+	native->url = jsval_undefined();
+	native->headers = headers_value;
+	native->status_text = status_text;
+	native->body_buffer = body_buffer;
+	native->status = status;
+	native->type = JSVAL_RESPONSE_TYPE_DEFAULT;
+	native->has_body = (uint8_t)(has_body ? 1 : 0);
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_RESPONSE;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_response_error(jsval_region_t *region, jsval_t *value_ptr)
+{
+	jsval_t out;
+	jsval_native_response_t *native;
+
+	if (jsval_response_new(region, jsval_undefined(), 0, jsval_undefined(), 0,
+			&out) < 0) {
+		return -1;
+	}
+	native = jsval_native_response(region, out);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->status = 0;
+	native->type = JSVAL_RESPONSE_TYPE_ERROR;
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_response_redirect(jsval_region_t *region, jsval_t url_value,
+		int have_status, uint32_t status, jsval_t *value_ptr)
+{
+	jsval_t out;
+	jsval_native_response_t *native;
+	uint32_t s = have_status ? status : 302u;
+
+	if (s != 301 && s != 302 && s != 303 && s != 307 && s != 308) {
+		errno = ERANGE;
+		return -1;
+	}
+	if (url_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_response_new(region, jsval_undefined(), 0, jsval_undefined(), 0,
+			&out) < 0) {
+		return -1;
+	}
+	native = jsval_native_response(region, out);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->status = (uint16_t)s;
+	{
+		jsval_t loc_name;
+		if (jsval_string_new_utf8(region, (const uint8_t *)"Location", 8,
+				&loc_name) < 0) {
+			return -1;
+		}
+		if (jsval_headers_append(region, native->headers, loc_name,
+				url_value) < 0) {
+			return -1;
+		}
+	}
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_response_json(jsval_region_t *region, jsval_t data_value,
+		int have_init, jsval_t init_value, jsval_t *value_ptr)
+{
+	jsval_t body_string;
+	jsval_t out;
+	jsval_native_response_t *native;
+	size_t json_len = 0;
+
+	if (jsval_copy_json(region, data_value, NULL, 0, &json_len) < 0) {
+		return -1;
+	}
+	{
+		uint8_t buf[json_len ? json_len : 1];
+		if (json_len > 0
+				&& jsval_copy_json(region, data_value, buf, json_len, NULL) < 0) {
+			return -1;
+		}
+		if (jsval_string_new_utf8(region, buf, json_len, &body_string) < 0) {
+			return -1;
+		}
+	}
+	if (jsval_response_new(region, body_string, 1, init_value, have_init,
+			&out) < 0) {
+		return -1;
+	}
+	native = jsval_native_response(region, out);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	{
+		jsval_t name;
+		jsval_t val;
+		int already = 0;
+		if (jsval_string_new_utf8(region, (const uint8_t *)"Content-Type", 12,
+				&name) < 0) {
+			return -1;
+		}
+		if (jsval_headers_has(region, native->headers, name, &already) < 0) {
+			return -1;
+		}
+		if (!already) {
+			if (jsval_string_new_utf8(region,
+					(const uint8_t *)"application/json", 16, &val) < 0) {
+				return -1;
+			}
+			if (jsval_headers_append(region, native->headers, name, val) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_string_new_utf8(region,
+					(const uint8_t *)"application/json", 16, &val) < 0) {
+				return -1;
+			}
+			if (jsval_headers_set(region, native->headers, name, val) < 0) {
+				return -1;
+			}
+		}
+	}
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_response_status(jsval_region_t *region, jsval_t response,
+		uint32_t *status_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || status_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*status_ptr = native->status;
+	return 0;
+}
+
+int jsval_response_status_text(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->status_text;
+	return 0;
+}
+
+int jsval_response_ok(jsval_region_t *region, jsval_t response, int *ok_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || ok_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*ok_ptr = (native->status >= 200 && native->status < 300) ? 1 : 0;
+	return 0;
+}
+
+int jsval_response_type(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	const char *s;
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	s = jsval_response_type_to_string(native->type);
+	return jsval_string_new_utf8(region, (const uint8_t *)s, strlen(s),
+			value_ptr);
+}
+
+int jsval_response_redirected(jsval_region_t *region, jsval_t response,
+		int *redirected_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || redirected_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*redirected_ptr = native->redirected ? 1 : 0;
+	return 0;
+}
+
+int jsval_response_url(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->url.kind == JSVAL_KIND_STRING) {
+		*value_ptr = native->url;
+		return 0;
+	}
+	return jsval_string_new_utf8(region, (const uint8_t *)"", 0, value_ptr);
+}
+
+int jsval_response_headers(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->headers;
+	return 0;
+}
+
+int jsval_response_body_used(jsval_region_t *region, jsval_t response,
+		int *used_ptr)
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	if (native == NULL || used_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*used_ptr = native->body_used ? 1 : 0;
+	return 0;
+}
+
+int jsval_response_clone(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *src = jsval_native_response(region, response);
+	jsval_native_response_t *dst;
+	jsval_t out;
+	jsval_off_t off;
+	jsval_t headers_copy;
+	jsval_t body_buffer = jsval_undefined();
+	int has_body = 0;
+
+	if (src == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src->body_used) {
+		errno = EACCES;
+		return -1;
+	}
+	if (jsval_headers_new_from_init(region, JSVAL_HEADERS_GUARD_RESPONSE,
+			src->headers, &headers_copy) < 0) {
+		return -1;
+	}
+	src = jsval_native_response(region, response);
+	if (src == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (src->has_body) {
+		if (jsval_body_snapshot_from_value(region, src->body_buffer,
+				&body_buffer, &has_body) < 0) {
+			return -1;
+		}
+	}
+	src = jsval_native_response(region, response);
+	if (src == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*dst), JSVAL_ALIGN, &off,
+			(void **)&dst) < 0) {
+		return -1;
+	}
+	src = jsval_native_response(region, response);
+	if (src == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	memset(dst, 0, sizeof(*dst));
+	dst->url = src->url;
+	dst->headers = headers_copy;
+	dst->status_text = src->status_text;
+	dst->body_buffer = body_buffer;
+	dst->status = src->status;
+	dst->type = src->type;
+	dst->redirected = src->redirected;
+	dst->body_used = 0;
+	dst->has_body = (uint8_t)(has_body ? 1 : 0);
+	out = jsval_undefined();
+	out.kind = JSVAL_KIND_RESPONSE;
+	out.repr = JSVAL_REPR_NATIVE;
+	out.off = off;
+	*value_ptr = out;
+	return 0;
+}
+
+static int jsval_response_mark_used(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_out, int (*resolver)(jsval_region_t *, jsval_t, int,
+				jsval_t *))
+{
+	jsval_native_response_t *native = jsval_native_response(region, response);
+	jsval_t body_buffer;
+	int has_body;
+
+	if (native == NULL || promise_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->body_used) {
+		jsval_t promise;
+		jsval_t reason;
+		if (jsval_promise_new(region, &promise) < 0) { return -1; }
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"body already used", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
+		*promise_out = promise;
+		return 0;
+	}
+	body_buffer = native->body_buffer;
+	has_body = native->has_body ? 1 : 0;
+	native->body_used = 1;
+	return resolver(region, body_buffer, has_body, promise_out);
+}
+
+int jsval_response_text(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr)
+{
+	return jsval_response_mark_used(region, response, promise_ptr,
+			jsval_body_resolve_text);
+}
+
+int jsval_response_json_body(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr)
+{
+	return jsval_response_mark_used(region, response, promise_ptr,
+			jsval_body_resolve_json);
+}
+
+int jsval_response_array_buffer(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr)
+{
+	return jsval_response_mark_used(region, response, promise_ptr,
+			jsval_body_resolve_array_buffer);
+}
+
+int jsval_response_bytes(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr)
+{
+	return jsval_response_mark_used(region, response, promise_ptr,
+			jsval_body_resolve_bytes);
+}
+
+/* -------------------- fetch() stub --------------------- */
+
+int jsval_fetch(jsval_region_t *region, jsval_t input_value, jsval_t init_value,
+		int have_init, jsval_t *promise_ptr)
+{
+	jsval_t request;
+	jsval_t promise;
+	jsval_t reason;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_request_new(region, input_value, init_value, have_init,
+			&request) < 0) {
+		return -1;
+	}
+	(void)request;
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (jsval_dom_exception_new_utf8(region, "TypeError",
+			"network not implemented yet", &reason) < 0) {
+		return -1;
+	}
+	if (jsval_promise_reject(region, promise, reason) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
 	return 0;
 }
