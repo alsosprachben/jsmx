@@ -8,16 +8,37 @@ JWKS endpoint, and implement billable WinterTC-style hosted functions on top
 of mnvkd — without dragging a general-purpose asynchronous runtime into
 `jsmx`.
 
-The design splits along a single seam:
+The design splits along an ownership line plus two directional seams:
 
 - **`jsmx`** owns the WHATWG Fetch *JS object model* and all HTTP-level
   semantics that can be expressed as deterministic data transforms over
-  caller-owned memory.
+  caller-owned memory. It also owns the **FaaS handler contract** — the
+  idiom that a hosted function *is itself* a `(Request) => Promise<Response>`
+  function, matching Cloudflare Workers, Deno Deploy, Bun.serve, Fastly
+  Compute, and the service-worker family.
 - **`mnvkd`** owns the HTTP/1.1 wire protocol, the coroutine scheduler, and
   every byte that touches a socket.
 
-Neither side has to understand the other's object vocabulary. The two meet at
-a small, explicit handoff point described below.
+The two handoff points are **directional** and not symmetric today:
+
+- **Inbound** (hosted function receives a request): `mnvkd`'s
+  `vk_http11` is a mature coroutine-based server parser. It already
+  yields on partial input, streams body bytes through `vk_forward`,
+  and has a response writer. The integration seam is a header-emit
+  callback into `jsval` plus a body-source adapter — described below.
+- **Outbound** (hosted function calls `fetch()` to reach an external
+  API, e.g. a JWKS endpoint): `mnvkd`'s `vk_fetch.c` is a *partial*
+  HTTP client — it sketches a request serializer but its response
+  handler is effectively a stub. The outbound story is therefore
+  still an open design question (finish `vk_fetch.c` on the `mnvkd`
+  side vs. have `jsmx` own the outbound state machine and drive
+  `mnvkd` through pure `connect` / `read` / `write` / `close`). See
+  [The outbound `fetch()` path](#the-outbound-fetch-path).
+
+The key symmetry that makes this tractable: **the same Fetch API is
+both the inbound handler contract and the outbound primitive.** One
+vocabulary, used in both directions. That is why the Fetch JS object
+model is the foundation for everything else here.
 
 ## Non-goals
 
@@ -52,9 +73,24 @@ a small, explicit handoff point described below.
 
 ### `mnvkd` owns
 
-- The `vk_http11` iterative HTTP/1.1 parser and its response writer. The
-  parser is already coroutine-aware, yields on partial input, and streams
-  body bytes through `vk_forward` without copying them into a struct.
+**For inbound requests (server path, mature):**
+
+- `vk_http11_request()` — the iterative request parser. Already
+  coroutine-aware, yields on partial input, streams body bytes through
+  `vk_forward` without copying them into a struct.
+- `vk_http11_response()` — the response writer. Handles status line,
+  headers, and chunked body framing.
+
+**For outbound requests (client path, partial):**
+
+- `vk_fetch.c` sketches an HTTP/1.1 client: it builds a request line
+  and headers from a `struct vk_fetch` and streams the body through
+  chunked encoding. The response handler is a stub (empty loop). A
+  real outbound path requires either finishing this file or having
+  `jsmx` own the client-side state machine — see the outbound section.
+
+**Direction-agnostic:**
+
 - The `vk_socket` / `vk_vectoring` / `vk_pipe` transport layer: rings,
   splices, half-close, backpressure.
 - TLS termination, connect, accept, and all socket lifetime.
@@ -69,9 +105,9 @@ a small, explicit handoff point described below.
   into a `jsval` `Headers` object.** The `vk_fetch_s.h` enums stay shared
   ABI; the storage shape does not.
 
-## Integration seam: the header-emit hook
+## Inbound integration seam: the header-emit hook
 
-Today `vk_http11`'s parser copies each parsed header into
+Today `vk_http11_request()` copies each parsed header into
 `struct request::headers[i]`. After this design, the parser accepts an
 **emit callback** that is called once per parsed header, inside the
 coroutine context:
@@ -171,37 +207,250 @@ full or empty, the coroutine blocks. The `jsmx` microtask queue treats
 this as "not runnable yet" and drains the other microtasks (resolved
 crypto, unrelated promise reactions) first. No explicit negotiation.
 
-## The `fetch()` entry point
+## FaaS handler contract
 
-`fetch(input, init?)` today is a value-constructor stub. Its real shape
-after transport integration:
+A hosted function *is* a `(Request) => Promise<Response>` function.
+This is the idiom every modern JS FaaS platform has converged on:
 
-```c
-int jsval_fetch(jsval_region_t *region, jsval_t input_value,
-        jsval_t init_value, int have_init, jsval_t *promise_ptr);
+```js
+/* Cloudflare Workers / Deno Deploy / Bun.serve / Vercel Edge / etc. */
+export default {
+  async fetch(request, env, ctx) {
+    const body = await request.json();
+    return Response.json({ echo: body });
+  }
+};
 ```
 
-The implementation:
+or the equivalent service-worker form:
 
-1. Constructs a `Request` from input/init (already shipped).
-2. Allocates a fresh `FETCH_REQUEST` microtask that owns:
-   - a `vk_socket` pair (outbound TCP, optionally TLS)
-   - the request bytes staged in an output ring
-   - the Promise to resolve on response
-3. The microtask does (in sequence, yielding on each):
-   - connect
-   - write request line + headers
-   - stream the request body (from the in-memory `ArrayBuffer` snapshot)
-   - parse response line + headers via `vk_http11_response`, using the
-     same header-emit hook to land headers into a `jsval` `Headers`
-   - construct a `Response` value with a pending body (body is a
-     lazily-drained `ArrayBuffer`, resolved on first `text()` etc.)
-   - resolve the outer Promise with the `Response`
+```js
+addEventListener("fetch", (event) => {
+  event.respondWith(handleRequest(event.request));
+});
+```
 
-The response body is itself drained via a `FETCH_BODY_DRAIN`
-microtask when userland consumes it, exactly the same way
-inbound bodies work. Inbound and outbound share the same body
-drain machinery.
+Both shapes collapse to the same contract: take a `Request`, return a
+`Response` (or a `Promise<Response>`). The runtime's job is to invoke
+the handler, await the promise, and serialize the result back out.
+
+### Transpiler lowering
+
+The transpiler recognizes the `export default { fetch(request) { ... } }`
+and `addEventListener("fetch", ...)` idioms and lowers the user's handler
+body into a single C function with a fixed signature:
+
+```c
+/*
+ * Emitted by the transpiler from the user's default export.
+ * The embedder calls this after parsing the request; it is expected
+ * to return a Promise<Response> (via *response_promise_out) that
+ * eventually settles on a Response value.
+ *
+ * Return 0 on normal completion (including thrown/rejected paths —
+ * those resolve through the promise). Return -1 only on fatal runtime
+ * errors that abort the request entirely.
+ */
+int user_fetch_handler(jsval_region_t *region,
+        jsval_t request, jsval_t *response_promise_out);
+```
+
+The handler can freely:
+
+- `await request.text() / .json() / .arrayBuffer() / .bytes()` —
+  resolves through the `FETCH_BODY_DRAIN` microtask against the
+  inbound body source.
+- call `fetch("https://...")` — resolves through the outbound path
+  (once it exists).
+- perform crypto, construct values, run business logic.
+- `return new Response(...)` or `return Response.json(...)`.
+
+The returned Promise is what the embedder waits on. The handler does
+**not** directly touch the response socket; it produces a Response
+*value* and the embedder serializes it.
+
+### The per-request lifecycle
+
+The `mnvkd` embedder owns the outer loop. One request looks like:
+
+```
+accept()
+  └─ allocate jsval_region_t for this request (billing unit)
+       └─ jsval_headers_new(region, REQUEST) → headers_value
+       └─ vk_http11_request(parser, emit_into_headers, &ctx)
+            └─ parser yields on partial reads
+            └─ each header → jsval_fetch_emit_header_into
+       └─ construct a vk_http11 body source (vtable over vk_socket RX)
+       └─ jsval_request_new_from_parts(region, method, url, headers,
+              &vk_body_vtable, body_userdata, content_length,
+              &request_value)
+       └─ call user_fetch_handler(region, request_value,
+              &response_promise)
+       └─ drive jsval_microtask_drain(region, &error) until the
+              response_promise settles
+              ├─ drain pumps FETCH_BODY_DRAIN (inbound body)
+              ├─ drain pumps crypto microtasks (JWT verification, etc.)
+              ├─ drain pumps outbound FETCH_REQUEST microtasks if the
+              │  handler called fetch() — see the outbound section
+              └─ drain yields the embedder coroutine on PENDING
+       └─ read resolved Response value from the promise
+            ├─ if rejected: synthesize a 500 Response with the error
+            │  message (or let a `try/catch` inside the handler
+            │  produce a user-visible response)
+            └─ if fulfilled: the handler's Response value
+       └─ vk_http11_response writer serializes:
+            ├─ status line from Response.status / statusText
+            ├─ headers emitted from the Response's jsval Headers
+            └─ body drained from the Response body source or copied
+               from an eager ArrayBuffer
+       └─ free the entire region
+```
+
+The region is the unit of billing, memory metering, and cleanup. One
+region per request; freed at the end regardless of outcome. This is
+exactly the shape every FaaS platform wants.
+
+### Who drives the microtask drain
+
+The embedder is the drain driver. It calls `jsval_microtask_drain`
+in a loop, alternating with scheduler yields when the drain reports
+that all remaining tasks are blocked on I/O. The existing
+`jsval_region_set_scheduler` hook is the integration point: the
+`on_wake` callback fires when a body source or outbound fetch becomes
+ready, telling the embedder to re-enter `jsval_microtask_drain`.
+
+Concretely, the embedder loop looks like:
+
+```c
+jsval_region_set_scheduler(region, &scheduler);
+if (user_fetch_handler(region, request, &response_promise) < 0) {
+    /* fatal — send 500 */;
+}
+while (jsval_promise_state_is_pending(region, response_promise)) {
+    if (jsval_microtask_drain(region, &error) < 0) {
+        break;
+    }
+    if (still_pending) {
+        vk_yield_until_scheduler_wakes();
+    }
+}
+```
+
+This is the same loop shape every async runtime uses. The only unusual
+thing about it is that it runs inside a `mnvkd` coroutine, so
+"yield until scheduler wakes" is a cheap coroutine switch rather than
+an OS-level poll.
+
+### Error handling
+
+Three distinct failure modes, each with a well-defined shape:
+
+1. **Handler throws / returns rejected Promise**: the embedder reads
+   the rejection reason from the promise, converts it to a 500-class
+   Response (with a text body containing the exception name and
+   message), and serializes that. Userland code that wants more
+   control should `try/catch` and produce its own Response.
+2. **Handler returns something that isn't a Response**: the embedder
+   synthesizes a 500 Response with "handler did not return a Response"
+   as the message.
+3. **Fatal runtime error** (handler returned -1, region exhausted,
+   microtask drain errored): the embedder closes the connection
+   without a response. Logged at the embedder level.
+
+### Environment and context bindings
+
+Cloudflare-style `fetch(request, env, ctx)` exposes two additional
+parameters: `env` (environment variables, KV bindings, secret
+material) and `ctx` (waitUntil / passThroughOnException hooks).
+For the first slice, the transpiler lowers only the single-argument
+form `fetch(request)`. Env and ctx are a later concern — they
+naturally map to a pair of pre-constructed jsval objects the
+embedder hands to the handler, but the interesting design question
+is **what goes in env** (secrets? KV? config?) and that is
+deployment-platform-specific, not a Fetch concern.
+
+### Why this handler shape and not a plain `main()`
+
+A plain `main()` that reads stdin and writes stdout would be simpler
+but loses the key FaaS properties:
+
+- **Multiple requests per process.** One handler invocation per
+  request; the compiled binary stays resident and bills per-request.
+- **Per-request region isolation.** Every request gets a fresh
+  `jsval_region_t` so there is no cross-request state leakage.
+- **Async composition.** A handler can `await` multiple things and
+  the drain handles them in one shared microtask queue.
+- **Symmetric outbound.** `fetch(url)` inside the handler uses the
+  same object model as the inbound request, and its promise lives
+  in the same microtask queue.
+
+The handler-per-request shape is what makes the runtime *useful* to
+the JS author; it's not an implementation detail.
+
+## The outbound `fetch()` path
+
+`fetch(input, init?)` today is a reject-stub that parses input/init
+into a `Request` and returns a Promise rejected with `TypeError("network
+not implemented yet")`. Making it real is the second-biggest remaining
+piece of work after the FaaS handler contract.
+
+### Open design question: who owns the client state machine?
+
+Two viable options, not yet decided:
+
+**Option A — finish `vk_fetch.c` on the `mnvkd` side.** `mnvkd` already
+has a partial HTTP/1.1 client sketch. Completing it (a real response
+parser mirroring `vk_http11_request()`, plus chunked body framing)
+gives `jsmx` a single-function entry point to call. The `jsmx` side
+stays thin: hand the client a method, URL, headers snapshot, and a
+request body source; receive a response struct plus a body source.
+
+- **Pros**: reuses `mnvkd`'s proven coroutine parser pattern for the
+  response path. Keeps all wire-protocol code on the C side where the
+  I/O primitives live.
+- **Cons**: two parsers to maintain on the `mnvkd` side (one for
+  inbound server requests, one for outbound client responses). Cross-repo
+  coupling on every protocol feature.
+
+**Option B — `jsmx` owns the client state machine, drives `mnvkd`
+through pure I/O.** `jsmx` implements an HTTP/1.1 request serializer
+and response parser, talking to `mnvkd` only through `connect` /
+`read` / `write` / `close` on a `vk_socket`. This matches the earlier
+architectural intuition that `jsmx` should own protocol-level semantics.
+
+- **Pros**: single-repo protocol implementation, testable end-to-end
+  against an in-memory byte pipe. Symmetric with how the inbound body
+  drain already works (it reads bytes through a vtable). `mnvkd`'s
+  role is purely transport.
+- **Cons**: `jsmx` grows an HTTP/1.1 response parser — roughly 400
+  lines of state machine plus tests. Feature parity with `vk_http11`
+  has to be maintained manually.
+
+Both options resolve to the same JS-visible behavior, so the decision
+doesn't block the inbound FaaS demo. The outbound fetch stub can stay
+in place through several slices of inbound work without blocking OAuth
+or JWKS — that work has to wait on outbound anyway.
+
+### Shared invariants regardless of option
+
+Whichever path we pick, these properties hold:
+
+- **The reply's body is drained through the same `FETCH_BODY_DRAIN`
+  microtask kind as the inbound body.** Both directions share one
+  `jsval_body_source_vtable_t` implementation surface; only the
+  userdata differs (inbound = vk_socket RX plus content-length
+  framing; outbound = vk_socket RX plus the response framing the
+  client state machine parsed out of the reply).
+- **The response headers land in a `jsval` Headers through the same
+  header-emit callback shape** — `jsval_fetch_emit_header_into` is
+  direction-agnostic.
+- **`jsval_fetch()` returns a Promise that eventually resolves to a
+  `Response` value.** The embedder's microtask drain loop is the
+  same loop that handles body consumption and crypto; outbound
+  fetch is one more microtask kind that yields until its socket is
+  ready.
+- **Redirect handling, cookie jars, and cache are explicitly not
+  runtime features.** See below.
 
 ### Redirects
 
@@ -274,27 +523,56 @@ same way closures and `Symbol.iterator` protocol already do.
 
 ## Ordering of future slices
 
-1. **mnvkd header-emit hook** — patch `vk_http11` to accept an emit
-   callback. Keep the existing `struct request` path as a default
-   callback for current callers. No behavior change for mnvkd's own
-   tests.
-2. **`FETCH_BODY_DRAIN` microtask** — add the new microtask kind plus
-   a test-only drain source (e.g. a preloaded byte buffer masquerading
-   as a coroutine) so the body-drain behavior can be exercised without
-   a real socket.
-3. **Inbound request lowering** — a small mnvkd example that accepts
-   a request, hands it to a jsmx region as a `Request` value, and
-   returns a hand-built `Response`. No userland JS yet; this is the
-   "handshake works end to end" slice.
-4. **Outbound `fetch()`** — replace the reject-stub with the
-   `FETCH_REQUEST` microtask and exercise it against a local test
-   server. This unblocks JWKS fetching and OAuth.
-5. **Redirect handling + bounded hop count.**
-6. **Streaming verbs** (`forEachChunk`, `pipeToFile`,
+**Landed:**
+
+1. ✅ **Fetch JS object model** — `Headers`, `Request`, `Response`,
+   `Body` mixin, `fetch()` reject-stub. 7 compliance fixtures.
+2. ✅ **Fetch transport foundation** — `jsval_body_source_vtable_t`,
+   `JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN`, lazy Request/Response
+   bodies, `jsval_request_new_from_parts`, `jsval_response_new_from_parts`,
+   `jsval_fetch_emit_header_into` reference callback. All testable
+   in jsmx with a fake body source; no mnvkd patches.
+
+**Pending:**
+
+3. **mnvkd header-emit hook** — cross-repo. Patch
+   `vk_http11_request()` to accept a `vk_http11_header_emit_fn` and
+   invoke it once per parsed header. Keep the existing
+   `struct request` path as a default callback so mnvkd's current
+   tests don't change. This is a small, surgical patch — the shape
+   is already locked by the jsmx-side types.
+4. **mnvkd body-source adapter** — a `jsval_body_source_vtable_t`
+   implementation that pulls bytes from a `vk_socket` RX ring honoring
+   `Content-Length` or chunked framing. Lives wherever the mnvkd ↔
+   jsmx embedding glue ends up (probably a new `runtime_modules/`
+   subdir or a small C file alongside the hosted-function runner).
+5. **FaaS handler contract + hello-world demo** — the first real
+   hosted function. Inbound-only: `vk_http11_request` → body drain
+   → user_fetch_handler → microtask drain → Response serialization.
+   The handler is hand-written C for this slice (transpiler
+   lowering from `export default { fetch }` is a later, separate
+   concern). Output: a standalone binary you can `curl` against
+   and get a Response back. This is the "FaaS works end to end"
+   milestone.
+6. **Transpiler recognition of the fetch-handler idiom** — the
+   transpiler learns to lower `export default { async fetch(request)
+   { ... } }` and `addEventListener("fetch", ...)` to the
+   `user_fetch_handler` C signature. Test: a JS source becomes a
+   working binary from step 5.
+7. **Outbound `fetch()` transport** — resolve the Option A vs. B
+   question, then implement. At this point OAuth / JWKS / upstream
+   calls become expressible. Likely wants a second hello-world-ish
+   demo (a hosted function that reverse-proxies).
+8. **Redirect handling + bounded hop count.**
+9. **Streaming verbs** (`forEachChunk`, `pipeToFile`,
    async-iterator response producers) when the first real hosted
    function asks for them.
-7. **OAuth userland library**, written in JS against the stable
-   `fetch` surface.
+10. **Env/ctx bindings** — the Cloudflare-style `fetch(request, env,
+    ctx)` second and third arguments. Requires a design pass on what
+    *goes in* env (secrets? bindings? config?) so it's not blocking
+    the core FaaS shape.
+11. **OAuth userland library**, written in JS against the stable
+    `fetch` surface. This is the product goal.
 
 ## Tradeoffs
 
@@ -327,12 +605,34 @@ same way closures and `Symbol.iterator` protocol already do.
 
 ## Status
 
-The JS object model is landed and tested: `Headers`, `Request`,
-`Response`, `Body` mixin, and `fetch()` as a reject-stub. See
-[`README.md`](../README.md) under "Fetch API (object-model slice)"
-for the current surface, and the seven compliance fixtures under
-`compliance/js/wintertc/jsmx/fetch-*` for the behavior contract.
+**Landed** (see [`README.md`](../README.md) and the compliance
+fixtures under `compliance/js/wintertc/jsmx/fetch-*`):
 
-The mnvkd integration seam (header-emit hook, `FETCH_BODY_DRAIN`
-microtask, outbound `fetch()` transport) is the next slice and has
-not been implemented.
+- **Fetch JS object model.** `Headers`, `Request`, `Response`, the
+  `Body` mixin (`text` / `json` / `arrayBuffer` / `bytes`), and
+  `fetch()` as a reject-stub. Seven compliance fixtures cover the
+  behavior contract.
+- **Fetch transport foundation.** `jsval_body_source_vtable_t`,
+  `JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN`, lazy Request/Response
+  bodies, `jsval_request_new_from_parts` /
+  `jsval_response_new_from_parts`, `jsval_fetch_emit_header_into`
+  reference callback, header-emit typedef for the pending mnvkd
+  patch. Six drain scenarios tested in `test_jsval` (text happy
+  path, stuttered arrayBuffer, bytes, json, over-budget, mid-stream
+  error) plus a `test_codegen` smoke.
+
+**Not yet implemented:**
+
+- The mnvkd-side header-emit patch to `vk_http11_request()`.
+- The mnvkd body-source adapter (`vk_socket` → `jsval_body_source_vtable_t`).
+- The FaaS handler contract (`user_fetch_handler` C signature plus
+  an embedder loop that drives microtask drain until a Response
+  promise settles).
+- Transpiler recognition of the `export default { fetch }` idiom.
+- The outbound `fetch()` transport (design decision pending — see
+  [The outbound `fetch()` path](#the-outbound-fetch-path)).
+
+The next landable slice is the **mnvkd header-emit patch plus the
+first hand-written hello-world FaaS demo**, which proves the whole
+inbound pipeline end-to-end without requiring outbound fetch or
+transpiler changes.
