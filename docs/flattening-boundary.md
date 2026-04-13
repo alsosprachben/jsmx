@@ -1,5 +1,10 @@
 # Flattening Boundary
 
+See also [`fetch.md`](fetch.md) for how this boundary applies to the
+WHATWG Fetch API: `jsmx` owns the JS object model (`Headers`, `Request`,
+`Response`, `Body`), `mnvkd` owns the HTTP/1.1 parser and transport,
+and `ReadableStream` is intentionally not a runtime value.
+
 ## Goal
 
 `jsmx` is the flattened, page-resident semantic layer for a JS-to-C

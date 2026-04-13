@@ -65,7 +65,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       where applicable, plus ECDSA P-256, RSASSA-PKCS1-v1_5,
       RSA-PSS, and Ed25519 asymmetric public/private `CryptoKey`
       values and `CryptoKeyPair` objects returned from `generateKey`
-  - optional feature-gated WHATWG Fetch JS object model values:
+  - optional feature-gated WHATWG Fetch JS object model values
+    (full design in [`docs/fetch.md`](../../../docs/fetch.md)):
     - `Headers` (case-insensitive append/set/get/has/delete,
       combine-with-comma reads, value normalization, getSetCookie)
     - `Request` (URL-string or Request input plus init dict with

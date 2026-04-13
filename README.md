@@ -664,7 +664,10 @@ key agreement, and P-384/P-521 curves.
 
 The WHATWG Fetch JS object model is available independently of any network
 transport. This slice lives entirely inside `jsval.c` so the object shape
-can be exercised without I/O:
+can be exercised without I/O. The full integration design (header-emit
+hook into `mnvkd`'s iterative parser, `FETCH_BODY_DRAIN` microtask, and
+the explicit no-`ReadableStream` decision) is in
+[`docs/fetch.md`](docs/fetch.md).
 
 - `Headers` with case-insensitive append/set/get/has/delete,
   combine-with-comma reads, whitespace-trimming value normalization, token
