@@ -73,7 +73,8 @@ typedef enum jsval_crypto_algorithm_kind_e {
 	JSVAL_CRYPTO_ALGORITHM_AES_CBC = 6,
 	JSVAL_CRYPTO_ALGORITHM_AES_KW = 7,
 	JSVAL_CRYPTO_ALGORITHM_ECDSA_P256 = 8,
-	JSVAL_CRYPTO_ALGORITHM_RSASSA_PKCS1_V1_5 = 9
+	JSVAL_CRYPTO_ALGORITHM_RSASSA_PKCS1_V1_5 = 9,
+	JSVAL_CRYPTO_ALGORITHM_RSA_PSS = 10
 } jsval_crypto_algorithm_kind_t;
 
 typedef struct jsval_native_crypto_key_s {
@@ -246,7 +247,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_AES_CBC = 8,
 	JSVAL_MICROTASK_KIND_SUBTLE_AES_KW = 9,
 	JSVAL_MICROTASK_KIND_SUBTLE_ECDSA = 10,
-	JSVAL_MICROTASK_KIND_SUBTLE_RSASSA_PKCS1_V1_5 = 11
+	JSVAL_MICROTASK_KIND_SUBTLE_RSASSA_PKCS1_V1_5 = 11,
+	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -452,6 +454,31 @@ typedef struct jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_s {
 	uint8_t extractable;
 	uint8_t reserved[3];
 } jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_t;
+
+typedef enum jsval_subtle_rsa_pss_task_op_e {
+	JSVAL_SUBTLE_RSA_PSS_TASK_GENERATE = 0,
+	JSVAL_SUBTLE_RSA_PSS_TASK_IMPORT = 1,
+	JSVAL_SUBTLE_RSA_PSS_TASK_EXPORT = 2,
+	JSVAL_SUBTLE_RSA_PSS_TASK_SIGN = 3,
+	JSVAL_SUBTLE_RSA_PSS_TASK_VERIFY = 4
+} jsval_subtle_rsa_pss_task_op_t;
+
+typedef struct jsval_native_microtask_subtle_rsa_pss_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t key_off;
+	size_t data_len;             /* raw DER on import; payload on sign/verify */
+	size_t signature_len;        /* verify only */
+	uint32_t modulus_bit_length;
+	uint32_t usages_mask;
+	uint32_t salt_length_bytes;  /* sign/verify only */
+	uint8_t operation;
+	uint8_t format;
+	uint8_t hash_algorithm;
+	uint8_t key_type;            /* PUBLIC/PRIVATE */
+	uint8_t extractable;
+	uint8_t reserved[3];
+} jsval_native_microtask_subtle_rsa_pss_t;
 
 typedef enum jsval_subtle_pbkdf2_task_op_e {
 	JSVAL_SUBTLE_PBKDF2_TASK_IMPORT = 0,
@@ -935,6 +962,18 @@ static uint8_t *jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_signature(
 {
 	return jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_data(task)
 			+ task->data_len;
+}
+
+static uint8_t *jsval_native_microtask_subtle_rsa_pss_data(
+		jsval_native_microtask_subtle_rsa_pss_t *task)
+{
+	return (uint8_t *)(task + 1);
+}
+
+static uint8_t *jsval_native_microtask_subtle_rsa_pss_signature(
+		jsval_native_microtask_subtle_rsa_pss_t *task)
+{
+	return jsval_native_microtask_subtle_rsa_pss_data(task) + task->data_len;
 }
 
 static uint8_t *jsval_native_microtask_subtle_aes_gcm_aad(
@@ -9227,8 +9266,8 @@ jsval_subtle_crypto_ecdsa_algorithm_object_new(jsval_region_t *region,
 }
 
 static int
-jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
-		jsval_region_t *region, uint32_t modulus_bits,
+jsval_subtle_crypto_rsa_algorithm_object_new(jsval_region_t *region,
+		const char *algorithm_name, uint32_t modulus_bits,
 		jscrypto_digest_algorithm_t hash, jsval_t *value_ptr)
 {
 	jsval_t object;
@@ -9237,11 +9276,10 @@ jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
 	jsval_t hash_name_value;
 	jsval_t exponent_typed;
 	jsval_t exponent_buffer;
-	jsval_native_typed_array_t *typed_native = NULL;
 	uint8_t *typed_bytes;
 	const char *hash_name;
 
-	if (region == NULL || value_ptr == NULL) {
+	if (region == NULL || value_ptr == NULL || algorithm_name == NULL) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -9260,8 +9298,8 @@ jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
 		return -1;
 	}
 	if (jsval_object_new(region, 4, &object) < 0
-			|| jsval_string_new_utf8(region,
-				(const uint8_t *)"RSASSA-PKCS1-v1_5", 17, &name_value) < 0
+			|| jsval_string_new_utf8(region, (const uint8_t *)algorithm_name,
+				strlen(algorithm_name), &name_value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"name",
 				4, name_value) < 0
 			|| jsval_object_set_utf8(region, object,
@@ -9281,7 +9319,6 @@ jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
 			return -1;
 		}
 	}
-	(void)typed_native;
 	typed_bytes[0] = 0x01u;
 	typed_bytes[1] = 0x00u;
 	typed_bytes[2] = 0x01u;
@@ -9302,6 +9339,24 @@ jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
 	}
 	*value_ptr = object;
 	return 0;
+}
+
+static int
+jsval_subtle_crypto_rsassa_pkcs1_v1_5_algorithm_object_new(
+		jsval_region_t *region, uint32_t modulus_bits,
+		jscrypto_digest_algorithm_t hash, jsval_t *value_ptr)
+{
+	return jsval_subtle_crypto_rsa_algorithm_object_new(region,
+			"RSASSA-PKCS1-v1_5", modulus_bits, hash, value_ptr);
+}
+
+static int
+jsval_subtle_crypto_rsa_pss_algorithm_object_new(jsval_region_t *region,
+		uint32_t modulus_bits, jscrypto_digest_algorithm_t hash,
+		jsval_t *value_ptr)
+{
+	return jsval_subtle_crypto_rsa_algorithm_object_new(region, "RSA-PSS",
+			modulus_bits, hash, value_ptr);
 }
 
 static int
@@ -10328,6 +10383,55 @@ jsval_subtle_crypto_new_rsassa_pkcs1_v1_5_task(jsval_region_t *region,
 	task->signature_len = signature_len;
 	task->modulus_bit_length = modulus_bit_length;
 	task->usages_mask = usages_mask;
+	task->operation = (uint8_t)operation;
+	task->format = (uint8_t)format;
+	task->hash_algorithm = (uint8_t)hash_algorithm;
+	task->key_type = (uint8_t)key_type;
+	task->extractable = extractable ? 1 : 0;
+	*off_ptr = off;
+	*task_ptr = task;
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_new_rsa_pss_task(jsval_region_t *region,
+		jsval_t promise_value, jsval_subtle_rsa_pss_task_op_t operation,
+		jsval_off_t key_off, jsval_subtle_crypto_key_format_t format,
+		jscrypto_digest_algorithm_t hash_algorithm,
+		jsval_crypto_key_type_t key_type, int extractable,
+		uint32_t usages_mask, uint32_t modulus_bit_length,
+		uint32_t salt_length_bytes, size_t data_len, size_t signature_len,
+		jsval_off_t *off_ptr,
+		jsval_native_microtask_subtle_rsa_pss_t **task_ptr)
+{
+	jsval_native_microtask_subtle_rsa_pss_t *task;
+	jsval_off_t off;
+	size_t bytes_len;
+
+	if (region == NULL || promise_value.kind != JSVAL_KIND_PROMISE
+			|| off_ptr == NULL || task_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (data_len > SIZE_MAX - sizeof(*task)
+			|| signature_len > SIZE_MAX - sizeof(*task) - data_len) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	bytes_len = sizeof(*task) + data_len + signature_len;
+	if (jsval_region_reserve(region, bytes_len, JSVAL_ALIGN, &off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS;
+	task->promise_off = promise_value.off;
+	task->key_off = key_off;
+	task->data_len = data_len;
+	task->signature_len = signature_len;
+	task->modulus_bit_length = modulus_bit_length;
+	task->usages_mask = usages_mask;
+	task->salt_length_bytes = salt_length_bytes;
 	task->operation = (uint8_t)operation;
 	task->format = (uint8_t)format;
 	task->hash_algorithm = (uint8_t)hash_algorithm;
@@ -13190,6 +13294,12 @@ jsval_subtle_crypto_rsassa_pkcs1_v1_5_params_parse(jsval_region_t *region,
 	return 0;
 }
 
+static const char *
+jsval_subtle_crypto_rsa_pss_jwk_alg(jscrypto_digest_algorithm_t hash);
+static int
+jsval_subtle_crypto_rsa_pss_hash_from_alg(const uint8_t *alg, size_t alg_len,
+		jscrypto_digest_algorithm_t *hash_out);
+
 static int
 jsval_subtle_crypto_build_rsa_jwk_export(jsval_region_t *region,
 		jsval_native_crypto_key_t *key, jsval_t *value_ptr)
@@ -13251,8 +13361,14 @@ jsval_subtle_crypto_build_rsa_jwk_export(jsval_region_t *region,
 			return -1;
 		}
 	}
-	alg_name = jsval_subtle_crypto_rsassa_pkcs1_v1_5_jwk_alg(
-			(jscrypto_digest_algorithm_t)key->hash_algorithm);
+	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
+			== JSVAL_CRYPTO_ALGORITHM_RSA_PSS) {
+		alg_name = jsval_subtle_crypto_rsa_pss_jwk_alg(
+				(jscrypto_digest_algorithm_t)key->hash_algorithm);
+	} else {
+		alg_name = jsval_subtle_crypto_rsassa_pkcs1_v1_5_jwk_alg(
+				(jscrypto_digest_algorithm_t)key->hash_algorithm);
+	}
 	if (alg_name == NULL) {
 		errno = EINVAL;
 		return -1;
@@ -13384,7 +13500,7 @@ jsval_subtle_crypto_rsa_jwk_field_decode(jsval_region_t *region,
  */
 static int
 jsval_subtle_crypto_parse_jwk_rsa_key(jsval_region_t *region,
-		jsval_t jwk_value, uint32_t declared_usages,
+		jsval_t jwk_value, uint32_t declared_usages, int is_pss,
 		jscrypto_digest_algorithm_t expected_hash, int has_expected_hash,
 		uint8_t *der_out, size_t der_cap, size_t *der_len_out,
 		int *is_private_out, uint32_t *modulus_bits_out,
@@ -13483,10 +13599,18 @@ jsval_subtle_crypto_parse_jwk_rsa_key(jsval_region_t *region,
 			return jsval_webcrypto_error_set(error, "DataError",
 					"unsupported RSA JWK alg");
 		}
-		if (jsval_subtle_crypto_rsassa_pkcs1_v1_5_hash_from_alg(alg_buf,
-				alg_len, &parsed) < 0) {
-			return jsval_webcrypto_error_set(error, "DataError",
-					"unsupported RSA JWK alg");
+		if (is_pss) {
+			if (jsval_subtle_crypto_rsa_pss_hash_from_alg(alg_buf, alg_len,
+					&parsed) < 0) {
+				return jsval_webcrypto_error_set(error, "DataError",
+						"unsupported RSA JWK alg");
+			}
+		} else {
+			if (jsval_subtle_crypto_rsassa_pkcs1_v1_5_hash_from_alg(alg_buf,
+					alg_len, &parsed) < 0) {
+				return jsval_webcrypto_error_set(error, "DataError",
+						"unsupported RSA JWK alg");
+			}
 		}
 		if (has_expected_hash && parsed != expected_hash) {
 			return jsval_webcrypto_error_set(error, "DataError",
@@ -13727,6 +13851,393 @@ jsval_subtle_crypto_run_rsassa_pkcs1_v1_5(jsval_region_t *region,
 				jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_data(task),
 				task->data_len,
 				jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_signature(task),
+				task->signature_len, &matches) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value,
+				jsval_bool(matches ? 1 : 0));
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+operation_error:
+	if (jsval_dom_exception_new_utf8(region, operation_error_name,
+			operation_error_message, &reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
+/*
+ * RSA-PSS helpers. Shares the DER key storage, keygen, and JWK
+ * structure with RSASSA-PKCS1-v1_5 — only the `alg` field and the
+ * sign/verify padding mode differ. The runner dispatches to the new
+ * jscrypto_rsa_pss_sign / _verify C functions with a per-operation
+ * saltLength parameter (default: digest output length).
+ */
+
+static const char *
+jsval_subtle_crypto_rsa_pss_jwk_alg(jscrypto_digest_algorithm_t hash)
+{
+	switch (hash) {
+	case JSCRYPTO_DIGEST_SHA256:
+		return "PS256";
+	case JSCRYPTO_DIGEST_SHA384:
+		return "PS384";
+	case JSCRYPTO_DIGEST_SHA512:
+		return "PS512";
+	default:
+		return NULL;
+	}
+}
+
+static int
+jsval_subtle_crypto_rsa_pss_hash_from_alg(const uint8_t *alg, size_t alg_len,
+		jscrypto_digest_algorithm_t *hash_out)
+{
+	if (alg_len == 5 && memcmp(alg, "PS256", 5) == 0) {
+		*hash_out = JSCRYPTO_DIGEST_SHA256;
+		return 0;
+	}
+	if (alg_len == 5 && memcmp(alg, "PS384", 5) == 0) {
+		*hash_out = JSCRYPTO_DIGEST_SHA384;
+		return 0;
+	}
+	if (alg_len == 5 && memcmp(alg, "PS512", 5) == 0) {
+		*hash_out = JSCRYPTO_DIGEST_SHA512;
+		return 0;
+	}
+	return -1;
+}
+
+/*
+ * Parse RSA-PSS algorithm objects. Three shapes, controlled by the
+ * `require_modulus` / `require_hash` flags:
+ *
+ * - generateKey/importKey: `{name, modulusLength, publicExponent, hash}`,
+ *   all required. Reuses the publicExponent validation from the
+ *   RSASSA-PKCS1-v1_5 parser (F4-or-reject, optional, defaults to F4).
+ *
+ * - sign/verify: `{name, saltLength?}`. If `saltLength` is absent we
+ *   default to the hash output length of the key — matching Node.js /
+ *   Chromium behavior and RFC 7518 §3.5 for JOSE PS256/384/512.
+ */
+static int
+jsval_subtle_crypto_rsa_pss_params_parse(jsval_region_t *region,
+		jsval_t algorithm_value, int require_hash, int require_modulus,
+		jscrypto_digest_algorithm_t *hash_out, int *has_hash_out,
+		uint32_t *modulus_bits_out, int *has_salt_length_out,
+		uint32_t *salt_length_out, jsval_webcrypto_error_t *error)
+{
+	jsval_t hash_value = jsval_undefined();
+	jsval_t modulus_value = jsval_undefined();
+	jsval_t exponent_value = jsval_undefined();
+	jsval_t salt_length_value = jsval_undefined();
+
+	if (has_hash_out != NULL) {
+		*has_hash_out = 0;
+	}
+	if (has_salt_length_out != NULL) {
+		*has_salt_length_out = 0;
+	}
+	if (algorithm_value.kind != JSVAL_KIND_OBJECT) {
+		if (require_hash || require_modulus) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected RSA-PSS algorithm object");
+		}
+		return 0;
+	}
+	if (jsval_object_get_utf8(region, algorithm_value,
+			(const uint8_t *)"hash", 4, &hash_value) < 0) {
+		return -1;
+	}
+	if (hash_value.kind == JSVAL_KIND_UNDEFINED) {
+		if (require_hash) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected RSA-PSS hash");
+		}
+	} else {
+		jsval_t name_value = hash_value;
+		uint8_t name_buf[16];
+		size_t name_len = 0;
+		jscrypto_digest_algorithm_t parsed;
+
+		if (hash_value.kind == JSVAL_KIND_OBJECT) {
+			if (jsval_object_get_utf8(region, hash_value,
+					(const uint8_t *)"name", 4, &name_value) < 0) {
+				return -1;
+			}
+		}
+		if (name_value.kind != JSVAL_KIND_STRING) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected RSA-PSS hash name");
+		}
+		if (jsval_string_copy_utf8(region, name_value, NULL, 0,
+				&name_len) < 0) {
+			return -1;
+		}
+		if (name_len > sizeof(name_buf)
+				|| jsval_string_copy_utf8(region, name_value, name_buf,
+					sizeof(name_buf), NULL) < 0) {
+			return jsval_webcrypto_error_set(error, "NotSupportedError",
+					"unsupported RSA-PSS hash");
+		}
+		if (jscrypto_digest_algorithm_parse(name_buf, name_len, &parsed) < 0
+				|| (parsed != JSCRYPTO_DIGEST_SHA256
+					&& parsed != JSCRYPTO_DIGEST_SHA384
+					&& parsed != JSCRYPTO_DIGEST_SHA512)) {
+			return jsval_webcrypto_error_set(error, "NotSupportedError",
+					"unsupported RSA-PSS hash");
+		}
+		if (hash_out != NULL) {
+			*hash_out = parsed;
+		}
+		if (has_hash_out != NULL) {
+			*has_hash_out = 1;
+		}
+	}
+	if (require_modulus) {
+		uint32_t bits;
+		const uint8_t *exponent_bytes = NULL;
+		size_t exponent_len = 0;
+
+		if (jsval_object_get_utf8(region, algorithm_value,
+				(const uint8_t *)"modulusLength", 13, &modulus_value) < 0) {
+			return -1;
+		}
+		if (modulus_value.kind != JSVAL_KIND_NUMBER) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected RSA-PSS modulusLength");
+		}
+		bits = (uint32_t)modulus_value.as.number;
+		if (bits != 2048 && bits != 3072 && bits != 4096) {
+			return jsval_webcrypto_error_set(error, "NotSupportedError",
+					"unsupported RSA-PSS modulusLength");
+		}
+		if (jsval_object_get_utf8(region, algorithm_value,
+				(const uint8_t *)"publicExponent", 14, &exponent_value) < 0) {
+			return -1;
+		}
+		if (exponent_value.kind != JSVAL_KIND_UNDEFINED) {
+			if (jsval_buffer_source_bytes(region, exponent_value,
+					&exponent_bytes, &exponent_len) < 0) {
+				return jsval_webcrypto_error_set(error, "TypeError",
+						"expected RSA-PSS publicExponent BufferSource");
+			}
+			if (!((exponent_len == 3 && exponent_bytes[0] == 0x01u
+					&& exponent_bytes[1] == 0x00u
+					&& exponent_bytes[2] == 0x01u)
+				|| (exponent_len == 4 && exponent_bytes[0] == 0x00u
+					&& exponent_bytes[1] == 0x01u
+					&& exponent_bytes[2] == 0x00u
+					&& exponent_bytes[3] == 0x01u))) {
+				return jsval_webcrypto_error_set(error, "OperationError",
+						"unsupported RSA-PSS publicExponent");
+			}
+		}
+		if (modulus_bits_out != NULL) {
+			*modulus_bits_out = bits;
+		}
+	}
+	/* saltLength is only meaningful on sign/verify. Accept numbers
+	 * >= 0; reject negative, non-integer, or non-number. */
+	if (jsval_object_get_utf8(region, algorithm_value,
+			(const uint8_t *)"saltLength", 10, &salt_length_value) < 0) {
+		return -1;
+	}
+	if (salt_length_value.kind != JSVAL_KIND_UNDEFINED) {
+		double n;
+
+		if (salt_length_value.kind != JSVAL_KIND_NUMBER) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"expected RSA-PSS saltLength number");
+		}
+		n = salt_length_value.as.number;
+		if (!(n >= 0.0) || n > (double)UINT32_MAX) {
+			return jsval_webcrypto_error_set(error, "TypeError",
+					"invalid RSA-PSS saltLength");
+		}
+		if (salt_length_out != NULL) {
+			*salt_length_out = (uint32_t)n;
+		}
+		if (has_salt_length_out != NULL) {
+			*has_salt_length_out = 1;
+		}
+	}
+	return 0;
+}
+
+static int
+jsval_subtle_crypto_run_rsa_pss(jsval_region_t *region,
+		jsval_native_microtask_subtle_rsa_pss_t *task)
+{
+	static const char operation_error_name[] = "OperationError";
+	static const char operation_error_message[] = "RSA-PSS operation failed";
+	jsval_t promise_value;
+	jsval_t reason;
+	jsval_t result;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	switch ((jsval_subtle_rsa_pss_task_op_t)task->operation) {
+	case JSVAL_SUBTLE_RSA_PSS_TASK_GENERATE:
+	{
+		uint8_t private_der[4096];
+		uint8_t public_der[1024];
+		size_t private_len = 0;
+		size_t public_len = 0;
+		jsval_t private_alg;
+		jsval_t public_alg;
+		jsval_t private_value;
+		jsval_t public_value;
+		jsval_t pair;
+		uint32_t sign_mask;
+		uint32_t verify_mask;
+
+		if (jscrypto_rsa_pkcs1_v1_5_generate(task->modulus_bit_length,
+				private_der, sizeof(private_der), &private_len) < 0
+				|| jscrypto_rsa_public_from_private(private_der, private_len,
+					public_der, sizeof(public_der), &public_len) < 0) {
+			goto operation_error;
+		}
+		sign_mask = task->usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN;
+		verify_mask = task->usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY;
+		if (jsval_subtle_crypto_rsa_pss_algorithm_object_new(region,
+				task->modulus_bit_length,
+				(jscrypto_digest_algorithm_t)task->hash_algorithm,
+				&private_alg) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_PRIVATE, task->extractable != 0,
+					private_alg, sign_mask,
+					JSVAL_CRYPTO_ALGORITHM_RSA_PSS,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->modulus_bit_length, private_der, private_len,
+					&private_value) < 0
+				|| jsval_subtle_crypto_rsa_pss_algorithm_object_new(region,
+					task->modulus_bit_length,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					&public_alg) < 0
+				|| jsval_crypto_key_new_internal(region,
+					JSVAL_CRYPTO_KEY_TYPE_PUBLIC, 1, public_alg, verify_mask,
+					JSVAL_CRYPTO_ALGORITHM_RSA_PSS,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->modulus_bit_length, public_der, public_len,
+					&public_value) < 0) {
+			goto operation_error;
+		}
+		if (jsval_object_new(region, 2, &pair) < 0
+				|| jsval_object_set_utf8(region, pair,
+					(const uint8_t *)"publicKey", 9, public_value) < 0
+				|| jsval_object_set_utf8(region, pair,
+					(const uint8_t *)"privateKey", 10, private_value) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, pair);
+	}
+	case JSVAL_SUBTLE_RSA_PSS_TASK_IMPORT:
+	{
+		uint8_t *bytes = jsval_native_microtask_subtle_rsa_pss_data(task);
+		jsval_t alg;
+		jsval_crypto_key_type_t kt =
+				(jsval_crypto_key_type_t)task->key_type;
+
+		if (jsval_subtle_crypto_rsa_pss_algorithm_object_new(region,
+				task->modulus_bit_length,
+				(jscrypto_digest_algorithm_t)task->hash_algorithm, &alg) < 0
+				|| jsval_crypto_key_new_internal(region, kt,
+					task->extractable != 0, alg, task->usages_mask,
+					JSVAL_CRYPTO_ALGORITHM_RSA_PSS,
+					(jscrypto_digest_algorithm_t)task->hash_algorithm,
+					task->modulus_bit_length, bytes, task->data_len,
+					&result) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_RSA_PSS_TASK_EXPORT:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+
+		if (key == NULL) {
+			goto operation_error;
+		}
+		if (!key->extractable) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError", "key is not extractable");
+		}
+		if (jsval_subtle_crypto_build_rsa_jwk_export(region, key, &result) < 0) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_RSA_PSS_TASK_SIGN:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+		const uint8_t *der;
+		jsval_native_array_buffer_t *buffer;
+		size_t sig_len = 0;
+		size_t sig_cap;
+
+		if (key == NULL
+				|| (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"expected RSA-PSS private key");
+		}
+		der = jsval_native_crypto_key_bytes(region, key);
+		if (der == NULL) {
+			goto operation_error;
+		}
+		sig_cap = task->modulus_bit_length / 8u;
+		if (jsval_array_buffer_new(region, sig_cap, &result) < 0) {
+			return -1;
+		}
+		buffer = jsval_native_array_buffer(region, result);
+		if (buffer == NULL) {
+			goto operation_error;
+		}
+		if (jscrypto_rsa_pss_sign(der, key->key_byte_length,
+				(jscrypto_digest_algorithm_t)key->hash_algorithm,
+				task->salt_length_bytes,
+				jsval_native_microtask_subtle_rsa_pss_data(task),
+				task->data_len,
+				jsval_native_array_buffer_bytes(buffer), sig_cap,
+				&sig_len) < 0 || sig_len != sig_cap) {
+			goto operation_error;
+		}
+		return jsval_promise_resolve(region, promise_value, result);
+	}
+	case JSVAL_SUBTLE_RSA_PSS_TASK_VERIFY:
+	{
+		jsval_native_crypto_key_t *key = jsval_native_crypto_key(region,
+				jsval_crypto_key_value(task->key_off));
+		const uint8_t *der;
+		int matches = 0;
+
+		if (key == NULL
+				|| (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"expected RSA-PSS public key");
+		}
+		der = jsval_native_crypto_key_bytes(region, key);
+		if (der == NULL) {
+			goto operation_error;
+		}
+		if (jscrypto_rsa_pss_verify(der, key->key_byte_length,
+				(jscrypto_digest_algorithm_t)key->hash_algorithm,
+				task->salt_length_bytes,
+				jsval_native_microtask_subtle_rsa_pss_data(task),
+				task->data_len,
+				jsval_native_microtask_subtle_rsa_pss_signature(task),
 				task->signature_len, &matches) < 0) {
 			goto operation_error;
 		}
@@ -14311,6 +14822,36 @@ jsval_subtle_crypto_generate_key(jsval_region_t *region, jsval_t subtle_value,
 			return -1;
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	eq = jsval_string_eq_ascii(region, name_value, "RSA-PSS");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_rsa_pss_t *pss_task;
+		jscrypto_digest_algorithm_t pss_hash = JSCRYPTO_DIGEST_SHA256;
+		uint32_t modulus_bits = 0;
+
+		if (jsval_subtle_crypto_rsa_pss_params_parse(region, algorithm_value,
+				1, 1, &pss_hash, NULL, &modulus_bits, NULL, NULL,
+				&error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY,
+				1, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
+				JSVAL_SUBTLE_RSA_PSS_TASK_GENERATE, 0,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW, pss_hash,
+				JSVAL_CRYPTO_KEY_TYPE_PRIVATE, extractable, usages_mask,
+				modulus_bits, 0, 0, 0, &off, &pss_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &pss_task->base);
 	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported algorithm");
@@ -15470,7 +16011,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					"NotSupportedError", "unsupported key format");
 		}
 		if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
-				usages_mask, rsa_hash, 1, rsa_der, sizeof(rsa_der),
+				usages_mask, 0, rsa_hash, 1, rsa_der, sizeof(rsa_der),
 				&rsa_der_len, &is_private, &modulus_bits, &error) < 0) {
 			return jsval_subtle_crypto_reject(region, promise_value,
 					error.name, error.message);
@@ -15487,6 +16028,52 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 		memcpy(jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_data(rsa_task),
 				rsa_der, rsa_der_len);
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	eq = jsval_string_eq_ascii(region, name_value, "RSA-PSS");
+	if (eq < 0) {
+		return -1;
+	}
+	if (eq > 0) {
+		jsval_native_microtask_subtle_rsa_pss_t *pss_task;
+		jscrypto_digest_algorithm_t pss_hash = JSCRYPTO_DIGEST_SHA256;
+		uint8_t pss_der[4096];
+		size_t pss_der_len = 0;
+		uint32_t modulus_bits = 0;
+		int is_private = 0;
+
+		if (jsval_subtle_crypto_rsa_pss_params_parse(region, algorithm_value,
+				1, 0, &pss_hash, NULL, NULL, NULL, NULL, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_parse_usages(region, usages_value,
+				JSVAL_CRYPTO_KEY_USAGE_SIGN | JSVAL_CRYPTO_KEY_USAGE_VERIFY,
+				0, &usages_mask, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError", "unsupported key format");
+		}
+		if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
+				usages_mask, 1, pss_hash, 1, pss_der, sizeof(pss_der),
+				&pss_der_len, &is_private, &modulus_bits, &error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
+				JSVAL_SUBTLE_RSA_PSS_TASK_IMPORT, 0,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK, pss_hash,
+				is_private ? JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+					: JSVAL_CRYPTO_KEY_TYPE_PUBLIC,
+				extractable, usages_mask, modulus_bits, 0, pss_der_len, 0,
+				&off, &pss_task) < 0) {
+			return -1;
+		}
+		memcpy(jsval_native_microtask_subtle_rsa_pss_data(pss_task),
+				pss_der, pss_der_len);
+		return jsval_microtask_push(region, off, &pss_task->base);
 	}
 	return jsval_subtle_crypto_reject(region, promise_value,
 			"NotSupportedError", "unsupported algorithm");
@@ -15656,6 +16243,28 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
 	}
+	case JSVAL_CRYPTO_ALGORITHM_RSA_PSS:
+	{
+		jsval_native_microtask_subtle_rsa_pss_t *pss_task;
+
+		if (!key->extractable) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError", "key is not extractable");
+		}
+		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError", "unsupported key format");
+		}
+		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
+				JSVAL_SUBTLE_RSA_PSS_TASK_EXPORT, key_value.off, format,
+				(jscrypto_digest_algorithm_t)key->hash_algorithm,
+				(jsval_crypto_key_type_t)key->type, key->extractable != 0,
+				key->usages_mask, key->key_bit_length, 0, 0, 0, &off,
+				&pss_task) < 0) {
+			return -1;
+		}
+		return jsval_microtask_push(region, off, &pss_task->base);
+	}
 	default:
 		return jsval_subtle_crypto_reject(region, promise_value,
 				"InvalidAccessError", "unsupported CryptoKey algorithm");
@@ -15736,6 +16345,7 @@ jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
 	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
 			== JSVAL_CRYPTO_ALGORITHM_RSASSA_PKCS1_V1_5) {
 		jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_t *rsa_task;
+		jsval_t op_name_value;
 
 		if ((jsval_crypto_key_type_t)key->type
 				!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE
@@ -15743,6 +16353,14 @@ jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError",
 					"key does not support sign");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"RSASSA-PKCS1-v1_5") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
 		}
 		if (jsval_subtle_crypto_rsassa_pkcs1_v1_5_params_parse(region,
 				algorithm_value, 0, 0, NULL, NULL, NULL, &error) < 0) {
@@ -15768,6 +16386,64 @@ jsval_subtle_crypto_sign(jsval_region_t *region, jsval_t subtle_value,
 					rsa_task), bytes, byte_length);
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
+			== JSVAL_CRYPTO_ALGORITHM_RSA_PSS) {
+		jsval_native_microtask_subtle_rsa_pss_t *pss_task;
+		jsval_t op_name_value;
+		uint32_t salt_length = 0;
+		int has_salt = 0;
+		size_t digest_len = 0;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+				|| (key->usages_mask & JSVAL_CRYPTO_KEY_USAGE_SIGN) == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"key does not support sign");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"RSA-PSS") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
+		}
+		if (jsval_subtle_crypto_rsa_pss_params_parse(region, algorithm_value,
+				0, 0, NULL, NULL, NULL, &has_salt, &salt_length,
+				&error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (!has_salt) {
+			if (jscrypto_digest_length(
+					(jscrypto_digest_algorithm_t)key->hash_algorithm,
+					&digest_len) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"OperationError", "invalid RSA-PSS hash");
+			}
+			salt_length = (uint32_t)digest_len;
+		}
+		if (jsval_buffer_source_bytes(region, data_value, &bytes,
+				&byte_length) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"TypeError", "expected BufferSource input");
+		}
+		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
+				JSVAL_SUBTLE_RSA_PSS_TASK_SIGN, key_value.off,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+				(jscrypto_digest_algorithm_t)key->hash_algorithm,
+				JSVAL_CRYPTO_KEY_TYPE_PRIVATE, key->extractable != 0,
+				key->usages_mask, key->key_bit_length, salt_length,
+				byte_length, 0, &off, &pss_task) < 0) {
+			return -1;
+		}
+		if (byte_length > 0) {
+			memcpy(jsval_native_microtask_subtle_rsa_pss_data(pss_task),
+					bytes, byte_length);
+		}
+		return jsval_microtask_push(region, off, &pss_task->base);
 	}
 	if (jsval_subtle_crypto_hmac_key_validate(region, key_value,
 			JSVAL_CRYPTO_KEY_USAGE_SIGN, 0, &key, &error) < 0) {
@@ -15885,6 +16561,7 @@ jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
 	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
 			== JSVAL_CRYPTO_ALGORITHM_RSASSA_PKCS1_V1_5) {
 		jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_t *rsa_task;
+		jsval_t op_name_value;
 
 		if ((jsval_crypto_key_type_t)key->type
 				!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC
@@ -15892,6 +16569,14 @@ jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError",
 					"key does not support verify");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"RSASSA-PKCS1-v1_5") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
 		}
 		if (jsval_subtle_crypto_rsassa_pkcs1_v1_5_params_parse(region,
 				algorithm_value, 0, 0, NULL, NULL, NULL, &error) < 0) {
@@ -15923,6 +16608,70 @@ jsval_subtle_crypto_verify(jsval_region_t *region, jsval_t subtle_value,
 					rsa_task), signature_bytes, signature_len);
 		}
 		return jsval_microtask_push(region, off, &rsa_task->base);
+	}
+	if ((jsval_crypto_algorithm_kind_t)key->algorithm_kind
+			== JSVAL_CRYPTO_ALGORITHM_RSA_PSS) {
+		jsval_native_microtask_subtle_rsa_pss_t *pss_task;
+		jsval_t op_name_value;
+		uint32_t salt_length = 0;
+		int has_salt = 0;
+		size_t digest_len = 0;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC
+				|| (key->usages_mask & JSVAL_CRYPTO_KEY_USAGE_VERIFY) == 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"key does not support verify");
+		}
+		if (jsval_subtle_crypto_algorithm_name_value(region, algorithm_value,
+				1, &op_name_value, &error) < 0
+				|| jsval_string_eq_ascii(region, op_name_value,
+					"RSA-PSS") <= 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"InvalidAccessError",
+					"algorithm does not match key");
+		}
+		if (jsval_subtle_crypto_rsa_pss_params_parse(region, algorithm_value,
+				0, 0, NULL, NULL, NULL, &has_salt, &salt_length,
+				&error) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					error.name, error.message);
+		}
+		if (!has_salt) {
+			if (jscrypto_digest_length(
+					(jscrypto_digest_algorithm_t)key->hash_algorithm,
+					&digest_len) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"OperationError", "invalid RSA-PSS hash");
+			}
+			salt_length = (uint32_t)digest_len;
+		}
+		if (jsval_buffer_source_bytes(region, signature_value,
+				&signature_bytes, &signature_len) < 0
+				|| jsval_buffer_source_bytes(region, data_value, &data_bytes,
+					&data_len) < 0) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"TypeError", "expected BufferSource input");
+		}
+		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
+				JSVAL_SUBTLE_RSA_PSS_TASK_VERIFY, key_value.off,
+				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW,
+				(jscrypto_digest_algorithm_t)key->hash_algorithm,
+				JSVAL_CRYPTO_KEY_TYPE_PUBLIC, key->extractable != 0,
+				key->usages_mask, key->key_bit_length, salt_length, data_len,
+				signature_len, &off, &pss_task) < 0) {
+			return -1;
+		}
+		if (data_len > 0) {
+			memcpy(jsval_native_microtask_subtle_rsa_pss_data(pss_task),
+					data_bytes, data_len);
+		}
+		if (signature_len > 0) {
+			memcpy(jsval_native_microtask_subtle_rsa_pss_signature(pss_task),
+					signature_bytes, signature_len);
+		}
+		return jsval_microtask_push(region, off, &pss_task->base);
 	}
 	if (jsval_subtle_crypto_hmac_key_validate(region, key_value,
 			JSVAL_CRYPTO_KEY_USAGE_VERIFY, 0, &key, &error) < 0) {
@@ -17906,6 +18655,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 
 			if (jsval_subtle_crypto_run_rsassa_pkcs1_v1_5(region,
 					rsa_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS:
+		{
+			jsval_native_microtask_subtle_rsa_pss_t *pss_task =
+				(jsval_native_microtask_subtle_rsa_pss_t *)task;
+
+			if (jsval_subtle_crypto_run_rsa_pss(region, pss_task) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}

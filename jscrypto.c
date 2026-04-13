@@ -2353,6 +2353,162 @@ jscrypto_rsa_private_from_jwk_components(
 #endif
 }
 
+/*
+ * RSA-PSS sign / verify. Structurally identical to
+ * rsa_pkcs1_v1_5_sign / _verify except that the EVP_PKEY_CTX is
+ * captured from EVP_Digest{Sign,Verify}Init and configured with
+ * PSS padding, saltLength, and MGF1 tied to the same hash as the
+ * main digest — WebCrypto §21.2 says MGF1 must match the hash.
+ */
+int
+jscrypto_rsa_pss_sign(const uint8_t *private_der, size_t private_len,
+		jscrypto_digest_algorithm_t hash, uint32_t salt_length_bytes,
+		const uint8_t *data, size_t data_len,
+		uint8_t *signature_out, size_t sig_cap, size_t *sig_len_out)
+{
+	if (signature_out == NULL || sig_len_out == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)private_der;
+	(void)private_len;
+	(void)hash;
+	(void)salt_length_bytes;
+	(void)sig_cap;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		RSA *rsa = NULL;
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		EVP_PKEY_CTX *pctx = NULL;
+		size_t out_len = sig_cap;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		rsa = jscrypto_rsa_from_private_der(private_der, private_len);
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestSignInit(ctx, &pctx, md, NULL, pkey) != 1
+				|| EVP_PKEY_CTX_set_rsa_padding(pctx,
+					RSA_PKCS1_PSS_PADDING) <= 0
+				|| EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx,
+					(int)salt_length_bytes) <= 0
+				|| EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md) <= 0
+				|| EVP_DigestSignUpdate(ctx, data, data_len) != 1
+				|| EVP_DigestSignFinal(ctx, signature_out, &out_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		*sig_len_out = out_len;
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_pss_verify(const uint8_t *public_der, size_t public_len,
+		jscrypto_digest_algorithm_t hash, uint32_t salt_length_bytes,
+		const uint8_t *data, size_t data_len,
+		const uint8_t *signature, size_t signature_len, int *matches_out)
+{
+	if (matches_out == NULL || signature == NULL
+			|| (data == NULL && data_len > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	*matches_out = 0;
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)public_der;
+	(void)public_len;
+	(void)hash;
+	(void)salt_length_bytes;
+	(void)signature_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		const EVP_MD *md = jscrypto_digest_evp(hash);
+		RSA *rsa = NULL;
+		EVP_PKEY *pkey = NULL;
+		EVP_MD_CTX *ctx = NULL;
+		EVP_PKEY_CTX *pctx = NULL;
+		int verify_rc;
+
+		if (md == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		rsa = jscrypto_rsa_from_public_der(public_der, public_len);
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		ctx = EVP_MD_CTX_new();
+		if (ctx == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = ENOMEM;
+			return -1;
+		}
+		if (EVP_DigestVerifyInit(ctx, &pctx, md, NULL, pkey) != 1
+				|| EVP_PKEY_CTX_set_rsa_padding(pctx,
+					RSA_PKCS1_PSS_PADDING) <= 0
+				|| EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx,
+					(int)salt_length_bytes) <= 0
+				|| EVP_PKEY_CTX_set_rsa_mgf1_md(pctx, md) <= 0
+				|| EVP_DigestVerifyUpdate(ctx, data, data_len) != 1) {
+			EVP_MD_CTX_free(ctx);
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		verify_rc = EVP_DigestVerifyFinal(ctx, signature, signature_len);
+		EVP_MD_CTX_free(ctx);
+		EVP_PKEY_free(pkey);
+		if (verify_rc == 1) {
+			*matches_out = 1;
+			return 0;
+		}
+		if (verify_rc == 0) {
+			*matches_out = 0;
+			return 0;
+		}
+		errno = EIO;
+		return -1;
+	}
+#endif
+}
+
 #if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
 #pragma GCC diagnostic pop
 #endif

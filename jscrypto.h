@@ -115,4 +115,13 @@ int jscrypto_rsa_private_from_jwk_components(
 		const uint8_t *qi, size_t qi_len,
 		uint8_t *private_der_out, size_t cap, size_t *len_out);
 
+int jscrypto_rsa_pss_sign(const uint8_t *private_der, size_t private_len,
+		jscrypto_digest_algorithm_t hash, uint32_t salt_length_bytes,
+		const uint8_t *data, size_t data_len,
+		uint8_t *signature_out, size_t sig_cap, size_t *sig_len_out);
+int jscrypto_rsa_pss_verify(const uint8_t *public_der, size_t public_len,
+		jscrypto_digest_algorithm_t hash, uint32_t salt_length_bytes,
+		const uint8_t *data, size_t data_len,
+		const uint8_t *signature, size_t signature_len, int *matches_out);
+
 #endif

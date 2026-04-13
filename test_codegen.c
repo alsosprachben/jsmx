@@ -4860,6 +4860,130 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/*
+				 * RSA-PSS transpiled smoke: 2048-bit generateKey +
+				 * sign + verify with SHA-256, default salt length.
+				 * publicExponent implicit F4.
+				 */
+				jsval_t pss_usages;
+				jsval_t pss_algorithm;
+				jsval_t pss_name;
+				jsval_t pss_hash_obj;
+				jsval_t pss_hash_name;
+				jsval_t pss_generate_promise;
+				jsval_t pss_keypair;
+				jsval_t pss_public;
+				jsval_t pss_private;
+				jsval_t pss_sign_algorithm;
+				jsval_t pss_data_typed;
+				jsval_t pss_data_buffer;
+				jsval_t pss_sign_promise;
+				jsval_t pss_signature;
+				jsval_t pss_verify_promise;
+
+				if (jsval_array_new(&region, 2, &pss_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"sign", 4, &result) < 0
+						|| jsval_array_push(&region, pss_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"verify", 6, &result) < 0
+						|| jsval_array_push(&region, pss_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"RSA-PSS", 7, &pss_name) < 0
+						|| jsval_object_new(&region, 1, &pss_hash_obj) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"SHA-256", 7,
+							&pss_hash_name) < 0
+						|| jsval_object_set_utf8(&region, pss_hash_obj,
+							(const uint8_t *)"name", 4, pss_hash_name) < 0
+						|| jsval_object_new(&region, 3, &pss_algorithm) < 0
+						|| jsval_object_set_utf8(&region, pss_algorithm,
+							(const uint8_t *)"name", 4, pss_name) < 0
+						|| jsval_object_set_utf8(&region, pss_algorithm,
+							(const uint8_t *)"modulusLength", 13,
+							jsval_number(2048.0)) < 0
+						|| jsval_object_set_utf8(&region, pss_algorithm,
+							(const uint8_t *)"hash", 4, pss_hash_obj) < 0) {
+					return generated_fail_errno(detail, cap, "pss setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						pss_algorithm, 1, pss_usages,
+						&pss_generate_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_generate_key(PSS)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region,
+							pss_generate_promise, &pss_keypair) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pss generate drain/result");
+				}
+				if (pss_keypair.kind != JSVAL_KIND_OBJECT
+						|| jsval_object_get_utf8(&region, pss_keypair,
+							(const uint8_t *)"publicKey", 9,
+							&pss_public) < 0
+						|| jsval_object_get_utf8(&region, pss_keypair,
+							(const uint8_t *)"privateKey", 10,
+							&pss_private) < 0
+						|| pss_public.kind != JSVAL_KIND_CRYPTO_KEY
+						|| pss_private.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_failf(detail, cap,
+							"expected PSS generateKey pair");
+				}
+				if (jsval_object_new(&region, 1, &pss_sign_algorithm) < 0
+						|| jsval_object_set_utf8(&region, pss_sign_algorithm,
+							(const uint8_t *)"name", 4, pss_name) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pss sign alg setup");
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+						16, &pss_data_typed) < 0
+						|| jsval_typed_array_buffer(&region, pss_data_typed,
+							&pss_data_buffer) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pss data buffer");
+				}
+				if (jsval_subtle_crypto_sign(&region, subtle_a,
+						pss_sign_algorithm, pss_private, pss_data_buffer,
+						&pss_sign_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_sign(PSS)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, pss_sign_promise,
+							&pss_signature) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pss sign drain/result");
+				}
+				if (pss_signature.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region,
+							pss_signature, &len) < 0 || len != 256) {
+					return generated_failf(detail, cap,
+							"expected 256-byte RSA-PSS signature");
+				}
+				if (jsval_subtle_crypto_verify(&region, subtle_a,
+						pss_sign_algorithm, pss_public, pss_signature,
+						pss_data_buffer, &pss_verify_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_verify(PSS)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, pss_verify_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"pss verify drain/result");
+				}
+				if (result.kind != JSVAL_KIND_BOOL
+						|| result.as.boolean != 1) {
+					return generated_failf(detail, cap,
+							"expected RSA-PSS verify to resolve true");
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;

@@ -1116,6 +1116,105 @@ main(void)
 			assert(errno == ENOTSUP);
 		}
 	}
+
+	/* RSA-PSS: shares key material with RSASSA-PKCS1-v1_5 but uses
+	 * PSS padding + randomized salt. Round-trip sign/verify across
+	 * all three hashes, confirm signatures randomize across calls,
+	 * and cross-check that a PSS signature does NOT verify via the
+	 * PKCS#1-v1.5 path. */
+	{
+		uint8_t private_der[4096];
+		uint8_t public_der[1024];
+		size_t private_len = 0;
+		size_t public_len = 0;
+		uint8_t message[32];
+		uint8_t signature[512];
+		uint8_t signature_b[512];
+		size_t sig_len = 0;
+		size_t sig_b_len = 0;
+		size_t i;
+		int matches = 0;
+
+		for (i = 0; i < sizeof(message); i++) {
+			message[i] = (uint8_t)(i * 7u);
+		}
+		assert(jscrypto_rsa_pkcs1_v1_5_generate(2048, private_der,
+				sizeof(private_der), &private_len) == 0);
+		assert(jscrypto_rsa_public_from_private(private_der, private_len,
+				public_der, sizeof(public_der), &public_len) == 0);
+
+		/* SHA-256 with default salt length (32 bytes). */
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(sig_len == 256);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+
+		/* Flip a signature byte -> verify resolves false. */
+		signature[0] ^= 0x40u;
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 0);
+		signature[0] ^= 0x40u;
+
+		/* Randomization check: two signatures of the same payload
+		 * must differ (PSS uses a random salt), but both must verify. */
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature_b, sizeof(signature_b), &sig_b_len) == 0);
+		assert(sig_len == sig_b_len);
+		assert(memcmp(signature, signature_b, sig_len) != 0);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature_b, sig_b_len, &matches) == 0);
+		assert(matches == 1);
+
+		/* SHA-384 / SHA-512 round-trip. */
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA384, 48, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA384, 48, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA512, 64, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA512, 64, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+
+		/* Cross-padding negative: sign with PSS, verify with PKCS#1-v1.5
+		 * should reject (it won't be a valid PKCS#1 encoding). */
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, 32, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(jscrypto_rsa_pkcs1_v1_5_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 0);
+
+		/* Salt length of 0 is spec-legal. */
+		assert(jscrypto_rsa_pss_sign(private_der, private_len,
+				JSCRYPTO_DIGEST_SHA256, 0, message, sizeof(message),
+				signature, sizeof(signature), &sig_len) == 0);
+		assert(jscrypto_rsa_pss_verify(public_der, public_len,
+				JSCRYPTO_DIGEST_SHA256, 0, message, sizeof(message),
+				signature, sig_len, &matches) == 0);
+		assert(matches == 1);
+	}
 #else
 	uint8_t byte = 0;
 	int matches = 0;
