@@ -1208,6 +1208,42 @@ int jsval_request_new_from_parts(jsval_region_t *region,
 		size_t content_length_hint,
 		jsval_t *value_ptr);
 
+/*
+ * Read-without-consume body accessors. Return the Request / Response
+ * body as an ArrayBuffer jsval without flipping body_used. Used by the
+ * FaaS bridge's response serializer and a future outbound-fetch
+ * request writer.
+ *
+ * Returns 0 with *buffer_out set to an ArrayBuffer jsval on success,
+ * or to jsval_undefined() if there is no body. Returns -1 with
+ * errno=ENOTSUP if the body is a pending streaming source (streaming
+ * serialization is deferred). Returns -1 with errno=EINVAL on kind
+ * mismatch.
+ */
+int jsval_request_body_snapshot(jsval_region_t *region,
+		jsval_t request, jsval_t *buffer_out);
+int jsval_response_body_snapshot(jsval_region_t *region,
+		jsval_t response, jsval_t *buffer_out);
+
+/*
+ * Eagerly drain a streaming Request body into the in-memory
+ * `body_buffer` ArrayBuffer, converting the Request from streaming
+ * to eager without flipping `body_used`. After this returns, the
+ * handler can call request.text() / .json() / .arrayBuffer() /
+ * .bytes() and they will all resolve synchronously against the
+ * drained bytes.
+ *
+ * If the Request already has an eager body or no body at all, this
+ * is a no-op that returns 0.
+ *
+ * The drain is driven by running the microtask queue locally until
+ * the internal drain promise settles. The caller must not be inside
+ * a jsval_microtask_drain already; this function is intended to run
+ * before the handler is invoked.
+ */
+int jsval_request_prewarm_body(jsval_region_t *region,
+		jsval_t request, jsmethod_error_t *error);
+
 int jsval_response_new_from_parts(jsval_region_t *region,
 		uint16_t status,
 		jsval_t status_text_value,

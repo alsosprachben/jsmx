@@ -42,3 +42,14 @@ The next shared module is the WinterTC-oriented sync crypto bridge:
   - `runtime_modules/shared/webcrypto_openssl.h`
 - WinterTC profile exposure:
   - `runtime_modules/wintertc/profile.json`
+
+The FaaS handler bridge glues the Fetch JS object model to an HTTP/1.1
+embedder. It defines the `faas_fetch_handler_fn` C signature every
+hosted function (hand-written or transpiled from
+`export default { async fetch(request) { ... } }`) must implement,
+plus a drain-until-settled pump and a Response serializer:
+
+- shared C bridge:
+  - `runtime_modules/shared/faas_bridge.h`
+- reference usage and test coverage:
+  - `test_faas.c` at the repo root

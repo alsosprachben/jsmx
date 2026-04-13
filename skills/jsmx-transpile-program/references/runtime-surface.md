@@ -164,6 +164,23 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       `jsval_response_array_buffer(...)`, `jsval_response_bytes(...)`
     - `jsval_fetch(...)` — parses input/init into a Request and returns
       a Promise rejected with TypeError until the transport slice lands
+    - `jsval_request_body_snapshot(...)`,
+      `jsval_response_body_snapshot(...)` — read-without-consume body
+      accessors used by the FaaS serializer and future outbound fetch
+    - `jsval_request_prewarm_body(...)` — eagerly drains a streaming
+      Request body into `body_buffer` without flipping `body_used`,
+      so the handler can consume it synchronously after the embedder
+      pre-drains
+  - FaaS handler contract (`runtime_modules/shared/faas_bridge.h`):
+    - `faas_fetch_handler_fn` — the stable C signature every hosted
+      function must match; a transpiled `export default { async
+      fetch(request) { ... } }` lowers to this shape
+    - `faas_drain_until_settled(...)` — pumps `jsval_microtask_drain`
+      until a Promise settles or the queue deadlocks
+    - `faas_serialize_response(...)` — writes an HTTP/1.1 response
+      byte stream from a jsval Response into a caller-supplied
+      buffer, authoritative Content-Length, skips any caller-set
+      Content-Length / Transfer-Encoding
 - string operations through `jsmethod` / `jsval`:
   - concat, trim, repeat, padding
   - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`

@@ -532,46 +532,50 @@ same way closures and `Symbol.iterator` protocol already do.
    bodies, `jsval_request_new_from_parts`, `jsval_response_new_from_parts`,
    `jsval_fetch_emit_header_into` reference callback. All testable
    in jsmx with a fake body source; no mnvkd patches.
+3. ✅ **FaaS handler bridge** —
+   `runtime_modules/shared/faas_bridge.h` defines the
+   `faas_fetch_handler_fn` contract, `faas_drain_until_settled`,
+   and `faas_serialize_response`. Plus `jsval_request_prewarm_body`
+   / `jsval_*_body_snapshot` helpers. Nine scenarios tested in
+   `test_faas`.
 
 **Pending:**
 
-3. **mnvkd header-emit hook** — cross-repo. Patch
+4. **mnvkd header-emit hook** — cross-repo. Patch
    `vk_http11_request()` to accept a `vk_http11_header_emit_fn` and
    invoke it once per parsed header. Keep the existing
    `struct request` path as a default callback so mnvkd's current
    tests don't change. This is a small, surgical patch — the shape
    is already locked by the jsmx-side types.
-4. **mnvkd body-source adapter** — a `jsval_body_source_vtable_t`
+5. **mnvkd body-source adapter** — a `jsval_body_source_vtable_t`
    implementation that pulls bytes from a `vk_socket` RX ring honoring
-   `Content-Length` or chunked framing. Lives wherever the mnvkd ↔
-   jsmx embedding glue ends up (probably a new `runtime_modules/`
-   subdir or a small C file alongside the hosted-function runner).
-5. **FaaS handler contract + hello-world demo** — the first real
-   hosted function. Inbound-only: `vk_http11_request` → body drain
-   → user_fetch_handler → microtask drain → Response serialization.
-   The handler is hand-written C for this slice (transpiler
-   lowering from `export default { fetch }` is a later, separate
-   concern). Output: a standalone binary you can `curl` against
-   and get a Response back. This is the "FaaS works end to end"
-   milestone.
-6. **Transpiler recognition of the fetch-handler idiom** — the
+   `Content-Length` or chunked framing. Lives alongside the
+   hosted-function runner on the mnvkd side.
+6. **`vk_test_faas_demo.c`** — cross-repo hello-world demo binary.
+   Copies `vk_test_http11_service.c`, replaces the hardcoded
+   response with a `faas_fetch_handler_fn` call through
+   `runtime_modules/shared/faas_bridge.h`, and writes the
+   serialized Response into the coroutine's output pipe. Output:
+   a standalone binary you can `curl` against and get a Response
+   back. This is the "FaaS works end to end" milestone.
+7. **Transpiler recognition of the fetch-handler idiom** — the
    transpiler learns to lower `export default { async fetch(request)
    { ... } }` and `addEventListener("fetch", ...)` to the
-   `user_fetch_handler` C signature. Test: a JS source becomes a
-   working binary from step 5.
-7. **Outbound `fetch()` transport** — resolve the Option A vs. B
+   `faas_fetch_handler_fn` C signature. Test: a JS source becomes
+   a working binary from step 6.
+8. **Outbound `fetch()` transport** — resolve the Option A vs. B
    question, then implement. At this point OAuth / JWKS / upstream
    calls become expressible. Likely wants a second hello-world-ish
    demo (a hosted function that reverse-proxies).
-8. **Redirect handling + bounded hop count.**
-9. **Streaming verbs** (`forEachChunk`, `pipeToFile`,
-   async-iterator response producers) when the first real hosted
-   function asks for them.
-10. **Env/ctx bindings** — the Cloudflare-style `fetch(request, env,
+9. **Redirect handling + bounded hop count.**
+10. **Streaming verbs** (`forEachChunk`, `pipeToFile`,
+    async-iterator response producers) when the first real hosted
+    function asks for them.
+11. **Env/ctx bindings** — the Cloudflare-style `fetch(request, env,
     ctx)` second and third arguments. Requires a design pass on what
     *goes in* env (secrets? bindings? config?) so it's not blocking
     the core FaaS shape.
-11. **OAuth userland library**, written in JS against the stable
+12. **OAuth userland library**, written in JS against the stable
     `fetch` surface. This is the product goal.
 
 ## Tradeoffs
@@ -620,19 +624,41 @@ fixtures under `compliance/js/wintertc/jsmx/fetch-*`):
   patch. Six drain scenarios tested in `test_jsval` (text happy
   path, stuttered arrayBuffer, bytes, json, over-budget, mid-stream
   error) plus a `test_codegen` smoke.
+- **FaaS handler bridge.** `runtime_modules/shared/faas_bridge.h`
+  — header-only glue module matching the `fs_sync.h` /
+  `webcrypto_openssl.h` pattern. Defines `faas_fetch_handler_fn`
+  (the stable C signature every hand-written or transpiled
+  handler must implement), `faas_drain_until_settled` (pumps
+  `jsval_microtask_drain` until a Promise settles or the queue
+  deadlocks), and `faas_serialize_response` (writes an HTTP/1.1
+  status line + headers + authoritative Content-Length + body
+  into a caller-supplied byte buffer). Plus jsmx-side helpers:
+  `jsval_request_body_snapshot` / `jsval_response_body_snapshot`
+  (read-without-consume body accessors) and
+  `jsval_request_prewarm_body` (eagerly drains a streaming
+  Request body into `body_buffer` without flipping `body_used`,
+  so the handler can consume it normally). Nine scenarios tested
+  in `test_faas` covering plain and echo handlers, Response.json,
+  custom status/headers, Content-Length override, Response.error
+  rejection, ENOBUFS buffer-too-small, EDEADLK deadlock detection,
+  and streaming-body ENOTSUP.
 
 **Not yet implemented:**
 
 - The mnvkd-side header-emit patch to `vk_http11_request()`.
-- The mnvkd body-source adapter (`vk_socket` → `jsval_body_source_vtable_t`).
-- The FaaS handler contract (`user_fetch_handler` C signature plus
-  an embedder loop that drives microtask drain until a Response
-  promise settles).
+- A mnvkd body-source adapter (`vk_socket` → `jsval_body_source_vtable_t`)
+  that reads body bytes from the coroutine's input pipe honoring
+  Content-Length or chunked framing.
+- A cross-repo `vk_test_faas_demo.c` that copies
+  `vk_test_http11_service.c`, replaces the hardcoded response with a
+  `faas_fetch_handler_fn` call through `faas_bridge.h`, and writes
+  the serialized Response into the coroutine's output pipe.
 - Transpiler recognition of the `export default { fetch }` idiom.
 - The outbound `fetch()` transport (design decision pending — see
   [The outbound `fetch()` path](#the-outbound-fetch-path)).
 
-The next landable slice is the **mnvkd header-emit patch plus the
-first hand-written hello-world FaaS demo**, which proves the whole
-inbound pipeline end-to-end without requiring outbound fetch or
-transpiler changes.
+The next landable slice is the **cross-repo hello-world FaaS demo**:
+the mnvkd header-emit patch plus a body-source adapter plus a new
+example binary that links against `runtime_modules/shared/faas_bridge.h`.
+The jsmx side is stable; the remaining work is entirely on the mnvkd
+side of the fence.

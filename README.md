@@ -669,6 +669,18 @@ hook into `mnvkd`'s iterative parser, `FETCH_BODY_DRAIN` microtask, and
 the explicit no-`ReadableStream` decision) is in
 [`docs/fetch.md`](docs/fetch.md).
 
+The **FaaS handler bridge** lives in
+[`runtime_modules/shared/faas_bridge.h`](runtime_modules/shared/faas_bridge.h)
+as a header-only module. It defines the stable C signature every hosted
+function must implement (`faas_fetch_handler_fn`), a drain-until-settled
+pump that walks the microtask queue until a Promise settles, and a
+response serializer that writes an HTTP/1.1 status line + headers +
+authoritative Content-Length + body into a caller-supplied byte buffer.
+See [`test_faas.c`](test_faas.c) for reference usage covering plain and
+echo handlers, `Response.json`, custom status/headers,
+`Content-Length` override, `Response.error()` serialization rejection,
+`ENOBUFS`/`EDEADLK` error paths, and streaming-body `ENOTSUP`.
+
 - `Headers` with case-insensitive append/set/get/has/delete,
   combine-with-comma reads, whitespace-trimming value normalization, token
   validation on names, and `getSetCookie`.

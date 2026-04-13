@@ -85,6 +85,10 @@ test_codegen: test_codegen.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsm
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
+test_faas: test_faas.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jscrypto.h jsval.h jsmethod.h jsurl.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h runtime_modules/shared/faas_bridge.h
+	$(CC) -g -I. $(CFLAGS) $(LDFLAGS) test_faas.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c $(LDLIBS) -o $@
+	./$@
+
 test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
 	python3 scripts/run_compliance_manifest.py
 

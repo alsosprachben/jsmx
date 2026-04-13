@@ -35591,6 +35591,171 @@ int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 
 /* -------------------- fetch() stub --------------------- */
 
+int jsval_request_body_snapshot(jsval_region_t *region, jsval_t request,
+		jsval_t *buffer_out)
+{
+	jsval_native_request_t *native;
+
+	if (region == NULL || buffer_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->body_is_streaming) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (!native->has_body) {
+		*buffer_out = jsval_undefined();
+		return 0;
+	}
+	*buffer_out = native->body_buffer;
+	return 0;
+}
+
+int jsval_response_body_snapshot(jsval_region_t *region, jsval_t response,
+		jsval_t *buffer_out)
+{
+	jsval_native_response_t *native;
+
+	if (region == NULL || buffer_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_response(region, response);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (native->body_is_streaming) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (!native->has_body) {
+		*buffer_out = jsval_undefined();
+		return 0;
+	}
+	*buffer_out = native->body_buffer;
+	return 0;
+}
+
+int jsval_request_prewarm_body(jsval_region_t *region, jsval_t request,
+		jsmethod_error_t *error)
+{
+	jsval_native_request_t *native;
+	jsval_off_t source_off;
+	size_t budget;
+	jsval_t drain_promise;
+	jsval_promise_state_t state;
+	jsval_t drained_value;
+	size_t drained_len = 0;
+	jsval_t buffer;
+	jsval_native_array_buffer_t *dst_buf;
+	jsval_native_body_source_t *src;
+
+	if (region == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!native->body_is_streaming) {
+		return 0;
+	}
+	if (native->body_used) {
+		errno = EACCES;
+		return -1;
+	}
+
+	source_off = native->body_source_off;
+	src = jsval_native_body_source(region, source_off);
+	if (src == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	budget = JSVAL_FETCH_BODY_DEFAULT_LIMIT;
+	if (src->content_length_hint != SIZE_MAX
+			&& src->content_length_hint < budget) {
+		budget = src->content_length_hint;
+	}
+
+	if (jsval_body_consume_streaming(region, source_off, budget,
+			JSVAL_BODY_CONSUME_ARRAY_BUFFER, &drain_promise) < 0) {
+		return -1;
+	}
+	/* Pump the drain locally. */
+	while (1) {
+		if (jsval_promise_state(region, drain_promise, &state) < 0) {
+			return -1;
+		}
+		if (state != JSVAL_PROMISE_STATE_PENDING) {
+			break;
+		}
+		if (jsval_microtask_pending(region) == 0) {
+			errno = EDEADLK;
+			return -1;
+		}
+		if (jsval_microtask_drain(region, error) < 0) {
+			return -1;
+		}
+	}
+	if (state == JSVAL_PROMISE_STATE_REJECTED) {
+		errno = EIO;
+		return -1;
+	}
+	if (jsval_promise_result(region, drain_promise, &drained_value) < 0) {
+		return -1;
+	}
+	if (drained_value.kind != JSVAL_KIND_ARRAY_BUFFER) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_array_buffer_byte_length(region, drained_value,
+			&drained_len) < 0) {
+		return -1;
+	}
+
+	/* Copy drained bytes into a fresh body_buffer so the Request owns
+	 * a stable eager body. Keeping the drain's ArrayBuffer directly
+	 * would also work, but the fresh copy keeps the Request's shape
+	 * identical to an eagerly-constructed one. */
+	if (jsval_array_buffer_new(region, drained_len, &buffer) < 0) {
+		return -1;
+	}
+	if (drained_len > 0) {
+		dst_buf = jsval_native_array_buffer(region, buffer);
+		if (dst_buf == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_array_buffer_copy_bytes(region, drained_value,
+				jsval_native_array_buffer_bytes(dst_buf), drained_len,
+				NULL) < 0) {
+			return -1;
+		}
+	}
+
+	/* Re-fetch the native pointer — the region may have grown. */
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->body_buffer = buffer;
+	native->body_source_off = 0;
+	native->body_is_streaming = 0;
+	native->has_body = 1;
+	native->body_used = 0;
+	return 0;
+}
+
 int jsval_fetch(jsval_region_t *region, jsval_t input_value, jsval_t init_value,
 		int have_init, jsval_t *promise_ptr)
 {
