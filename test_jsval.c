@@ -3487,6 +3487,465 @@ static void test_crypto_semantics(void)
 	}
 
 	{
+		/*
+		 * SPKI / PKCS#8 key transport formats for all three
+		 * asymmetric algorithms. For each algorithm: generate a
+		 * keypair, export public as SPKI, export private as PKCS#8,
+		 * reimport both, use the reimported keys to verify / sign.
+		 * Plus negatives: SPKI on private key, PKCS#8 on public
+		 * key, malformed DER, symmetric algorithm rejecting SPKI.
+		 */
+		jsval_t spki_format;
+		jsval_t pkcs8_format;
+		jsval_t name_string;
+		jsval_t data_typed;
+		jsval_t data_buffer;
+
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"spki", 4,
+				&spki_format) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"pkcs8", 5,
+				&pkcs8_format) == 0);
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 16,
+				&data_typed) == 0);
+		assert(jsval_typed_array_buffer(&region, data_typed,
+				&data_buffer) == 0);
+
+		/* ECDSA P-256 SPKI/PKCS8 round trip. */
+		{
+			jsval_t ecdsa_alg;
+			jsval_t sign_alg;
+			jsval_t usages;
+			jsval_t verify_usages;
+			jsval_t sign_only_usages;
+			jsval_t gen_promise;
+			jsval_t pair;
+			jsval_t public_key;
+			jsval_t private_key;
+			jsval_t spki_promise;
+			jsval_t pkcs8_promise;
+			jsval_t spki_bytes;
+			jsval_t pkcs8_bytes;
+			jsval_t reimport_public_promise;
+			jsval_t reimport_public;
+			jsval_t reimport_private_promise;
+			jsval_t reimport_private;
+			jsval_t sign_promise;
+			jsval_t sig;
+			jsval_t verify_promise;
+			jsval_t result;
+
+			assert(jsval_array_new(&region, 2, &usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &verify_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, verify_usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &sign_only_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, sign_only_usages,
+					name_string) == 0);
+
+			assert(jsval_object_new(&region, 2, &ecdsa_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"ECDSA", 5,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, ecdsa_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"P-256", 5,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, ecdsa_alg,
+					(const uint8_t *)"namedCurve", 10, name_string) == 0);
+
+			assert(jsval_subtle_crypto_generate_key(&region, subtle_a,
+					ecdsa_alg, 1, usages, &gen_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, gen_promise, &pair) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"publicKey", 9, &public_key) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"privateKey", 10, &private_key) == 0);
+
+			/* Export public as SPKI. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					spki_format, public_key, &spki_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, spki_promise,
+					&spki_bytes) == 0);
+			assert(spki_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, spki_bytes,
+					&len) == 0);
+			assert(len > 60 && len < 120);
+
+			/* Export private as PKCS#8. */
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					pkcs8_format, private_key, &pkcs8_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, pkcs8_promise,
+					&pkcs8_bytes) == 0);
+			assert(pkcs8_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, pkcs8_bytes,
+					&len) == 0);
+			assert(len > 100 && len < 200);
+
+			/* Reimport public from SPKI. */
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					spki_format, spki_bytes, ecdsa_alg, 1, verify_usages,
+					&reimport_public_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_public_promise,
+					&reimport_public) == 0);
+			assert(reimport_public.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			/* Reimport private from PKCS#8. */
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					pkcs8_format, pkcs8_bytes, ecdsa_alg, 1,
+					sign_only_usages, &reimport_private_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_private_promise,
+					&reimport_private) == 0);
+			assert(reimport_private.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			/* Sign with reimport_private, verify with reimport_public. */
+			assert(jsval_object_new(&region, 2, &sign_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"ECDSA",
+					5, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, sign_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, sign_alg,
+					(const uint8_t *)"hash", 4, name_string) == 0);
+			assert(jsval_subtle_crypto_sign(&region, subtle_a, sign_alg,
+					reimport_private, data_buffer, &sign_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, sign_promise, &sig) == 0);
+			assert(sig.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+					reimport_public, sig, data_buffer,
+					&verify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, verify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+			/* Negative: SPKI export of private key -> NotSupportedError. */
+			{
+				jsval_t bad_spki_promise;
+
+				assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+						spki_format, private_key,
+						&bad_spki_promise) == 0);
+				assert(jsval_promise_result(&region, bad_spki_promise,
+						&result) == 0);
+				assert_dom_exception(&region, result, "NotSupportedError",
+						"spki export requires EC public key");
+			}
+
+			/* Negative: PKCS#8 export of public key -> NotSupportedError. */
+			{
+				jsval_t bad_pkcs8_promise;
+
+				assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+						pkcs8_format, public_key,
+						&bad_pkcs8_promise) == 0);
+				assert(jsval_promise_result(&region, bad_pkcs8_promise,
+						&result) == 0);
+				assert_dom_exception(&region, result, "NotSupportedError",
+						"pkcs8 export requires EC private key");
+			}
+		}
+
+		/* RSASSA-PKCS1-v1_5 SPKI/PKCS8 round trip. */
+		{
+			jsval_t rsa_alg;
+			jsval_t sign_alg;
+			jsval_t usages;
+			jsval_t verify_usages;
+			jsval_t sign_only_usages;
+			jsval_t gen_promise;
+			jsval_t pair;
+			jsval_t public_key;
+			jsval_t private_key;
+			jsval_t spki_promise;
+			jsval_t pkcs8_promise;
+			jsval_t spki_bytes;
+			jsval_t pkcs8_bytes;
+			jsval_t reimport_public_promise;
+			jsval_t reimport_public;
+			jsval_t reimport_private_promise;
+			jsval_t reimport_private;
+			jsval_t sign_promise;
+			jsval_t sig;
+			jsval_t verify_promise;
+			jsval_t hash_obj;
+			jsval_t result;
+
+			assert(jsval_array_new(&region, 2, &usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &verify_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, verify_usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &sign_only_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, sign_only_usages,
+					name_string) == 0);
+
+			assert(jsval_object_new(&region, 1, &hash_obj) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, hash_obj,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_new(&region, 3, &rsa_alg) == 0);
+			assert(jsval_string_new_utf8(&region,
+					(const uint8_t *)"RSASSA-PKCS1-v1_5", 17,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, rsa_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, rsa_alg,
+					(const uint8_t *)"modulusLength", 13,
+					jsval_number(2048.0)) == 0);
+			assert(jsval_object_set_utf8(&region, rsa_alg,
+					(const uint8_t *)"hash", 4, hash_obj) == 0);
+
+			assert(jsval_subtle_crypto_generate_key(&region, subtle_a, rsa_alg,
+					1, usages, &gen_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, gen_promise, &pair) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"publicKey", 9, &public_key) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"privateKey", 10, &private_key) == 0);
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					spki_format, public_key, &spki_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, spki_promise,
+					&spki_bytes) == 0);
+			assert(spki_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					pkcs8_format, private_key, &pkcs8_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, pkcs8_promise,
+					&pkcs8_bytes) == 0);
+			assert(pkcs8_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					spki_format, spki_bytes, rsa_alg, 1, verify_usages,
+					&reimport_public_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_public_promise,
+					&reimport_public) == 0);
+			assert(reimport_public.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					pkcs8_format, pkcs8_bytes, rsa_alg, 1, sign_only_usages,
+					&reimport_private_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_private_promise,
+					&reimport_private) == 0);
+			assert(reimport_private.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			/* Sign with reimported private, verify with reimported public. */
+			assert(jsval_object_new(&region, 1, &sign_alg) == 0);
+			assert(jsval_string_new_utf8(&region,
+					(const uint8_t *)"RSASSA-PKCS1-v1_5", 17,
+					&name_string) == 0);
+			assert(jsval_object_set_utf8(&region, sign_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_subtle_crypto_sign(&region, subtle_a, sign_alg,
+					reimport_private, data_buffer, &sign_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, sign_promise, &sig) == 0);
+			assert(sig.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_array_buffer_byte_length(&region, sig, &len) == 0);
+			assert(len == 256);
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+					reimport_public, sig, data_buffer,
+					&verify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, verify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+
+			/* Cross-algorithm: RSA SPKI fed to an ECDSA importKey
+			 * -> DataError. */
+			{
+				jsval_t bad_ecdsa_alg;
+				jsval_t cross_import_promise;
+
+				assert(jsval_object_new(&region, 2, &bad_ecdsa_alg) == 0);
+				assert(jsval_string_new_utf8(&region,
+						(const uint8_t *)"ECDSA", 5, &name_string) == 0);
+				assert(jsval_object_set_utf8(&region, bad_ecdsa_alg,
+						(const uint8_t *)"name", 4, name_string) == 0);
+				assert(jsval_string_new_utf8(&region,
+						(const uint8_t *)"P-256", 5, &name_string) == 0);
+				assert(jsval_object_set_utf8(&region, bad_ecdsa_alg,
+						(const uint8_t *)"namedCurve", 10, name_string) == 0);
+				assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+						spki_format, spki_bytes, bad_ecdsa_alg, 1,
+						verify_usages, &cross_import_promise) == 0);
+				assert(jsval_promise_result(&region, cross_import_promise,
+						&result) == 0);
+				assert_dom_exception(&region, result, "DataError",
+						"invalid EC SPKI");
+			}
+		}
+
+		/* RSA-PSS SPKI/PKCS8 round trip (re-uses the same DER
+		 * storage as RSASSA-PKCS1-v1_5 but with a different
+		 * algorithm tag). */
+		{
+			jsval_t pss_alg;
+			jsval_t sign_alg;
+			jsval_t usages;
+			jsval_t verify_usages;
+			jsval_t sign_only_usages;
+			jsval_t gen_promise;
+			jsval_t pair;
+			jsval_t public_key;
+			jsval_t private_key;
+			jsval_t spki_promise;
+			jsval_t pkcs8_promise;
+			jsval_t spki_bytes;
+			jsval_t pkcs8_bytes;
+			jsval_t reimport_public_promise;
+			jsval_t reimport_public;
+			jsval_t reimport_private_promise;
+			jsval_t reimport_private;
+			jsval_t sign_promise;
+			jsval_t sig;
+			jsval_t verify_promise;
+			jsval_t hash_obj;
+			jsval_t result;
+
+			assert(jsval_array_new(&region, 2, &usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &verify_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"verify",
+					6, &name_string) == 0);
+			assert(jsval_array_push(&region, verify_usages, name_string) == 0);
+			assert(jsval_array_new(&region, 1, &sign_only_usages) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"sign", 4,
+					&name_string) == 0);
+			assert(jsval_array_push(&region, sign_only_usages,
+					name_string) == 0);
+
+			assert(jsval_object_new(&region, 1, &hash_obj) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"SHA-256",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, hash_obj,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_new(&region, 3, &pss_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"RSA-PSS",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, pss_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_object_set_utf8(&region, pss_alg,
+					(const uint8_t *)"modulusLength", 13,
+					jsval_number(2048.0)) == 0);
+			assert(jsval_object_set_utf8(&region, pss_alg,
+					(const uint8_t *)"hash", 4, hash_obj) == 0);
+
+			assert(jsval_subtle_crypto_generate_key(&region, subtle_a, pss_alg,
+					1, usages, &gen_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, gen_promise, &pair) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"publicKey", 9, &public_key) == 0);
+			assert(jsval_object_get_utf8(&region, pair,
+					(const uint8_t *)"privateKey", 10, &private_key) == 0);
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					spki_format, public_key, &spki_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, spki_promise,
+					&spki_bytes) == 0);
+			assert(spki_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			assert(jsval_subtle_crypto_export_key(&region, subtle_a,
+					pkcs8_format, private_key, &pkcs8_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, pkcs8_promise,
+					&pkcs8_bytes) == 0);
+			assert(pkcs8_bytes.kind == JSVAL_KIND_ARRAY_BUFFER);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					spki_format, spki_bytes, pss_alg, 1, verify_usages,
+					&reimport_public_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_public_promise,
+					&reimport_public) == 0);
+			assert(reimport_public.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_subtle_crypto_import_key(&region, subtle_a,
+					pkcs8_format, pkcs8_bytes, pss_alg, 1, sign_only_usages,
+					&reimport_private_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, reimport_private_promise,
+					&reimport_private) == 0);
+			assert(reimport_private.kind == JSVAL_KIND_CRYPTO_KEY);
+
+			assert(jsval_object_new(&region, 1, &sign_alg) == 0);
+			assert(jsval_string_new_utf8(&region, (const uint8_t *)"RSA-PSS",
+					7, &name_string) == 0);
+			assert(jsval_object_set_utf8(&region, sign_alg,
+					(const uint8_t *)"name", 4, name_string) == 0);
+			assert(jsval_subtle_crypto_sign(&region, subtle_a, sign_alg,
+					reimport_private, data_buffer, &sign_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, sign_promise, &sig) == 0);
+			assert(sig.kind == JSVAL_KIND_ARRAY_BUFFER);
+			assert(jsval_subtle_crypto_verify(&region, subtle_a, sign_alg,
+					reimport_public, sig, data_buffer,
+					&verify_promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_result(&region, verify_promise,
+					&result) == 0);
+			assert(result.kind == JSVAL_KIND_BOOL && result.as.boolean == 1);
+		}
+	}
+
+	{
 		jsval_t derive_usages;
 		jsval_t derive_key_only_usages;
 		jsval_t sign_verify_usages;

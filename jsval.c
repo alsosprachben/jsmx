@@ -287,7 +287,9 @@ typedef enum jsval_subtle_hmac_task_op_e {
 
 typedef enum jsval_subtle_crypto_key_format_e {
 	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_RAW = 0,
-	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK = 1
+	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK = 1,
+	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI = 2,
+	JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8 = 3
 } jsval_subtle_crypto_key_format_t;
 
 typedef struct jsval_native_microtask_subtle_hmac_s {
@@ -8510,6 +8512,14 @@ jsval_subtle_crypto_parse_format(jsval_region_t *region, jsval_t format_value,
 		*format_ptr = JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK;
 		return 0;
 	}
+	if (jsval_string_eq_ascii(region, format_value, "spki") > 0) {
+		*format_ptr = JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI;
+		return 0;
+	}
+	if (jsval_string_eq_ascii(region, format_value, "pkcs8") > 0) {
+		*format_ptr = JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8;
+		return 0;
+	}
 	return jsval_webcrypto_error_set(error, "NotSupportedError",
 			"unsupported key format");
 }
@@ -13043,6 +13053,62 @@ jsval_subtle_crypto_run_ecdsa(jsval_region_t *region,
 			memcpy(out + 1, xy, 64);
 			return jsval_promise_resolve(region, promise_value, result);
 		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			uint8_t scratch[256];
+			size_t scratch_len = 0;
+			const uint8_t *src;
+			jsval_native_array_buffer_t *buffer;
+
+			if ((jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC
+					|| key->key_byte_length != 64) {
+				goto operation_error;
+			}
+			src = jsval_native_crypto_key_bytes(region, key);
+			if (src == NULL
+					|| jscrypto_ecdsa_p256_public_to_spki(src, scratch,
+						sizeof(scratch), &scratch_len) < 0
+					|| jsval_array_buffer_new(region, scratch_len,
+						&result) < 0) {
+				goto operation_error;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				goto operation_error;
+			}
+			memcpy(jsval_native_array_buffer_bytes(buffer), scratch,
+					scratch_len);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
+		if ((jsval_subtle_crypto_key_format_t)task->format
+				== JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			uint8_t scratch[256];
+			size_t scratch_len = 0;
+			const uint8_t *src;
+			jsval_native_array_buffer_t *buffer;
+
+			if ((jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE
+					|| key->key_byte_length != 32) {
+				goto operation_error;
+			}
+			src = jsval_native_crypto_key_bytes(region, key);
+			if (src == NULL
+					|| jscrypto_ecdsa_p256_private_to_pkcs8(src, scratch,
+						sizeof(scratch), &scratch_len) < 0
+					|| jsval_array_buffer_new(region, scratch_len,
+						&result) < 0) {
+				goto operation_error;
+			}
+			buffer = jsval_native_array_buffer(region, result);
+			if (buffer == NULL) {
+				goto operation_error;
+			}
+			memcpy(jsval_native_array_buffer_bytes(buffer), scratch,
+					scratch_len);
+			return jsval_promise_resolve(region, promise_value, result);
+		}
 		if (jsval_subtle_crypto_build_ec_jwk_export(region, key, &result) < 0) {
 			goto operation_error;
 		}
@@ -13681,6 +13747,84 @@ jsval_subtle_crypto_parse_jwk_rsa_key(jsval_region_t *region,
 	return 0;
 }
 
+/*
+ * Shared RSA export helper: handles JWK, SPKI, and PKCS#8 output
+ * formats for both RSASSA-PKCS1-v1_5 and RSA-PSS keys (they share
+ * PKCS#1 DER storage). Called from each runner's EXPORT case.
+ * On success, fills *result_ptr with the emitted ArrayBuffer
+ * (SPKI/PKCS#8) or JWK object. Returns -1 on hard error.
+ */
+static int
+jsval_subtle_crypto_rsa_export_to_format(jsval_region_t *region,
+		jsval_native_crypto_key_t *key,
+		jsval_subtle_crypto_key_format_t format, jsval_t *result_ptr)
+{
+	if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+		return jsval_subtle_crypto_build_rsa_jwk_export(region, key,
+				result_ptr);
+	}
+	if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+		uint8_t scratch[4096];
+		size_t scratch_len = 0;
+		const uint8_t *src;
+		jsval_t buf;
+		jsval_native_array_buffer_t *buffer;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			errno = EINVAL;
+			return -1;
+		}
+		src = jsval_native_crypto_key_bytes(region, key);
+		if (src == NULL
+				|| jscrypto_rsa_public_pkcs1_to_spki(src,
+					key->key_byte_length, scratch, sizeof(scratch),
+					&scratch_len) < 0
+				|| jsval_array_buffer_new(region, scratch_len, &buf) < 0) {
+			return -1;
+		}
+		buffer = jsval_native_array_buffer(region, buf);
+		if (buffer == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memcpy(jsval_native_array_buffer_bytes(buffer), scratch, scratch_len);
+		*result_ptr = buf;
+		return 0;
+	}
+	if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+		uint8_t scratch[4096];
+		size_t scratch_len = 0;
+		const uint8_t *src;
+		jsval_t buf;
+		jsval_native_array_buffer_t *buffer;
+
+		if ((jsval_crypto_key_type_t)key->type
+				!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			errno = EINVAL;
+			return -1;
+		}
+		src = jsval_native_crypto_key_bytes(region, key);
+		if (src == NULL
+				|| jscrypto_rsa_private_pkcs1_to_pkcs8(src,
+					key->key_byte_length, scratch, sizeof(scratch),
+					&scratch_len) < 0
+				|| jsval_array_buffer_new(region, scratch_len, &buf) < 0) {
+			return -1;
+		}
+		buffer = jsval_native_array_buffer(region, buf);
+		if (buffer == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memcpy(jsval_native_array_buffer_bytes(buffer), scratch, scratch_len);
+		*result_ptr = buf;
+		return 0;
+	}
+	errno = EINVAL;
+	return -1;
+}
+
 static int
 jsval_subtle_crypto_run_rsassa_pkcs1_v1_5(jsval_region_t *region,
 		jsval_native_microtask_subtle_rsassa_pkcs1_v1_5_t *task)
@@ -13785,7 +13929,9 @@ jsval_subtle_crypto_run_rsassa_pkcs1_v1_5(jsval_region_t *region,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError", "key is not extractable");
 		}
-		if (jsval_subtle_crypto_build_rsa_jwk_export(region, key, &result) < 0) {
+		if (jsval_subtle_crypto_rsa_export_to_format(region, key,
+				(jsval_subtle_crypto_key_format_t)task->format,
+				&result) < 0) {
 			goto operation_error;
 		}
 		return jsval_promise_resolve(region, promise_value, result);
@@ -14170,7 +14316,9 @@ jsval_subtle_crypto_run_rsa_pss(jsval_region_t *region,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError", "key is not extractable");
 		}
-		if (jsval_subtle_crypto_build_rsa_jwk_export(region, key, &result) < 0) {
+		if (jsval_subtle_crypto_rsa_export_to_format(region, key,
+				(jsval_subtle_crypto_key_format_t)task->format,
+				&result) < 0) {
 			goto operation_error;
 		}
 		return jsval_promise_resolve(region, promise_value, result);
@@ -14907,6 +15055,22 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 			&name_value, &error) < 0) {
 		return jsval_subtle_crypto_reject(region, promise_value, error.name,
 				error.message);
+	}
+	/*
+	 * SPKI and PKCS#8 are asymmetric-only formats. For symmetric
+	 * algorithms (HMAC, AES-*, PBKDF2, HKDF), parse_format accepts
+	 * these strings now but the algorithm branches don't know how
+	 * to handle them — gate them here so the error comes out with
+	 * the right "unsupported key format" message.
+	 */
+	if ((format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+			|| format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8)
+			&& jsval_string_eq_ascii(region, name_value, "ECDSA") <= 0
+			&& jsval_string_eq_ascii(region, name_value,
+				"RSASSA-PKCS1-v1_5") <= 0
+			&& jsval_string_eq_ascii(region, name_value, "RSA-PSS") <= 0) {
+		return jsval_subtle_crypto_reject(region, promise_value,
+				"NotSupportedError", "unsupported key format");
 	}
 	eq = jsval_string_eq_ascii(region, name_value, "HMAC");
 	if (eq < 0) {
@@ -15980,6 +16144,60 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					ec_bytes, ec_len);
 			return jsval_microtask_push(region, off, &ecdsa_task->base);
 		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "EC SPKI import requires verify usages");
+			}
+			if (jscrypto_ecdsa_p256_spki_to_public(bytes, byte_length,
+					ec_bytes) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						errno == ENOTSUP ? "NotSupportedError" : "DataError",
+						"invalid EC SPKI");
+			}
+			if (jsval_subtle_crypto_new_ecdsa_task(region, promise_value,
+					JSVAL_SUBTLE_ECDSA_TASK_IMPORT, 0,
+					JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI, curve_hash,
+					JSVAL_CRYPTO_KEY_TYPE_PUBLIC, extractable, usages_mask,
+					64, 0, &off, &ecdsa_task) < 0) {
+				return -1;
+			}
+			memcpy(jsval_native_microtask_subtle_ecdsa_data(ecdsa_task),
+					ec_bytes, 64);
+			return jsval_microtask_push(region, off, &ecdsa_task->base);
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_SIGN) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "EC PKCS#8 import requires sign usages");
+			}
+			if (jscrypto_ecdsa_p256_pkcs8_to_private(bytes, byte_length,
+					ec_bytes) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						errno == ENOTSUP ? "NotSupportedError" : "DataError",
+						"invalid EC PKCS#8");
+			}
+			if (jsval_subtle_crypto_new_ecdsa_task(region, promise_value,
+					JSVAL_SUBTLE_ECDSA_TASK_IMPORT, 0,
+					JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8, curve_hash,
+					JSVAL_CRYPTO_KEY_TYPE_PRIVATE, extractable, usages_mask,
+					32, 0, &off, &ecdsa_task) < 0) {
+				return -1;
+			}
+			memcpy(jsval_native_microtask_subtle_ecdsa_data(ecdsa_task),
+					ec_bytes, 32);
+			return jsval_microtask_push(region, off, &ecdsa_task->base);
+		}
 		return jsval_subtle_crypto_reject(region, promise_value,
 				"NotSupportedError", "unsupported key format");
 	}
@@ -16006,19 +16224,68 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					error.name, error.message);
 		}
-		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+			if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
+					usages_mask, 0, rsa_hash, 1, rsa_der, sizeof(rsa_der),
+					&rsa_der_len, &is_private, &modulus_bits, &error) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						error.name, error.message);
+			}
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"RSA SPKI import requires verify usages");
+			}
+			if (jscrypto_rsa_spki_to_public_pkcs1(bytes, byte_length, rsa_der,
+					sizeof(rsa_der), &rsa_der_len) < 0
+					|| jscrypto_rsa_modulus_bits(rsa_der, rsa_der_len, 0,
+						&modulus_bits) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid RSA SPKI");
+			}
+			if (modulus_bits != 2048 && modulus_bits != 3072
+					&& modulus_bits != 4096) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"NotSupportedError", "unsupported RSA modulus length");
+			}
+			is_private = 0;
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_SIGN) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"RSA PKCS#8 import requires sign usages");
+			}
+			if (jscrypto_rsa_pkcs8_to_private_pkcs1(bytes, byte_length,
+					rsa_der, sizeof(rsa_der), &rsa_der_len) < 0
+					|| jscrypto_rsa_modulus_bits(rsa_der, rsa_der_len, 1,
+						&modulus_bits) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid RSA PKCS#8");
+			}
+			if (modulus_bits != 2048 && modulus_bits != 3072
+					&& modulus_bits != 4096) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"NotSupportedError", "unsupported RSA modulus length");
+			}
+			is_private = 1;
+		} else {
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"NotSupportedError", "unsupported key format");
 		}
-		if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
-				usages_mask, 0, rsa_hash, 1, rsa_der, sizeof(rsa_der),
-				&rsa_der_len, &is_private, &modulus_bits, &error) < 0) {
-			return jsval_subtle_crypto_reject(region, promise_value,
-					error.name, error.message);
-		}
 		if (jsval_subtle_crypto_new_rsassa_pkcs1_v1_5_task(region,
 				promise_value, JSVAL_SUBTLE_RSASSA_PKCS1_V1_5_TASK_IMPORT, 0,
-				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK, rsa_hash,
+				format, rsa_hash,
 				is_private ? JSVAL_CRYPTO_KEY_TYPE_PRIVATE
 					: JSVAL_CRYPTO_KEY_TYPE_PUBLIC,
 				extractable, usages_mask, modulus_bits, rsa_der_len, 0, &off,
@@ -16052,19 +16319,67 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					error.name, error.message);
 		}
-		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+			if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
+					usages_mask, 1, pss_hash, 1, pss_der, sizeof(pss_der),
+					&pss_der_len, &is_private, &modulus_bits, &error) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						error.name, error.message);
+			}
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_VERIFY) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"RSA SPKI import requires verify usages");
+			}
+			if (jscrypto_rsa_spki_to_public_pkcs1(bytes, byte_length, pss_der,
+					sizeof(pss_der), &pss_der_len) < 0
+					|| jscrypto_rsa_modulus_bits(pss_der, pss_der_len, 0,
+						&modulus_bits) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid RSA SPKI");
+			}
+			if (modulus_bits != 2048 && modulus_bits != 3072
+					&& modulus_bits != 4096) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"NotSupportedError", "unsupported RSA modulus length");
+			}
+			is_private = 0;
+		} else if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
+			if (jsval_buffer_source_bytes(region, key_data_value, &bytes,
+					&byte_length) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"TypeError", "expected BufferSource key data");
+			}
+			if ((usages_mask & ~JSVAL_CRYPTO_KEY_USAGE_SIGN) != 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError",
+						"RSA PKCS#8 import requires sign usages");
+			}
+			if (jscrypto_rsa_pkcs8_to_private_pkcs1(bytes, byte_length,
+					pss_der, sizeof(pss_der), &pss_der_len) < 0
+					|| jscrypto_rsa_modulus_bits(pss_der, pss_der_len, 1,
+						&modulus_bits) < 0) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"DataError", "invalid RSA PKCS#8");
+			}
+			if (modulus_bits != 2048 && modulus_bits != 3072
+					&& modulus_bits != 4096) {
+				return jsval_subtle_crypto_reject(region, promise_value,
+						"NotSupportedError", "unsupported RSA modulus length");
+			}
+			is_private = 1;
+		} else {
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"NotSupportedError", "unsupported key format");
 		}
-		if (jsval_subtle_crypto_parse_jwk_rsa_key(region, key_data_value,
-				usages_mask, 1, pss_hash, 1, pss_der, sizeof(pss_der),
-				&pss_der_len, &is_private, &modulus_bits, &error) < 0) {
-			return jsval_subtle_crypto_reject(region, promise_value,
-					error.name, error.message);
-		}
 		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
-				JSVAL_SUBTLE_RSA_PSS_TASK_IMPORT, 0,
-				JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK, pss_hash,
+				JSVAL_SUBTLE_RSA_PSS_TASK_IMPORT, 0, format, pss_hash,
 				is_private ? JSVAL_CRYPTO_KEY_TYPE_PRIVATE
 					: JSVAL_CRYPTO_KEY_TYPE_PUBLIC,
 				extractable, usages_mask, modulus_bits, 0, pss_der_len, 0,
@@ -16211,6 +16526,20 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 					"NotSupportedError",
 					"raw export requires EC public key");
 		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"spki export requires EC public key");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"pkcs8 export requires EC private key");
+		}
 		if (jsval_subtle_crypto_new_ecdsa_task(region, promise_value,
 				JSVAL_SUBTLE_ECDSA_TASK_EXPORT, key_value.off, format,
 				JSCRYPTO_DIGEST_SHA256,
@@ -16228,9 +16557,25 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError", "key is not extractable");
 		}
-		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK
+				&& format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"NotSupportedError", "unsupported key format");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"spki export requires RSA public key");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"pkcs8 export requires RSA private key");
 		}
 		if (jsval_subtle_crypto_new_rsassa_pkcs1_v1_5_task(region,
 				promise_value, JSVAL_SUBTLE_RSASSA_PKCS1_V1_5_TASK_EXPORT,
@@ -16251,9 +16596,25 @@ jsval_subtle_crypto_export_key(jsval_region_t *region, jsval_t subtle_value,
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"InvalidAccessError", "key is not extractable");
 		}
-		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK) {
+		if (format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_JWK
+				&& format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& format != JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8) {
 			return jsval_subtle_crypto_reject(region, promise_value,
 					"NotSupportedError", "unsupported key format");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_SPKI
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PUBLIC) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"spki export requires RSA public key");
+		}
+		if (format == JSVAL_SUBTLE_CRYPTO_KEY_FORMAT_PKCS8
+				&& (jsval_crypto_key_type_t)key->type
+					!= JSVAL_CRYPTO_KEY_TYPE_PRIVATE) {
+			return jsval_subtle_crypto_reject(region, promise_value,
+					"NotSupportedError",
+					"pkcs8 export requires RSA private key");
 		}
 		if (jsval_subtle_crypto_new_rsa_pss_task(region, promise_value,
 				JSVAL_SUBTLE_RSA_PSS_TASK_EXPORT, key_value.off, format,

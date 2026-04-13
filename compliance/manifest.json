@@ -4787,7 +4787,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic WinterTC ECDSA P-256 fixture: generateKey returns a CryptoKeyPair, sign/verify round-trip over SHA-256, raw and jwk exports of the public key, jwk export of the private key, and reimport-then-verify."
+      "notes": "Repo-authored idiomatic WinterTC ECDSA P-256 fixture: generateKey returns a CryptoKeyPair, sign/verify round-trip over SHA-256, raw and jwk exports of the public key, jwk export of the private key, reimport-then-verify, plus SPKI/PKCS#8 export of both halves and SPKI-reimport-then-verify."
     },
     {
       "id": "jsmx-wintertc-crypto-subtle-ecdsa-p256-errors",
@@ -4809,7 +4809,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic WinterTC RSASSA-PKCS1-v1_5 fixture: 2048-bit generateKey returns a CryptoKeyPair, sign/verify round-trip with SHA-256 (256-byte signature), jwk export of both halves, reimport public, verify the original signature against the reimported key."
+      "notes": "Repo-authored idiomatic WinterTC RSASSA-PKCS1-v1_5 fixture: 2048-bit generateKey returns a CryptoKeyPair, sign/verify round-trip with SHA-256 (256-byte signature), jwk export of both halves, reimport public, verify the original signature against the reimported key, plus SPKI/PKCS#8 export and SPKI reimport round trip."
     },
     {
       "id": "jsmx-wintertc-crypto-subtle-rsassa-pkcs1-v1-5-errors",
@@ -4831,7 +4831,7 @@
       "lowering_class": "static_pass",
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
-      "notes": "Repo-authored idiomatic WinterTC RSA-PSS fixture: 2048-bit generateKey returns a CryptoKeyPair, sign/verify round-trip with SHA-256 and default salt length (256-byte signature), jwk export of both halves, reimport public, verify the original signature against the reimported key."
+      "notes": "Repo-authored idiomatic WinterTC RSA-PSS fixture: 2048-bit generateKey returns a CryptoKeyPair, sign/verify round-trip with SHA-256 and default salt length (256-byte signature), jwk export of both halves, reimport public, verify the original signature against the reimported key, plus SPKI/PKCS#8 export and SPKI reimport round trip."
     },
     {
       "id": "jsmx-wintertc-crypto-subtle-rsa-pss-errors",

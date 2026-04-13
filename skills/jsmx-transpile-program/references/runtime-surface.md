@@ -49,11 +49,13 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       hashes emitting and consuming IEEE P1363 fixed-width `r||s`
       signatures, plus RSASSA-PKCS1-v1_5 `generateKey(...)` returning
       a `{publicKey, privateKey}` pair, `importKey(...)` /
-      `exportKey(...)` over `jwk` only at 2048/3072/4096-bit modulus
+      `exportKey(...)` at 2048/3072/4096-bit modulus
       lengths with public exponent 65537, and `sign(...)` /
       `verify(...)` with SHA-256/384/512 hashes, plus RSA-PSS with
       the same key/modulus/hash policy and per-operation `saltLength`
-      (default: digest output length)
+      (default: digest output length). All three asymmetric
+      algorithms support `jwk`, `spki` (public DER), and `pkcs8`
+      (private DER) key transport formats
     - `CryptoKey` values for the current HMAC, AES-GCM, AES-CTR, AES-CBC,
       AES-KW, PBKDF2, and HKDF secret-key surfaces over `raw` and `jwk`
       where applicable, plus ECDSA P-256, RSASSA-PKCS1-v1_5, and
@@ -229,15 +231,15 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     `sign(...)` / `verify(...)` over `raw` (SEC1 uncompressed public
     only) and `jwk` key formats with SHA-256/384/512 hashes, and
     RSASSA-PKCS1-v1_5 `generateKey(...)` / `importKey(...)` /
-    `exportKey(...)` / `sign(...)` / `verify(...)` over `jwk` only at
-    2048/3072/4096-bit modulus lengths with public exponent 65537 and
-    SHA-256/384/512 hashes, and RSA-PSS over the same key/modulus/hash
-    policy with per-operation `saltLength` (default: digest output
-    length). Other wrapping algorithms for `wrapKey`/`unwrapKey`
-    (RSA-OAEP), other ECDSA curves (P-384, P-521), and the remaining
-    asymmetric algorithms (RSA-OAEP, Ed25519, ECDH) are still pending.
-    `spki` and `pkcs8` key formats are also pending across all
-    asymmetric surfaces.
+    `exportKey(...)` / `sign(...)` / `verify(...)` at 2048/3072/4096-bit
+    modulus lengths with public exponent 65537 and SHA-256/384/512
+    hashes, and RSA-PSS over the same key/modulus/hash policy with
+    per-operation `saltLength` (default: digest output length). All
+    three asymmetric algorithms above accept `jwk`, `spki`, and
+    `pkcs8` formats for `importKey`/`exportKey`. Other wrapping
+    algorithms for `wrapKey`/`unwrapKey` (RSA-OAEP), other ECDSA
+    curves (P-384, P-521), and the remaining asymmetric algorithms
+    (RSA-OAEP, Ed25519, ECDH) are still pending.
   - JS-visible global / prototype Promise surface beyond the explicit helper
     contract, including arbitrary thenable duck typing and Promise
     combinators such as `all`, `race`, `any`, and `allSettled`

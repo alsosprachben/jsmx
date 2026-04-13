@@ -193,6 +193,12 @@ That makes semantic correctness more important than surface familiarity:
       `saltLength` defaulting to the digest output length — randomized
       PS256/384/512 signatures suitable for FIPS 186-5 and PSD2
       compliance
+    - `spki` (SubjectPublicKeyInfo) and `pkcs8` (PKCS#8 PrivateKeyInfo)
+      key transport formats for `importKey(...)` and `exportKey(...)`
+      on all three asymmetric algorithms above — unblocks RFC 7523
+      private-key JWT client authentication flows (Google Cloud
+      service accounts, GitHub Apps, Apple App Store Connect, etc.)
+      that ship DER-encoded key material
     - Promise-backed PBKDF2 `importKey("raw", ...)`, `deriveBits(...)`, and
       `deriveKey(...)` to HMAC, AES-GCM, AES-CTR, or AES-CBC
     - Promise-backed HKDF `importKey("raw", ...)`, `deriveBits(...)`, and
@@ -610,6 +616,15 @@ Current WinterTC-oriented crypto coverage is:
   RSASSA-PKCS1-v1_5 plus per-operation `saltLength` (default: digest
   output length) — PS256/384/512 JWT verification, randomized
   signatures, FIPS 186-5 / PSD2 / PCI DSS v4 compliant
+- `spki` and `pkcs8` key transport formats for
+  `crypto.subtle.importKey(...)` / `crypto.subtle.exportKey(...)` on
+  all three asymmetric algorithms. The DER bytes must be passed as
+  a BufferSource — PEM files need a userland "strip `-----BEGIN/END-----`
+  markers then base64-decode the body" helper before the import.
+  Unblocks RFC 7523 private-key JWT client authentication against
+  Google Cloud service accounts (their `private_key` ships as a
+  PKCS#8 PEM), GitHub Apps (RSA PEM), Apple App Store Connect (EC
+  PEM `.p8` file), Salesforce, Snowflake, and similar SaaS APIs.
 - Promise-backed PBKDF2 `crypto.subtle.importKey("raw", ...)`,
   `crypto.subtle.deriveBits(...)`, and `crypto.subtle.deriveKey(...)` to
   HMAC, AES-GCM, AES-CTR, or AES-CBC

@@ -17,6 +17,7 @@
 #include <openssl/obj_mac.h>
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
+#include <openssl/x509.h>
 #endif
 
 static uint8_t
@@ -2505,6 +2506,474 @@ jscrypto_rsa_pss_verify(const uint8_t *public_der, size_t public_len,
 		}
 		errno = EIO;
 		return -1;
+	}
+#endif
+}
+
+/*
+ * SPKI (SubjectPublicKeyInfo, RFC 5280) and PKCS#8 (PrivateKeyInfo,
+ * RFC 5208) key transport formats. OpenSSL's d2i_PUBKEY / i2d_PUBKEY
+ * and d2i_PrivateKey / i2d_PrivateKey take an EVP_PKEY and are
+ * algorithm-agnostic, so a single pair of static bridges handles both
+ * ECDSA and RSA. The algorithm-specific work sits at the extract /
+ * build step on either side of the EVP_PKEY.
+ */
+
+#if JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL
+
+static EVP_PKEY *
+jscrypto_pkey_from_spki_bytes(const uint8_t *der, size_t der_len,
+		int expected_base_id)
+{
+	const uint8_t *cursor = der;
+	EVP_PKEY *pkey;
+
+	if (der == NULL || der_len == 0 || der_len > LONG_MAX) {
+		errno = EINVAL;
+		return NULL;
+	}
+	pkey = d2i_PUBKEY(NULL, &cursor, (long)der_len);
+	if (pkey == NULL) {
+		errno = EIO;
+		return NULL;
+	}
+	if (expected_base_id != 0
+			&& EVP_PKEY_base_id(pkey) != expected_base_id) {
+		EVP_PKEY_free(pkey);
+		errno = EIO;
+		return NULL;
+	}
+	return pkey;
+}
+
+static EVP_PKEY *
+jscrypto_pkey_from_pkcs8_bytes(const uint8_t *der, size_t der_len,
+		int expected_base_id)
+{
+	const uint8_t *cursor = der;
+	EVP_PKEY *pkey;
+
+	if (der == NULL || der_len == 0 || der_len > LONG_MAX) {
+		errno = EINVAL;
+		return NULL;
+	}
+	pkey = d2i_AutoPrivateKey(NULL, &cursor, (long)der_len);
+	if (pkey == NULL) {
+		errno = EIO;
+		return NULL;
+	}
+	if (expected_base_id != 0
+			&& EVP_PKEY_base_id(pkey) != expected_base_id) {
+		EVP_PKEY_free(pkey);
+		errno = EIO;
+		return NULL;
+	}
+	return pkey;
+}
+
+static int
+jscrypto_pkey_to_spki_bytes(EVP_PKEY *pkey, uint8_t *out, size_t cap,
+		size_t *len_out)
+{
+	uint8_t *der = NULL;
+	int der_len;
+
+	if (pkey == NULL || len_out == NULL
+			|| (out == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	der_len = i2d_PUBKEY(pkey, &der);
+	if (der_len <= 0 || der == NULL) {
+		errno = EIO;
+		return -1;
+	}
+	*len_out = (size_t)der_len;
+	if (out == NULL) {
+		OPENSSL_free(der);
+		return 0;
+	}
+	if ((size_t)der_len > cap) {
+		OPENSSL_free(der);
+		errno = ENOBUFS;
+		return -1;
+	}
+	memcpy(out, der, (size_t)der_len);
+	OPENSSL_free(der);
+	return 0;
+}
+
+static int
+jscrypto_pkey_to_pkcs8_bytes(EVP_PKEY *pkey, uint8_t *out, size_t cap,
+		size_t *len_out)
+{
+	uint8_t *der = NULL;
+	int der_len;
+
+	if (pkey == NULL || len_out == NULL
+			|| (out == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	der_len = i2d_PrivateKey(pkey, &der);
+	if (der_len <= 0 || der == NULL) {
+		errno = EIO;
+		return -1;
+	}
+	*len_out = (size_t)der_len;
+	if (out == NULL) {
+		OPENSSL_free(der);
+		return 0;
+	}
+	if ((size_t)der_len > cap) {
+		OPENSSL_free(der);
+		errno = ENOBUFS;
+		return -1;
+	}
+	memcpy(out, der, (size_t)der_len);
+	OPENSSL_free(der);
+	return 0;
+}
+
+#endif /* JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL */
+
+int
+jscrypto_ecdsa_p256_spki_to_public(const uint8_t *spki_der, size_t spki_len,
+		uint8_t xy_out[64])
+{
+	if (xy_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)spki_der;
+	(void)spki_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_spki_bytes(spki_der, spki_len,
+				EVP_PKEY_EC);
+		const EC_KEY *ec = NULL;
+		const EC_GROUP *group;
+		int rc;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		ec = EVP_PKEY_get0_EC_KEY(pkey);
+		if (ec == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		group = EC_KEY_get0_group(ec);
+		if (group == NULL
+				|| EC_GROUP_get_curve_name(group)
+					!= NID_X9_62_prime256v1) {
+			EVP_PKEY_free(pkey);
+			errno = ENOTSUP;
+			return -1;
+		}
+		rc = jscrypto_ecdsa_extract_public_xy(ec, xy_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_public_to_spki(const uint8_t xy[64], uint8_t *der_out,
+		size_t der_cap, size_t *der_len_out)
+{
+	if (xy == NULL || der_len_out == NULL
+			|| (der_out == NULL && der_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_ecdsa_pkey_from_xy(xy);
+		int rc;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		rc = jscrypto_pkey_to_spki_bytes(pkey, der_out, der_cap,
+				der_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_pkcs8_to_private(const uint8_t *pkcs8_der,
+		size_t pkcs8_len, uint8_t scalar_out[32])
+{
+	if (scalar_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)pkcs8_der;
+	(void)pkcs8_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_pkcs8_bytes(pkcs8_der,
+				pkcs8_len, EVP_PKEY_EC);
+		const EC_KEY *ec = NULL;
+		const EC_GROUP *group;
+		const BIGNUM *priv = NULL;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		ec = EVP_PKEY_get0_EC_KEY(pkey);
+		if (ec == NULL) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		group = EC_KEY_get0_group(ec);
+		if (group == NULL
+				|| EC_GROUP_get_curve_name(group)
+					!= NID_X9_62_prime256v1) {
+			EVP_PKEY_free(pkey);
+			errno = ENOTSUP;
+			return -1;
+		}
+		priv = EC_KEY_get0_private_key(ec);
+		if (priv == NULL || BN_bn2binpad(priv, scalar_out, 32) != 32) {
+			EVP_PKEY_free(pkey);
+			errno = EIO;
+			return -1;
+		}
+		EVP_PKEY_free(pkey);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_ecdsa_p256_private_to_pkcs8(const uint8_t scalar[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out)
+{
+	if (scalar == NULL || der_len_out == NULL
+			|| (der_out == NULL && der_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_ecdsa_pkey_from_scalar(scalar);
+		int rc;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		/* OpenSSL's i2d_PrivateKey on EC emits the flat EC private
+		 * bytes unless we ask for PKCS#8. The EC_KEY we built above
+		 * already has both the scalar and the derived public point,
+		 * so i2d_PrivateKey produces a valid PrivateKeyInfo wrapper
+		 * via the EVP_PKEY level. */
+		rc = jscrypto_pkey_to_pkcs8_bytes(pkey, der_out, der_cap,
+				der_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_spki_to_public_pkcs1(const uint8_t *spki_der, size_t spki_len,
+		uint8_t *pkcs1_out, size_t pkcs1_cap, size_t *pkcs1_len_out)
+{
+	if (pkcs1_len_out == NULL
+			|| (pkcs1_out == NULL && pkcs1_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)spki_der;
+	(void)spki_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_spki_bytes(spki_der, spki_len,
+				EVP_PKEY_RSA);
+		RSA *rsa = NULL;
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		rsa = EVP_PKEY_get1_RSA(pkey);
+		EVP_PKEY_free(pkey);
+		if (rsa == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		der_len = i2d_RSAPublicKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*pkcs1_len_out = (size_t)der_len;
+		if (pkcs1_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > pkcs1_cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(pkcs1_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_public_pkcs1_to_spki(const uint8_t *pkcs1, size_t pkcs1_len,
+		uint8_t *spki_out, size_t spki_cap, size_t *spki_len_out)
+{
+	if (spki_len_out == NULL
+			|| (spki_out == NULL && spki_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)pkcs1;
+	(void)pkcs1_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = jscrypto_rsa_from_public_der(pkcs1, pkcs1_len);
+		EVP_PKEY *pkey = NULL;
+		int rc;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		/* pkey now owns rsa. */
+		rc = jscrypto_pkey_to_spki_bytes(pkey, spki_out, spki_cap,
+				spki_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_pkcs8_to_private_pkcs1(const uint8_t *pkcs8_der, size_t pkcs8_len,
+		uint8_t *pkcs1_out, size_t pkcs1_cap, size_t *pkcs1_len_out)
+{
+	if (pkcs1_len_out == NULL
+			|| (pkcs1_out == NULL && pkcs1_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)pkcs8_der;
+	(void)pkcs8_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		EVP_PKEY *pkey = jscrypto_pkey_from_pkcs8_bytes(pkcs8_der,
+				pkcs8_len, EVP_PKEY_RSA);
+		RSA *rsa = NULL;
+		uint8_t *der = NULL;
+		int der_len;
+
+		if (pkey == NULL) {
+			return -1;
+		}
+		rsa = EVP_PKEY_get1_RSA(pkey);
+		EVP_PKEY_free(pkey);
+		if (rsa == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		der_len = i2d_RSAPrivateKey(rsa, &der);
+		RSA_free(rsa);
+		if (der_len <= 0 || der == NULL) {
+			errno = EIO;
+			return -1;
+		}
+		*pkcs1_len_out = (size_t)der_len;
+		if (pkcs1_out == NULL) {
+			OPENSSL_free(der);
+			return 0;
+		}
+		if ((size_t)der_len > pkcs1_cap) {
+			OPENSSL_free(der);
+			errno = ENOBUFS;
+			return -1;
+		}
+		memcpy(pkcs1_out, der, (size_t)der_len);
+		OPENSSL_free(der);
+		return 0;
+	}
+#endif
+}
+
+int
+jscrypto_rsa_private_pkcs1_to_pkcs8(const uint8_t *pkcs1, size_t pkcs1_len,
+		uint8_t *pkcs8_out, size_t pkcs8_cap, size_t *pkcs8_len_out)
+{
+	if (pkcs8_len_out == NULL
+			|| (pkcs8_out == NULL && pkcs8_cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+#if !(JSMX_WITH_CRYPTO && JSMX_CRYPTO_BACKEND_OPENSSL)
+	(void)pkcs1;
+	(void)pkcs1_len;
+	errno = ENOTSUP;
+	return -1;
+#else
+	{
+		RSA *rsa = jscrypto_rsa_from_private_der(pkcs1, pkcs1_len);
+		EVP_PKEY *pkey = NULL;
+		int rc;
+
+		if (rsa == NULL) {
+			return -1;
+		}
+		pkey = EVP_PKEY_new();
+		if (pkey == NULL || EVP_PKEY_assign_RSA(pkey, rsa) != 1) {
+			EVP_PKEY_free(pkey);
+			RSA_free(rsa);
+			errno = ENOMEM;
+			return -1;
+		}
+		rc = jscrypto_pkey_to_pkcs8_bytes(pkey, pkcs8_out, pkcs8_cap,
+				pkcs8_len_out);
+		EVP_PKEY_free(pkey);
+		return rc;
 	}
 #endif
 }

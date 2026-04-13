@@ -1215,6 +1215,106 @@ main(void)
 				signature, sig_len, &matches) == 0);
 		assert(matches == 1);
 	}
+
+	/* SPKI / PKCS#8 format conversions for ECDSA P-256. Generate a
+	 * keypair, export to SPKI / PKCS#8, reimport, and confirm the
+	 * internal storage bytes round-trip. */
+	{
+		uint8_t private_key[32];
+		uint8_t public_key[64];
+		uint8_t spki[256];
+		uint8_t pkcs8[256];
+		uint8_t reimport_public[64];
+		uint8_t reimport_private[32];
+		size_t spki_len = 0;
+		size_t pkcs8_len = 0;
+
+		assert(jscrypto_ecdsa_p256_generate(private_key, public_key) == 0);
+
+		assert(jscrypto_ecdsa_p256_public_to_spki(public_key, spki,
+				sizeof(spki), &spki_len) == 0);
+		/* SPKI for P-256 is ~91 bytes in practice. */
+		assert(spki_len > 60 && spki_len < 120);
+		assert(jscrypto_ecdsa_p256_spki_to_public(spki, spki_len,
+				reimport_public) == 0);
+		assert(memcmp(reimport_public, public_key, 64) == 0);
+
+		assert(jscrypto_ecdsa_p256_private_to_pkcs8(private_key, pkcs8,
+				sizeof(pkcs8), &pkcs8_len) == 0);
+		assert(pkcs8_len > 100 && pkcs8_len < 200);
+		assert(jscrypto_ecdsa_p256_pkcs8_to_private(pkcs8, pkcs8_len,
+				reimport_private) == 0);
+		assert(memcmp(reimport_private, private_key, 32) == 0);
+
+		/* An RSA SPKI fed to the ECDSA parser must fail. We produce
+		 * a short deliberately-malformed blob and check it errors. */
+		{
+			uint8_t bad[8] = { 0x00 };
+			uint8_t scratch[64];
+
+			assert(jscrypto_ecdsa_p256_spki_to_public(bad, sizeof(bad),
+					scratch) == -1);
+		}
+	}
+
+	/* SPKI / PKCS#8 for RSA (2048-bit). Generate a key, export both
+	 * formats, reimport, confirm PKCS#1 DER byte-for-byte round-trip. */
+	{
+		uint8_t private_der[4096];
+		uint8_t public_der[1024];
+		uint8_t spki[1024];
+		uint8_t pkcs8[4096];
+		uint8_t reimport_public[1024];
+		uint8_t reimport_private[4096];
+		size_t private_len = 0;
+		size_t public_len = 0;
+		size_t spki_len = 0;
+		size_t pkcs8_len = 0;
+		size_t reimport_public_len = 0;
+		size_t reimport_private_len = 0;
+
+		assert(jscrypto_rsa_pkcs1_v1_5_generate(2048, private_der,
+				sizeof(private_der), &private_len) == 0);
+		assert(jscrypto_rsa_public_from_private(private_der, private_len,
+				public_der, sizeof(public_der), &public_len) == 0);
+
+		/* Public: PKCS#1 -> SPKI -> PKCS#1. SPKI adds a ~25-byte
+		 * AlgorithmIdentifier wrapper plus a BIT STRING header. */
+		assert(jscrypto_rsa_public_pkcs1_to_spki(public_der, public_len,
+				spki, sizeof(spki), &spki_len) == 0);
+		assert(spki_len > public_len && spki_len < public_len + 128);
+		assert(jscrypto_rsa_spki_to_public_pkcs1(spki, spki_len,
+				reimport_public, sizeof(reimport_public),
+				&reimport_public_len) == 0);
+		assert(reimport_public_len == public_len);
+		assert(memcmp(reimport_public, public_der, public_len) == 0);
+
+		/* Private: PKCS#1 -> PKCS#8 -> PKCS#1. */
+		assert(jscrypto_rsa_private_pkcs1_to_pkcs8(private_der, private_len,
+				pkcs8, sizeof(pkcs8), &pkcs8_len) == 0);
+		assert(pkcs8_len > 0 && pkcs8_len <= sizeof(pkcs8));
+		assert(jscrypto_rsa_pkcs8_to_private_pkcs1(pkcs8, pkcs8_len,
+				reimport_private, sizeof(reimport_private),
+				&reimport_private_len) == 0);
+		assert(reimport_private_len == private_len);
+		assert(memcmp(reimport_private, private_der, private_len) == 0);
+
+		/* Sign/verify with the reimported key material works. */
+		{
+			uint8_t msg[16] = { 0 };
+			uint8_t sig[256];
+			size_t sig_len_b = 0;
+			int matches = 0;
+
+			assert(jscrypto_rsa_pkcs1_v1_5_sign(reimport_private,
+					reimport_private_len, JSCRYPTO_DIGEST_SHA256, msg,
+					sizeof(msg), sig, sizeof(sig), &sig_len_b) == 0);
+			assert(jscrypto_rsa_pkcs1_v1_5_verify(reimport_public,
+					reimport_public_len, JSCRYPTO_DIGEST_SHA256, msg,
+					sizeof(msg), sig, sig_len_b, &matches) == 0);
+			assert(matches == 1);
+		}
+	}
 #else
 	uint8_t byte = 0;
 	int matches = 0;

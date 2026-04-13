@@ -4984,6 +4984,166 @@ generated_smoke_jsval_crypto(char *detail, size_t cap)
 			}
 
 			{
+				/*
+				 * SPKI format transpiled smoke. Generate an ECDSA
+				 * P-256 keypair, export public as SPKI, reimport,
+				 * sign/verify round-trip with the reimported public
+				 * key. This exercises the SPKI import + export paths
+				 * end-to-end.
+				 */
+				jsval_t spki_usages;
+				jsval_t spki_verify_usages;
+				jsval_t spki_ecdsa_alg;
+				jsval_t spki_name;
+				jsval_t spki_curve;
+				jsval_t spki_format_value;
+				jsval_t spki_gen_promise;
+				jsval_t spki_pair;
+				jsval_t spki_public;
+				jsval_t spki_private;
+				jsval_t spki_export_promise;
+				jsval_t spki_bytes;
+				jsval_t spki_reimport_promise;
+				jsval_t spki_reimported;
+				jsval_t spki_sign_alg;
+				jsval_t spki_hash_name;
+				jsval_t spki_data_typed;
+				jsval_t spki_data_buffer;
+				jsval_t spki_sign_promise;
+				jsval_t spki_signature;
+				jsval_t spki_verify_promise;
+
+				if (jsval_array_new(&region, 2, &spki_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"sign", 4, &result) < 0
+						|| jsval_array_push(&region, spki_usages, result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"verify", 6, &result) < 0
+						|| jsval_array_push(&region, spki_usages, result) < 0
+						|| jsval_array_new(&region, 1,
+							&spki_verify_usages) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"verify", 6, &result) < 0
+						|| jsval_array_push(&region, spki_verify_usages,
+							result) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"ECDSA", 5, &spki_name) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"P-256", 5, &spki_curve) < 0
+						|| jsval_object_new(&region, 2, &spki_ecdsa_alg) < 0
+						|| jsval_object_set_utf8(&region, spki_ecdsa_alg,
+							(const uint8_t *)"name", 4, spki_name) < 0
+						|| jsval_object_set_utf8(&region, spki_ecdsa_alg,
+							(const uint8_t *)"namedCurve", 10,
+							spki_curve) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"spki", 4,
+							&spki_format_value) < 0) {
+					return generated_fail_errno(detail, cap, "spki setup");
+				}
+				if (jsval_subtle_crypto_generate_key(&region, subtle_a,
+						spki_ecdsa_alg, 1, spki_usages,
+						&spki_gen_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki ecdsa generateKey");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, spki_gen_promise,
+							&spki_pair) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki ecdsa generate drain");
+				}
+				if (jsval_object_get_utf8(&region, spki_pair,
+						(const uint8_t *)"publicKey", 9, &spki_public) < 0
+						|| jsval_object_get_utf8(&region, spki_pair,
+							(const uint8_t *)"privateKey", 10,
+							&spki_private) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki pair accessors");
+				}
+				if (jsval_subtle_crypto_export_key(&region, subtle_a,
+						spki_format_value, spki_public,
+						&spki_export_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_export_key(spki)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, spki_export_promise,
+							&spki_bytes) < 0
+						|| spki_bytes.kind != JSVAL_KIND_ARRAY_BUFFER
+						|| jsval_array_buffer_byte_length(&region, spki_bytes,
+							&len) < 0 || len < 60 || len > 120) {
+					return generated_fail_errno(detail, cap,
+							"spki export sanity");
+				}
+				if (jsval_subtle_crypto_import_key(&region, subtle_a,
+						spki_format_value, spki_bytes, spki_ecdsa_alg, 1,
+						spki_verify_usages, &spki_reimport_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"jsval_subtle_crypto_import_key(spki)");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, spki_reimport_promise,
+							&spki_reimported) < 0
+						|| spki_reimported.kind != JSVAL_KIND_CRYPTO_KEY) {
+					return generated_fail_errno(detail, cap,
+							"spki reimport");
+				}
+				if (jsval_object_new(&region, 2, &spki_sign_alg) < 0
+						|| jsval_object_set_utf8(&region, spki_sign_alg,
+							(const uint8_t *)"name", 4, spki_name) < 0
+						|| jsval_string_new_utf8(&region,
+							(const uint8_t *)"SHA-256", 7,
+							&spki_hash_name) < 0
+						|| jsval_object_set_utf8(&region, spki_sign_alg,
+							(const uint8_t *)"hash", 4, spki_hash_name) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki sign alg setup");
+				}
+				if (jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8,
+						16, &spki_data_typed) < 0
+						|| jsval_typed_array_buffer(&region, spki_data_typed,
+							&spki_data_buffer) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki data buffer");
+				}
+				if (jsval_subtle_crypto_sign(&region, subtle_a, spki_sign_alg,
+						spki_private, spki_data_buffer,
+						&spki_sign_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki sign");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, spki_sign_promise,
+							&spki_signature) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki sign drain");
+				}
+				if (jsval_subtle_crypto_verify(&region, subtle_a,
+						spki_sign_alg, spki_reimported, spki_signature,
+						spki_data_buffer, &spki_verify_promise) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki verify");
+				}
+				memset(&error, 0, sizeof(error));
+				if (jsval_microtask_drain(&region, &error) < 0
+						|| jsval_promise_result(&region, spki_verify_promise,
+							&result) < 0) {
+					return generated_fail_errno(detail, cap,
+							"spki verify drain");
+				}
+				if (result.kind != JSVAL_KIND_BOOL
+						|| result.as.boolean != 1) {
+					return generated_failf(detail, cap,
+							"expected SPKI-reimported verify to resolve true");
+				}
+			}
+
+			{
 				jsval_t pbkdf2_usages;
 				jsval_t derive_key_only_usages;
 				jsval_t sign_verify_usages;

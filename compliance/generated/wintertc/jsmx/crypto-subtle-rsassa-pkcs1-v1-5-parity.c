@@ -273,5 +273,73 @@ main(void)
 			&& result.as.boolean == 1, SUITE, CASE_NAME,
 			"expected RSA reverify to resolve true");
 
+	/* SPKI / PKCS#8 round-trip on the same key pair. */
+	{
+		jsval_t spki_format;
+		jsval_t pkcs8_format;
+		jsval_t spki_export_promise;
+		jsval_t pkcs8_export_promise;
+		jsval_t spki_bytes;
+		jsval_t pkcs8_bytes;
+		jsval_t spki_reimport_promise;
+		jsval_t spki_reimported;
+		jsval_t spki_reverify_promise;
+
+		GENERATED_TEST_ASSERT(make_string(&region, "spki", &spki_format) == 0,
+				SUITE, CASE_NAME, "failed to build spki format");
+		GENERATED_TEST_ASSERT(make_string(&region, "pkcs8",
+				&pkcs8_format) == 0, SUITE, CASE_NAME,
+				"failed to build pkcs8 format");
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_export_key(&region,
+				subtle_value, spki_format, public_key,
+				&spki_export_promise) == 0, SUITE, CASE_NAME,
+				"failed to call RSA exportKey(spki)");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain RSA exportKey(spki)");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region,
+				spki_export_promise, &spki_bytes) == 0
+				&& spki_bytes.kind == JSVAL_KIND_ARRAY_BUFFER, SUITE,
+				CASE_NAME, "expected RSA SPKI ArrayBuffer");
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_export_key(&region,
+				subtle_value, pkcs8_format, private_key,
+				&pkcs8_export_promise) == 0, SUITE, CASE_NAME,
+				"failed to call RSA exportKey(pkcs8)");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain RSA exportKey(pkcs8)");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region,
+				pkcs8_export_promise, &pkcs8_bytes) == 0
+				&& pkcs8_bytes.kind == JSVAL_KIND_ARRAY_BUFFER, SUITE,
+				CASE_NAME, "expected RSA PKCS#8 ArrayBuffer");
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_import_key(&region,
+				subtle_value, spki_format, spki_bytes, key_algorithm, 1,
+				verify_only_usages, &spki_reimport_promise) == 0, SUITE,
+				CASE_NAME, "failed to call RSA importKey(spki)");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain RSA importKey(spki)");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region,
+				spki_reimport_promise, &spki_reimported) == 0
+				&& spki_reimported.kind == JSVAL_KIND_CRYPTO_KEY, SUITE,
+				CASE_NAME, "expected RSA SPKI reimport");
+
+		GENERATED_TEST_ASSERT(jsval_subtle_crypto_verify(&region, subtle_value,
+				op_algorithm, spki_reimported, signature, data_buffer,
+				&spki_reverify_promise) == 0, SUITE, CASE_NAME,
+				"failed to call RSA SPKI reverify");
+		memset(&error, 0, sizeof(error));
+		GENERATED_TEST_ASSERT(jsval_microtask_drain(&region, &error) == 0,
+				SUITE, CASE_NAME, "failed to drain RSA SPKI reverify");
+		GENERATED_TEST_ASSERT(jsval_promise_result(&region,
+				spki_reverify_promise, &result) == 0
+				&& result.kind == JSVAL_KIND_BOOL
+				&& result.as.boolean == 1, SUITE, CASE_NAME,
+				"expected RSA SPKI reverify true");
+	}
+
 	return generated_test_pass(SUITE, CASE_NAME);
 }

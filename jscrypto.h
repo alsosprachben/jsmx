@@ -124,4 +124,24 @@ int jscrypto_rsa_pss_verify(const uint8_t *public_der, size_t public_len,
 		const uint8_t *data, size_t data_len,
 		const uint8_t *signature, size_t signature_len, int *matches_out);
 
+int jscrypto_ecdsa_p256_spki_to_public(const uint8_t *spki_der,
+		size_t spki_len, uint8_t xy_out[64]);
+int jscrypto_ecdsa_p256_public_to_spki(const uint8_t xy[64],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out);
+int jscrypto_ecdsa_p256_pkcs8_to_private(const uint8_t *pkcs8_der,
+		size_t pkcs8_len, uint8_t scalar_out[32]);
+int jscrypto_ecdsa_p256_private_to_pkcs8(const uint8_t scalar[32],
+		uint8_t *der_out, size_t der_cap, size_t *der_len_out);
+
+int jscrypto_rsa_spki_to_public_pkcs1(const uint8_t *spki_der, size_t spki_len,
+		uint8_t *pkcs1_out, size_t pkcs1_cap, size_t *pkcs1_len_out);
+int jscrypto_rsa_public_pkcs1_to_spki(const uint8_t *pkcs1, size_t pkcs1_len,
+		uint8_t *spki_out, size_t spki_cap, size_t *spki_len_out);
+int jscrypto_rsa_pkcs8_to_private_pkcs1(const uint8_t *pkcs8_der,
+		size_t pkcs8_len, uint8_t *pkcs1_out, size_t pkcs1_cap,
+		size_t *pkcs1_len_out);
+int jscrypto_rsa_private_pkcs1_to_pkcs8(const uint8_t *pkcs1,
+		size_t pkcs1_len, uint8_t *pkcs8_out, size_t pkcs8_cap,
+		size_t *pkcs8_len_out);
+
 #endif

@@ -46,4 +46,26 @@ const reverified = subtle.verify(
   data,
 );
 
-[pair, signature, verified, jwkPublic, jwkPrivate, reverified];
+const spkiPublic = subtle.exportKey("spki", pair.publicKey);
+const pkcs8Private = subtle.exportKey("pkcs8", pair.privateKey);
+const spkiReimport = subtle.importKey(
+  "spki",
+  spkiPublic,
+  {
+    name: "RSA-PSS",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+    hash: { name: "SHA-256" },
+  },
+  true,
+  ["verify"],
+);
+const spkiReverify = subtle.verify(
+  { name: "RSA-PSS", saltLength: 32 },
+  spkiReimport,
+  signature,
+  data,
+);
+
+[pair, signature, verified, jwkPublic, jwkPrivate, reverified,
+ spkiPublic, pkcs8Private, spkiReverify];
