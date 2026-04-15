@@ -642,23 +642,65 @@ fixtures under `compliance/js/wintertc/jsmx/fetch-*`):
   custom status/headers, Content-Length override, Response.error
   rejection, ENOBUFS buffer-too-small, EDEADLK deadlock detection,
   and streaming-body ENOTSUP.
+- **Fetch transport seam + waitlist (slice 8, outbound).**
+  `jsval_fetch_transport_t` vtable (`begin`/`poll`/`cancel`) +
+  `jsval_region_set_fetch_transport` let an embedder wire a
+  `begin`-returns-state / `poll`-returns-READY-or-PENDING-or-ERROR
+  transport into the outbound `fetch()` path. A new
+  `JSVAL_MICROTASK_KIND_FETCH_REQUEST` pumps the poll via
+  `jsval_fetch_run_request`. In parallel, the **fetch waitlist**
+  (`jsval_region_set_fetch_waitlist_mode` +
+  `jsval_fetch_waitlist_pop` + `jsval_fetch_waitlist_size`) lets
+  embedders whose outbound HTTP/1.1 client lives in a coroutine
+  body (notably mnvkd's `vk_jsmx_fetch_driver`) park pending
+  `(Request, Promise)` pairs in a region-local FIFO and drive
+  them from outside a transport callback — the coroutine's
+  `vk_read`/`vk_write` macros need to sit at the switch level,
+  which a `poll` callback can't satisfy. Six new `test_faas`
+  scenarios exercise the transport seam (one-shot, staged
+  PENDING→READY, ERROR, no-transport reject-stub regression,
+  two-fetch concurrent, waitlist-drives-proxy-handler) against
+  an in-process mock transport and the hand-lowered proxy
+  handler.
+- **Proxy handler lowering recipe (slice 7).**
+  `example/wintertc_proxy.js` is the canonical JS source for the
+  `export default { async fetch(request) { ... } }` FaaS idiom;
+  `example/wintertc_proxy_handler.c` is the hand-lowered output
+  the `jsmx-transpile-program` skill now emits for this shape,
+  via a CPS transform that registers a continuation through
+  `jsval_promise_then`. The skill's `lowering-recipes.md`
+  documents the `export default { fetch }` pattern plus the
+  `await fetch(...)` → `jsval_fetch` + `jsval_promise_then` CPS
+  lowering and the eager-body shortcut for
+  `await response.arrayBuffer()`. `test_faas` links the
+  hand-lowered handler and runs it against the mock transport
+  for both success and upstream-error paths.
+- **Cross-repo FaaS proxy demo.** `mnvkd/vk_test_faas_demo.c` +
+  `mnvkd/vk_jsmx_fetch.c` run the transpiled proxy handler
+  behind mnvkd's coroutine HTTP/1.1 server. The parent responder
+  opens an upstream TCP socket via `vk_connect`, spawns
+  `vk_jsmx_fetch_driver` as a sub-coroutine bound to that fd,
+  waits for its completion, and forwards the parsed upstream
+  Response back to the inbound client. End-to-end smoke:
+  `bmake vk_test_faas_demo` + `./vk_test_faas_demo &` +
+  `nc -q 0 127.0.0.1 8081 <<<$'GET / HTTP/1.1\r\nHost:x\r\nConnection: close\r\n\r\n'`
+  returns the hardcoded upstream's real response. The upstream
+  base URL is baked in at transpile time (no CLI flag, no
+  env var); the transpiled handler *is* the deployment config.
 
 **Not yet implemented:**
 
-- The mnvkd-side header-emit patch to `vk_http11_request()`.
-- A mnvkd body-source adapter (`vk_socket` → `jsval_body_source_vtable_t`)
-  that reads body bytes from the coroutine's input pipe honoring
-  Content-Length or chunked framing.
-- A cross-repo `vk_test_faas_demo.c` that copies
-  `vk_test_http11_service.c`, replaces the hardcoded response with a
-  `faas_fetch_handler_fn` call through `faas_bridge.h`, and writes
-  the serialized Response into the coroutine's output pipe.
-- Transpiler recognition of the `export default { fetch }` idiom.
-- The outbound `fetch()` transport (design decision pending — see
-  [The outbound `fetch()` path](#the-outbound-fetch-path)).
-
-The next landable slice is the **cross-repo hello-world FaaS demo**:
-the mnvkd header-emit patch plus a body-source adapter plus a new
-example binary that links against `runtime_modules/shared/faas_bridge.h`.
-The jsmx side is stable; the remaining work is entirely on the mnvkd
-side of the fence.
+- The mnvkd-side header-emit patch to `vk_http11_request()` (the
+  inbound integration in the demo prewarms request bodies into
+  ArrayBuffers via `faas_build_request_from_parts` instead).
+- A mnvkd body-source adapter (`vk_socket` →
+  `jsval_body_source_vtable_t`) that reads body bytes lazily
+  rather than slurping them up front.
+- `https://` outbound (TLS). The demo is plain HTTP; mnvkd's
+  TLS support is a follow-on slice.
+- Concurrent outbound fetches in the mnvkd driver. The jsmx
+  waitlist supports `Promise.all([fetch(a), fetch(b)])` in test
+  scenarios, but the mnvkd driver currently serializes fetches
+  per request (one driver sub-coroutine at a time).
+- Redirect chains, cookie jars, cache — non-goals per the
+  ownership split above.

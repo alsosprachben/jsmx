@@ -6,8 +6,12 @@ all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod t
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
-libjsmx.a: jsmn.o jsnum.o jscrypto.o jsval.o jsmethod.o jsregex.o jsurl.o
+libjsmx.a: jsmn.o jsnum.o jscrypto.o jsval.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o
 	$(AR) rc $@ $^
+
+jsstr.o: jsstr.c jsstr.h unicode.h unicode_db.h
+
+unicode.o: unicode.c unicode.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h
 
 jsmn.o: jsmn.c jsmn.h
 
@@ -85,8 +89,8 @@ test_codegen: test_codegen.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsm
 	$(CC) -g $(CFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	./$@
 
-test_faas: test_faas.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jscrypto.h jsval.h jsmethod.h jsurl.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h runtime_modules/shared/faas_bridge.h
-	$(CC) -g -I. $(CFLAGS) $(LDFLAGS) test_faas.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c $(LDLIBS) -o $@
+test_faas: test_faas.c example/wintertc_proxy_handler.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c jsnum.h jscrypto.h jsval.h jsmethod.h jsurl.h unicode_db.h unicode_collation.h unicode_special_casing.h unicode_exclusions.h unicode_derived_normalization_props.h runtime_modules/shared/faas_bridge.h
+	$(CC) -g -I. $(CFLAGS) $(LDFLAGS) test_faas.c example/wintertc_proxy_handler.c jsnum.c jscrypto.c jsval.c jsmethod.c jsregex.c jsmn.c jsurl.c jsstr.c unicode.c $(LDLIBS) -o $@
 	./$@
 
 test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
@@ -141,7 +145,7 @@ test_collation: test_collation.c unicode_collation.h
 	./$@
 
 clean:
-	rm -f jsmn.o jsnum.o jscrypto.o jsval.o jsmethod.o jsregex.o jsurl.o jsmndom.o jsmn_test.o example/simple.o example/jsondump.o
+	rm -f jsmn.o jsnum.o jscrypto.o jsval.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o jsmndom.o jsmn_test.o example/simple.o example/jsondump.o
 	rm -f libjsmn.a libjsmx.a libjsmndom.a
 	rm -f simple_example
 	rm -f jsondump

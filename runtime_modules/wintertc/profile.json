@@ -7,14 +7,14 @@
       "notes": "The shared sync fs bridge is cataloged here to document overlap with future WinterTC-style profiles, but no WinterTC fs surface is claimed yet."
     },
     "fetch": {
-      "status": "object_model_only",
+      "status": "transport_seam_wired",
       "surface": [
         "globalThis.Headers",
         "globalThis.Request",
         "globalThis.Response",
         "globalThis.fetch"
       ],
-      "notes": "WHATWG Fetch JS object model is available through jsval_headers_*, jsval_request_*, jsval_response_*, and jsval_fetch. Headers supports case-insensitive append/set/get/has/delete, combine-with-comma reads, whitespace normalization, token validation, and getSetCookie. Request accepts URL-string or Request input plus an init dict (method/headers/body) with forbidden-method (CONNECT/TRACE/TRACK) rejection. Response supports body, status, statusText, headers, plus static Response.error, Response.redirect (301/302/303/307/308 only), and Response.json. The Body mixin (text/json/arrayBuffer/bytes) resolves synchronously against in-memory bytes. fetch() parses the request and returns a Promise that rejects with DOMException{name:'TypeError', message:'network not implemented yet'}; the HTTP/1.1 wire serializer, response parser, and mnvkd byte-pipe transport are separate future slices. ReadableStream bodies, Blob, FormData, and AbortSignal are deferred."
+      "notes": "WHATWG Fetch JS object model is available through jsval_headers_*, jsval_request_*, jsval_response_*, and jsval_fetch. Headers supports case-insensitive append/set/get/has/delete, combine-with-comma reads, whitespace normalization, token validation, and getSetCookie. Request accepts URL-string or Request input plus an init dict (method/headers/body) with forbidden-method (CONNECT/TRACE/TRACK) rejection. Response supports body, status, statusText, headers, plus static Response.error, Response.redirect (301/302/303/307/308 only), and Response.json. The Body mixin (text/json/arrayBuffer/bytes) resolves synchronously against in-memory bytes. fetch() now delegates outbound through a pluggable jsval_fetch_transport_t vtable registered via jsval_region_set_fetch_transport — embedders hook begin/poll/cancel and the JSVAL_MICROTASK_KIND_FETCH_REQUEST microtask pumps the poll. Coroutine-driven embedders that can't run their I/O macros inside a poll callback use the fetch waitlist mode instead (jsval_region_set_fetch_waitlist_mode + jsval_fetch_waitlist_pop + jsval_fetch_waitlist_size) — jsval_fetch parks (Request, Promise) pairs in a region-local FIFO and the embedder's coroutine body drives them externally. mnvkd's vk_test_faas_demo uses the waitlist + vk_jsmx_fetch_driver sub-coroutine to run a transpiled proxy handler end to end against an upstream. Without a transport or waitlist mode set, jsval_fetch still rejects with DOMException{name:'TypeError', message:'network not implemented yet'} for backward compatibility. ReadableStream bodies, Blob, FormData, AbortSignal, TLS upstream, and redirect chains are still deferred."
     },
     "crypto": {
       "status": "available",

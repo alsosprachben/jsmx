@@ -307,4 +307,187 @@ static int faas_serialize_response(jsval_region_t *region,
 	return 0;
 }
 
+/* =========================================================================
+ * Higher-level glue: assemble a Request, run a handler, extract a Response.
+ *
+ * These helpers keep an embedder's per-request plumbing to a minimum. The
+ * mnvkd FaaS demo uses all three; a future standalone embedder (libevent,
+ * or a transpiler-generated main) can use them unchanged because none of
+ * them touch mnvkd types.
+ * ========================================================================= */
+
+/*
+ * One header pair to hand into faas_build_request_from_parts(). The caller
+ * owns the underlying bytes; the helper copies them into the region via
+ * jsval_string_new_utf8 before returning, so the caller is free to reuse
+ * or release its source storage afterward.
+ */
+typedef struct faas_header_pair_s {
+	const uint8_t *name;
+	size_t name_len;
+	const uint8_t *value;
+	size_t value_len;
+} faas_header_pair_t;
+
+/*
+ * Assemble a jsval Request from raw parts via the init-dict constructor.
+ *
+ * method        — NUL-terminated ASCII method name ("GET", "POST", ...).
+ *                 Pass NULL or "" to default to GET.
+ * url_bytes     — URL path-and-query (NOT NUL-terminated).
+ * url_len       — length of url_bytes in bytes.
+ * headers       — array of header pairs; header_count may be zero.
+ * body_bytes    — raw body bytes; may be NULL iff body_len == 0.
+ * body_len      — length of body_bytes in bytes.
+ *
+ * Returns 0 and fills *request_out on success. Returns -1 with errno set
+ * on failure (propagated from the underlying jsmx call).
+ *
+ * Internally builds a Headers object, populates it via jsval_headers_append,
+ * wraps the body as a jsval string (byte-preserving, no UTF-8 validation),
+ * constructs the init dict, and calls jsval_request_new. All intermediate
+ * allocations live in the caller-supplied region.
+ */
+static int faas_build_request_from_parts(jsval_region_t *region,
+		const char *method,
+		const uint8_t *url_bytes, size_t url_len,
+		const faas_header_pair_t *headers, size_t header_count,
+		const uint8_t *body_bytes, size_t body_len,
+		jsval_t *request_out)
+{
+	jsval_t headers_value;
+	jsval_t url_value;
+	jsval_t init_value;
+	jsval_t method_value;
+	jsval_t name_val;
+	jsval_t value_val;
+	jsval_t body_value;
+	const char *method_name = (method != NULL && method[0] != '\0')
+			? method : "GET";
+	size_t i;
+
+	if (region == NULL || request_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (header_count > 0 && headers == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (body_len > 0 && body_bytes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_headers_new(region, JSVAL_HEADERS_GUARD_REQUEST,
+			&headers_value) < 0) {
+		return -1;
+	}
+	for (i = 0; i < header_count; i++) {
+		if (jsval_string_new_utf8(region, headers[i].name,
+				headers[i].name_len, &name_val) < 0) {
+			return -1;
+		}
+		if (jsval_string_new_utf8(region, headers[i].value,
+				headers[i].value_len, &value_val) < 0) {
+			return -1;
+		}
+		/* Silently skip headers that fail validation (e.g. bytes that
+		 * aren't valid HTTP tokens). Real clients occasionally send
+		 * oddities; aborting the whole request is too strict. */
+		(void)jsval_headers_append(region, headers_value, name_val,
+				value_val);
+	}
+
+	if (jsval_string_new_utf8(region, url_bytes, url_len, &url_value) < 0) {
+		return -1;
+	}
+	if (jsval_string_new_utf8(region, (const uint8_t *)method_name,
+			strlen(method_name), &method_value) < 0) {
+		return -1;
+	}
+
+	if (jsval_object_new(region, 4, &init_value) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, init_value,
+			(const uint8_t *)"method", 6, method_value) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, init_value,
+			(const uint8_t *)"headers", 7, headers_value) < 0) {
+		return -1;
+	}
+	if (body_len > 0) {
+		if (jsval_string_new_utf8(region, body_bytes, body_len,
+				&body_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, init_value,
+				(const uint8_t *)"body", 4, body_value) < 0) {
+			return -1;
+		}
+	}
+
+	return jsval_request_new(region, url_value, init_value, 1, request_out);
+}
+
+/*
+ * Call a handler, drive microtask drain until its returned promise settles,
+ * and extract the resolved value.
+ *
+ * On success (promise fulfilled with a Response-shaped value):
+ *   returns 0, *response_out is a JSVAL_KIND_RESPONSE jsval.
+ *
+ * On handler rejection (promise rejected with any reason):
+ *   returns -1, errno is set to EIO, and *response_out holds the rejection
+ *   reason. Typical reasons are DOMException jsvals with name/message
+ *   fields the caller can inspect to build a custom 500 Response.
+ *
+ * On handler invocation failure (handler returned -1 directly):
+ *   returns -1, errno preserved from the handler; *response_out is
+ *   undefined.
+ *
+ * On drain failure (e.g. deadlock):
+ *   returns -1, errno set by faas_drain_until_settled.
+ */
+static int faas_run_and_extract(jsval_region_t *region,
+		faas_fetch_handler_fn handler,
+		jsval_t request_value,
+		jsval_t *response_out,
+		jsmethod_error_t *error)
+{
+	jsval_t response_promise;
+	jsval_promise_state_t state;
+
+	if (region == NULL || handler == NULL || response_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (handler(region, request_value, &response_promise) < 0) {
+		return -1;
+	}
+	if (faas_drain_until_settled(region, response_promise, error) < 0) {
+		return -1;
+	}
+	if (jsval_promise_state(region, response_promise, &state) < 0) {
+		return -1;
+	}
+	if (state == JSVAL_PROMISE_STATE_REJECTED) {
+		jsval_t reason;
+		if (jsval_promise_result(region, response_promise, &reason) < 0) {
+			return -1;
+		}
+		*response_out = reason;
+		errno = EIO;
+		return -1;
+	}
+	if (state != JSVAL_PROMISE_STATE_FULFILLED) {
+		errno = EIO;
+		return -1;
+	}
+	return jsval_promise_result(region, response_promise, response_out);
+}
+
 #endif

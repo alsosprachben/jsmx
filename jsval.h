@@ -126,6 +126,53 @@ typedef struct jsval_scheduler_s {
 	jsval_scheduler_notify_fn on_wake;
 } jsval_scheduler_t;
 
+/*
+ * Outbound fetch transport seam.
+ *
+ * An embedder (today: mnvkd's vk_jsmx_fetch_transport) implements this
+ * vtable and registers it on a region via jsval_region_set_fetch_transport.
+ * When hosted JS calls fetch(), jsval_fetch delegates to the transport
+ * instead of returning a rejected stub Promise.
+ *
+ *   begin:  Allocate opaque in-flight state for `request_value`. The
+ *           transport copies any bytes it needs out of the Request before
+ *           returning; `request_value` is not retained.
+ *           Returns 0 on success (with *state_out set), -1 with errno set
+ *           on failure.
+ *
+ *   poll:   Drive the in-flight request forward by one step. Three outcomes:
+ *             PENDING: transport blocked on I/O. The microtask stays
+ *                      parked; the drain re-polls on the next pump.
+ *                      (Future: integrates with jsval_scheduler_s so the
+ *                      embedder can yield its coroutine until wake.)
+ *             READY  : *response_out holds a JSVAL_KIND_RESPONSE
+ *                      built by the transport via jsval_response_new_*.
+ *                      The state is freed by the transport internally.
+ *             ERROR  : *reason_out holds a rejection reason (typically
+ *                      a DOMException built via jsval_dom_exception_new_*).
+ *                      The state is freed by the transport internally.
+ *           Returns 0 on any of the three outcomes, -1 with errno on
+ *           fatal failure (treated as a TypeError by the drain).
+ *
+ *   cancel: Free `state` early, e.g. on region tear-down or abort. May be
+ *           NULL if the transport has no cancellation path.
+ */
+
+typedef enum jsval_fetch_transport_status_e {
+	JSVAL_FETCH_TRANSPORT_STATUS_PENDING = 0,
+	JSVAL_FETCH_TRANSPORT_STATUS_READY = 1,
+	JSVAL_FETCH_TRANSPORT_STATUS_ERROR = 2
+} jsval_fetch_transport_status_t;
+
+typedef struct jsval_fetch_transport_s {
+	int (*begin)(void *userdata, jsval_region_t *region,
+			jsval_t request_value, void **state_out);
+	int (*poll)(void *userdata, jsval_region_t *region, void *state,
+			jsval_fetch_transport_status_t *status_out,
+			jsval_t *response_out, jsval_t *reason_out);
+	void (*cancel)(void *userdata, void *state);
+} jsval_fetch_transport_t;
+
 typedef struct jsval_region_s {
 	uint8_t *base;
 	size_t len;
@@ -135,8 +182,14 @@ typedef struct jsval_region_s {
 	jsval_off_t microtask_tail;
 	size_t microtask_count;
 	uint8_t microtask_draining;
-	uint8_t reserved[7];
+	uint8_t fetch_waitlist_enabled;
+	uint8_t reserved[6];
 	jsval_scheduler_t scheduler;
+	const jsval_fetch_transport_t *fetch_transport;
+	void *fetch_transport_userdata;
+	jsval_off_t fetch_waitlist_head;
+	jsval_off_t fetch_waitlist_tail;
+	size_t fetch_waitlist_count;
 } jsval_region_t;
 
 typedef int (*jsval_native_function_fn)(jsval_region_t *region, size_t argc,
@@ -170,6 +223,43 @@ void jsval_region_set_scheduler(jsval_region_t *region,
 		const jsval_scheduler_t *scheduler);
 void jsval_region_get_scheduler(const jsval_region_t *region,
 		jsval_scheduler_t *scheduler_ptr);
+void jsval_region_set_fetch_transport(jsval_region_t *region,
+		const jsval_fetch_transport_t *transport, void *userdata);
+
+/*
+ * External-driver fetch waitlist.
+ *
+ * An embedder whose outbound HTTP/1.1 client lives in a coroutine body
+ * (notably mnvkd's vk_jsmx_fetch_driver) can't do I/O from inside a
+ * jsval_fetch_transport_t::poll callback — mnvkd's vk_* I/O macros
+ * only compile inside a coroutine's top-level switch. For those
+ * embedders, enable the waitlist with jsval_region_set_fetch_waitlist_mode.
+ *
+ * When waitlist mode is enabled AND no transport is registered,
+ * jsval_fetch() pushes each call onto a per-region FIFO of pending
+ * (Request, Promise) pairs and returns the pending Promise. The
+ * embedder's responder coroutine drives the queue by repeatedly:
+ *
+ *   1. draining non-fetch microtasks,
+ *   2. calling jsval_fetch_waitlist_pop(...) to dequeue one pending
+ *      entry,
+ *   3. doing the HTTP/1.1 round trip with vk_* macros at the
+ *      coroutine body level (e.g. via a spawned sub-coroutine),
+ *   4. resolving the returned Promise via jsval_promise_resolve (or
+ *      jsval_promise_reject on failure),
+ *   5. looping back to the drain.
+ *
+ * Transport ABI and waitlist mode are mutually exclusive from the
+ * point of view of jsval_fetch(): if a transport is registered it
+ * wins; if not and waitlist mode is off the reject-stub path runs
+ * (TypeError "network not implemented yet"), preserving the
+ * pre-seam contract.
+ */
+void jsval_region_set_fetch_waitlist_mode(jsval_region_t *region,
+		int enabled);
+size_t jsval_fetch_waitlist_size(const jsval_region_t *region);
+int jsval_fetch_waitlist_pop(jsval_region_t *region,
+		jsval_t *request_out, jsval_t *promise_out);
 size_t jsval_region_remaining(jsval_region_t *region);
 int jsval_region_alloc(jsval_region_t *region, size_t len, size_t align,
 		void **ptr_ptr);
@@ -309,6 +399,16 @@ int jsval_array_buffer_byte_length(jsval_region_t *region, jsval_t buffer,
 		size_t *len_ptr);
 int jsval_array_buffer_copy_bytes(jsval_region_t *region, jsval_t buffer,
 		uint8_t *buf, size_t cap, size_t *len_ptr);
+/*
+ * Return a mutable pointer to the backing bytes of an ArrayBuffer,
+ * along with its capacity. Intended for embedders that need to write
+ * directly into a region-allocated buffer (e.g., an HTTP server
+ * vk_read'ing a request body). The pointer is valid until any region
+ * operation that might relocate the buffer. Returns 0 on success,
+ * -1 with errno=EINVAL on kind mismatch.
+ */
+int jsval_array_buffer_bytes_mut(jsval_region_t *region, jsval_t buffer,
+		uint8_t **bytes_out, size_t *len_out);
 int jsval_typed_array_new(jsval_region_t *region, jsval_typed_array_kind_t kind,
 		size_t length, jsval_t *value_ptr);
 int jsval_typed_array_kind(jsval_region_t *region, jsval_t typed_array,

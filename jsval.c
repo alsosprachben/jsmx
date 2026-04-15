@@ -321,7 +321,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_RSASSA_PKCS1_V1_5 = 11,
 	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12,
 	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13,
-	JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN = 14
+	JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN = 14,
+	JSVAL_MICROTASK_KIND_FETCH_REQUEST = 15
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -647,6 +648,37 @@ typedef struct jsval_native_microtask_fetch_body_drain_s {
 	uint8_t reserved[7];
 } jsval_native_microtask_fetch_body_drain_t;
 
+/*
+ * Outbound-fetch microtask. Holds the pending Promise plus the transport
+ * vtable + opaque state allocated by the transport's begin callback.
+ * Pointers to the vtable and state are embedder-owned (not region-owned);
+ * they survive across region_ptr dereferences because they live outside
+ * the region. The embedder is responsible for draining to completion
+ * before rewinding the region.
+ */
+typedef struct jsval_native_microtask_fetch_request_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	void *transport_state;
+	const jsval_fetch_transport_t *transport_vtable;
+	void *transport_userdata;
+} jsval_native_microtask_fetch_request_t;
+
+/*
+ * External-driver fetch waitlist entry — a (Request, Promise) pair
+ * parked until the embedder's outbound HTTP/1.1 driver picks it up.
+ * Unlike the FETCH_REQUEST microtask, the waitlist does NOT live on
+ * the microtask queue — it is a separate FIFO rooted in the region
+ * so the microtask drain never re-polls it. The embedder pops
+ * entries via jsval_fetch_waitlist_pop and resolves their promises
+ * from its own coroutine body.
+ */
+typedef struct jsval_native_fetch_waitlist_entry_s {
+	jsval_off_t next_off;
+	jsval_off_t request_off;
+	jsval_off_t promise_off;
+} jsval_native_fetch_waitlist_entry_t;
+
 typedef struct jsval_native_prop_s {
 	jsval_t name;
 	jsval_t value;
@@ -751,6 +783,8 @@ static int jsval_body_consume_streaming(jsval_region_t *region,
 		jsval_t *promise_out);
 static int jsval_fetch_run_body_drain(jsval_region_t *region,
 		jsval_native_microtask_fetch_body_drain_t *task, jsval_off_t task_off);
+static int jsval_fetch_run_request(jsval_region_t *region,
+		jsval_native_microtask_fetch_request_t *task, jsval_off_t task_off);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -6104,8 +6138,14 @@ void jsval_region_init(jsval_region_t *region, void *buf, size_t len)
 	region->microtask_tail = 0;
 	region->microtask_count = 0;
 	region->microtask_draining = 0;
+	region->fetch_waitlist_enabled = 0;
 	memset(region->reserved, 0, sizeof(region->reserved));
 	memset(&region->scheduler, 0, sizeof(region->scheduler));
+	region->fetch_transport = NULL;
+	region->fetch_transport_userdata = NULL;
+	region->fetch_waitlist_head = 0;
+	region->fetch_waitlist_tail = 0;
+	region->fetch_waitlist_count = 0;
 
 	if (buf == NULL || len < head_size || len > UINT32_MAX) {
 		return;
@@ -6133,8 +6173,14 @@ void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len)
 	region->microtask_tail = 0;
 	region->microtask_count = 0;
 	region->microtask_draining = 0;
+	region->fetch_waitlist_enabled = 0;
 	memset(region->reserved, 0, sizeof(region->reserved));
 	memset(&region->scheduler, 0, sizeof(region->scheduler));
+	region->fetch_transport = NULL;
+	region->fetch_transport_userdata = NULL;
+	region->fetch_waitlist_head = 0;
+	region->fetch_waitlist_tail = 0;
+	region->fetch_waitlist_count = 0;
 
 	if (buf == NULL || len < sizeof(jsval_pages_t)) {
 		return;
@@ -6166,6 +6212,70 @@ void jsval_region_set_scheduler(jsval_region_t *region,
 		return;
 	}
 	region->scheduler = *scheduler;
+}
+
+void jsval_region_set_fetch_transport(jsval_region_t *region,
+		const jsval_fetch_transport_t *transport, void *userdata)
+{
+	if (region == NULL) {
+		return;
+	}
+	region->fetch_transport = transport;
+	region->fetch_transport_userdata = userdata;
+}
+
+void jsval_region_set_fetch_waitlist_mode(jsval_region_t *region, int enabled)
+{
+	if (region == NULL) {
+		return;
+	}
+	region->fetch_waitlist_enabled = enabled ? 1 : 0;
+}
+
+size_t jsval_fetch_waitlist_size(const jsval_region_t *region)
+{
+	if (region == NULL) {
+		return 0;
+	}
+	return region->fetch_waitlist_count;
+}
+
+int jsval_fetch_waitlist_pop(jsval_region_t *region, jsval_t *request_out,
+		jsval_t *promise_out)
+{
+	jsval_native_fetch_waitlist_entry_t *entry;
+	jsval_off_t entry_off;
+
+	if (region == NULL || request_out == NULL || promise_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (region->fetch_waitlist_head == 0) {
+		errno = ENOENT;
+		return -1;
+	}
+	entry_off = region->fetch_waitlist_head;
+	entry = (jsval_native_fetch_waitlist_entry_t *)jsval_region_ptr(region,
+			entry_off);
+	if (entry == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	region->fetch_waitlist_head = entry->next_off;
+	if (region->fetch_waitlist_head == 0) {
+		region->fetch_waitlist_tail = 0;
+	}
+	if (region->fetch_waitlist_count > 0) {
+		region->fetch_waitlist_count--;
+	}
+
+	*request_out = jsval_undefined();
+	request_out->kind = JSVAL_KIND_REQUEST;
+	request_out->repr = JSVAL_REPR_NATIVE;
+	request_out->off = entry->request_off;
+
+	*promise_out = jsval_promise_value(entry->promise_off);
+	return 0;
 }
 
 void jsval_region_get_scheduler(const jsval_region_t *region,
@@ -8073,6 +8183,28 @@ jsval_array_buffer_copy_bytes(jsval_region_t *region, jsval_t buffer,
 	if (native->byte_length > 0) {
 		memcpy(buf, jsval_native_array_buffer_bytes(native),
 				native->byte_length);
+	}
+	return 0;
+}
+
+int
+jsval_array_buffer_bytes_mut(jsval_region_t *region, jsval_t buffer,
+		uint8_t **bytes_out, size_t *len_out)
+{
+	jsval_native_array_buffer_t *native;
+
+	if (bytes_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_array_buffer(region, buffer);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*bytes_out = jsval_native_array_buffer_bytes(native);
+	if (len_out != NULL) {
+		*len_out = native->byte_length;
 	}
 	return 0;
 }
@@ -20016,6 +20148,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 				(jsval_native_microtask_fetch_body_drain_t *)task;
 
 			if (jsval_fetch_run_body_drain(region, drain_task, off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
+		case JSVAL_MICROTASK_KIND_FETCH_REQUEST:
+		{
+			jsval_native_microtask_fetch_request_t *req_task =
+				(jsval_native_microtask_fetch_request_t *)task;
+
+			if (jsval_fetch_run_request(region, req_task, off) < 0) {
 				region->microtask_draining = 0;
 				return -1;
 			}
@@ -35762,6 +35905,11 @@ int jsval_fetch(jsval_region_t *region, jsval_t input_value, jsval_t init_value,
 	jsval_t request;
 	jsval_t promise;
 	jsval_t reason;
+	const jsval_fetch_transport_t *transport;
+	void *transport_userdata;
+	void *state = NULL;
+	jsval_native_microtask_fetch_request_t *task;
+	jsval_off_t task_off;
 
 	if (promise_ptr == NULL) {
 		errno = EINVAL;
@@ -35771,15 +35919,99 @@ int jsval_fetch(jsval_region_t *region, jsval_t input_value, jsval_t init_value,
 			&request) < 0) {
 		return -1;
 	}
-	(void)request;
+
+	transport = region->fetch_transport;
+	transport_userdata = region->fetch_transport_userdata;
+	if (transport == NULL || transport->begin == NULL
+			|| transport->poll == NULL) {
+		if (region->fetch_waitlist_enabled) {
+			/* Waitlist mode: park the (request, promise) pair in
+			 * the region's FIFO and let the embedder's outbound
+			 * driver pop it from its own coroutine body. */
+			jsval_native_fetch_waitlist_entry_t *entry;
+			jsval_off_t entry_off;
+
+			if (jsval_promise_new(region, &promise) < 0) {
+				return -1;
+			}
+			if (jsval_region_reserve(region, sizeof(*entry), JSVAL_ALIGN,
+					&entry_off, (void **)&entry) < 0) {
+				return -1;
+			}
+			memset(entry, 0, sizeof(*entry));
+			entry->request_off = request.off;
+			entry->promise_off = promise.off;
+			entry->next_off = 0;
+			if (region->fetch_waitlist_tail == 0) {
+				region->fetch_waitlist_head = entry_off;
+				region->fetch_waitlist_tail = entry_off;
+			} else {
+				jsval_native_fetch_waitlist_entry_t *tail =
+					(jsval_native_fetch_waitlist_entry_t *)
+					jsval_region_ptr(region,
+							region->fetch_waitlist_tail);
+				if (tail == NULL) {
+					errno = EINVAL;
+					return -1;
+				}
+				tail->next_off = entry_off;
+				region->fetch_waitlist_tail = entry_off;
+			}
+			region->fetch_waitlist_count++;
+			*promise_ptr = promise;
+			return 0;
+		}
+
+		/* Preserve the reject-stub contract for embedders with no
+		 * transport registered and waitlist mode disabled. */
+		if (jsval_promise_new(region, &promise) < 0) {
+			return -1;
+		}
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"network not implemented yet", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
 	if (jsval_promise_new(region, &promise) < 0) {
 		return -1;
 	}
-	if (jsval_dom_exception_new_utf8(region, "TypeError",
-			"network not implemented yet", &reason) < 0) {
+	if (transport->begin(transport_userdata, region, request, &state) < 0) {
+		/* Translate transport begin failure into a TypeError rejection
+		 * so the handler's await sees a rejected Promise instead of a
+		 * fatal return. */
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"fetch transport begin failed", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		if (transport->cancel != NULL) {
+			transport->cancel(transport_userdata, state);
+		}
 		return -1;
 	}
-	if (jsval_promise_reject(region, promise, reason) < 0) {
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_FETCH_REQUEST;
+	task->promise_off = promise.off;
+	task->transport_state = state;
+	task->transport_vtable = transport;
+	task->transport_userdata = transport_userdata;
+	if (jsval_microtask_push(region, task_off, &task->base) < 0) {
+		if (transport->cancel != NULL) {
+			transport->cancel(transport_userdata, state);
+		}
 		return -1;
 	}
 	*promise_ptr = promise;
@@ -36293,4 +36525,64 @@ static int jsval_body_consume_streaming(jsval_region_t *region,
 	}
 	return jsval_body_drain_schedule(region, source_off, budget, consume_mode,
 			promise_out);
+}
+
+/*
+ * Outbound-fetch microtask pump. Called by the drain for each
+ * JSVAL_MICROTASK_KIND_FETCH_REQUEST task.
+ *
+ * PENDING: re-enqueue the task at the tail of the microtask queue so the
+ *          next drain pass re-polls. Matches the pattern
+ *          jsval_fetch_run_body_drain uses at the FETCH_BODY_DRAIN PENDING
+ *          branch. Real scheduler integration (yield the embedder
+ *          coroutine until a socket is ready) lands alongside the mnvkd
+ *          adapter; this slice assumes the transport does not return
+ *          PENDING indefinitely in a single drain.
+ * READY  : resolve the Promise with the transport-built Response.
+ * ERROR  : reject the Promise with the transport-built reason.
+ */
+static int jsval_fetch_run_request(jsval_region_t *region,
+		jsval_native_microtask_fetch_request_t *task, jsval_off_t task_off)
+{
+	jsval_fetch_transport_status_t status = JSVAL_FETCH_TRANSPORT_STATUS_ERROR;
+	jsval_t promise_value;
+	jsval_t response_value = jsval_undefined();
+	jsval_t reason_value = jsval_undefined();
+	int rc;
+
+	if (region == NULL || task == NULL || task->transport_vtable == NULL
+			|| task->transport_vtable->poll == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	promise_value = jsval_promise_value(task->promise_off);
+	rc = task->transport_vtable->poll(task->transport_userdata, region,
+			task->transport_state, &status, &response_value, &reason_value);
+	if (rc < 0) {
+		jsval_t fallback;
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"fetch transport poll failed", &fallback) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, fallback);
+	}
+	if (status == JSVAL_FETCH_TRANSPORT_STATUS_PENDING) {
+		return jsval_microtask_push(region, task_off, &task->base);
+	}
+	if (status == JSVAL_FETCH_TRANSPORT_STATUS_ERROR) {
+		return jsval_promise_reject(region, promise_value, reason_value);
+	}
+	if (status != JSVAL_FETCH_TRANSPORT_STATUS_READY) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (response_value.kind != JSVAL_KIND_RESPONSE) {
+		jsval_t fallback;
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"fetch transport returned non-Response", &fallback) < 0) {
+			return -1;
+		}
+		return jsval_promise_reject(region, promise_value, fallback);
+	}
+	return jsval_promise_resolve(region, promise_value, response_value);
 }

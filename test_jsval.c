@@ -12362,6 +12362,32 @@ static void test_fetch_body_drain_semantics(void)
 	}
 }
 
+static void test_array_buffer_bytes_mut_helper(void)
+{
+	uint8_t storage[16384];
+	jsval_region_t region;
+	jsval_t buffer;
+	uint8_t *writable;
+	size_t cap = 0;
+	uint8_t readback[8];
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	assert(jsval_array_buffer_new(&region, 8, &buffer) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, buffer, &writable, &cap)
+			== 0);
+	assert(cap == 8);
+	memcpy(writable, "abcdefgh", 8);
+	assert(jsval_array_buffer_copy_bytes(&region, buffer, readback,
+			sizeof(readback), NULL) == 0);
+	assert(memcmp(readback, "abcdefgh", 8) == 0);
+
+	/* Kind mismatch path */
+	errno = 0;
+	assert(jsval_array_buffer_bytes_mut(&region, jsval_undefined(),
+			&writable, &cap) < 0);
+	assert(errno == EINVAL);
+}
+
 int main(void)
 {
 	test_region_alloc_helpers();
@@ -12439,6 +12465,7 @@ int main(void)
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
 	test_fetch_body_drain_semantics();
+	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;
 }
