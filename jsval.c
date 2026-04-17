@@ -28673,6 +28673,40 @@ int jsval_string_to_cstr(jsval_region_t *region, jsval_t str_val,
 	return 0;
 }
 
+int jsval_string_concat_utf8(jsval_region_t *region,
+		const uint8_t *left, size_t left_len,
+		jsval_t right_str, jsval_t *out)
+{
+	size_t right_len = 0;
+	size_t total_len;
+	jsval_t scratch_buffer;
+	uint8_t *scratch;
+	size_t scratch_cap = 0;
+
+	if (jsval_string_copy_utf8(region, right_str, NULL, 0,
+			&right_len) < 0)
+		return -1;
+
+	total_len = left_len + right_len;
+
+	if (jsval_array_buffer_new(region,
+			total_len == 0 ? 1 : total_len, &scratch_buffer) < 0)
+		return -1;
+	if (jsval_array_buffer_bytes_mut(region, scratch_buffer,
+			&scratch, &scratch_cap) < 0)
+		return -1;
+
+	if (left_len > 0)
+		memcpy(scratch, left, left_len);
+	if (right_len > 0) {
+		if (jsval_string_copy_utf8(region, right_str,
+				scratch + left_len, right_len, NULL) < 0)
+			return -1;
+	}
+
+	return jsval_string_new_utf8(region, scratch, total_len, out);
+}
+
 size_t jsval_object_size(jsval_region_t *region, jsval_t object)
 {
 	if (object.kind != JSVAL_KIND_OBJECT) {
