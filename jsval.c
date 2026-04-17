@@ -28654,6 +28654,25 @@ int jsval_string_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf, 
 	return -1;
 }
 
+int jsval_string_to_cstr(jsval_region_t *region, jsval_t str_val,
+		char *buf, size_t cap, size_t *out_len)
+{
+	size_t len = 0;
+	if (jsval_string_copy_utf8(region, str_val, NULL, 0, &len) < 0)
+		return -1;
+	if (len >= cap)
+		return -1;
+	if (len > 0) {
+		if (jsval_string_copy_utf8(region, str_val,
+				(uint8_t *)buf, len, NULL) < 0)
+			return -1;
+	}
+	buf[len] = '\0';
+	if (out_len)
+		*out_len = len;
+	return 0;
+}
+
 size_t jsval_object_size(jsval_region_t *region, jsval_t object)
 {
 	if (object.kind != JSVAL_KIND_OBJECT) {

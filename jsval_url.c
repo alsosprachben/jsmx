@@ -1,26 +1,6 @@
 #include <string.h>
 #include "jsval.h"
 
-static int
-copy_component(jsval_region_t *region, jsval_t str_val,
-               char *buf, size_t cap, size_t *out_len)
-{
-	size_t len = 0;
-	if (jsval_string_copy_utf8(region, str_val, NULL, 0, &len) < 0)
-		return -1;
-	if (len >= cap)
-		return -1;
-	if (len > 0) {
-		if (jsval_string_copy_utf8(region, str_val,
-				(uint8_t *)buf, len, NULL) < 0)
-			return -1;
-	}
-	buf[len] = '\0';
-	if (out_len)
-		*out_len = len;
-	return 0;
-}
-
 int jsval_url_extract(jsval_region_t *region, jsval_t url_string,
                       struct jsval_url_parts *parts)
 {
@@ -37,7 +17,7 @@ int jsval_url_extract(jsval_region_t *region, jsval_t url_string,
 	/* protocol (e.g. "https:") */
 	if (jsval_url_protocol(region, url_obj, &val) != 0)
 		return -1;
-	if (copy_component(region, val, parts->scheme,
+	if (jsval_string_to_cstr(region, val, parts->scheme,
 			sizeof(parts->scheme), NULL) < 0)
 		return -1;
 	{
@@ -50,14 +30,14 @@ int jsval_url_extract(jsval_region_t *region, jsval_t url_string,
 	/* hostname */
 	if (jsval_url_hostname(region, url_obj, &val) != 0)
 		return -1;
-	if (copy_component(region, val, parts->host,
+	if (jsval_string_to_cstr(region, val, parts->host,
 			sizeof(parts->host), NULL) < 0)
 		return -1;
 
 	/* port (may be empty → use default) */
 	if (jsval_url_port(region, url_obj, &val) != 0)
 		return -1;
-	if (copy_component(region, val, parts->port,
+	if (jsval_string_to_cstr(region, val, parts->port,
 			sizeof(parts->port), NULL) < 0)
 		return -1;
 	if (parts->port[0] == '\0') {
@@ -73,7 +53,7 @@ int jsval_url_extract(jsval_region_t *region, jsval_t url_string,
 	/* pathname + search → combined path */
 	if (jsval_url_pathname(region, url_obj, &val) != 0)
 		return -1;
-	if (copy_component(region, val, parts->path,
+	if (jsval_string_to_cstr(region, val, parts->path,
 			sizeof(parts->path), &path_len) < 0)
 		return -1;
 

@@ -524,6 +524,7 @@ int jsval_promote_array_shallow_in_place(jsval_region_t *region, jsval_t *value_
 int jsval_copy_json(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t cap, size_t *len_ptr);
 
 int jsval_string_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t cap, size_t *len_ptr);
+int jsval_string_to_cstr(jsval_region_t *region, jsval_t str_val, char *buf, size_t cap, size_t *out_len);
 size_t jsval_object_size(jsval_region_t *region, jsval_t object);
 size_t jsval_array_length(jsval_region_t *region, jsval_t array);
 
