@@ -188,6 +188,56 @@ drain uses to fulfill the downstream Promise.
   needed local can be recovered from the fulfillment value. Prefer
   (b) when possible — no closure allocation, lower CPS cost.
 
+### Concurrent Fetches Via `Promise.all`
+
+When the JS source issues two or more `fetch()` calls before
+awaiting any of them — typically via explicit
+`Promise.all([fetch(a), fetch(b), ...])` — lower the join via
+`jsval_promise_all` rather than chained `.then` callbacks. Each
+`jsval_fetch(...)` call synchronously parks a `(Request, Promise)`
+entry on the region's fetch waitlist before the handler returns;
+the embedder drains the whole waitlist in one dispatch cycle,
+issuing each upstream request in parallel.
+
+- **API**: `jsval_promise_all(region, inputs, n, &all_promise)`.
+  Resolves with an `n`-element jsval array of results (input
+  order) when all inputs fulfill; rejects with the first
+  rejection reason if any input rejects. `n == 0` synchronously
+  fulfills with the empty array. Re-entrant: multiple
+  `jsval_promise_all` calls per region are tracked via a
+  coordinator list scanned inside `jsval_microtask_drain`.
+- **Lowering**: replace the chained-`.then` pattern with a single
+  `jsval_promise_all` over the pending input promises, then
+  register one continuation on the aggregate promise:
+
+  ```c
+  jsval_t inputs[2];
+  /* each inputs[i] = jsval_fetch(...) result */
+  if (jsval_promise_all(region, inputs, 2, &all_promise) < 0) return -1;
+  if (jsval_function_new(region, on_both_fulfilled, 1, 0,
+          jsval_undefined(), &continuation_fn) < 0) return -1;
+  if (jsval_promise_then(region, all_promise, continuation_fn,
+          jsval_undefined(), &downstream_promise) < 0) return -1;
+  *response_promise_out = downstream_promise;
+  ```
+
+- **Continuation shape**: `argv[0]` is the results array; extract
+  each entry via `jsval_array_get(region, results, i, &elem)`.
+  Each entry is the upstream `Response`. From there, the **Body
+  Consumption Shortcut** recipe applies per-entry — read the
+  body via `jsval_response_array_buffer` + sync state check +
+  result extract.
+- **Body-level `Promise.all`**: if the JS source also wraps
+  `[a.arrayBuffer(), b.arrayBuffer()]` in a `Promise.all`,
+  collapse it inline rather than emitting a second
+  `jsval_promise_all` — in-memory Response bodies are eagerly
+  fulfilled, so the sync-extract idiom suffices per body. Same
+  reasoning as the outer single-fetch body shortcut.
+- **Rejection**: if any upstream fetch rejects, the aggregate
+  promise rejects with that reason before the continuation runs.
+  `jsval_promise_then` propagates the rejection into the
+  downstream promise just as in the single-fetch path.
+
 ### Body Consumption Shortcut
 
 `await response.arrayBuffer()` (and siblings `text() / bytes() /
@@ -246,12 +296,21 @@ require the embedder to reconstruct an absolute inbound URL.
 
 ### Reference Output
 
-See `example/wintertc_proxy.js` and `example/wintertc_proxy_handler.c`
-for the canonical hand-lowered pair. The test scenarios
-`test_wintertc_proxy_handler_success` and
-`test_wintertc_proxy_handler_upstream_error` in `test_faas.c` exercise
-the handler end to end against an in-process mock transport — diff
-against this pair when extending the recipe.
+Two canonical hand-lowered pairs live in `example/`:
+
+- Single fetch: `example/wintertc_proxy.js` ↔
+  `example/wintertc_proxy_handler.c`. End-to-end coverage in
+  `test_faas.c` (`test_wintertc_proxy_handler_success` and
+  `test_wintertc_proxy_handler_upstream_error`) against an
+  in-process mock transport.
+- Concurrent fetch via `Promise.all`:
+  `example/wintertc_proxy_concurrent.js` ↔
+  `example/wintertc_proxy_concurrent_handler.c`. End-to-end
+  coverage in mnvkd's `vk_test_faas_demo_concurrent.passed`
+  target, which spins up a real local upstream and verifies the
+  concatenated response body.
+
+Diff against the matching pair when extending the recipe.
 
 ### Build And Link
 
@@ -266,7 +325,13 @@ cc -I. -c example/wintertc_proxy_handler.c -o wintertc_proxy_handler.o
 
 For the jsmx-side smoke, the `Makefile`'s `test_faas` target includes
 `example/wintertc_proxy_handler.c` in the compile line. For the mnvkd
-demo, `vk_test_faas_demo` adds the same file to its link.
+demo, `vk_test_faas_demo` adds the same file to its link. The
+concurrent-fetch variant has its own mnvkd target
+`vk_test_faas_demo_concurrent`, built with
+`-DWINTERTC_PROXY_USE_CONCURRENT=1` so the demo's responder
+forward-declares the concurrent handler in place of the single-fetch
+one, and linking in `example/wintertc_proxy_concurrent_handler.c`
+instead.
 
 ## Output And Error Handling
 

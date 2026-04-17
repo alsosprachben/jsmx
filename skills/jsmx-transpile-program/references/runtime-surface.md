@@ -119,6 +119,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_promise_then(...)`
     - `jsval_promise_catch(...)`
     - `jsval_promise_finally(...)`
+    - `jsval_promise_all(...)`
     - `jsval_microtask_enqueue(...)`
     - `jsval_microtask_drain(...)`
     - `jsval_microtask_pending(...)`
