@@ -158,36 +158,23 @@ static int echo_handler(jsval_region_t *region, jsval_t request,
 	jsval_t text_promise;
 	jsval_promise_state_t state;
 	jsval_t body_text;
+	jsval_t body_string;
 	jsval_t response;
 	jsval_t init;
 	jsval_t promise;
-	size_t input_len = 0;
-	const char prefix[] = "echo: ";
+	static const uint8_t prefix[] = "echo: ";
 
 	assert(jsval_request_text(region, request, &text_promise) == 0);
 	assert(jsval_promise_state(region, text_promise, &state) == 0);
 	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
 	assert(jsval_promise_result(region, text_promise, &body_text) == 0);
-	assert(jsval_string_copy_utf8(region, body_text, NULL, 0, &input_len)
-			== 0);
-	{
-		size_t total_len = sizeof(prefix) - 1 + input_len;
-		uint8_t buf[total_len ? total_len : 1];
-		jsval_t body_string;
-
-		memcpy(buf, prefix, sizeof(prefix) - 1);
-		if (input_len > 0) {
-			assert(jsval_string_copy_utf8(region, body_text,
-					buf + sizeof(prefix) - 1, input_len, NULL) == 0);
-		}
-		assert(jsval_string_new_utf8(region, buf, total_len, &body_string)
-				== 0);
-		assert(jsval_object_new(region, 1, &init) == 0);
-		assert(jsval_object_set_utf8(region, init,
-				(const uint8_t *)"status", 6, jsval_number(200.0)) == 0);
-		assert(jsval_response_new(region, body_string, 1, init, 1,
-				&response) == 0);
-	}
+	assert(jsval_string_concat_utf8(region, prefix, sizeof(prefix) - 1,
+			body_text, &body_string) == 0);
+	assert(jsval_object_new(region, 1, &init) == 0);
+	assert(jsval_object_set_utf8(region, init,
+			(const uint8_t *)"status", 6, jsval_number(200.0)) == 0);
+	assert(jsval_response_new(region, body_string, 1, init, 1,
+			&response) == 0);
 	assert(jsval_promise_new(region, &promise) == 0);
 	assert(jsval_promise_resolve(region, promise, response) == 0);
 	*response_promise_out = promise;
