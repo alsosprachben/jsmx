@@ -63,10 +63,13 @@
  *     transpile output *is* the deployment config.
  */
 
-/* Upstream base URL — baked in at transpile time. Switch to e.g.
- * http://127.0.0.1:9000 to smoke-test against a local python3
- * http.server; the checked-in default points at example.com. */
+/* Upstream base URL — baked in at transpile time. Defaults to
+ * http://example.com for the shipped demo binary. Tests override via
+ * -DWINTERTC_PROXY_UPSTREAM_BASE=\"http://127.0.0.1:<port>\" at
+ * compile time to point at a local python3 http.server fixture. */
+#ifndef WINTERTC_PROXY_UPSTREAM_BASE
 #define WINTERTC_PROXY_UPSTREAM_BASE "http://example.com"
+#endif
 #define WINTERTC_PROXY_UPSTREAM_BASE_LEN \
 	(sizeof(WINTERTC_PROXY_UPSTREAM_BASE) - 1)
 
