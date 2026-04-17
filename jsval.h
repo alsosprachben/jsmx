@@ -190,6 +190,7 @@ typedef struct jsval_region_s {
 	jsval_off_t fetch_waitlist_head;
 	jsval_off_t fetch_waitlist_tail;
 	size_t fetch_waitlist_count;
+	jsval_off_t promise_all_head;
 } jsval_region_t;
 
 typedef int (*jsval_native_function_fn)(jsval_region_t *region, size_t argc,
@@ -504,6 +505,8 @@ int jsval_promise_catch(jsval_region_t *region, jsval_t promise_value,
 		jsval_t on_rejected, jsval_t *value_ptr);
 int jsval_promise_finally(jsval_region_t *region, jsval_t promise_value,
 		jsval_t on_finally, jsval_t *value_ptr);
+int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
+		size_t n, jsval_t *out_promise);
 int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
 		size_t argc, const jsval_t *argv);
 size_t jsval_microtask_pending(jsval_region_t *region);

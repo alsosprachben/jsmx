@@ -6146,6 +6146,7 @@ void jsval_region_init(jsval_region_t *region, void *buf, size_t len)
 	region->fetch_waitlist_head = 0;
 	region->fetch_waitlist_tail = 0;
 	region->fetch_waitlist_count = 0;
+	region->promise_all_head = 0;
 
 	if (buf == NULL || len < head_size || len > UINT32_MAX) {
 		return;
@@ -6181,6 +6182,7 @@ void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len)
 	region->fetch_waitlist_head = 0;
 	region->fetch_waitlist_tail = 0;
 	region->fetch_waitlist_count = 0;
+	region->promise_all_head = 0;
 
 	if (buf == NULL || len < sizeof(jsval_pages_t)) {
 		return;
@@ -19958,6 +19960,116 @@ static int jsval_promise_run_reaction(jsval_region_t *region,
 	}
 }
 
+/*
+ * jsval_promise_all coordinator. Allocated per call to
+ * jsval_promise_all; linked into region->promise_all_head until
+ * settled. The microtask drain scans the list and settles any
+ * coord whose inputs have all fulfilled (or any rejected). No
+ * per-input callbacks, no captures — re-entrant by construction.
+ */
+typedef struct jsval_promise_all_coord_s {
+	jsval_off_t next;          /* next coord in list, 0 = end */
+	jsval_off_t inputs_off;    /* offset of jsval_t[n] input array */
+	jsval_t results_array;     /* pre-allocated output array (cap=n) */
+	jsval_t out_promise;       /* downstream promise to resolve/reject */
+	uint32_t n;
+	uint32_t settled;          /* 0 pending, 1 already settled */
+} jsval_promise_all_coord_t;
+
+/*
+ * Scan all pending coords, settling any whose inputs have all
+ * fulfilled (resolve with results array) or whose any input has
+ * rejected (reject with first rejection reason). Returns 1 if
+ * any coord transitioned this pass, 0 otherwise.
+ */
+static int jsval_promise_all_scan(jsval_region_t *region)
+{
+	jsval_off_t off;
+	int progress = 0;
+
+	for (off = region->promise_all_head; off != 0; ) {
+		jsval_promise_all_coord_t *coord =
+			(jsval_promise_all_coord_t *)(region->base + off);
+		jsval_t *inputs;
+		int all_fulfilled;
+		size_t i;
+
+		off = coord->next;
+
+		if (coord->settled) {
+			continue;
+		}
+
+		inputs = (jsval_t *)(region->base + coord->inputs_off);
+		all_fulfilled = 1;
+
+		for (i = 0; i < coord->n; i++) {
+			jsval_promise_state_t state;
+			if (jsval_promise_state(region, inputs[i], &state) < 0) {
+				continue;
+			}
+			if (state == JSVAL_PROMISE_STATE_REJECTED) {
+				jsval_t reason;
+				if (jsval_promise_result(region, inputs[i],
+						&reason) < 0) {
+					reason = jsval_undefined();
+				}
+				(void)jsval_promise_reject(region,
+						coord->out_promise, reason);
+				coord->settled = 1;
+				progress = 1;
+				break;
+			}
+			if (state == JSVAL_PROMISE_STATE_PENDING) {
+				all_fulfilled = 0;
+			}
+		}
+
+		if (coord->settled) {
+			continue;
+		}
+
+		if (all_fulfilled) {
+			for (i = 0; i < coord->n; i++) {
+				jsval_t result;
+				if (jsval_promise_result(region, inputs[i],
+						&result) < 0) {
+					break;
+				}
+				if (jsval_array_set(region, coord->results_array,
+						i, result) < 0) {
+					break;
+				}
+			}
+			(void)jsval_promise_resolve(region,
+					coord->out_promise, coord->results_array);
+			coord->settled = 1;
+			progress = 1;
+		}
+	}
+
+	return progress;
+}
+
+/*
+ * Unlink settled coords from region->promise_all_head. The memory
+ * itself isn't freed (arena allocation) — just removed from the
+ * scan list so subsequent drains don't walk them.
+ */
+static void jsval_promise_all_unlink_settled(jsval_region_t *region)
+{
+	jsval_off_t *prev_next = &region->promise_all_head;
+	while (*prev_next != 0) {
+		jsval_promise_all_coord_t *coord =
+			(jsval_promise_all_coord_t *)(region->base + *prev_next);
+		if (coord->settled) {
+			*prev_next = coord->next;
+		} else {
+			prev_next = &coord->next;
+		}
+	}
+}
+
 int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 {
 	jsval_off_t off;
@@ -19971,6 +20083,7 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 		return 0;
 	}
 	region->microtask_draining = 1;
+	for (;;) {
 	while ((off = jsval_microtask_pop(region)) != 0) {
 		jsval_native_microtask_t *task = jsval_native_microtask(region, off);
 
@@ -20170,6 +20283,11 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			return -1;
 		}
 	}
+	if (!jsval_promise_all_scan(region)) {
+		break;
+	}
+	}
+	jsval_promise_all_unlink_settled(region);
 	region->microtask_draining = 0;
 	return 0;
 }
@@ -20334,6 +20452,121 @@ int jsval_promise_finally(jsval_region_t *region, jsval_t promise_value,
 		return -1;
 	}
 	*value_ptr = downstream;
+	return 0;
+}
+
+int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
+		size_t n, jsval_t *out_promise)
+{
+	jsval_t out;
+	jsval_t results_array;
+	jsval_promise_all_coord_t *coord;
+	jsval_t *inputs_copy;
+	jsval_off_t coord_off;
+	void *ptr;
+	size_t i;
+	int all_fulfilled;
+
+	if (region == NULL || out_promise == NULL ||
+			(n > 0 && inputs == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < n; i++) {
+		if (inputs[i].kind != JSVAL_KIND_PROMISE) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
+	if (jsval_promise_new(region, &out) < 0) {
+		return -1;
+	}
+	if (jsval_array_new(region, n, &results_array) < 0) {
+		return -1;
+	}
+
+	/* Pre-size the results array to n so we can assign by index in
+	 * any order. Length grows on first assignment to index n-1. */
+	if (n > 0) {
+		if (jsval_array_set(region, results_array, n - 1,
+				jsval_undefined()) < 0) {
+			return -1;
+		}
+	}
+
+	/* Fast path: if all inputs are already settled we can resolve
+	 * or reject synchronously without linking a coord. */
+	all_fulfilled = 1;
+	for (i = 0; i < n; i++) {
+		jsval_promise_state_t state;
+		if (jsval_promise_state(region, inputs[i], &state) < 0) {
+			return -1;
+		}
+		if (state == JSVAL_PROMISE_STATE_REJECTED) {
+			jsval_t reason;
+			if (jsval_promise_result(region, inputs[i],
+					&reason) < 0) {
+				return -1;
+			}
+			if (jsval_promise_reject(region, out, reason) < 0) {
+				return -1;
+			}
+			*out_promise = out;
+			return 0;
+		}
+		if (state == JSVAL_PROMISE_STATE_PENDING) {
+			all_fulfilled = 0;
+		}
+	}
+	if (all_fulfilled) {
+		for (i = 0; i < n; i++) {
+			jsval_t result;
+			if (jsval_promise_result(region, inputs[i],
+					&result) < 0) {
+				return -1;
+			}
+			if (jsval_array_set(region, results_array, i,
+					result) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_promise_resolve(region, out, results_array) < 0) {
+			return -1;
+		}
+		*out_promise = out;
+		return 0;
+	}
+
+	/* Slow path: at least one input still pending. Allocate a coord
+	 * and link it into region->promise_all_head so the next
+	 * jsval_microtask_drain scan phase settles it. */
+	if (jsval_region_alloc(region, sizeof(*coord),
+			_Alignof(jsval_promise_all_coord_t), &ptr) < 0) {
+		return -1;
+	}
+	coord = (jsval_promise_all_coord_t *)ptr;
+	coord_off = (jsval_off_t)((uint8_t *)ptr - region->base);
+
+	if (jsval_region_alloc(region, n * sizeof(jsval_t),
+			_Alignof(jsval_t), &ptr) < 0) {
+		return -1;
+	}
+	inputs_copy = (jsval_t *)ptr;
+	for (i = 0; i < n; i++) {
+		inputs_copy[i] = inputs[i];
+	}
+
+	coord->next = region->promise_all_head;
+	coord->inputs_off =
+		(jsval_off_t)((uint8_t *)inputs_copy - region->base);
+	coord->results_array = results_array;
+	coord->out_promise = out;
+	coord->n = (uint32_t)n;
+	coord->settled = 0;
+	region->promise_all_head = coord_off;
+
+	*out_promise = out;
 	return 0;
 }
 

@@ -5103,6 +5103,102 @@ static void test_promise_semantics(void)
 	assert_number_value(result, 3.0);
 }
 
+static void test_promise_all_semantics(void)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t p[3];
+	jsval_t all;
+	jsval_t result;
+	jsval_t elem;
+	jsval_promise_state_t state;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* n==0: empty array, synchronously fulfilled with empty array. */
+	assert(jsval_promise_all(&region, NULL, 0, &all) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, all, &result) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 0);
+
+	/* Fast path: all pre-fulfilled. Resolve in input order. */
+	assert(jsval_promise_new(&region, &p[0]) == 0);
+	assert(jsval_promise_resolve(&region, p[0], jsval_number(10.0)) == 0);
+	assert(jsval_promise_new(&region, &p[1]) == 0);
+	assert(jsval_promise_resolve(&region, p[1], jsval_number(20.0)) == 0);
+	assert(jsval_promise_new(&region, &p[2]) == 0);
+	assert(jsval_promise_resolve(&region, p[2], jsval_number(30.0)) == 0);
+	assert(jsval_promise_all(&region, p, 3, &all) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, all, &result) == 0);
+	assert(result.kind == JSVAL_KIND_ARRAY);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &elem) == 0);
+	assert_number_value(elem, 10.0);
+	assert(jsval_array_get(&region, result, 1, &elem) == 0);
+	assert_number_value(elem, 20.0);
+	assert(jsval_array_get(&region, result, 2, &elem) == 0);
+	assert_number_value(elem, 30.0);
+
+	/* Fast path: first rejection short-circuits. Input p[1] rejected
+	 * before p[0] and p[2]; output rejects with p[1]'s reason. */
+	assert(jsval_promise_new(&region, &p[0]) == 0);
+	assert(jsval_promise_resolve(&region, p[0], jsval_number(1.0)) == 0);
+	assert(jsval_promise_new(&region, &p[1]) == 0);
+	assert(jsval_promise_reject(&region, p[1], jsval_number(999.0)) == 0);
+	assert(jsval_promise_new(&region, &p[2]) == 0);
+	assert(jsval_promise_resolve(&region, p[2], jsval_number(3.0)) == 0);
+	assert(jsval_promise_all(&region, p, 3, &all) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, all, &result) == 0);
+	assert_number_value(result, 999.0);
+
+	/* Slow path: settle via drain. Input p[0] pending, p[1] and p[2]
+	 * already fulfilled. Output is pending until p[0] resolves and
+	 * jsval_microtask_drain's scan phase runs. */
+	assert(jsval_promise_new(&region, &p[0]) == 0);
+	assert(jsval_promise_new(&region, &p[1]) == 0);
+	assert(jsval_promise_resolve(&region, p[1], jsval_number(200.0)) == 0);
+	assert(jsval_promise_new(&region, &p[2]) == 0);
+	assert(jsval_promise_resolve(&region, p[2], jsval_number(300.0)) == 0);
+	assert(jsval_promise_all(&region, p, 3, &all) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	/* Resolve last; drain must settle `all` with results in input order. */
+	assert(jsval_promise_resolve(&region, p[0], jsval_number(100.0)) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, all, &result) == 0);
+	assert(jsval_array_length(&region, result) == 3);
+	assert(jsval_array_get(&region, result, 0, &elem) == 0);
+	assert_number_value(elem, 100.0);
+	assert(jsval_array_get(&region, result, 1, &elem) == 0);
+	assert_number_value(elem, 200.0);
+	assert(jsval_array_get(&region, result, 2, &elem) == 0);
+	assert_number_value(elem, 300.0);
+
+	/* Slow path: one input rejects after aggregation started. */
+	assert(jsval_promise_new(&region, &p[0]) == 0);
+	assert(jsval_promise_new(&region, &p[1]) == 0);
+	assert(jsval_promise_all(&region, p, 2, &all) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_PENDING);
+	assert(jsval_promise_reject(&region, p[1], jsval_number(42.0)) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(jsval_promise_state(&region, all, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	assert(jsval_promise_result(&region, all, &result) == 0);
+	assert_number_value(result, 42.0);
+}
+
 static void test_set_semantics(void)
 {
 	uint8_t storage[32768];
@@ -12399,6 +12495,7 @@ int main(void)
 	test_date_semantics();
 	test_crypto_semantics();
 	test_promise_semantics();
+	test_promise_all_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();
