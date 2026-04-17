@@ -5015,6 +5015,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Promise.allSettled fixture: mix of pre-fulfilled and pre-rejected inputs produces an array of {status, value/reason} descriptors in input order. Exercises the jsval_promise_all_settled fast path + the per-input descriptor builder."
+    },
+    {
+      "id": "jsmx-promises-any-first-fulfilled",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/any-first-fulfilled.js",
+      "generated": "compliance/generated/promises/jsmx/any-first-fulfilled.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.any fixture: first pre-fulfilled input propagates synchronously; pre-rejected predecessors are ignored. Exercises the jsval_promise_any sync fast path (any-fulfilled branch)."
+    },
+    {
+      "id": "jsmx-promises-any-all-rejected",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/any-all-rejected.js",
+      "generated": "compliance/generated/promises/jsmx/any-all-rejected.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.any fixture: all inputs pre-rejected rejects synchronously with AggregateError(errors=[r0, r1, r2]). Exercises jsval_promise_any's AggregateError construction path and the new jsval_dom_exception_errors accessor."
+    },
+    {
+      "id": "jsmx-promises-any-empty",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/any-empty.js",
+      "generated": "compliance/generated/promises/jsmx/any-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.any fixture: empty input rejects synchronously with AggregateError(errors=[]). Exercises the jsval_promise_any n==0 fast path."
     }
   ]
 }

@@ -431,6 +431,10 @@ int jsval_dom_exception_name(jsval_region_t *region, jsval_t exception_value,
 		jsval_t *value_ptr);
 int jsval_dom_exception_message(jsval_region_t *region,
 		jsval_t exception_value, jsval_t *value_ptr);
+int jsval_dom_exception_errors(jsval_region_t *region,
+		jsval_t exception_value, jsval_t *value_ptr);
+int jsval_aggregate_error_new(jsval_region_t *region,
+		jsval_t errors_array, jsval_t message_value, jsval_t *value_ptr);
 int jsval_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
 int jsval_subtle_crypto_new(jsval_region_t *region, jsval_t *value_ptr);
 int jsval_crypto_subtle(jsval_region_t *region, jsval_t crypto_value,
@@ -510,6 +514,8 @@ int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
 int jsval_promise_race(jsval_region_t *region, const jsval_t *inputs,
 		size_t n, jsval_t *out_promise);
 int jsval_promise_all_settled(jsval_region_t *region, const jsval_t *inputs,
+		size_t n, jsval_t *out_promise);
+int jsval_promise_any(jsval_region_t *region, const jsval_t *inputs,
 		size_t n, jsval_t *out_promise);
 int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
 		size_t argc, const jsval_t *argv);

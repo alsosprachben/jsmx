@@ -93,6 +93,8 @@ typedef struct jsval_native_crypto_key_s {
 typedef struct jsval_native_dom_exception_s {
 	jsval_t name;
 	jsval_t message;
+	jsval_t errors;  /* undefined for ordinary exceptions; array for
+			    AggregateError (i.e. name == "AggregateError"). */
 } jsval_native_dom_exception_t;
 
 typedef struct jsval_native_promise_s {
@@ -8508,8 +8510,61 @@ jsval_dom_exception_new(jsval_region_t *region, jsval_t name_value,
 	native = (jsval_native_dom_exception_t *)ptr;
 	native->name = name_value;
 	native->message = message_value;
+	native->errors = jsval_undefined();
 	*value_ptr = jsval_native_make_value(region, native,
 			JSVAL_KIND_DOM_EXCEPTION);
+	return 0;
+}
+
+int
+jsval_dom_exception_errors(jsval_region_t *region, jsval_t exception_value,
+		jsval_t *value_ptr)
+{
+	jsval_native_dom_exception_t *native;
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_dom_exception(region, exception_value);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*value_ptr = native->errors;
+	return 0;
+}
+
+int
+jsval_aggregate_error_new(jsval_region_t *region, jsval_t errors_array,
+		jsval_t message_value, jsval_t *value_ptr)
+{
+	jsval_t name_value;
+	jsval_t exception;
+	jsval_native_dom_exception_t *native;
+
+	if (region == NULL || value_ptr == NULL
+			|| errors_array.kind != JSVAL_KIND_ARRAY
+			|| message_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_new_utf8(region,
+			(const uint8_t *)"AggregateError", 14,
+			&name_value) < 0) {
+		return -1;
+	}
+	if (jsval_dom_exception_new(region, name_value, message_value,
+			&exception) < 0) {
+		return -1;
+	}
+	native = jsval_native_dom_exception(region, exception);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->errors = errors_array;
+	*value_ptr = exception;
 	return 0;
 }
 
@@ -19974,6 +20029,7 @@ typedef enum jsval_promise_combinator_kind_e {
 	JSVAL_PROMISE_COMBINATOR_ALL = 0,
 	JSVAL_PROMISE_COMBINATOR_RACE = 1,
 	JSVAL_PROMISE_COMBINATOR_ALL_SETTLED = 2,
+	JSVAL_PROMISE_COMBINATOR_ANY = 3,
 } jsval_promise_combinator_kind_t;
 
 typedef struct jsval_promise_combinator_coord_s {
@@ -20176,6 +20232,66 @@ static int jsval_promise_combinator_scan(jsval_region_t *region)
 				(void)jsval_promise_resolve(region,
 						coord->out_promise,
 						coord->results_array);
+				coord->settled = 1;
+				progress = 1;
+			}
+			break;
+		}
+		case JSVAL_PROMISE_COMBINATOR_ANY: {
+			int all_rejected = 1;
+			for (i = 0; i < coord->n; i++) {
+				jsval_promise_state_t state;
+				if (jsval_promise_state(region, inputs[i],
+						&state) < 0) {
+					continue;
+				}
+				if (state == JSVAL_PROMISE_STATE_FULFILLED) {
+					jsval_t fulfilled_value;
+					if (jsval_promise_result(region, inputs[i],
+							&fulfilled_value) < 0) {
+						fulfilled_value = jsval_undefined();
+					}
+					(void)jsval_promise_resolve(region,
+							coord->out_promise,
+							fulfilled_value);
+					coord->settled = 1;
+					progress = 1;
+					break;
+				}
+				if (state == JSVAL_PROMISE_STATE_PENDING) {
+					all_rejected = 0;
+				}
+			}
+			if (coord->settled) {
+				break;
+			}
+			if (all_rejected) {
+				jsval_t agg_message;
+				jsval_t agg_error;
+				for (i = 0; i < coord->n; i++) {
+					jsval_t reason;
+					if (jsval_promise_result(region,
+							inputs[i], &reason) < 0) {
+						reason = jsval_undefined();
+					}
+					if (jsval_array_set(region,
+							coord->results_array, i,
+							reason) < 0) {
+						break;
+					}
+				}
+				if (jsval_string_new_utf8(region,
+						(const uint8_t *)
+						"All promises were rejected",
+						26, &agg_message) == 0 &&
+						jsval_aggregate_error_new(region,
+							coord->results_array,
+							agg_message,
+							&agg_error) == 0) {
+					(void)jsval_promise_reject(region,
+							coord->out_promise,
+							agg_error);
+				}
 				coord->settled = 1;
 				progress = 1;
 			}
@@ -20894,6 +21010,161 @@ int jsval_promise_all_settled(jsval_region_t *region,
 	coord->n = (uint32_t)n;
 	coord->settled = 0;
 	coord->kind = JSVAL_PROMISE_COMBINATOR_ALL_SETTLED;
+	region->promise_combinator_head = coord_off;
+
+	*out_promise = out;
+	return 0;
+}
+
+int jsval_promise_any(jsval_region_t *region, const jsval_t *inputs,
+		size_t n, jsval_t *out_promise)
+{
+	jsval_t out;
+	jsval_t errors_array;
+	jsval_promise_combinator_coord_t *coord;
+	jsval_t *inputs_copy;
+	jsval_off_t coord_off;
+	void *ptr;
+	size_t i;
+	int all_rejected;
+	int any_fulfilled_idx;
+
+	if (region == NULL || out_promise == NULL ||
+			(n > 0 && inputs == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < n; i++) {
+		if (inputs[i].kind != JSVAL_KIND_PROMISE) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
+	if (jsval_promise_new(region, &out) < 0) {
+		return -1;
+	}
+	if (jsval_array_new(region, n, &errors_array) < 0) {
+		return -1;
+	}
+	if (n > 0) {
+		if (jsval_array_set(region, errors_array, n - 1,
+				jsval_undefined()) < 0) {
+			return -1;
+		}
+	}
+
+	/* n == 0: spec says reject synchronously with
+	 * AggregateError(errors=[], "All promises were rejected"). */
+	if (n == 0) {
+		jsval_t agg_message;
+		jsval_t agg_error;
+		if (jsval_string_new_utf8(region,
+				(const uint8_t *)"All promises were rejected",
+				26, &agg_message) < 0) {
+			return -1;
+		}
+		if (jsval_aggregate_error_new(region, errors_array,
+				agg_message, &agg_error) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, out, agg_error) < 0) {
+			return -1;
+		}
+		*out_promise = out;
+		return 0;
+	}
+
+	/* Fast path: walk inputs. If any is already fulfilled, resolve
+	 * output and return. If all are already rejected, build an
+	 * AggregateError and reject. Otherwise fall to slow path. */
+	all_rejected = 1;
+	any_fulfilled_idx = -1;
+	for (i = 0; i < n; i++) {
+		jsval_promise_state_t state;
+		if (jsval_promise_state(region, inputs[i], &state) < 0) {
+			return -1;
+		}
+		if (state == JSVAL_PROMISE_STATE_FULFILLED) {
+			if (any_fulfilled_idx < 0) {
+				any_fulfilled_idx = (int)i;
+			}
+			all_rejected = 0;
+		} else if (state == JSVAL_PROMISE_STATE_PENDING) {
+			all_rejected = 0;
+		}
+	}
+	if (any_fulfilled_idx >= 0) {
+		jsval_t fulfilled_value;
+		if (jsval_promise_result(region,
+				inputs[any_fulfilled_idx],
+				&fulfilled_value) < 0) {
+			return -1;
+		}
+		if (jsval_promise_resolve(region, out,
+				fulfilled_value) < 0) {
+			return -1;
+		}
+		*out_promise = out;
+		return 0;
+	}
+	if (all_rejected) {
+		jsval_t agg_message;
+		jsval_t agg_error;
+		for (i = 0; i < n; i++) {
+			jsval_t reason;
+			if (jsval_promise_result(region, inputs[i],
+					&reason) < 0) {
+				return -1;
+			}
+			if (jsval_array_set(region, errors_array, i,
+					reason) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_string_new_utf8(region,
+				(const uint8_t *)"All promises were rejected",
+				26, &agg_message) < 0) {
+			return -1;
+		}
+		if (jsval_aggregate_error_new(region, errors_array,
+				agg_message, &agg_error) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, out, agg_error) < 0) {
+			return -1;
+		}
+		*out_promise = out;
+		return 0;
+	}
+
+	/* Slow path: at least one input still pending. Link a coord; the
+	 * scan phase inside jsval_microtask_drain will resolve or reject
+	 * once enough inputs have settled. */
+	if (jsval_region_alloc(region, sizeof(*coord),
+			_Alignof(jsval_promise_combinator_coord_t), &ptr) < 0) {
+		return -1;
+	}
+	coord = (jsval_promise_combinator_coord_t *)ptr;
+	coord_off = (jsval_off_t)((uint8_t *)ptr - region->base);
+
+	if (jsval_region_alloc(region, n * sizeof(jsval_t),
+			_Alignof(jsval_t), &ptr) < 0) {
+		return -1;
+	}
+	inputs_copy = (jsval_t *)ptr;
+	for (i = 0; i < n; i++) {
+		inputs_copy[i] = inputs[i];
+	}
+
+	coord->next = region->promise_combinator_head;
+	coord->inputs_off =
+		(jsval_off_t)((uint8_t *)inputs_copy - region->base);
+	coord->results_array = errors_array;
+	coord->out_promise = out;
+	coord->n = (uint32_t)n;
+	coord->settled = 0;
+	coord->kind = JSVAL_PROMISE_COMBINATOR_ANY;
 	region->promise_combinator_head = coord_off;
 
 	*out_promise = out;

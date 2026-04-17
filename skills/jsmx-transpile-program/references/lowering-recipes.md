@@ -245,11 +245,18 @@ issuing each upstream request in parallel.
   `jsval_promise_all_settled(region, inputs, n, &out)` — output
   fulfills with an array of `{status, value}` / `{status, reason}`
   descriptors once every input has settled, and never rejects.
-  Both share the same continuation-registration shape as
-  `Promise.all` — install a single `jsval_promise_then`
-  handler on the combinator's output promise. `Promise.any`
-  isn't covered yet; it needs `AggregateError`, which jsmx
-  doesn't currently expose.
+  `Promise.any` lowers to
+  `jsval_promise_any(region, inputs, n, &out)` — output resolves
+  with the first fulfilled input's value; if all inputs reject,
+  output rejects with `AggregateError(errors, "All promises were
+  rejected")` where `errors` is the input-ordered array of
+  rejection reasons. The AggregateError is produced via
+  `jsval_aggregate_error_new`; consumers read
+  `.name` / `.message` through the usual DOMException
+  accessors and `.errors` through `jsval_dom_exception_errors`.
+  All four combinators share the same continuation-registration
+  shape — install a single `jsval_promise_then` handler on the
+  combinator's output promise.
 
 ### Body Consumption Shortcut
 
