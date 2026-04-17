@@ -1,3 +1,17 @@
 # Temporary unicode collation data
 unicode_collation.h
 bench/results/
+
+# Build objects and archives
+*.o
+*.a
+
+# Test binaries (keep sources + fixtures visible)
+test_*
+!test_*.c
+!test_*.h
+!test_*.txt
+!test_*.sh
+test/test_*
+!test/test_*.c
+!test/test_*.h
