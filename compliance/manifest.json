@@ -4935,6 +4935,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored idiomatic WHATWG Fetch stub fixture: fetch() constructs a Request and returns a Promise that rejects with TypeError(\"network not implemented yet\") until the HTTP transport slice lands."
+    },
+    {
+      "id": "jsmx-promises-all-empty",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/all-empty.js",
+      "generated": "compliance/generated/promises/jsmx/all-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.all fixture: empty input fulfills synchronously with []. Exercises the jsval_promise_all n==0 fast path."
+    },
+    {
+      "id": "jsmx-promises-all-fulfilled",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/all-fulfilled.js",
+      "generated": "compliance/generated/promises/jsmx/all-fulfilled.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.all fixture: all inputs pre-fulfilled resolve synchronously with results in input order. Exercises the all-settled fast path in jsval_promise_all."
+    },
+    {
+      "id": "jsmx-promises-all-rejected",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/all-rejected.js",
+      "generated": "compliance/generated/promises/jsmx/all-rejected.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.all fixture: any pre-rejected input rejects the aggregate synchronously with that reason. Exercises the first-rejection fast path in jsval_promise_all."
+    },
+    {
+      "id": "jsmx-promises-all-settled-mix",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/all-settled-mix.js",
+      "generated": "compliance/generated/promises/jsmx/all-settled-mix.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.all fixture: mix of pending and fulfilled inputs. Aggregate stays pending until last input settles; results preserve input order. Exercises the coordinator-list scan inside jsval_microtask_drain."
     }
   ]
 }
