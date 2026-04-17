@@ -6,7 +6,7 @@ all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod t
 libjsmn.a: jsmn.o
 	$(AR) rc $@ $^
 
-libjsmx.a: jsmn.o jsnum.o jscrypto.o jsval.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o
+libjsmx.a: jsmn.o jsnum.o jscrypto.o jsval.o jsval_url.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o
 	$(AR) rc $@ $^
 
 jsstr.o: jsstr.c jsstr.h unicode.h unicode_db.h

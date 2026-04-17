@@ -1353,4 +1353,15 @@ int jsval_response_new_from_parts(jsval_region_t *region,
 		size_t content_length_hint,
 		jsval_t *value_ptr);
 
+struct jsval_url_parts {
+	char scheme[8];
+	char host[256];
+	char port[8];
+	char path[2048];
+	int is_tls;
+};
+
+int jsval_url_extract(jsval_region_t *region, jsval_t url_string,
+		struct jsval_url_parts *parts);
+
 #endif
