@@ -237,6 +237,19 @@ issuing each upstream request in parallel.
   promise rejects with that reason before the continuation runs.
   `jsval_promise_then` propagates the rejection into the
   downstream promise just as in the single-fetch path.
+- **Sibling combinators**: `Promise.race` lowers to
+  `jsval_promise_race(region, inputs, n, &out)` — output
+  settles with the first input to transition from PENDING (in
+  input order if multiple are already settled at call time).
+  `Promise.allSettled` lowers to
+  `jsval_promise_all_settled(region, inputs, n, &out)` — output
+  fulfills with an array of `{status, value}` / `{status, reason}`
+  descriptors once every input has settled, and never rejects.
+  Both share the same continuation-registration shape as
+  `Promise.all` — install a single `jsval_promise_then`
+  handler on the combinator's output promise. `Promise.any`
+  isn't covered yet; it needs `AggregateError`, which jsmx
+  doesn't currently expose.
 
 ### Body Consumption Shortcut
 

@@ -6146,7 +6146,7 @@ void jsval_region_init(jsval_region_t *region, void *buf, size_t len)
 	region->fetch_waitlist_head = 0;
 	region->fetch_waitlist_tail = 0;
 	region->fetch_waitlist_count = 0;
-	region->promise_all_head = 0;
+	region->promise_combinator_head = 0;
 
 	if (buf == NULL || len < head_size || len > UINT32_MAX) {
 		return;
@@ -6182,7 +6182,7 @@ void jsval_region_rebase(jsval_region_t *region, void *buf, size_t len)
 	region->fetch_waitlist_head = 0;
 	region->fetch_waitlist_tail = 0;
 	region->fetch_waitlist_count = 0;
-	region->promise_all_head = 0;
+	region->promise_combinator_head = 0;
 
 	if (buf == NULL || len < sizeof(jsval_pages_t)) {
 		return;
@@ -19961,37 +19961,101 @@ static int jsval_promise_run_reaction(jsval_region_t *region,
 }
 
 /*
- * jsval_promise_all coordinator. Allocated per call to
- * jsval_promise_all; linked into region->promise_all_head until
- * settled. The microtask drain scans the list and settles any
- * coord whose inputs have all fulfilled (or any rejected). No
- * per-input callbacks, no captures — re-entrant by construction.
+ * Promise combinator coordinator. One struct serves Promise.all,
+ * Promise.race, and Promise.allSettled — they differ only in
+ * the settle condition and the settled value. Allocated per
+ * call to any combinator; linked into
+ * region->promise_combinator_head until settled. The microtask
+ * drain scans the list and settles each coord when its
+ * kind-specific condition is met. No per-input callbacks, no
+ * captures — re-entrant by construction.
  */
-typedef struct jsval_promise_all_coord_s {
+typedef enum jsval_promise_combinator_kind_e {
+	JSVAL_PROMISE_COMBINATOR_ALL = 0,
+	JSVAL_PROMISE_COMBINATOR_RACE = 1,
+	JSVAL_PROMISE_COMBINATOR_ALL_SETTLED = 2,
+} jsval_promise_combinator_kind_t;
+
+typedef struct jsval_promise_combinator_coord_s {
 	jsval_off_t next;          /* next coord in list, 0 = end */
 	jsval_off_t inputs_off;    /* offset of jsval_t[n] input array */
-	jsval_t results_array;     /* pre-allocated output array (cap=n) */
+	jsval_t results_array;     /* ALL / ALL_SETTLED: output array.
+				      RACE: undefined. */
 	jsval_t out_promise;       /* downstream promise to resolve/reject */
 	uint32_t n;
-	uint32_t settled;          /* 0 pending, 1 already settled */
-} jsval_promise_all_coord_t;
+	uint16_t settled;          /* 0 pending, 1 already settled */
+	uint16_t kind;             /* jsval_promise_combinator_kind_t */
+} jsval_promise_combinator_coord_t;
 
 /*
- * Scan all pending coords, settling any whose inputs have all
- * fulfilled (resolve with results array) or whose any input has
- * rejected (reject with first rejection reason). Returns 1 if
- * any coord transitioned this pass, 0 otherwise.
+ * Build a per-input result object for Promise.allSettled:
+ *   fulfilled → { status: "fulfilled", value: X }
+ *   rejected  → { status: "rejected",  reason: Y }
  */
-static int jsval_promise_all_scan(jsval_region_t *region)
+static int jsval_promise_all_settled_build_entry(jsval_region_t *region,
+		jsval_t input_promise, jsval_t *entry_out)
+{
+	jsval_promise_state_t state;
+	jsval_t settled_value;
+	jsval_t status_value;
+	jsval_t entry;
+
+	if (jsval_promise_state(region, input_promise, &state) < 0) {
+		return -1;
+	}
+	if (jsval_promise_result(region, input_promise, &settled_value) < 0) {
+		return -1;
+	}
+	if (jsval_object_new(region, 2, &entry) < 0) {
+		return -1;
+	}
+	if (state == JSVAL_PROMISE_STATE_FULFILLED) {
+		if (jsval_string_new_utf8(region,
+				(const uint8_t *)"fulfilled", 9,
+				&status_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, entry,
+				(const uint8_t *)"status", 6, status_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, entry,
+				(const uint8_t *)"value", 5, settled_value) < 0) {
+			return -1;
+		}
+	} else {
+		if (jsval_string_new_utf8(region,
+				(const uint8_t *)"rejected", 8,
+				&status_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, entry,
+				(const uint8_t *)"status", 6, status_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, entry,
+				(const uint8_t *)"reason", 6, settled_value) < 0) {
+			return -1;
+		}
+	}
+	*entry_out = entry;
+	return 0;
+}
+
+/*
+ * Scan all pending combinator coords, settling any whose
+ * kind-specific condition is met. Returns 1 if any coord
+ * transitioned this pass, 0 otherwise.
+ */
+static int jsval_promise_combinator_scan(jsval_region_t *region)
 {
 	jsval_off_t off;
 	int progress = 0;
 
-	for (off = region->promise_all_head; off != 0; ) {
-		jsval_promise_all_coord_t *coord =
-			(jsval_promise_all_coord_t *)(region->base + off);
+	for (off = region->promise_combinator_head; off != 0; ) {
+		jsval_promise_combinator_coord_t *coord =
+			(jsval_promise_combinator_coord_t *)(region->base + off);
 		jsval_t *inputs;
-		int all_fulfilled;
 		size_t i;
 
 		off = coord->next;
@@ -20001,50 +20065,122 @@ static int jsval_promise_all_scan(jsval_region_t *region)
 		}
 
 		inputs = (jsval_t *)(region->base + coord->inputs_off);
-		all_fulfilled = 1;
 
-		for (i = 0; i < coord->n; i++) {
-			jsval_promise_state_t state;
-			if (jsval_promise_state(region, inputs[i], &state) < 0) {
-				continue;
-			}
-			if (state == JSVAL_PROMISE_STATE_REJECTED) {
-				jsval_t reason;
-				if (jsval_promise_result(region, inputs[i],
-						&reason) < 0) {
-					reason = jsval_undefined();
+		switch ((jsval_promise_combinator_kind_t)coord->kind) {
+		case JSVAL_PROMISE_COMBINATOR_ALL: {
+			int all_fulfilled = 1;
+			for (i = 0; i < coord->n; i++) {
+				jsval_promise_state_t state;
+				if (jsval_promise_state(region, inputs[i],
+						&state) < 0) {
+					continue;
 				}
-				(void)jsval_promise_reject(region,
-						coord->out_promise, reason);
+				if (state == JSVAL_PROMISE_STATE_REJECTED) {
+					jsval_t reason;
+					if (jsval_promise_result(region, inputs[i],
+							&reason) < 0) {
+						reason = jsval_undefined();
+					}
+					(void)jsval_promise_reject(region,
+							coord->out_promise, reason);
+					coord->settled = 1;
+					progress = 1;
+					break;
+				}
+				if (state == JSVAL_PROMISE_STATE_PENDING) {
+					all_fulfilled = 0;
+				}
+			}
+			if (coord->settled) {
+				break;
+			}
+			if (all_fulfilled) {
+				for (i = 0; i < coord->n; i++) {
+					jsval_t result;
+					if (jsval_promise_result(region,
+							inputs[i], &result) < 0) {
+						break;
+					}
+					if (jsval_array_set(region,
+							coord->results_array, i,
+							result) < 0) {
+						break;
+					}
+				}
+				(void)jsval_promise_resolve(region,
+						coord->out_promise,
+						coord->results_array);
+				coord->settled = 1;
+				progress = 1;
+			}
+			break;
+		}
+		case JSVAL_PROMISE_COMBINATOR_RACE: {
+			/* First non-pending input in input order wins. */
+			for (i = 0; i < coord->n; i++) {
+				jsval_promise_state_t state;
+				jsval_t settled_value;
+				if (jsval_promise_state(region, inputs[i],
+						&state) < 0) {
+					continue;
+				}
+				if (state == JSVAL_PROMISE_STATE_PENDING) {
+					continue;
+				}
+				if (jsval_promise_result(region, inputs[i],
+						&settled_value) < 0) {
+					settled_value = jsval_undefined();
+				}
+				if (state == JSVAL_PROMISE_STATE_FULFILLED) {
+					(void)jsval_promise_resolve(region,
+							coord->out_promise,
+							settled_value);
+				} else {
+					(void)jsval_promise_reject(region,
+							coord->out_promise,
+							settled_value);
+				}
 				coord->settled = 1;
 				progress = 1;
 				break;
 			}
-			if (state == JSVAL_PROMISE_STATE_PENDING) {
-				all_fulfilled = 0;
-			}
+			break;
 		}
-
-		if (coord->settled) {
-			continue;
-		}
-
-		if (all_fulfilled) {
+		case JSVAL_PROMISE_COMBINATOR_ALL_SETTLED: {
+			int all_settled = 1;
 			for (i = 0; i < coord->n; i++) {
-				jsval_t result;
-				if (jsval_promise_result(region, inputs[i],
-						&result) < 0) {
-					break;
+				jsval_promise_state_t state;
+				if (jsval_promise_state(region, inputs[i],
+						&state) < 0) {
+					continue;
 				}
-				if (jsval_array_set(region, coord->results_array,
-						i, result) < 0) {
+				if (state == JSVAL_PROMISE_STATE_PENDING) {
+					all_settled = 0;
 					break;
 				}
 			}
-			(void)jsval_promise_resolve(region,
-					coord->out_promise, coord->results_array);
-			coord->settled = 1;
-			progress = 1;
+			if (all_settled) {
+				for (i = 0; i < coord->n; i++) {
+					jsval_t entry;
+					if (jsval_promise_all_settled_build_entry(
+							region, inputs[i],
+							&entry) < 0) {
+						break;
+					}
+					if (jsval_array_set(region,
+							coord->results_array, i,
+							entry) < 0) {
+						break;
+					}
+				}
+				(void)jsval_promise_resolve(region,
+						coord->out_promise,
+						coord->results_array);
+				coord->settled = 1;
+				progress = 1;
+			}
+			break;
+		}
 		}
 	}
 
@@ -20052,16 +20188,17 @@ static int jsval_promise_all_scan(jsval_region_t *region)
 }
 
 /*
- * Unlink settled coords from region->promise_all_head. The memory
- * itself isn't freed (arena allocation) — just removed from the
- * scan list so subsequent drains don't walk them.
+ * Unlink settled coords from region->promise_combinator_head. The
+ * memory itself isn't freed (arena allocation) — just removed
+ * from the scan list so subsequent drains don't walk them.
  */
-static void jsval_promise_all_unlink_settled(jsval_region_t *region)
+static void jsval_promise_combinator_unlink_settled(jsval_region_t *region)
 {
-	jsval_off_t *prev_next = &region->promise_all_head;
+	jsval_off_t *prev_next = &region->promise_combinator_head;
 	while (*prev_next != 0) {
-		jsval_promise_all_coord_t *coord =
-			(jsval_promise_all_coord_t *)(region->base + *prev_next);
+		jsval_promise_combinator_coord_t *coord =
+			(jsval_promise_combinator_coord_t *)
+			(region->base + *prev_next);
 		if (coord->settled) {
 			*prev_next = coord->next;
 		} else {
@@ -20283,11 +20420,11 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			return -1;
 		}
 	}
-	if (!jsval_promise_all_scan(region)) {
+	if (!jsval_promise_combinator_scan(region)) {
 		break;
 	}
 	}
-	jsval_promise_all_unlink_settled(region);
+	jsval_promise_combinator_unlink_settled(region);
 	region->microtask_draining = 0;
 	return 0;
 }
@@ -20460,7 +20597,7 @@ int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
 {
 	jsval_t out;
 	jsval_t results_array;
-	jsval_promise_all_coord_t *coord;
+	jsval_promise_combinator_coord_t *coord;
 	jsval_t *inputs_copy;
 	jsval_off_t coord_off;
 	void *ptr;
@@ -20542,10 +20679,10 @@ int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
 	 * and link it into region->promise_all_head so the next
 	 * jsval_microtask_drain scan phase settles it. */
 	if (jsval_region_alloc(region, sizeof(*coord),
-			_Alignof(jsval_promise_all_coord_t), &ptr) < 0) {
+			_Alignof(jsval_promise_combinator_coord_t), &ptr) < 0) {
 		return -1;
 	}
-	coord = (jsval_promise_all_coord_t *)ptr;
+	coord = (jsval_promise_combinator_coord_t *)ptr;
 	coord_off = (jsval_off_t)((uint8_t *)ptr - region->base);
 
 	if (jsval_region_alloc(region, n * sizeof(jsval_t),
@@ -20557,14 +20694,207 @@ int jsval_promise_all(jsval_region_t *region, const jsval_t *inputs,
 		inputs_copy[i] = inputs[i];
 	}
 
-	coord->next = region->promise_all_head;
+	coord->next = region->promise_combinator_head;
 	coord->inputs_off =
 		(jsval_off_t)((uint8_t *)inputs_copy - region->base);
 	coord->results_array = results_array;
 	coord->out_promise = out;
 	coord->n = (uint32_t)n;
 	coord->settled = 0;
-	region->promise_all_head = coord_off;
+	coord->kind = JSVAL_PROMISE_COMBINATOR_ALL;
+	region->promise_combinator_head = coord_off;
+
+	*out_promise = out;
+	return 0;
+}
+
+int jsval_promise_race(jsval_region_t *region, const jsval_t *inputs,
+		size_t n, jsval_t *out_promise)
+{
+	jsval_t out;
+	jsval_promise_combinator_coord_t *coord;
+	jsval_t *inputs_copy;
+	jsval_off_t coord_off;
+	void *ptr;
+	size_t i;
+
+	if (region == NULL || out_promise == NULL ||
+			(n > 0 && inputs == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < n; i++) {
+		if (inputs[i].kind != JSVAL_KIND_PROMISE) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
+	if (jsval_promise_new(region, &out) < 0) {
+		return -1;
+	}
+
+	/* Fast path: first already-settled input wins. n==0 returns a
+	 * pending promise — standard spec behavior (never settles). */
+	for (i = 0; i < n; i++) {
+		jsval_promise_state_t state;
+		jsval_t settled_value;
+		if (jsval_promise_state(region, inputs[i], &state) < 0) {
+			return -1;
+		}
+		if (state == JSVAL_PROMISE_STATE_PENDING) {
+			continue;
+		}
+		if (jsval_promise_result(region, inputs[i],
+				&settled_value) < 0) {
+			return -1;
+		}
+		if (state == JSVAL_PROMISE_STATE_FULFILLED) {
+			if (jsval_promise_resolve(region, out,
+					settled_value) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_promise_reject(region, out,
+					settled_value) < 0) {
+				return -1;
+			}
+		}
+		*out_promise = out;
+		return 0;
+	}
+
+	if (n == 0) {
+		*out_promise = out;
+		return 0;
+	}
+
+	/* Slow path: allocate a coord, wait for an input to settle. */
+	if (jsval_region_alloc(region, sizeof(*coord),
+			_Alignof(jsval_promise_combinator_coord_t), &ptr) < 0) {
+		return -1;
+	}
+	coord = (jsval_promise_combinator_coord_t *)ptr;
+	coord_off = (jsval_off_t)((uint8_t *)ptr - region->base);
+
+	if (jsval_region_alloc(region, n * sizeof(jsval_t),
+			_Alignof(jsval_t), &ptr) < 0) {
+		return -1;
+	}
+	inputs_copy = (jsval_t *)ptr;
+	for (i = 0; i < n; i++) {
+		inputs_copy[i] = inputs[i];
+	}
+
+	coord->next = region->promise_combinator_head;
+	coord->inputs_off =
+		(jsval_off_t)((uint8_t *)inputs_copy - region->base);
+	coord->results_array = jsval_undefined();
+	coord->out_promise = out;
+	coord->n = (uint32_t)n;
+	coord->settled = 0;
+	coord->kind = JSVAL_PROMISE_COMBINATOR_RACE;
+	region->promise_combinator_head = coord_off;
+
+	*out_promise = out;
+	return 0;
+}
+
+int jsval_promise_all_settled(jsval_region_t *region,
+		const jsval_t *inputs, size_t n, jsval_t *out_promise)
+{
+	jsval_t out;
+	jsval_t results_array;
+	jsval_promise_combinator_coord_t *coord;
+	jsval_t *inputs_copy;
+	jsval_off_t coord_off;
+	void *ptr;
+	size_t i;
+	int all_settled;
+
+	if (region == NULL || out_promise == NULL ||
+			(n > 0 && inputs == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	for (i = 0; i < n; i++) {
+		if (inputs[i].kind != JSVAL_KIND_PROMISE) {
+			errno = EINVAL;
+			return -1;
+		}
+	}
+
+	if (jsval_promise_new(region, &out) < 0) {
+		return -1;
+	}
+	if (jsval_array_new(region, n, &results_array) < 0) {
+		return -1;
+	}
+	if (n > 0) {
+		if (jsval_array_set(region, results_array, n - 1,
+				jsval_undefined()) < 0) {
+			return -1;
+		}
+	}
+
+	/* Fast path: all inputs already settled — build entries and
+	 * fulfill synchronously. */
+	all_settled = 1;
+	for (i = 0; i < n; i++) {
+		jsval_promise_state_t state;
+		if (jsval_promise_state(region, inputs[i], &state) < 0) {
+			return -1;
+		}
+		if (state == JSVAL_PROMISE_STATE_PENDING) {
+			all_settled = 0;
+			break;
+		}
+	}
+	if (all_settled) {
+		for (i = 0; i < n; i++) {
+			jsval_t entry;
+			if (jsval_promise_all_settled_build_entry(region,
+					inputs[i], &entry) < 0) {
+				return -1;
+			}
+			if (jsval_array_set(region, results_array, i,
+					entry) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_promise_resolve(region, out, results_array) < 0) {
+			return -1;
+		}
+		*out_promise = out;
+		return 0;
+	}
+
+	/* Slow path. */
+	if (jsval_region_alloc(region, sizeof(*coord),
+			_Alignof(jsval_promise_combinator_coord_t), &ptr) < 0) {
+		return -1;
+	}
+	coord = (jsval_promise_combinator_coord_t *)ptr;
+	coord_off = (jsval_off_t)((uint8_t *)ptr - region->base);
+
+	if (jsval_region_alloc(region, n * sizeof(jsval_t),
+			_Alignof(jsval_t), &ptr) < 0) {
+		return -1;
+	}
+	inputs_copy = (jsval_t *)ptr;
+	for (i = 0; i < n; i++) {
+		inputs_copy[i] = inputs[i];
+	}
+
+	coord->next = region->promise_combinator_head;
+	coord->inputs_off =
+		(jsval_off_t)((uint8_t *)inputs_copy - region->base);
+	coord->results_array = results_array;
+	coord->out_promise = out;
+	coord->n = (uint32_t)n;
+	coord->settled = 0;
+	coord->kind = JSVAL_PROMISE_COMBINATOR_ALL_SETTLED;
+	region->promise_combinator_head = coord_off;
 
 	*out_promise = out;
 	return 0;

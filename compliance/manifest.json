@@ -4975,6 +4975,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Promise.all fixture: mix of pending and fulfilled inputs. Aggregate stays pending until last input settles; results preserve input order. Exercises the coordinator-list scan inside jsval_microtask_drain."
+    },
+    {
+      "id": "jsmx-promises-race-first-fulfilled",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/race-first-fulfilled.js",
+      "generated": "compliance/generated/promises/jsmx/race-first-fulfilled.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.race fixture: first pre-fulfilled input propagates synchronously to the output. Exercises the jsval_promise_race sync fast path."
+    },
+    {
+      "id": "jsmx-promises-race-first-rejected",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/race-first-rejected.js",
+      "generated": "compliance/generated/promises/jsmx/race-first-rejected.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.race fixture: first pre-rejected input propagates its reason synchronously. Exercises the rejection branch of the jsval_promise_race sync fast path."
+    },
+    {
+      "id": "jsmx-promises-allsettled-empty",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/allsettled-empty.js",
+      "generated": "compliance/generated/promises/jsmx/allsettled-empty.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.allSettled fixture: empty input fulfills synchronously with []. Exercises the jsval_promise_all_settled n==0 fast path."
+    },
+    {
+      "id": "jsmx-promises-allsettled-mix",
+      "suite": "promises",
+      "source": "compliance/js/promises/jsmx/allsettled-mix.js",
+      "generated": "compliance/generated/promises/jsmx/allsettled-mix.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Promise.allSettled fixture: mix of pre-fulfilled and pre-rejected inputs produces an array of {status, value/reason} descriptors in input order. Exercises the jsval_promise_all_settled fast path + the per-input descriptor builder."
     }
   ]
 }
