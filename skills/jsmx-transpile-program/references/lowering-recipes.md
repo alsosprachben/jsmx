@@ -63,6 +63,21 @@ codec wrappers as utility functions, not object-model classes:
   where `buf` is a `Uint8Array` / `Int8Array` / `Uint8ClampedArray`
   / `ArrayBuffer`.
 
+**`atob` / `btoa` lowering**. Standard-alphabet base64 with `=`
+padding. jsmx's shape uses `Uint8Array` / `ArrayBuffer` on the
+binary side (not the spec's Latin-1 `DOMString`), matching how
+Node's `Buffer.from(str, 'base64')` is typically used in
+WinterTC handlers:
+
+- `btoa(bytes)` → `jsval_base64_encode(region, bytes, &out)`
+  where `bytes` is a `Uint8Array` / `Int8Array` /
+  `Uint8ClampedArray` / `ArrayBuffer`; output is a base64 jsval
+  string (with `+`, `/`, `=`).
+- `atob(s)` → `jsval_base64_decode(region, s, &out)` where `s`
+  is a base64 jsval string; output is a `Uint8Array`.
+  Base64url characters (`-`, `_`) are rejected by the standard
+  decoder — use the internal base64url path for JWK transport.
+
 ## Objects, Arrays, Sets, And Maps
 
 Prefer the direct helper surface already established in the corpus:

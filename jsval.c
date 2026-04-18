@@ -9170,6 +9170,177 @@ jsval_base64url_decode(const uint8_t *input, size_t input_len, uint8_t *buf,
 }
 
 static int
+jsval_base64_std_value(uint8_t ch)
+{
+	if (ch >= 'A' && ch <= 'Z') {
+		return ch - 'A';
+	}
+	if (ch >= 'a' && ch <= 'z') {
+		return ch - 'a' + 26;
+	}
+	if (ch >= '0' && ch <= '9') {
+		return ch - '0' + 52;
+	}
+	if (ch == '+') {
+		return 62;
+	}
+	if (ch == '/') {
+		return 63;
+	}
+	return -1;
+}
+
+static int
+jsval_base64_std_encode(const uint8_t *input, size_t input_len, uint8_t *buf,
+		size_t cap, size_t *len_ptr)
+{
+	static const uint8_t alphabet[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	size_t out_len = ((input_len + 2) / 3) * 4;
+	size_t i;
+	size_t out = 0;
+
+	if (len_ptr != NULL) {
+		*len_ptr = out_len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < out_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	for (i = 0; i + 2 < input_len; i += 3) {
+		uint32_t word = ((uint32_t)input[i] << 16)
+			| ((uint32_t)input[i + 1] << 8) | input[i + 2];
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+		buf[out++] = alphabet[(word >> 6) & 0x3f];
+		buf[out++] = alphabet[word & 0x3f];
+	}
+	if (input_len - i == 1) {
+		uint32_t word = (uint32_t)input[i] << 16;
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+		buf[out++] = (uint8_t)'=';
+		buf[out++] = (uint8_t)'=';
+	} else if (input_len - i == 2) {
+		uint32_t word = ((uint32_t)input[i] << 16)
+			| ((uint32_t)input[i + 1] << 8);
+
+		buf[out++] = alphabet[(word >> 18) & 0x3f];
+		buf[out++] = alphabet[(word >> 12) & 0x3f];
+		buf[out++] = alphabet[(word >> 6) & 0x3f];
+		buf[out++] = (uint8_t)'=';
+	}
+	return 0;
+}
+
+static int
+jsval_base64_std_decode(const uint8_t *input, size_t input_len, uint8_t *buf,
+		size_t cap, size_t *len_ptr)
+{
+	size_t effective_len = input_len;
+	size_t pad_count = 0;
+	size_t out_len;
+	size_t cursor = 0;
+	size_t out = 0;
+	size_t whole_groups;
+	size_t trailing;
+
+	if ((input == NULL && input_len > 0) || (buf == NULL && cap > 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	/* Standard base64 is always padded to a multiple of 4. Accept
+	 * trailing "=" (one or two) and drop them from the effective
+	 * length before decoding. */
+	if (input_len > 0 && (input_len % 4) != 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	while (effective_len > 0 && input[effective_len - 1] == '=' &&
+			pad_count < 2) {
+		effective_len--;
+		pad_count++;
+	}
+	if (effective_len > 0 && input[effective_len - 1] == '=') {
+		/* More than two '=' trailing is never valid. */
+		errno = EINVAL;
+		return -1;
+	}
+	if ((effective_len % 4) == 1) {
+		errno = EINVAL;
+		return -1;
+	}
+	whole_groups = effective_len / 4;
+	trailing = effective_len % 4;
+	out_len = whole_groups * 3;
+	if (trailing == 2) {
+		out_len += 1;
+	} else if (trailing == 3) {
+		out_len += 2;
+	}
+	if (len_ptr != NULL) {
+		*len_ptr = out_len;
+	}
+	if (buf == NULL) {
+		return 0;
+	}
+	if (cap < out_len) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	while (cursor + 4 <= effective_len) {
+		int a = jsval_base64_std_value(input[cursor]);
+		int b = jsval_base64_std_value(input[cursor + 1]);
+		int c = jsval_base64_std_value(input[cursor + 2]);
+		int d = jsval_base64_std_value(input[cursor + 3]);
+		uint32_t word;
+
+		if (a < 0 || b < 0 || c < 0 || d < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12)
+			| ((uint32_t)c << 6) | (uint32_t)d;
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+		buf[out++] = (uint8_t)((word >> 8) & 0xff);
+		buf[out++] = (uint8_t)(word & 0xff);
+		cursor += 4;
+	}
+	if (trailing == 2) {
+		int a = jsval_base64_std_value(input[cursor]);
+		int b = jsval_base64_std_value(input[cursor + 1]);
+		uint32_t word;
+
+		if (a < 0 || b < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12);
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+	} else if (trailing == 3) {
+		int a = jsval_base64_std_value(input[cursor]);
+		int b = jsval_base64_std_value(input[cursor + 1]);
+		int c = jsval_base64_std_value(input[cursor + 2]);
+		uint32_t word;
+
+		if (a < 0 || b < 0 || c < 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		word = ((uint32_t)a << 18) | ((uint32_t)b << 12)
+			| ((uint32_t)c << 6);
+		buf[out++] = (uint8_t)((word >> 16) & 0xff);
+		buf[out++] = (uint8_t)((word >> 8) & 0xff);
+	}
+	return 0;
+}
+
+static int
 jsval_subtle_crypto_mask_unused_key_bits(uint8_t *bytes, size_t byte_len,
 		uint32_t bit_len)
 {
@@ -29626,6 +29797,131 @@ int jsval_text_decode_utf8(jsval_region_t *region, jsval_t buffer_value,
 	}
 
 	return jsval_string_new_utf8(region, bytes, len, string_out);
+}
+
+int jsval_base64_encode(jsval_region_t *region, jsval_t input_value,
+		jsval_t *string_out)
+{
+	uint8_t *in_bytes;
+	size_t in_len = 0;
+	jsval_t backing_buffer;
+	size_t b64_len = 0;
+	void *out_ptr;
+	uint8_t *b64_buf;
+
+	if (region == NULL || string_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (input_value.kind == JSVAL_KIND_TYPED_ARRAY) {
+		jsval_typed_array_kind_t kind;
+		if (jsval_typed_array_kind(region, input_value, &kind) < 0) {
+			return -1;
+		}
+		if (kind != JSVAL_TYPED_ARRAY_UINT8 &&
+				kind != JSVAL_TYPED_ARRAY_UINT8_CLAMPED &&
+				kind != JSVAL_TYPED_ARRAY_INT8) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_typed_array_buffer(region, input_value,
+				&backing_buffer) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_bytes_mut(region, backing_buffer,
+				&in_bytes, &in_len) < 0) {
+			return -1;
+		}
+	} else if (input_value.kind == JSVAL_KIND_ARRAY_BUFFER) {
+		if (jsval_array_buffer_bytes_mut(region, input_value,
+				&in_bytes, &in_len) < 0) {
+			return -1;
+		}
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_base64_std_encode(in_bytes, in_len, NULL, 0,
+			&b64_len) < 0) {
+		return -1;
+	}
+	if (jsval_region_alloc(region, b64_len == 0 ? 1 : b64_len,
+			_Alignof(uint8_t), &out_ptr) < 0) {
+		return -1;
+	}
+	b64_buf = (uint8_t *)out_ptr;
+	if (b64_len > 0) {
+		if (jsval_base64_std_encode(in_bytes, in_len, b64_buf,
+				b64_len, NULL) < 0) {
+			return -1;
+		}
+	}
+	return jsval_string_new_utf8(region, b64_buf, b64_len, string_out);
+}
+
+int jsval_base64_decode(jsval_region_t *region, jsval_t input_value,
+		jsval_t *uint8array_out)
+{
+	size_t string_len = 0;
+	void *str_ptr;
+	uint8_t *str_bytes;
+	size_t bin_len = 0;
+	jsval_t typed_array;
+	jsval_t backing_buffer;
+	uint8_t *out_bytes;
+	size_t out_cap = 0;
+
+	if (region == NULL || uint8array_out == NULL ||
+			input_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_string_copy_utf8(region, input_value, NULL, 0,
+			&string_len) < 0) {
+		return -1;
+	}
+	if (jsval_region_alloc(region, string_len == 0 ? 1 : string_len,
+			_Alignof(uint8_t), &str_ptr) < 0) {
+		return -1;
+	}
+	str_bytes = (uint8_t *)str_ptr;
+	if (string_len > 0) {
+		if (jsval_string_copy_utf8(region, input_value, str_bytes,
+				string_len, NULL) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_base64_std_decode(str_bytes, string_len, NULL, 0,
+			&bin_len) < 0) {
+		return -1;
+	}
+
+	if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8,
+			bin_len, &typed_array) < 0) {
+		return -1;
+	}
+	if (jsval_typed_array_buffer(region, typed_array,
+			&backing_buffer) < 0) {
+		return -1;
+	}
+	if (jsval_array_buffer_bytes_mut(region, backing_buffer,
+			&out_bytes, &out_cap) < 0) {
+		return -1;
+	}
+
+	if (bin_len > 0) {
+		if (jsval_base64_std_decode(str_bytes, string_len, out_bytes,
+				bin_len, NULL) < 0) {
+			return -1;
+		}
+	}
+
+	*uint8array_out = typed_array;
+	return 0;
 }
 
 size_t jsval_object_size(jsval_region_t *region, jsval_t object)

@@ -5125,6 +5125,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored TextEncoder/TextDecoder error fixture: jsval_text_encode_utf8 rejects non-string input; jsval_text_decode_utf8 rejects non-buffer input (number, undefined)."
+    },
+    {
+      "id": "jsmx-wintertc-base64-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/base64-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/base64-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored standard base64 parity fixture: encode \"foo\" → \"Zm9v\"; encode [0xfb, 0xff, 0xff] → \"+///\" (verifies + and / alphabet); decode round-trips both. Exercises jsval_base64_encode / _decode on Uint8Array and ArrayBuffer inputs."
+    },
+    {
+      "id": "jsmx-wintertc-base64-padding",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/base64-padding.js",
+      "generated": "compliance/generated/wintertc/jsmx/base64-padding.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored base64 padding fixture: 1-byte input encodes to \"Zg==\"; 2-byte input encodes to \"Zm8=\"; both decode back correctly. Exercises the padding emit and accept paths."
+    },
+    {
+      "id": "jsmx-wintertc-base64-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/base64-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/base64-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored base64 error fixture: decode rejects base64url-only characters (- and _), non-multiple-of-4 length, non-string input; encode rejects non-buffer input."
     }
   ]
 }

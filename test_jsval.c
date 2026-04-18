@@ -5540,6 +5540,131 @@ static void test_text_encoder_decoder_semantics(void)
 	assert(jsval_text_decode_utf8(&region, bad, &decoded) < 0);
 }
 
+static int
+base64_expect_string(jsval_region_t *region, jsval_t value, const char *expected)
+{
+	size_t expected_len = strlen(expected);
+	size_t len = 0;
+	uint8_t buf[64];
+	if (value.kind != JSVAL_KIND_STRING) {
+		return 0;
+	}
+	if (jsval_string_copy_utf8(region, value, NULL, 0, &len) < 0 ||
+			len != expected_len || len >= sizeof(buf)) {
+		return 0;
+	}
+	if (jsval_string_copy_utf8(region, value, buf, len, NULL) < 0) {
+		return 0;
+	}
+	return memcmp(buf, expected, len) == 0;
+}
+
+static void test_base64_codec_semantics(void)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t ab;
+	jsval_t encoded;
+	jsval_t decoded;
+	jsval_t backing;
+	jsval_t bad;
+	uint8_t *bytes;
+	size_t len = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* Empty: [] → "". */
+	assert(jsval_array_buffer_new(&region, 1, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	/* Override to zero length via a typed_array_new(0). */
+	{
+		jsval_t zero_ta;
+		assert(jsval_typed_array_new(&region, JSVAL_TYPED_ARRAY_UINT8, 0,
+				&zero_ta) == 0);
+		assert(jsval_base64_encode(&region, zero_ta, &encoded) == 0);
+		assert(base64_expect_string(&region, encoded, ""));
+	}
+
+	/* 1 byte → 4 chars with "==" padding. [0x66] → "Zg==". */
+	assert(jsval_array_buffer_new(&region, 1, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	bytes[0] = 0x66;
+	assert(jsval_base64_encode(&region, ab, &encoded) == 0);
+	assert(base64_expect_string(&region, encoded, "Zg=="));
+
+	/* 2 bytes → 4 chars with single "=". [0x66, 0x6f] → "Zm8=". */
+	assert(jsval_array_buffer_new(&region, 2, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	bytes[0] = 0x66; bytes[1] = 0x6f;
+	assert(jsval_base64_encode(&region, ab, &encoded) == 0);
+	assert(base64_expect_string(&region, encoded, "Zm8="));
+
+	/* 3 bytes → 4 chars no padding. [0x66, 0x6f, 0x6f] → "Zm9v". */
+	assert(jsval_array_buffer_new(&region, 3, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	bytes[0] = 0x66; bytes[1] = 0x6f; bytes[2] = 0x6f;
+	assert(jsval_base64_encode(&region, ab, &encoded) == 0);
+	assert(base64_expect_string(&region, encoded, "Zm9v"));
+
+	/* Standard-alphabet-only: [0xfb, 0xff, 0xff] → "+///". */
+	assert(jsval_array_buffer_new(&region, 3, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	bytes[0] = 0xfb; bytes[1] = 0xff; bytes[2] = 0xff;
+	assert(jsval_base64_encode(&region, ab, &encoded) == 0);
+	assert(base64_expect_string(&region, encoded, "+///"));
+
+	/* Round-trip: decode "Zm9v" → [0x66, 0x6f, 0x6f]. */
+	{
+		jsval_t b64_str;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"Zm9v", 4,
+				&b64_str) == 0);
+		assert(jsval_base64_decode(&region, b64_str, &decoded) == 0);
+		assert(decoded.kind == JSVAL_KIND_TYPED_ARRAY);
+		assert(jsval_typed_array_length(&region, decoded) == 3);
+		assert(jsval_typed_array_buffer(&region, decoded, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&len) == 0);
+		assert(bytes[0] == 0x66 && bytes[1] == 0x6f && bytes[2] == 0x6f);
+	}
+
+	/* Decode with "==" padding. "Zg==" → [0x66]. */
+	{
+		jsval_t b64_str;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"Zg==", 4,
+				&b64_str) == 0);
+		assert(jsval_base64_decode(&region, b64_str, &decoded) == 0);
+		assert(jsval_typed_array_length(&region, decoded) == 1);
+		assert(jsval_typed_array_buffer(&region, decoded, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&len) == 0);
+		assert(bytes[0] == 0x66);
+	}
+
+	/* Base64url characters "-" and "_" should be rejected. */
+	{
+		jsval_t b64_str;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"ab-d", 4,
+				&b64_str) == 0);
+		assert(jsval_base64_decode(&region, b64_str, &decoded) < 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"ab_d", 4,
+				&b64_str) == 0);
+		assert(jsval_base64_decode(&region, b64_str, &decoded) < 0);
+	}
+
+	/* Invalid length (not a multiple of 4) rejected. */
+	{
+		jsval_t b64_str;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"Zm9", 3,
+				&b64_str) == 0);
+		assert(jsval_base64_decode(&region, b64_str, &decoded) < 0);
+	}
+
+	/* Error paths: non-buffer encode input, non-string decode input. */
+	bad = jsval_number(42.0);
+	assert(jsval_base64_encode(&region, bad, &encoded) < 0);
+	assert(jsval_base64_decode(&region, bad, &decoded) < 0);
+}
+
 static void test_set_semantics(void)
 {
 	uint8_t storage[32768];
@@ -12841,6 +12966,7 @@ int main(void)
 	test_promise_all_settled_semantics();
 	test_promise_any_semantics();
 	test_text_encoder_decoder_semantics();
+	test_base64_codec_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();
