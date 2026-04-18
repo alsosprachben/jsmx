@@ -5205,6 +5205,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored URL.canParse / URL.parse parity fixture: valid absolute URL → true / URL; relative URL without base → false / null; relative URL with base → true / resolved URL; invalid hostname → false / null. Both wrappers are spec-non-throwing."
+    },
+    {
+      "id": "jsmx-json-parity",
+      "suite": "json",
+      "source": "compliance/js/json/jsmx/json-parity.js",
+      "generated": "compliance/generated/json/jsmx/json-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored JSON parity fixture: parse + serialize round-trip for empty object, empty array, and a nested mixed structure with number/bool/null leaves. Verifies accessor equivalence and byte-identical re-serialization."
+    },
+    {
+      "id": "jsmx-json-escapes",
+      "suite": "json",
+      "source": "compliance/js/json/jsmx/json-escapes.js",
+      "generated": "compliance/generated/json/jsmx/json-escapes.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored JSON escape-codec fidelity fixture: simple escapes (\\\", \\\\, \\n, \\t), \\u0041 BMP char, surrogate-pair \\ud83d\\ude00 emoji (4-byte UTF-8 round-trip), plain strings."
+    },
+    {
+      "id": "jsmx-json-errors",
+      "suite": "json",
+      "source": "compliance/js/json/jsmx/json-errors.js",
+      "generated": "compliance/generated/json/jsmx/json-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored JSON error-path fixture: parse rejects malformed input; serialize rejects undefined and NaN with ENOTSUP; circular references with ELOOP."
     }
   ]
 }

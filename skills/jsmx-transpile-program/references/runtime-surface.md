@@ -139,6 +139,10 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_microtask_pending(...)`
     - `jsval_region_set_scheduler(...)`
     - `jsval_region_get_scheduler(...)`
+  - JSON parse/serialize helpers through:
+    - `jsval_json_parse(...)` — JSON.parse equivalent (bytes → jsval tree)
+    - `jsval_copy_json(...)` — JSON.stringify equivalent (jsval → compact JSON bytes; measure-then-fill)
+    - `jsval_is_json_backed(...)` — detect a JSON-lazy jsval vs. a native one
   - optional feature-gated WinterTC crypto through:
     - `jsval_crypto_new(...)`
     - `jsval_crypto_subtle(...)`
