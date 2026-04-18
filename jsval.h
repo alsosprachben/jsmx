@@ -1265,6 +1265,18 @@ int jsval_response_array_buffer(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr);
 int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr);
+/*
+ * Response.body getter: returns a ReadableStream wrapping the Response's
+ * body. If the Response has no body (!has_body) or its body is already
+ * used, returns JSVAL_KIND_NULL. Otherwise returns a new
+ * JSVAL_KIND_READABLE_STREAM and flips bodyUsed to 1 — this is a
+ * Phase-1B simplification that diverges from WHATWG (which only flips
+ * bodyUsed when the stream is drained). Subsequent consumer calls
+ * (text/json/arrayBuffer/bytes) reject with the usual body-already-used
+ * TypeError. Returns 0 on success, -1 with errno on error.
+ */
+int jsval_response_body(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr);
 
 int jsval_fetch(jsval_region_t *region, jsval_t input_value,
 		jsval_t init_value, int have_init, jsval_t *promise_ptr);

@@ -5445,6 +5445,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Request body already-used error path: first text() fulfills and sets bodyUsed; second text() (and cross-consumer json()) returns a Promise rejected with DOMException(name='TypeError', message='body already used')."
+    },
+    {
+      "id": "jsmx-streams-readable-stream-from-bytes-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/readable-stream-from-bytes-parity.js",
+      "generated": "compliance/generated/streams/jsmx/readable-stream-from-bytes-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored ReadableStream.new_from_bytes parity: a stream over 'hello' yields a single Uint8Array chunk of 5 bytes via reader.read(), then {done:true} on every subsequent read."
+    },
+    {
+      "id": "jsmx-streams-readable-stream-response-body-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/readable-stream-response-body-parity.js",
+      "generated": "compliance/generated/streams/jsmx/readable-stream-response-body-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Response.body parity: .body returns a ReadableStream over the body bytes; accessing .body flips bodyUsed (Phase-1B simplification); subsequent response.text() rejects with TypeError('body already used'); reader.read() drains to {value: Uint8Array, done:false} then {done:true}."
+    },
+    {
+      "id": "jsmx-streams-readable-stream-reader-lock-errors",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/readable-stream-reader-lock-errors.js",
+      "generated": "compliance/generated/streams/jsmx/readable-stream-reader-lock-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored ReadableStream reader-lock parity: first getReader() succeeds and locked==1; second getReader() fails with errno EBUSY; releaseLock() clears the lock so a fresh getReader() succeeds."
+    },
+    {
+      "id": "jsmx-streams-readable-stream-cancel-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/readable-stream-cancel-parity.js",
+      "generated": "compliance/generated/streams/jsmx/readable-stream-cancel-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored ReadableStream cancel parity: cancel() fulfills with undefined, drops buffered source bytes, and subsequent reader.read() resolves with {done:true} instead of the unread payload."
     }
   ]
 }

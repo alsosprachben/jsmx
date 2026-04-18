@@ -37248,6 +37248,59 @@ int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 			jsval_body_resolve_bytes, JSVAL_BODY_CONSUME_BYTES);
 }
 
+int jsval_response_body(jsval_region_t *region, jsval_t response,
+		jsval_t *value_ptr)
+{
+	jsval_native_response_t *native;
+	jsval_t stream = jsval_undefined();
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_response(region, response);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!native->has_body || native->body_used) {
+		*value_ptr = jsval_null();
+		return 0;
+	}
+	if (native->body_is_streaming) {
+		jsval_native_body_source_t *src =
+				jsval_native_body_source(region, native->body_source_off);
+		if (src == NULL || src->vtable == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_readable_stream_new_from_source(region, src->vtable,
+				src->userdata, &stream) < 0) {
+			return -1;
+		}
+	} else {
+		uint8_t *bytes = NULL;
+		size_t len = 0;
+		if (jsval_array_buffer_bytes_mut(region, native->body_buffer,
+				&bytes, &len) < 0) {
+			return -1;
+		}
+		if (jsval_readable_stream_new_from_bytes(region, bytes, len,
+				&stream) < 0) {
+			return -1;
+		}
+	}
+	/* Re-lookup: allocations above bumped the region, but base is stable. */
+	native = jsval_native_response(region, response);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->body_used = 1;
+	*value_ptr = stream;
+	return 0;
+}
+
 /* -------------------- fetch() stub --------------------- */
 
 int jsval_request_body_snapshot(jsval_region_t *region, jsval_t request,
