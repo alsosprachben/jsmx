@@ -12924,6 +12924,265 @@ static void test_fetch_body_drain_semantics(void)
 	}
 }
 
+static int read_result_done(jsval_region_t *region, jsval_t result)
+{
+	jsval_t done_value;
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"done", 4,
+			&done_value) < 0) {
+		return -1;
+	}
+	return done_value.kind == JSVAL_KIND_BOOL ? done_value.as.boolean : -1;
+}
+
+static int read_result_value_bytes(jsval_region_t *region, jsval_t result,
+		uint8_t *buf, size_t cap, size_t *len_out)
+{
+	jsval_t value;
+	jsval_typed_array_kind_t kind;
+	size_t len;
+	jsval_t backing;
+	uint8_t *bytes;
+	size_t bytes_len = 0;
+
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"value", 5,
+			&value) < 0) {
+		return -1;
+	}
+	if (value.kind != JSVAL_KIND_TYPED_ARRAY) {
+		return -1;
+	}
+	if (jsval_typed_array_kind(region, value, &kind) < 0
+			|| kind != JSVAL_TYPED_ARRAY_UINT8) {
+		return -1;
+	}
+	len = jsval_typed_array_length(region, value);
+	if (len > cap) {
+		return -1;
+	}
+	if (jsval_typed_array_buffer(region, value, &backing) < 0) {
+		return -1;
+	}
+	if (jsval_array_buffer_bytes_mut(region, backing, &bytes, &bytes_len) < 0
+			|| bytes_len < len) {
+		return -1;
+	}
+	if (len > 0) {
+		memcpy(buf, bytes, len);
+	}
+	if (len_out != NULL) {
+		*len_out = len;
+	}
+	return 0;
+}
+
+static void test_readable_stream_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. from_bytes: read single chunk synchronously, then EOF. */
+	{
+		jsval_t stream;
+		jsval_t reader;
+		jsval_t promise;
+		jsval_t result;
+		jsval_promise_state_t state;
+		int locked = 0;
+		uint8_t buf[32];
+		size_t len = 0;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello", 5, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(jsval_readable_stream_locked(&region, stream, &locked) == 0);
+		assert(locked == 0);
+
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader)
+				== 0);
+		assert(reader.kind == JSVAL_KIND_READABLE_STREAM_READER);
+		assert(jsval_readable_stream_locked(&region, stream, &locked) == 0);
+		assert(locked == 1);
+
+		assert(jsval_readable_stream_reader_read(&region, reader, &promise)
+				== 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, buf, sizeof(buf),
+				&len) == 0);
+		assert(len == 5);
+		assert(memcmp(buf, "hello", 5) == 0);
+
+		/* Second read: EOF. */
+		assert(jsval_readable_stream_reader_read(&region, reader, &promise)
+				== 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+
+		/* Third read on closed stream: still done. */
+		assert(jsval_readable_stream_reader_read(&region, reader, &promise)
+				== 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 2. Lock semantics: getReader twice fails; releaseLock; getReader
+	 * succeeds. */
+	{
+		jsval_t stream;
+		jsval_t reader1;
+		jsval_t reader2;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"abc", 3, &stream) == 0);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader1)
+				== 0);
+		errno = 0;
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader2)
+				< 0);
+		assert(errno == EBUSY);
+		assert(jsval_readable_stream_reader_release_lock(&region, reader1)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader2)
+				== 0);
+	}
+
+	/* 3. Cancel: resolves subsequent reads with done:true; bytes-source
+	 * close is a no-op but state transitions correctly. */
+	{
+		jsval_t stream;
+		jsval_t reader;
+		jsval_t cancel_promise;
+		jsval_t read_promise;
+		jsval_t result;
+		jsval_promise_state_t state;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"abcdef", 6, &stream) == 0);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader)
+				== 0);
+		assert(jsval_readable_stream_cancel(&region, stream,
+				jsval_undefined(), &cancel_promise) == 0);
+		assert(jsval_promise_state(&region, cancel_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(jsval_readable_stream_reader_read(&region, reader,
+				&read_promise) == 0);
+		assert(jsval_promise_state(&region, read_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, read_promise, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 4. from_source with stuttered chunks exercises the microtask pump.
+	 * chunk_size=3 means a 7-byte payload takes 3 reads. The second read()
+	 * is queued behind the first pump and resolved across drains. */
+	{
+		static const uint8_t body[] = "hello, world";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 3, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		jsval_t stream;
+		jsval_t reader;
+		jsval_t p1;
+		jsval_t p2;
+		jsval_t p3;
+		jsval_t p4;
+		jsval_t p5;
+		jsval_t p_eof;
+		jsval_t result;
+		jsval_promise_state_t state;
+		uint8_t chunk[16];
+		size_t len = 0;
+		uint8_t accum[32];
+		size_t accum_len = 0;
+
+		assert(jsval_readable_stream_new_from_source(&region,
+				&fake_body_vtable, &src, &stream) == 0);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader)
+				== 0);
+
+		/* First read pulls the first chunk synchronously (READY, 3 bytes). */
+		assert(jsval_readable_stream_reader_read(&region, reader, &p1) == 0);
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		/* Subsequent reads queue + pump; drain to settle. */
+		assert(jsval_readable_stream_reader_read(&region, reader, &p2) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &p3) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &p4) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &p5) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		{
+			jsval_t ps[5] = {p1, p2, p3, p4, p5};
+			size_t i;
+			for (i = 0; i < 5; i++) {
+				assert(jsval_promise_state(&region, ps[i], &state) == 0);
+				assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+				assert(jsval_promise_result(&region, ps[i], &result) == 0);
+				if (read_result_done(&region, result) == 1) {
+					break;
+				}
+				assert(read_result_value_bytes(&region, result, chunk,
+						sizeof(chunk), &len) == 0);
+				assert(accum_len + len <= sizeof(accum));
+				memcpy(accum + accum_len, chunk, len);
+				accum_len += len;
+			}
+		}
+		assert(accum_len == sizeof(body) - 1);
+		assert(memcmp(accum, body, accum_len) == 0);
+		assert(src.close_calls == 1);
+
+		/* Final read on closed stream returns done. */
+		assert(jsval_readable_stream_reader_read(&region, reader, &p_eof)
+				== 0);
+		assert(jsval_promise_state(&region, p_eof, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, p_eof, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 5. from_source error path: source returns ERROR; pending reads
+	 * reject with DOMException. */
+	{
+		static const uint8_t body[] = "irrelevant";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 2, .fail_after = 0,
+			.reads = 0, .close_calls = 0,
+		};
+		jsval_t stream;
+		jsval_t reader;
+		jsval_t promise;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_readable_stream_new_from_source(&region,
+				&fake_body_vtable, &src, &stream) == 0);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &promise)
+				== 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, promise, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -13033,6 +13292,7 @@ int main(void)
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
 	test_fetch_body_drain_semantics();
+	test_readable_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

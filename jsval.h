@@ -47,7 +47,9 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_PROMISE = 24,
 	JSVAL_KIND_HEADERS = 25,
 	JSVAL_KIND_REQUEST = 26,
-	JSVAL_KIND_RESPONSE = 27
+	JSVAL_KIND_RESPONSE = 27,
+	JSVAL_KIND_READABLE_STREAM = 28,
+	JSVAL_KIND_READABLE_STREAM_READER = 29
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -1292,6 +1294,35 @@ typedef struct jsval_body_source_vtable_s {
 			size_t *out_len, jsval_body_source_status_t *status_ptr);
 	void (*close)(void *userdata);
 } jsval_body_source_vtable_t;
+
+/*
+ * ReadableStream: minimal WHATWG-shaped facade over the body-source vtable.
+ *
+ * A stream wraps a jsval_body_source_vtable_t + userdata (foundational path)
+ * or a byte buffer (in-memory shortcut). Readers drain one chunk per
+ * reader.read() via the microtask-pump pattern: READY fulfills with a
+ * Uint8Array chunk, EOF fulfills with { done: true }, ERROR rejects with
+ * a DOMException, PENDING queues the read until the next drain.
+ *
+ * Phase 1 scope: no controller-based construction (new ReadableStream({pull})),
+ * no tee(), no pipeTo/pipeThrough, no BYOB readers, no async iteration.
+ * Reader.read() returns a Promise<{ value: Uint8Array | undefined, done: bool }>.
+ */
+int jsval_readable_stream_new_from_source(jsval_region_t *region,
+		const jsval_body_source_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr);
+int jsval_readable_stream_new_from_bytes(jsval_region_t *region,
+		const uint8_t *bytes, size_t len, jsval_t *value_ptr);
+int jsval_readable_stream_locked(jsval_region_t *region, jsval_t stream,
+		int *locked_ptr);
+int jsval_readable_stream_get_reader(jsval_region_t *region, jsval_t stream,
+		jsval_t *reader_ptr);
+int jsval_readable_stream_reader_release_lock(jsval_region_t *region,
+		jsval_t reader);
+int jsval_readable_stream_reader_read(jsval_region_t *region, jsval_t reader,
+		jsval_t *promise_ptr);
+int jsval_readable_stream_cancel(jsval_region_t *region, jsval_t stream,
+		jsval_t reason, jsval_t *promise_ptr);
 
 typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,

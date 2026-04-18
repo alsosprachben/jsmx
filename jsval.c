@@ -324,7 +324,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_RSA_PSS = 12,
 	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13,
 	JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN = 14,
-	JSVAL_MICROTASK_KIND_FETCH_REQUEST = 15
+	JSVAL_MICROTASK_KIND_FETCH_REQUEST = 15,
+	JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP = 16
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -651,6 +652,54 @@ typedef struct jsval_native_microtask_fetch_body_drain_s {
 } jsval_native_microtask_fetch_body_drain_t;
 
 /*
+ * ReadableStream state. `state` is 0=readable, 1=closed, 2=errored.
+ * `reader_off` is 0 when unlocked. Pending reads form a FIFO of
+ * jsval_native_readable_stream_pending_read_t nodes. `pump_scheduled`
+ * prevents stacking multiple pump microtasks for the same stream.
+ */
+typedef enum jsval_readable_stream_state_e {
+	JSVAL_READABLE_STREAM_STATE_READABLE = 0,
+	JSVAL_READABLE_STREAM_STATE_CLOSED = 1,
+	JSVAL_READABLE_STREAM_STATE_ERRORED = 2
+} jsval_readable_stream_state_t;
+
+typedef struct jsval_native_readable_stream_s {
+	jsval_off_t source_off;
+	jsval_off_t reader_off;
+	jsval_off_t pending_reads_head;
+	jsval_off_t pending_reads_tail;
+	jsval_t error_reason;
+	uint8_t state;
+	uint8_t pump_scheduled;
+	uint8_t reserved[6];
+} jsval_native_readable_stream_t;
+
+typedef struct jsval_native_readable_stream_reader_s {
+	jsval_off_t stream_off;
+	uint8_t reserved[4];
+} jsval_native_readable_stream_reader_t;
+
+typedef struct jsval_native_readable_stream_pending_read_s {
+	jsval_off_t next_off;
+	jsval_off_t promise_off;
+} jsval_native_readable_stream_pending_read_t;
+
+typedef struct jsval_native_microtask_readable_stream_pump_s {
+	jsval_native_microtask_t base;
+	jsval_off_t stream_off;
+} jsval_native_microtask_readable_stream_pump_t;
+
+/*
+ * In-memory byte source userdata for jsval_readable_stream_new_from_bytes.
+ * Allocated immediately after a jsval_native_body_source_t in the region;
+ * the `len` bytes follow the struct.
+ */
+typedef struct jsval_native_readable_stream_bytes_source_s {
+	size_t len;
+	size_t cursor;
+} jsval_native_readable_stream_bytes_source_t;
+
+/*
  * Outbound-fetch microtask. Holds the pending Promise plus the transport
  * vtable + opaque state allocated by the transport's begin callback.
  * Pointers to the vtable and state are embedder-owned (not region-owned);
@@ -787,6 +836,8 @@ static int jsval_fetch_run_body_drain(jsval_region_t *region,
 		jsval_native_microtask_fetch_body_drain_t *task, jsval_off_t task_off);
 static int jsval_fetch_run_request(jsval_region_t *region,
 		jsval_native_microtask_fetch_request_t *task, jsval_off_t task_off);
+static int jsval_readable_stream_run_pump(jsval_region_t *region,
+		jsval_native_microtask_readable_stream_pump_t *task);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -1996,6 +2047,8 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		return 1;
 	default:
 		return 0;
@@ -3565,6 +3618,8 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -3720,6 +3775,8 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3801,6 +3858,8 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3901,6 +3960,8 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -4079,6 +4140,8 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -20706,6 +20769,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			}
 			break;
 		}
+		case JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP:
+		{
+			jsval_native_microtask_readable_stream_pump_t *pump_task =
+				(jsval_native_microtask_readable_stream_pump_t *)task;
+
+			if (jsval_readable_stream_run_pump(region, pump_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
 		default:
 			region->microtask_draining = 0;
 			errno = EINVAL;
@@ -32976,6 +33050,8 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -33080,6 +33156,8 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		return 1;
 	default:
 		return 0;
@@ -33171,6 +33249,8 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_HEADERS:
 	case JSVAL_KIND_REQUEST:
 	case JSVAL_KIND_RESPONSE:
+	case JSVAL_KIND_READABLE_STREAM:
+	case JSVAL_KIND_READABLE_STREAM_READER:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -38021,4 +38101,762 @@ static int jsval_fetch_run_request(jsval_region_t *region,
 		return jsval_promise_reject(region, promise_value, fallback);
 	}
 	return jsval_promise_resolve(region, promise_value, response_value);
+}
+
+/* -------------------- ReadableStream --------------------- */
+
+static jsval_native_readable_stream_t *jsval_native_readable_stream(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_READABLE_STREAM) {
+		return NULL;
+	}
+	return (jsval_native_readable_stream_t *)jsval_region_ptr(region, value.off);
+}
+
+static jsval_native_readable_stream_t *jsval_native_readable_stream_off(
+		jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_readable_stream_t *)jsval_region_ptr(region, off);
+}
+
+static jsval_native_readable_stream_reader_t *jsval_native_readable_stream_reader(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_READABLE_STREAM_READER) {
+		return NULL;
+	}
+	return (jsval_native_readable_stream_reader_t *)jsval_region_ptr(region,
+			value.off);
+}
+
+static int jsval_readable_stream_bytes_source_read(void *userdata,
+		uint8_t *buf, size_t cap, size_t *out_len,
+		jsval_body_source_status_t *status_ptr)
+{
+	jsval_native_readable_stream_bytes_source_t *state;
+	const uint8_t *bytes;
+	size_t remaining;
+	size_t n;
+
+	if (userdata == NULL || out_len == NULL || status_ptr == NULL
+			|| (cap > 0 && buf == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	state = (jsval_native_readable_stream_bytes_source_t *)userdata;
+	bytes = (const uint8_t *)(state + 1);
+	remaining = state->len - state->cursor;
+	if (remaining == 0) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_EOF;
+		return 0;
+	}
+	n = cap < remaining ? cap : remaining;
+	memcpy(buf, bytes + state->cursor, n);
+	state->cursor += n;
+	*out_len = n;
+	*status_ptr = JSVAL_BODY_SOURCE_STATUS_READY;
+	return 0;
+}
+
+static void jsval_readable_stream_bytes_source_close(void *userdata)
+{
+	(void)userdata;
+}
+
+static const jsval_body_source_vtable_t
+		jsval_readable_stream_bytes_source_vtable = {
+	jsval_readable_stream_bytes_source_read,
+	jsval_readable_stream_bytes_source_close
+};
+
+/*
+ * Build a { value: Uint8Array | undefined, done: bool } object on the region.
+ * When done == 1, value is undefined; when done == 0, value is a Uint8Array
+ * populated with len bytes from `bytes`.
+ */
+static int jsval_readable_stream_make_read_result(jsval_region_t *region,
+		const uint8_t *bytes, size_t len, int done, jsval_t *out)
+{
+	jsval_t result;
+	jsval_t value = jsval_undefined();
+
+	if (!done) {
+		jsval_t backing;
+		uint8_t *dst = NULL;
+		size_t cap = 0;
+
+		if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8, len,
+				&value) < 0) {
+			return -1;
+		}
+		if (jsval_typed_array_buffer(region, value, &backing) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_bytes_mut(region, backing, &dst, &cap) < 0) {
+			return -1;
+		}
+		if (len > 0 && bytes != NULL) {
+			memcpy(dst, bytes, len);
+		}
+	}
+
+	if (jsval_object_new(region, 2, &result) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, result, (const uint8_t *)"value", 5,
+			value) < 0) {
+		return -1;
+	}
+	if (jsval_object_set_utf8(region, result, (const uint8_t *)"done", 4,
+			jsval_bool(done)) < 0) {
+		return -1;
+	}
+	*out = result;
+	return 0;
+}
+
+static int jsval_readable_stream_enqueue_read(jsval_region_t *region,
+		jsval_off_t stream_off, jsval_off_t promise_off)
+{
+	jsval_native_readable_stream_t *stream;
+	jsval_native_readable_stream_pending_read_t *node;
+	jsval_off_t node_off;
+
+	if (jsval_region_reserve(region, sizeof(*node),
+			_Alignof(jsval_native_readable_stream_pending_read_t),
+			&node_off, (void **)&node) < 0) {
+		return -1;
+	}
+	node->next_off = 0;
+	node->promise_off = promise_off;
+
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->pending_reads_tail == 0) {
+		stream->pending_reads_head = node_off;
+		stream->pending_reads_tail = node_off;
+	} else {
+		jsval_native_readable_stream_pending_read_t *tail;
+		tail = (jsval_native_readable_stream_pending_read_t *)jsval_region_ptr(
+				region, stream->pending_reads_tail);
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = node_off;
+		stream->pending_reads_tail = node_off;
+	}
+	return 0;
+}
+
+static jsval_off_t jsval_readable_stream_dequeue_read(jsval_region_t *region,
+		jsval_native_readable_stream_t *stream)
+{
+	jsval_native_readable_stream_pending_read_t *node;
+	jsval_off_t node_off;
+	jsval_off_t promise_off;
+
+	if (stream == NULL || stream->pending_reads_head == 0) {
+		return 0;
+	}
+	node_off = stream->pending_reads_head;
+	node = (jsval_native_readable_stream_pending_read_t *)jsval_region_ptr(
+			region, node_off);
+	if (node == NULL) {
+		return 0;
+	}
+	promise_off = node->promise_off;
+	stream->pending_reads_head = node->next_off;
+	if (stream->pending_reads_head == 0) {
+		stream->pending_reads_tail = 0;
+	}
+	return promise_off;
+}
+
+static int jsval_readable_stream_schedule_pump(jsval_region_t *region,
+		jsval_off_t stream_off)
+{
+	jsval_native_readable_stream_t *stream;
+	jsval_native_microtask_readable_stream_pump_t *task;
+	jsval_off_t task_off;
+
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->pump_scheduled) {
+		return 0;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP;
+	task->stream_off = stream_off;
+	/* Re-lookup after reserve. */
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->pump_scheduled = 1;
+	return jsval_microtask_push(region, task_off, &task->base);
+}
+
+int jsval_readable_stream_new_from_source(jsval_region_t *region,
+		const jsval_body_source_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr)
+{
+	jsval_native_readable_stream_t *stream;
+	jsval_native_body_source_t *source;
+	jsval_off_t source_off;
+	void *ptr = NULL;
+
+	if (region == NULL || vtable == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*source),
+			_Alignof(jsval_native_body_source_t), &source_off,
+			(void **)&source) < 0) {
+		return -1;
+	}
+	source->vtable = vtable;
+	source->userdata = userdata;
+	source->content_length_hint = SIZE_MAX;
+	source->closed = 0;
+	memset(source->reserved, 0, sizeof(source->reserved));
+
+	if (jsval_region_alloc(region, sizeof(*stream),
+			_Alignof(jsval_native_readable_stream_t), &ptr) < 0) {
+		return -1;
+	}
+	stream = (jsval_native_readable_stream_t *)ptr;
+	memset(stream, 0, sizeof(*stream));
+	stream->source_off = source_off;
+	stream->error_reason = jsval_undefined();
+	stream->state = JSVAL_READABLE_STREAM_STATE_READABLE;
+
+	*value_ptr = jsval_native_make_value(region, stream,
+			JSVAL_KIND_READABLE_STREAM);
+	return 0;
+}
+
+int jsval_readable_stream_new_from_bytes(jsval_region_t *region,
+		const uint8_t *bytes, size_t len, jsval_t *value_ptr)
+{
+	jsval_native_readable_stream_bytes_source_t *state;
+	uint8_t *state_bytes;
+	jsval_off_t state_off;
+	size_t total;
+
+	if (region == NULL || value_ptr == NULL
+			|| (bytes == NULL && len != 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (len > SIZE_MAX - sizeof(*state)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total = sizeof(*state) + len;
+	if (jsval_region_reserve(region, total,
+			_Alignof(jsval_native_readable_stream_bytes_source_t),
+			&state_off, (void **)&state) < 0) {
+		return -1;
+	}
+	state->len = len;
+	state->cursor = 0;
+	state_bytes = (uint8_t *)(state + 1);
+	if (len > 0) {
+		memcpy(state_bytes, bytes, len);
+	}
+	return jsval_readable_stream_new_from_source(region,
+			&jsval_readable_stream_bytes_source_vtable, state, value_ptr);
+}
+
+int jsval_readable_stream_locked(jsval_region_t *region, jsval_t stream_value,
+		int *locked_ptr)
+{
+	jsval_native_readable_stream_t *stream;
+
+	if (locked_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_readable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*locked_ptr = stream->reader_off != 0 ? 1 : 0;
+	return 0;
+}
+
+int jsval_readable_stream_get_reader(jsval_region_t *region,
+		jsval_t stream_value, jsval_t *reader_ptr)
+{
+	jsval_native_readable_stream_t *stream;
+	jsval_native_readable_stream_reader_t *reader;
+	jsval_t reader_value;
+	void *ptr = NULL;
+
+	if (reader_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_readable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->reader_off != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*reader),
+			_Alignof(jsval_native_readable_stream_reader_t), &ptr) < 0) {
+		return -1;
+	}
+	reader = (jsval_native_readable_stream_reader_t *)ptr;
+	memset(reader, 0, sizeof(*reader));
+	reader->stream_off = stream_value.off;
+	reader_value = jsval_native_make_value(region, reader,
+			JSVAL_KIND_READABLE_STREAM_READER);
+	/* Re-lookup stream (base is stable but be explicit). */
+	stream = jsval_native_readable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->reader_off = reader_value.off;
+	*reader_ptr = reader_value;
+	return 0;
+}
+
+int jsval_readable_stream_reader_release_lock(jsval_region_t *region,
+		jsval_t reader_value)
+{
+	jsval_native_readable_stream_reader_t *reader;
+	jsval_native_readable_stream_t *stream;
+
+	reader = jsval_native_readable_stream_reader(region, reader_value);
+	if (reader == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_readable_stream_off(region, reader->stream_off);
+	if (stream == NULL) {
+		/* Already released. */
+		return 0;
+	}
+	if (stream->pending_reads_head != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	stream->reader_off = 0;
+	reader->stream_off = 0;
+	return 0;
+}
+
+int jsval_readable_stream_reader_read(jsval_region_t *region,
+		jsval_t reader_value, jsval_t *promise_ptr)
+{
+	jsval_native_readable_stream_reader_t *reader;
+	jsval_native_readable_stream_t *stream;
+	jsval_off_t stream_off;
+	jsval_t promise;
+	jsval_t result;
+	jsval_t reason;
+	jsval_native_body_source_t *source;
+	uint8_t scratch[JSVAL_FETCH_BODY_DRAIN_BATCH];
+	size_t n = 0;
+	jsval_body_source_status_t status = JSVAL_BODY_SOURCE_STATUS_ERROR;
+	int rc;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	reader = jsval_native_readable_stream_reader(region, reader_value);
+	if (reader == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = reader->stream_off;
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (stream->state == JSVAL_READABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (stream->state == JSVAL_READABLE_STREAM_STATE_CLOSED) {
+		if (jsval_readable_stream_make_read_result(region, NULL, 0, 1,
+				&result) < 0) {
+			return -1;
+		}
+		if (jsval_promise_resolve(region, promise, result) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	/* FIFO ordering: if prior reads are queued or a pump is in flight,
+	 * enqueue this read behind them. */
+	if (stream->pending_reads_head != 0 || stream->pump_scheduled) {
+		if (jsval_readable_stream_enqueue_read(region, stream_off,
+				promise.off) < 0) {
+			return -1;
+		}
+		if (jsval_readable_stream_schedule_pump(region, stream_off) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	source = jsval_native_body_source(region, stream->source_off);
+	if (source == NULL || source->vtable == NULL
+			|| source->vtable->read == NULL) {
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"invalid stream source", &reason) < 0) {
+			return -1;
+		}
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		stream->state = JSVAL_READABLE_STREAM_STATE_ERRORED;
+		stream->error_reason = reason;
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	rc = source->vtable->read(source->userdata, scratch, sizeof(scratch),
+			&n, &status);
+	if (rc < 0 || status == JSVAL_BODY_SOURCE_STATUS_ERROR) {
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"stream source error", &reason) < 0) {
+			return -1;
+		}
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		stream->state = JSVAL_READABLE_STREAM_STATE_ERRORED;
+		stream->error_reason = reason;
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	if (status == JSVAL_BODY_SOURCE_STATUS_EOF) {
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		stream->state = JSVAL_READABLE_STREAM_STATE_CLOSED;
+		source = jsval_native_body_source(region, stream->source_off);
+		jsval_body_source_close_once(source);
+		/* EOF may carry a final chunk. Deliver bytes first; next read
+		 * will see stream->state == CLOSED and return { done: true }. */
+		if (n > 0) {
+			if (jsval_readable_stream_make_read_result(region, scratch, n, 0,
+					&result) < 0) {
+				return -1;
+			}
+		} else {
+			if (jsval_readable_stream_make_read_result(region, NULL, 0, 1,
+					&result) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_promise_resolve(region, promise, result) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING || n == 0) {
+		if (jsval_readable_stream_enqueue_read(region, stream_off,
+				promise.off) < 0) {
+			return -1;
+		}
+		if (jsval_readable_stream_schedule_pump(region, stream_off) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	if (jsval_readable_stream_make_read_result(region, scratch, n, 0,
+			&result) < 0) {
+		return -1;
+	}
+	if (jsval_promise_resolve(region, promise, result) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+int jsval_readable_stream_cancel(jsval_region_t *region, jsval_t stream_value,
+		jsval_t reason, jsval_t *promise_ptr)
+{
+	jsval_native_readable_stream_t *stream;
+	jsval_off_t stream_off;
+	jsval_t promise;
+	jsval_native_body_source_t *source;
+	jsval_off_t read_promise_off;
+	(void)reason;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_readable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = stream_value.off;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->state == JSVAL_READABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason)
+				< 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	stream->state = JSVAL_READABLE_STREAM_STATE_CLOSED;
+	source = jsval_native_body_source(region, stream->source_off);
+	jsval_body_source_close_once(source);
+
+	while ((read_promise_off = jsval_readable_stream_dequeue_read(region,
+			stream)) != 0) {
+		jsval_t done_result;
+		jsval_t read_promise = jsval_promise_value(read_promise_off);
+
+		if (jsval_readable_stream_make_read_result(region, NULL, 0, 1,
+				&done_result) < 0) {
+			return -1;
+		}
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_promise_resolve(region, read_promise, done_result) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_promise_resolve(region, promise, jsval_undefined()) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+static int jsval_readable_stream_run_pump(jsval_region_t *region,
+		jsval_native_microtask_readable_stream_pump_t *task)
+{
+	jsval_off_t stream_off;
+	jsval_native_readable_stream_t *stream;
+	jsval_native_body_source_t *source;
+	uint8_t scratch[JSVAL_FETCH_BODY_DRAIN_BATCH];
+	size_t n = 0;
+	jsval_body_source_status_t status = JSVAL_BODY_SOURCE_STATUS_ERROR;
+	int rc;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = task->stream_off;
+	stream = jsval_native_readable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->pump_scheduled = 0;
+
+	if (stream->pending_reads_head == 0) {
+		return 0;
+	}
+	if (stream->state != JSVAL_READABLE_STREAM_STATE_READABLE) {
+		jsval_off_t read_off;
+		while ((read_off = jsval_readable_stream_dequeue_read(region,
+				stream)) != 0) {
+			jsval_t p = jsval_promise_value(read_off);
+
+			if (stream->state == JSVAL_READABLE_STREAM_STATE_ERRORED) {
+				if (jsval_promise_reject(region, p,
+						stream->error_reason) < 0) {
+					return -1;
+				}
+			} else {
+				jsval_t result;
+				if (jsval_readable_stream_make_read_result(region, NULL,
+						0, 1, &result) < 0) {
+					return -1;
+				}
+				stream = jsval_native_readable_stream_off(region,
+						stream_off);
+				if (stream == NULL) {
+					errno = EINVAL;
+					return -1;
+				}
+				if (jsval_promise_resolve(region, p, result) < 0) {
+					return -1;
+				}
+			}
+		}
+		return 0;
+	}
+
+	source = jsval_native_body_source(region, stream->source_off);
+	if (source == NULL || source->vtable == NULL
+			|| source->vtable->read == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	rc = source->vtable->read(source->userdata, scratch, sizeof(scratch),
+			&n, &status);
+	if (rc < 0 || status == JSVAL_BODY_SOURCE_STATUS_ERROR) {
+		jsval_t reason;
+		jsval_off_t read_off;
+
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"stream source error", &reason) < 0) {
+			return -1;
+		}
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		stream->state = JSVAL_READABLE_STREAM_STATE_ERRORED;
+		stream->error_reason = reason;
+		while ((read_off = jsval_readable_stream_dequeue_read(region,
+				stream)) != 0) {
+			jsval_t p = jsval_promise_value(read_off);
+			if (jsval_promise_reject(region, p, reason) < 0) {
+				return -1;
+			}
+		}
+		return 0;
+	}
+
+	if (status == JSVAL_BODY_SOURCE_STATUS_EOF) {
+		jsval_off_t read_off;
+		int first = 1;
+
+		stream->state = JSVAL_READABLE_STREAM_STATE_CLOSED;
+		jsval_body_source_close_once(source);
+		while ((read_off = jsval_readable_stream_dequeue_read(region,
+				stream)) != 0) {
+			jsval_t p = jsval_promise_value(read_off);
+			jsval_t result;
+
+			/* EOF may carry a final chunk. Deliver the chunk to the
+			 * oldest pending reader; subsequent readers get done:true. */
+			if (first && n > 0) {
+				if (jsval_readable_stream_make_read_result(region, scratch,
+						n, 0, &result) < 0) {
+					return -1;
+				}
+			} else {
+				if (jsval_readable_stream_make_read_result(region, NULL, 0,
+						1, &result) < 0) {
+					return -1;
+				}
+			}
+			first = 0;
+			stream = jsval_native_readable_stream_off(region, stream_off);
+			if (stream == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			if (jsval_promise_resolve(region, p, result) < 0) {
+				return -1;
+			}
+		}
+		return 0;
+	}
+
+	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING || n == 0) {
+		return jsval_readable_stream_schedule_pump(region, stream_off);
+	}
+
+	{
+		jsval_off_t read_off;
+		jsval_t result;
+		jsval_t p;
+
+		read_off = jsval_readable_stream_dequeue_read(region, stream);
+		if (read_off == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_readable_stream_make_read_result(region, scratch, n, 0,
+				&result) < 0) {
+			return -1;
+		}
+		p = jsval_promise_value(read_off);
+		if (jsval_promise_resolve(region, p, result) < 0) {
+			return -1;
+		}
+		stream = jsval_native_readable_stream_off(region, stream_off);
+		if (stream != NULL && stream->pending_reads_head != 0) {
+			return jsval_readable_stream_schedule_pump(region, stream_off);
+		}
+	}
+	return 0;
 }
