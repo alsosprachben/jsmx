@@ -76,7 +76,21 @@ WinterTC handlers:
 - `atob(s)` → `jsval_base64_decode(region, s, &out)` where `s`
   is a base64 jsval string; output is a `Uint8Array`.
   Base64url characters (`-`, `_`) are rejected by the standard
-  decoder — use the internal base64url path for JWK transport.
+  decoder — use the base64url pair below for JWT/JWK payloads.
+
+**base64url lowering**. RFC 4648 §5 alphabet (`-`, `_`, no `=`
+padding). Same jsval shape as standard base64 but with a
+distinct alphabet. Use this for JWT segments, JWS/JWE
+serializations, and WebCrypto JWK key material:
+
+- Encoding bytes → string: `jsval_base64url_encode(region, bytes, &out)`
+  where `bytes` is `Uint8Array` / `Int8Array` /
+  `Uint8ClampedArray` / `ArrayBuffer`; output is a base64url
+  jsval string (with `-`, `_`, no `=`).
+- Decoding string → bytes: `jsval_base64url_decode(region, s, &out)`
+  where `s` is a base64url jsval string; output is a
+  `Uint8Array`. Standard-alphabet characters (`+`, `/`) are
+  rejected — use the standard base64 pair above for those.
 
 **`queueMicrotask` lowering**. `queueMicrotask(fn)` →
 `jsval_queue_microtask(region, fn)`, a thin named wrapper over

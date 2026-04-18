@@ -9036,7 +9036,7 @@ jsval_base64url_value(uint8_t ch)
 }
 
 static int
-jsval_base64url_encode(const uint8_t *input, size_t input_len, uint8_t *buf,
+jsval_base64url_raw_encode(const uint8_t *input, size_t input_len, uint8_t *buf,
 		size_t cap, size_t *len_ptr)
 {
 	static const uint8_t alphabet[] =
@@ -9091,7 +9091,7 @@ jsval_base64url_encode(const uint8_t *input, size_t input_len, uint8_t *buf,
 }
 
 static int
-jsval_base64url_decode(const uint8_t *input, size_t input_len, uint8_t *buf,
+jsval_base64url_raw_decode(const uint8_t *input, size_t input_len, uint8_t *buf,
 		size_t cap, size_t *len_ptr)
 {
 	size_t out_len;
@@ -9542,14 +9542,14 @@ jsval_subtle_crypto_build_oct_jwk_export(jsval_region_t *region,
 		errno = EINVAL;
 		return -1;
 	}
-	if (jsval_base64url_encode(key_bytes, key_len, NULL, 0, &b64_len) < 0) {
+	if (jsval_base64url_raw_encode(key_bytes, key_len, NULL, 0, &b64_len) < 0) {
 		return -1;
 	}
 	if (b64_len > sizeof(b64)) {
 		errno = EOVERFLOW;
 		return -1;
 	}
-	if (jsval_base64url_encode(key_bytes, key_len, b64, sizeof(b64), NULL) < 0) {
+	if (jsval_base64url_raw_encode(key_bytes, key_len, b64, sizeof(b64), NULL) < 0) {
 		return -1;
 	}
 	if (jsval_object_new(region, 5, &object) < 0) {
@@ -11649,7 +11649,7 @@ jsval_subtle_crypto_unwrap_validate_jwk_oct(jsval_region_t *region,
 			encoded_len, NULL) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_decode((uint8_t *)decoded_ptr, encoded_len,
+	if (jsval_base64url_raw_decode((uint8_t *)decoded_ptr, encoded_len,
 			(uint8_t *)decoded_ptr, encoded_len, &decoded_len) < 0
 			|| decoded_len == 0) {
 		return jsval_webcrypto_error_set(error, "DataError",
@@ -13319,20 +13319,20 @@ jsval_subtle_crypto_build_ec_jwk_export(jsval_region_t *region,
 				(const uint8_t *)"crv", 3, value) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_encode(x_bytes, 32, b64, sizeof(b64), &b64_len) < 0
+	if (jsval_base64url_raw_encode(x_bytes, 32, b64, sizeof(b64), &b64_len) < 0
 			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 			|| jsval_object_set_utf8(region, object,
 				(const uint8_t *)"x", 1, value) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_encode(y_bytes, 32, b64, sizeof(b64), &b64_len) < 0
+	if (jsval_base64url_raw_encode(y_bytes, 32, b64, sizeof(b64), &b64_len) < 0
 			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 			|| jsval_object_set_utf8(region, object,
 				(const uint8_t *)"y", 1, value) < 0) {
 		return -1;
 	}
 	if (is_private) {
-		if (jsval_base64url_encode(key_bytes, 32, b64, sizeof(b64),
+		if (jsval_base64url_raw_encode(key_bytes, 32, b64, sizeof(b64),
 				&b64_len) < 0
 				|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 				|| jsval_object_set_utf8(region, object,
@@ -13438,13 +13438,13 @@ jsval_subtle_crypto_parse_jwk_ec_key(jsval_region_t *region,
 				"invalid EC JWK y");
 	}
 	decoded_len = 0;
-	if (jsval_base64url_decode(x_buf, x_len, decoded_x, sizeof(decoded_x),
+	if (jsval_base64url_raw_decode(x_buf, x_len, decoded_x, sizeof(decoded_x),
 			&decoded_len) < 0 || decoded_len != 32) {
 		return jsval_webcrypto_error_set(error, "DataError",
 				"invalid EC JWK x");
 	}
 	decoded_len = 0;
-	if (jsval_base64url_decode(y_buf, y_len, decoded_y, sizeof(decoded_y),
+	if (jsval_base64url_raw_decode(y_buf, y_len, decoded_y, sizeof(decoded_y),
 			&decoded_len) < 0 || decoded_len != 32) {
 		return jsval_webcrypto_error_set(error, "DataError",
 				"invalid EC JWK y");
@@ -13465,7 +13465,7 @@ jsval_subtle_crypto_parse_jwk_ec_key(jsval_region_t *region,
 					"invalid EC JWK d");
 		}
 		decoded_len = 0;
-		if (jsval_base64url_decode(d_buf, d_len, decoded_d,
+		if (jsval_base64url_raw_decode(d_buf, d_len, decoded_d,
 				sizeof(decoded_d), &decoded_len) < 0 || decoded_len != 32) {
 			return jsval_webcrypto_error_set(error, "DataError",
 					"invalid EC JWK d");
@@ -14040,13 +14040,13 @@ jsval_subtle_crypto_build_rsa_jwk_export(jsval_region_t *region,
 				3, value) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_encode(n_bytes, n_len, b64, sizeof(b64), &b64_len) < 0
+	if (jsval_base64url_raw_encode(n_bytes, n_len, b64, sizeof(b64), &b64_len) < 0
 			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"n", 1,
 				value) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_encode(e_bytes, e_len, b64, sizeof(b64), &b64_len) < 0
+	if (jsval_base64url_raw_encode(e_bytes, e_len, b64, sizeof(b64), &b64_len) < 0
 			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"e", 1,
 				value) < 0) {
@@ -14068,7 +14068,7 @@ jsval_subtle_crypto_build_rsa_jwk_export(jsval_region_t *region,
 		comps[4].len = dq_len;
 		comps[5].len = qi_len;
 		for (ci = 0; ci < sizeof(comps) / sizeof(comps[0]); ci++) {
-			if (jsval_base64url_encode(comps[ci].bytes, comps[ci].len, b64,
+			if (jsval_base64url_raw_encode(comps[ci].bytes, comps[ci].len, b64,
 					sizeof(b64), &b64_len) < 0
 					|| jsval_string_new_utf8(region, b64, b64_len, &value)
 						< 0
@@ -14139,7 +14139,7 @@ jsval_subtle_crypto_rsa_jwk_field_decode(jsval_region_t *region,
 		return jsval_webcrypto_error_set(error, "DataError",
 				"invalid RSA JWK field");
 	}
-	if (jsval_base64url_decode(encoded, encoded_len, out, cap, len_out) < 0) {
+	if (jsval_base64url_raw_decode(encoded, encoded_len, out, cap, len_out) < 0) {
 		return jsval_webcrypto_error_set(error, "DataError",
 				"invalid RSA JWK field");
 	}
@@ -15090,14 +15090,14 @@ jsval_subtle_crypto_build_okp_jwk_export(jsval_region_t *region,
 				3, value) < 0) {
 		return -1;
 	}
-	if (jsval_base64url_encode(x_bytes, 32, b64, sizeof(b64), &b64_len) < 0
+	if (jsval_base64url_raw_encode(x_bytes, 32, b64, sizeof(b64), &b64_len) < 0
 			|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 			|| jsval_object_set_utf8(region, object, (const uint8_t *)"x", 1,
 				value) < 0) {
 		return -1;
 	}
 	if (is_private) {
-		if (jsval_base64url_encode(key_bytes, 32, b64, sizeof(b64),
+		if (jsval_base64url_raw_encode(key_bytes, 32, b64, sizeof(b64),
 				&b64_len) < 0
 				|| jsval_string_new_utf8(region, b64, b64_len, &value) < 0
 				|| jsval_object_set_utf8(region, object,
@@ -15181,7 +15181,7 @@ jsval_subtle_crypto_parse_jwk_okp_key(jsval_region_t *region,
 				"invalid OKP JWK x");
 	}
 	decoded_len = 0;
-	if (jsval_base64url_decode(x_buf, x_len, decoded_x, sizeof(decoded_x),
+	if (jsval_base64url_raw_decode(x_buf, x_len, decoded_x, sizeof(decoded_x),
 			&decoded_len) < 0 || decoded_len != 32) {
 		return jsval_webcrypto_error_set(error, "DataError",
 				"invalid OKP JWK x");
@@ -15202,7 +15202,7 @@ jsval_subtle_crypto_parse_jwk_okp_key(jsval_region_t *region,
 					"invalid OKP JWK d");
 		}
 		decoded_len = 0;
-		if (jsval_base64url_decode(d_buf, d_len, decoded_d,
+		if (jsval_base64url_raw_decode(d_buf, d_len, decoded_d,
 				sizeof(decoded_d), &decoded_len) < 0 || decoded_len != 32) {
 			return jsval_webcrypto_error_set(error, "DataError",
 					"invalid OKP JWK d");
@@ -16357,7 +16357,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					NULL) < 0) {
 				return -1;
 			}
-			if (jsval_base64url_decode(
+			if (jsval_base64url_raw_decode(
 					jsval_native_microtask_subtle_hmac_data(task), encoded_len,
 					jsval_native_microtask_subtle_hmac_data(task), encoded_len,
 					&decoded_len) < 0 || decoded_len == 0
@@ -16511,7 +16511,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					encoded_len, NULL) < 0) {
 				return -1;
 			}
-			if (jsval_base64url_decode(
+			if (jsval_base64url_raw_decode(
 					jsval_native_microtask_subtle_aes_gcm_data(aes_task),
 					encoded_len,
 					jsval_native_microtask_subtle_aes_gcm_data(aes_task),
@@ -16697,7 +16697,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					encoded_len, NULL) < 0) {
 				return -1;
 			}
-			if (jsval_base64url_decode(
+			if (jsval_base64url_raw_decode(
 					jsval_native_microtask_subtle_aes_ctr_data(ctr_task),
 					encoded_len,
 					jsval_native_microtask_subtle_aes_ctr_data(ctr_task),
@@ -16882,7 +16882,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					encoded_len, NULL) < 0) {
 				return -1;
 			}
-			if (jsval_base64url_decode(
+			if (jsval_base64url_raw_decode(
 					jsval_native_microtask_subtle_aes_cbc_data(cbc_task),
 					encoded_len,
 					jsval_native_microtask_subtle_aes_cbc_data(cbc_task),
@@ -17066,7 +17066,7 @@ jsval_subtle_crypto_import_key(jsval_region_t *region, jsval_t subtle_value,
 					encoded_len, NULL) < 0) {
 				return -1;
 			}
-			if (jsval_base64url_decode(
+			if (jsval_base64url_raw_decode(
 					jsval_native_microtask_subtle_aes_kw_data(kw_task),
 					encoded_len,
 					jsval_native_microtask_subtle_aes_kw_data(kw_task),
@@ -29920,6 +29920,131 @@ int jsval_base64_decode(jsval_region_t *region, jsval_t input_value,
 
 	if (bin_len > 0) {
 		if (jsval_base64_std_decode(str_bytes, string_len, out_bytes,
+				bin_len, NULL) < 0) {
+			return -1;
+		}
+	}
+
+	*uint8array_out = typed_array;
+	return 0;
+}
+
+int jsval_base64url_encode(jsval_region_t *region, jsval_t input_value,
+		jsval_t *string_out)
+{
+	uint8_t *in_bytes;
+	size_t in_len = 0;
+	jsval_t backing_buffer;
+	size_t b64_len = 0;
+	void *out_ptr;
+	uint8_t *b64_buf;
+
+	if (region == NULL || string_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (input_value.kind == JSVAL_KIND_TYPED_ARRAY) {
+		jsval_typed_array_kind_t kind;
+		if (jsval_typed_array_kind(region, input_value, &kind) < 0) {
+			return -1;
+		}
+		if (kind != JSVAL_TYPED_ARRAY_UINT8 &&
+				kind != JSVAL_TYPED_ARRAY_UINT8_CLAMPED &&
+				kind != JSVAL_TYPED_ARRAY_INT8) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_typed_array_buffer(region, input_value,
+				&backing_buffer) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_bytes_mut(region, backing_buffer,
+				&in_bytes, &in_len) < 0) {
+			return -1;
+		}
+	} else if (input_value.kind == JSVAL_KIND_ARRAY_BUFFER) {
+		if (jsval_array_buffer_bytes_mut(region, input_value,
+				&in_bytes, &in_len) < 0) {
+			return -1;
+		}
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_base64url_raw_encode(in_bytes, in_len, NULL, 0,
+			&b64_len) < 0) {
+		return -1;
+	}
+	if (jsval_region_alloc(region, b64_len == 0 ? 1 : b64_len,
+			_Alignof(uint8_t), &out_ptr) < 0) {
+		return -1;
+	}
+	b64_buf = (uint8_t *)out_ptr;
+	if (b64_len > 0) {
+		if (jsval_base64url_raw_encode(in_bytes, in_len, b64_buf,
+				b64_len, NULL) < 0) {
+			return -1;
+		}
+	}
+	return jsval_string_new_utf8(region, b64_buf, b64_len, string_out);
+}
+
+int jsval_base64url_decode(jsval_region_t *region, jsval_t input_value,
+		jsval_t *uint8array_out)
+{
+	size_t string_len = 0;
+	void *str_ptr;
+	uint8_t *str_bytes;
+	size_t bin_len = 0;
+	jsval_t typed_array;
+	jsval_t backing_buffer;
+	uint8_t *out_bytes;
+	size_t out_cap = 0;
+
+	if (region == NULL || uint8array_out == NULL ||
+			input_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_string_copy_utf8(region, input_value, NULL, 0,
+			&string_len) < 0) {
+		return -1;
+	}
+	if (jsval_region_alloc(region, string_len == 0 ? 1 : string_len,
+			_Alignof(uint8_t), &str_ptr) < 0) {
+		return -1;
+	}
+	str_bytes = (uint8_t *)str_ptr;
+	if (string_len > 0) {
+		if (jsval_string_copy_utf8(region, input_value, str_bytes,
+				string_len, NULL) < 0) {
+			return -1;
+		}
+	}
+
+	if (jsval_base64url_raw_decode(str_bytes, string_len, NULL, 0,
+			&bin_len) < 0) {
+		return -1;
+	}
+
+	if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8,
+			bin_len, &typed_array) < 0) {
+		return -1;
+	}
+	if (jsval_typed_array_buffer(region, typed_array,
+			&backing_buffer) < 0) {
+		return -1;
+	}
+	if (jsval_array_buffer_bytes_mut(region, backing_buffer,
+			&out_bytes, &out_cap) < 0) {
+		return -1;
+	}
+
+	if (bin_len > 0) {
+		if (jsval_base64url_raw_decode(str_bytes, string_len, out_bytes,
 				bin_len, NULL) < 0) {
 			return -1;
 		}

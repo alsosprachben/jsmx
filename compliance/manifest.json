@@ -5175,6 +5175,26 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored queueMicrotask error fixture: non-function callback (number, undefined) returns -1."
+    },
+    {
+      "id": "jsmx-wintertc-base64url-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/base64url-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/base64url-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored base64url parity fixture: encode [0xfb, 0xef, 0xff] → \"--__\" (verifies the '-' and '_' alphabet remap); 1-byte input encodes with no '=' padding; decode round-trips both. Exercises jsval_base64url_encode / _decode."
+    },
+    {
+      "id": "jsmx-wintertc-base64url-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/base64url-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/base64url-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored base64url error fixture: decode rejects standard-alphabet chars (+, /), length-mod-4 == 1 input, non-string input; encode rejects non-buffer input."
     }
   ]
 }

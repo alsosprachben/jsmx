@@ -544,6 +544,8 @@ int jsval_text_encode_utf8(jsval_region_t *region, jsval_t string_value, jsval_t
 int jsval_text_decode_utf8(jsval_region_t *region, jsval_t buffer_value, jsval_t *string_out);
 int jsval_base64_encode(jsval_region_t *region, jsval_t input_value, jsval_t *string_out);
 int jsval_base64_decode(jsval_region_t *region, jsval_t input_value, jsval_t *uint8array_out);
+int jsval_base64url_encode(jsval_region_t *region, jsval_t input_value, jsval_t *string_out);
+int jsval_base64url_decode(jsval_region_t *region, jsval_t input_value, jsval_t *uint8array_out);
 size_t jsval_object_size(jsval_region_t *region, jsval_t object);
 size_t jsval_array_length(jsval_region_t *region, jsval_t array);
 
