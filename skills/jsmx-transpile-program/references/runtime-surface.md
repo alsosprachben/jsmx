@@ -180,7 +180,28 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
       `jsval_response_headers(...)`, `jsval_response_body_used(...)`,
       `jsval_response_clone(...)`, `jsval_response_text(...)`,
       `jsval_response_json_body(...)`,
-      `jsval_response_array_buffer(...)`, `jsval_response_bytes(...)`
+      `jsval_response_array_buffer(...)`, `jsval_response_bytes(...)`,
+      `jsval_response_body(...)` — returns a ReadableStream over the
+      Response body, or `JSVAL_KIND_NULL` when the Response has no
+      body or is already used. Phase-1B simplification: accessing
+      `.body` flips `body_used`, so subsequent `text()` / `json()` /
+      `arrayBuffer()` / `bytes()` on the same Response reject with
+      `TypeError("body already used")`.
+    - ReadableStream (Phase 1; no constructor-from-JS yet):
+      - `jsval_readable_stream_new_from_bytes(region, bytes, len, &stream)`
+      - `jsval_readable_stream_new_from_source(region, vtable, userdata, &stream)`
+        — pull-based `jsval_body_source_vtable_t` (same as Request /
+        Response streaming-body sources)
+      - `jsval_readable_stream_locked(region, stream, &locked)`
+      - `jsval_readable_stream_get_reader(region, stream, &reader)` —
+        returns `-1` with `errno == EBUSY` if the stream is already locked
+      - `jsval_readable_stream_reader_release_lock(region, reader)` —
+        fails `EBUSY` if pending reads exist
+      - `jsval_readable_stream_reader_read(region, reader, &promise)` —
+        promise fulfills with a plain object
+        `{ value: Uint8Array | undefined, done: bool }`
+      - `jsval_readable_stream_cancel(region, stream, reason, &promise)` —
+        `reason` is currently accepted but not propagated
     - `jsval_fetch(...)` — parses input/init into a Request and returns
       a Promise rejected with TypeError until the transport slice lands
     - `jsval_request_body_snapshot(...)`,
@@ -336,9 +357,10 @@ Classify the program as `manual_runtime_needed` when it depends on behavior like
     (`connect` / `read` / `write` / `close`)
   - `fetch()` actually issuing a network request (today `fetch()`
     always rejects with `TypeError("network not implemented yet")`)
-  - streaming request/response bodies (`ReadableStream`,
-    `WritableStream`), `Blob`, `File`, `FormData`, `body.blob()`,
-    `body.formData()`
+  - `WritableStream`, `Blob`, `File`, `FormData`, `body.blob()`,
+    `body.formData()`. `ReadableStream` is Phase-1 supported
+    (see above); Request-side `.body` as a ReadableStream is not
+    yet wired — symmetric Phase 1D slice.
   - `AbortController` / `AbortSignal`
   - redirect-chain handling, cookie jar / `Set-Cookie` parsing, CORS
     preflight, and per-header guard enforcement against the

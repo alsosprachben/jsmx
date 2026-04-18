@@ -346,6 +346,122 @@ continuation on the happy path. If streaming bodies land later, this
 slot grows an additional continuation registered on `body_promise`
 (same `jsval_promise_then` pattern as the outer fetch).
 
+### Reading Response Bodies As Streams
+
+When the JS source consumes a body through `response.body.getReader()`
+instead of `response.arrayBuffer()` / `text()` / `json()` / `bytes()`,
+the lowering uses the Phase-1 ReadableStream API. The same sync-extract
+reasoning as Body Consumption Shortcut applies: for every transport the
+repo currently hosts (mock and `vk_jsmx_fetch_transport`), Response
+bodies are in-memory and `reader.read()` fulfills synchronously, so
+the JS `while (!done)` loop lowers to a plain C `for (;;)` without
+CPS. Streaming transports (future mnvkd `vk_socket` body-source
+adapter) will flip this to `production_slow_path`, registering a
+`jsval_promise_then` continuation per read.
+
+**Property access.** `response.body` lowers to a single call:
+
+```c
+if (jsval_response_body(region, upstream, &stream_value) < 0) return -1;
+if (stream_value.kind == JSVAL_KIND_NULL) { errno = EIO; return -1; }
+```
+
+Phase-1B semantic: accessing `.body` flips `body_used`. Any later
+`.text()` / `.json()` / `.arrayBuffer()` / `.bytes()` on the same
+Response therefore rejects with `TypeError("body already used")`.
+The handler must not mix the stream path with the consumer-method
+path on the same Response. Returns `JSVAL_KIND_NULL` if the Response
+has no body or has already been used; treat null as an EIO boundary.
+
+**Reader acquisition.** `stream.getReader()`:
+
+```c
+if (jsval_readable_stream_get_reader(region, stream_value, &reader_value) < 0) {
+        /* errno == EBUSY iff the stream is already locked. Emit a
+         * TypeError analog only if the JS source observes the error;
+         * in straight-line single-reader code this never fires. */
+        return -1;
+}
+```
+
+**Read loop.** The canonical JS shape is:
+
+```js
+const reader = response.body.getReader();
+while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        /* consume value (a Uint8Array) */
+}
+```
+
+For in-memory bodies, lower to a C `for` that uses the sync-extract
+idiom on each `reader.read()` return:
+
+```c
+for (;;) {
+        jsval_t read_promise;
+        jsval_promise_state_t state;
+        jsval_t chunk_obj;
+        jsval_t done_value;
+        jsval_t chunk_value;
+
+        if (jsval_readable_stream_reader_read(region, reader_value,
+                        &read_promise) < 0) return -1;
+        if (jsval_promise_state(region, read_promise, &state) < 0) return -1;
+        if (state != JSVAL_PROMISE_STATE_FULFILLED) { errno = EIO; return -1; }
+        if (jsval_promise_result(region, read_promise, &chunk_obj) < 0) return -1;
+        if (jsval_object_get_utf8(region, chunk_obj,
+                        (const uint8_t *)"done", 4, &done_value) < 0) return -1;
+        if (done_value.kind == JSVAL_KIND_BOOL && done_value.as.boolean) {
+                break;
+        }
+        if (jsval_object_get_utf8(region, chunk_obj,
+                        (const uint8_t *)"value", 5, &chunk_value) < 0) return -1;
+        /* chunk_value is a Uint8Array — extract bytes per sub-recipe. */
+}
+```
+
+`{ value, done }` is always resolved via `jsval_object_get_utf8`;
+the keys are stable and not user-configurable. `value` is
+`JSVAL_KIND_UNDEFINED` when `done` is true — the lowered loop never
+reads `value` on the terminating iteration.
+
+**Bytes extraction sub-recipe.** To pull the Uint8Array bytes out of
+a chunk into a C buffer, use the typed-array accessors — the same
+idiom the Phase-1B compliance fixtures exercise
+(`compliance/generated/streams/jsmx/readable-stream-response-body-parity.c`):
+
+```c
+jsval_typed_array_kind_t kind;
+jsval_t backing;
+uint8_t *bytes = NULL;
+size_t backing_len = 0;
+size_t chunk_len;
+
+if (jsval_typed_array_kind(region, chunk_value, &kind) < 0
+                || kind != JSVAL_TYPED_ARRAY_UINT8) { errno = EIO; return -1; }
+chunk_len = jsval_typed_array_length(region, chunk_value);
+if (jsval_typed_array_buffer(region, chunk_value, &backing) < 0) return -1;
+if (jsval_array_buffer_bytes_mut(region, backing, &bytes, &backing_len) < 0) return -1;
+if (backing_len < chunk_len) { errno = EIO; return -1; }
+/* bytes[0..chunk_len) is the chunk payload. */
+```
+
+**Release lock.** `reader.releaseLock()` →
+`jsval_readable_stream_reader_release_lock(region, reader_value)`.
+Fails with `EBUSY` when pending reads are outstanding; the
+canonical handler shape drains to `done: true` before releasing.
+
+**Cancel.** `stream.cancel(reason)` →
+`jsval_readable_stream_cancel(region, stream_value, reason_value,
+&cancel_promise)`. The `reason` argument is accepted but is not
+propagated onto the source today; lower it anyway (honest shape)
+and note the known divergence.
+
+For a worked reference pair see `example/stream_reader_demo.js` ↔
+`example/stream_reader_demo_handler.c`.
+
 ### Response Construction
 
 `return new Response(body, { status, statusText, headers })` lowers
