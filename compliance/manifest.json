@@ -5335,6 +5335,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored string iterator parity: ASCII 'abc' yields 3 single-byte code points; 'café' yields 4 code points (é is 2 UTF-8 bytes); '🎉' yields exactly one 4-byte code point (surrogate pair is NOT split by UTF-16 unit)."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-response-array-buffer-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-response-array-buffer-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-response-array-buffer-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Response.arrayBuffer() parity: body consumed via jsval_response_array_buffer resolves synchronously with an ArrayBuffer matching the source's UTF-8 bytes; bodyUsed flips from 0 to 1 across consumption."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-response-bytes-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-response-bytes-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-response-bytes-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Response.bytes() parity: multi-byte 'café' body produces a synchronous Uint8Array (UINT8 typed-array kind) whose backing bytes equal the UTF-8 encoding; bodyUsed updates correctly."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-response-body-consumed-error",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-response-body-consumed-error.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-response-body-consumed-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Response body already-used error path: first text() fulfills and sets bodyUsed; second text() (and cross-consumer json()) returns a Promise rejected with DOMException(name='TypeError', message='body already used')."
     }
   ]
 }
