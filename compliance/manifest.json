@@ -5235,6 +5235,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored JSON error-path fixture: parse rejects malformed input; serialize rejects undefined and NaN with ENOTSUP; circular references with ELOOP."
+    },
+    {
+      "id": "jsmx-dates-date-construct-parity",
+      "suite": "dates",
+      "source": "compliance/js/dates/jsmx/date-construct-parity.js",
+      "generated": "compliance/generated/dates/jsmx/date-construct-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Date construction parity: new_time(0), new_iso(epoch string), and new_utc_fields(2024,0,1,12,30,45,500) all produce valid dates; each returns the expected getTime() value. Non-deterministic new_now is excluded."
+    },
+    {
+      "id": "jsmx-dates-date-accessors-parity",
+      "suite": "dates",
+      "source": "compliance/js/dates/jsmx/date-accessors-parity.js",
+      "generated": "compliance/generated/dates/jsmx/date-accessors-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Date UTC accessors parity: given Date(1704112245500), verify every UTC component (year/month/date/day/hours/minutes/seconds/ms) matches 2024-01-01T12:30:45.500Z (Monday); setUTCFullYear round-trip. Local-time accessors excluded (TZ-dependent)."
+    },
+    {
+      "id": "jsmx-dates-date-iso-parity",
+      "suite": "dates",
+      "source": "compliance/js/dates/jsmx/date-iso-parity.js",
+      "generated": "compliance/generated/dates/jsmx/date-iso-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Date ISO serialization parity: new_iso(\"2024-01-01T12:30:45.500Z\").toISOString() round-trips identically; toJSON equals toISOString; new_time(1704112245500).toISOString() produces the canonical form."
+    },
+    {
+      "id": "jsmx-dates-date-errors",
+      "suite": "dates",
+      "source": "compliance/js/dates/jsmx/date-errors.js",
+      "generated": "compliance/generated/dates/jsmx/date-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Date error-path: malformed ISO and NaN time value produce invalid Dates (is_valid == 0) without failing construction; toISOString on invalid Date returns -1."
     }
   ]
 }
