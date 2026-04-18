@@ -5446,6 +5446,100 @@ static void test_promise_any_semantics(void)
 	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
 }
 
+static void test_text_encoder_decoder_semantics(void)
+{
+	uint8_t storage[32768];
+	jsval_region_t region;
+	jsval_t input;
+	jsval_t encoded;
+	jsval_t decoded;
+	jsval_t buffer;
+	jsval_t ab;
+	jsval_t bad;
+	uint8_t *bytes;
+	size_t byte_len = 0;
+	size_t len = 0;
+	uint8_t str_buf[32];
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* ASCII "hello" -> [0x68, 0x65, 0x6c, 0x6c, 0x6f]. */
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"hello", 5,
+			&input) == 0);
+	assert(jsval_text_encode_utf8(&region, input, &encoded) == 0);
+	assert(encoded.kind == JSVAL_KIND_TYPED_ARRAY);
+	assert(jsval_typed_array_length(&region, encoded) == 5);
+	assert(jsval_typed_array_byte_length(&region, encoded, &byte_len) == 0);
+	assert(byte_len == 5);
+	assert(jsval_typed_array_buffer(&region, encoded, &buffer) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, buffer, &bytes, &len) == 0);
+	assert(len == 5);
+	assert(bytes[0] == 0x68 && bytes[1] == 0x65 && bytes[2] == 0x6c
+			&& bytes[3] == 0x6c && bytes[4] == 0x6f);
+
+	/* Round-trip back to string. */
+	assert(jsval_text_decode_utf8(&region, encoded, &decoded) == 0);
+	assert(decoded.kind == JSVAL_KIND_STRING);
+	assert(jsval_string_copy_utf8(&region, decoded, NULL, 0, &len) == 0);
+	assert(len == 5);
+	assert(jsval_string_copy_utf8(&region, decoded, str_buf, len, NULL)
+			== 0);
+	assert(memcmp(str_buf, "hello", 5) == 0);
+
+	/* Multi-byte: "café" = 63 61 66 C3 A9 (5 UTF-8 bytes). */
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"caf\xc3\xa9",
+			5, &input) == 0);
+	assert(jsval_text_encode_utf8(&region, input, &encoded) == 0);
+	assert(jsval_typed_array_length(&region, encoded) == 5);
+	assert(jsval_typed_array_buffer(&region, encoded, &buffer) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, buffer, &bytes, &len) == 0);
+	assert(bytes[3] == 0xc3 && bytes[4] == 0xa9);
+	assert(jsval_text_decode_utf8(&region, encoded, &decoded) == 0);
+	assert(jsval_string_copy_utf8(&region, decoded, NULL, 0, &len) == 0);
+	assert(len == 5);
+	assert(jsval_string_copy_utf8(&region, decoded, str_buf, len, NULL)
+			== 0);
+	assert(memcmp(str_buf, "caf\xc3\xa9", 5) == 0);
+
+	/* 4-byte UTF-8: "🎉" (U+1F389) = F0 9F 8E 89. */
+	assert(jsval_string_new_utf8(&region,
+			(const uint8_t *)"\xf0\x9f\x8e\x89", 4, &input) == 0);
+	assert(jsval_text_encode_utf8(&region, input, &encoded) == 0);
+	assert(jsval_typed_array_length(&region, encoded) == 4);
+	assert(jsval_typed_array_buffer(&region, encoded, &buffer) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, buffer, &bytes, &len) == 0);
+	assert(bytes[0] == 0xf0 && bytes[1] == 0x9f
+			&& bytes[2] == 0x8e && bytes[3] == 0x89);
+	assert(jsval_text_decode_utf8(&region, encoded, &decoded) == 0);
+	assert(jsval_string_copy_utf8(&region, decoded, NULL, 0, &len) == 0);
+	assert(len == 4);
+
+	/* Empty string: encode produces length-0 Uint8Array. */
+	assert(jsval_string_new_utf8(&region, (const uint8_t *)"", 0, &input)
+			== 0);
+	assert(jsval_text_encode_utf8(&region, input, &encoded) == 0);
+	assert(jsval_typed_array_length(&region, encoded) == 0);
+	assert(jsval_text_decode_utf8(&region, encoded, &decoded) == 0);
+	assert(jsval_string_copy_utf8(&region, decoded, NULL, 0, &len) == 0);
+	assert(len == 0);
+
+	/* ArrayBuffer direct decode path. */
+	assert(jsval_array_buffer_new(&region, 5, &ab) == 0);
+	assert(jsval_array_buffer_bytes_mut(&region, ab, &bytes, &len) == 0);
+	memcpy(bytes, "world", 5);
+	assert(jsval_text_decode_utf8(&region, ab, &decoded) == 0);
+	assert(jsval_string_copy_utf8(&region, decoded, NULL, 0, &len) == 0);
+	assert(len == 5);
+	assert(jsval_string_copy_utf8(&region, decoded, str_buf, len, NULL)
+			== 0);
+	assert(memcmp(str_buf, "world", 5) == 0);
+
+	/* Error paths: non-string encode, non-buffer decode. */
+	bad = jsval_number(42.0);
+	assert(jsval_text_encode_utf8(&region, bad, &encoded) < 0);
+	assert(jsval_text_decode_utf8(&region, bad, &decoded) < 0);
+}
+
 static void test_set_semantics(void)
 {
 	uint8_t storage[32768];
@@ -12746,6 +12840,7 @@ int main(void)
 	test_promise_race_semantics();
 	test_promise_all_settled_semantics();
 	test_promise_any_semantics();
+	test_text_encoder_decoder_semantics();
 	test_set_semantics();
 	test_map_semantics();
 	test_iterator_semantics();

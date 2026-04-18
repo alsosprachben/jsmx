@@ -49,6 +49,20 @@ Examples:
 
 Keep measure-then-execute APIs explicit when the generated program needs caller-managed output buffers.
 
+**TextEncoder / TextDecoder lowering**. jsmx exposes sync UTF-8
+codec wrappers as utility functions, not object-model classes:
+
+- `new TextEncoder()` erases at transpile time (no per-instance
+  state in jsmx — UTF-8 is the only encoding).
+- `encoder.encode(s)` → `jsval_text_encode_utf8(region, s, &out)`
+  (output is a `Uint8Array` whose backing ArrayBuffer holds the
+  UTF-8 bytes).
+- `new TextDecoder()` also erases at transpile time (fatal /
+  ignoreBOM / streaming are out of this slice's scope).
+- `decoder.decode(buf)` → `jsval_text_decode_utf8(region, buf, &out)`
+  where `buf` is a `Uint8Array` / `Int8Array` / `Uint8ClampedArray`
+  / `ArrayBuffer`.
+
 ## Objects, Arrays, Sets, And Maps
 
 Prefer the direct helper surface already established in the corpus:

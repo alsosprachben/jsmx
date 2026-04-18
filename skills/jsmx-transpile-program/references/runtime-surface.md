@@ -125,6 +125,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_promise_any(...)`
     - `jsval_aggregate_error_new(...)`
     - `jsval_dom_exception_errors(...)`
+    - `jsval_text_encode_utf8(...)` — TextEncoder.encode equivalent
+    - `jsval_text_decode_utf8(...)` — TextDecoder.decode equivalent
     - `jsval_microtask_enqueue(...)`
     - `jsval_microtask_drain(...)`
     - `jsval_microtask_pending(...)`

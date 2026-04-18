@@ -5085,6 +5085,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored WinterTC URLSearchParams error fixture: get() on a missing name returns null (not an error); accessor methods called on a non-URLSearchParams receiver return -1."
+    },
+    {
+      "id": "jsmx-wintertc-textencoder-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/textencoder-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/textencoder-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextEncoder parity fixture: ASCII, multi-byte (café), and 4-byte UTF-8 (emoji) inputs encode to spec-aligned Uint8Array bytes via jsval_text_encode_utf8."
+    },
+    {
+      "id": "jsmx-wintertc-textdecoder-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/textdecoder-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/textdecoder-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextDecoder parity fixture: round-trip ASCII + multi-byte via encode→decode through Uint8Array, plus direct decode from an ArrayBuffer."
+    },
+    {
+      "id": "jsmx-wintertc-text-emoji-roundtrip",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/text-emoji-roundtrip.js",
+      "generated": "compliance/generated/wintertc/jsmx/text-emoji-roundtrip.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored 4-byte UTF-8 emoji (U+1F389) round-trip: source string → encode → expected bytes → decode → string-equal to source."
+    },
+    {
+      "id": "jsmx-wintertc-text-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/text-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/text-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextEncoder/TextDecoder error fixture: jsval_text_encode_utf8 rejects non-string input; jsval_text_decode_utf8 rejects non-buffer input (number, undefined)."
     }
   ]
 }

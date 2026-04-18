@@ -29541,6 +29541,93 @@ int jsval_string_concat_utf8(jsval_region_t *region,
 	return jsval_string_new_utf8(region, scratch, total_len, out);
 }
 
+int jsval_text_encode_utf8(jsval_region_t *region, jsval_t string_value,
+		jsval_t *uint8array_out)
+{
+	size_t len = 0;
+	jsval_t typed_array;
+	jsval_t buffer_value;
+	uint8_t *bytes;
+	size_t cap = 0;
+
+	if (region == NULL || uint8array_out == NULL ||
+			string_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_string_copy_utf8(region, string_value, NULL, 0, &len) < 0) {
+		return -1;
+	}
+
+	if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8,
+			len, &typed_array) < 0) {
+		return -1;
+	}
+	if (jsval_typed_array_buffer(region, typed_array,
+			&buffer_value) < 0) {
+		return -1;
+	}
+	if (jsval_array_buffer_bytes_mut(region, buffer_value,
+			&bytes, &cap) < 0) {
+		return -1;
+	}
+
+	if (len > 0) {
+		if (jsval_string_copy_utf8(region, string_value,
+				bytes, len, NULL) < 0) {
+			return -1;
+		}
+	}
+
+	*uint8array_out = typed_array;
+	return 0;
+}
+
+int jsval_text_decode_utf8(jsval_region_t *region, jsval_t buffer_value,
+		jsval_t *string_out)
+{
+	uint8_t *bytes;
+	size_t len = 0;
+	jsval_t backing_buffer;
+
+	if (region == NULL || string_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (buffer_value.kind == JSVAL_KIND_TYPED_ARRAY) {
+		jsval_typed_array_kind_t kind;
+		if (jsval_typed_array_kind(region, buffer_value, &kind) < 0) {
+			return -1;
+		}
+		if (kind != JSVAL_TYPED_ARRAY_UINT8 &&
+				kind != JSVAL_TYPED_ARRAY_UINT8_CLAMPED &&
+				kind != JSVAL_TYPED_ARRAY_INT8) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_typed_array_buffer(region, buffer_value,
+				&backing_buffer) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_bytes_mut(region, backing_buffer,
+				&bytes, &len) < 0) {
+			return -1;
+		}
+	} else if (buffer_value.kind == JSVAL_KIND_ARRAY_BUFFER) {
+		if (jsval_array_buffer_bytes_mut(region, buffer_value,
+				&bytes, &len) < 0) {
+			return -1;
+		}
+	} else {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_string_new_utf8(region, bytes, len, string_out);
+}
+
 size_t jsval_object_size(jsval_region_t *region, jsval_t object)
 {
 	if (object.kind != JSVAL_KIND_OBJECT) {
