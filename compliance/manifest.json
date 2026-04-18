@@ -5275,6 +5275,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Date error-path: malformed ISO and NaN time value produce invalid Dates (is_valid == 0) without failing construction; toISOString on invalid Date returns -1."
+    },
+    {
+      "id": "jsmx-collections-set-parity",
+      "suite": "collections",
+      "source": "compliance/js/collections/jsmx/set-parity.js",
+      "generated": "compliance/generated/collections/jsmx/set-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Set parity: new/add/has/size/delete/clear with sameValueZero semantics. NaN dedupes to a single key; -0 and +0 are the same key."
+    },
+    {
+      "id": "jsmx-collections-map-parity",
+      "suite": "collections",
+      "source": "compliance/js/collections/jsmx/map-parity.js",
+      "generated": "compliance/generated/collections/jsmx/map-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Map parity: new/set/get/has/delete/clear; set-on-existing-key overwrites value and preserves size; insertion-order iteration via key_at / value_at."
+    },
+    {
+      "id": "jsmx-collections-errors",
+      "suite": "collections",
+      "source": "compliance/js/collections/jsmx/collections-errors.js",
+      "generated": "compliance/generated/collections/jsmx/collections-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Set/Map error-path: over-capacity add/set returns -1 with ENOBUFS; set_clone/map_clone grow to a larger capacity; accessors on wrong-kind receivers fail."
     }
   ]
 }
