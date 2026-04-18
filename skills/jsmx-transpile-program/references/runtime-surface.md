@@ -131,6 +131,8 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_base64_decode(...)` — standard base64 decode (atob-shaped)
     - `jsval_base64url_encode(...)` — base64url encode (JWT/JWK-shaped)
     - `jsval_base64url_decode(...)` — base64url decode (JWT/JWK-shaped)
+    - `jsval_url_can_parse(...)` — URL.canParse(input, base?) equivalent
+    - `jsval_url_parse(...)` — URL.parse(input, base?) equivalent
     - `jsval_microtask_enqueue(...)`
     - `jsval_queue_microtask(...)` — queueMicrotask(callback) equivalent
     - `jsval_microtask_drain(...)`

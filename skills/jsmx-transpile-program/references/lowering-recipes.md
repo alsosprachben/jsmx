@@ -98,6 +98,21 @@ serializations, and WebCrypto JWK key material:
 the next `jsval_microtask_drain` pass; rejects non-function
 arguments with -1.
 
+**`URL.canParse` / `URL.parse` lowering**. Non-throwing URL
+static methods. Use these rather than wrapping `new URL(...)`
+in try/catch:
+
+- `URL.canParse(s, base)` → `jsval_url_can_parse(region, s,
+  have_base, base, &out)` where `out` becomes
+  `jsval_bool(true|false)`.
+- `URL.parse(s, base)` → `jsval_url_parse(region, s, have_base,
+  base, &out)` where `out` becomes the URL jsval or
+  `jsval_null()`.
+
+Both functions return 0 except for NULL-arg validation; parse
+failures map to the boolean/null result, never to a non-zero
+return.
+
 ## Objects, Arrays, Sets, And Maps
 
 Prefer the direct helper surface already established in the corpus:

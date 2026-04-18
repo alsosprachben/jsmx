@@ -5195,6 +5195,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored base64url error fixture: decode rejects standard-alphabet chars (+, /), length-mod-4 == 1 input, non-string input; encode rejects non-buffer input."
+    },
+    {
+      "id": "jsmx-wintertc-url-static-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/url-static-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/url-static-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored URL.canParse / URL.parse parity fixture: valid absolute URL → true / URL; relative URL without base → false / null; relative URL with base → true / resolved URL; invalid hostname → false / null. Both wrappers are spec-non-throwing."
     }
   ]
 }

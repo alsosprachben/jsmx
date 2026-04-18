@@ -31997,6 +31997,42 @@ int jsval_url_new(jsval_region_t *region, jsval_t input_value, int have_base,
 	}
 }
 
+int jsval_url_can_parse(jsval_region_t *region, jsval_t input_value,
+		int have_base, jsval_t base_value, jsval_t *value_ptr)
+{
+	jsval_t url;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_new(region, input_value, have_base, base_value,
+			&url) == 0) {
+		*value_ptr = jsval_bool(1);
+	} else {
+		*value_ptr = jsval_bool(0);
+	}
+	return 0;
+}
+
+int jsval_url_parse(jsval_region_t *region, jsval_t input_value,
+		int have_base, jsval_t base_value, jsval_t *value_ptr)
+{
+	jsval_t url;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_url_new(region, input_value, have_base, base_value,
+			&url) == 0) {
+		*value_ptr = url;
+	} else {
+		*value_ptr = jsval_null();
+	}
+	return 0;
+}
+
 int jsval_url_href(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr)
 {

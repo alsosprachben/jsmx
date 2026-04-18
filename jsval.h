@@ -612,6 +612,10 @@ int jsval_array_set_length(jsval_region_t *region, jsval_t array, size_t new_len
 
 int jsval_url_new(jsval_region_t *region, jsval_t input_value, int have_base,
 		jsval_t base_value, jsval_t *value_ptr);
+int jsval_url_can_parse(jsval_region_t *region, jsval_t input_value,
+		int have_base, jsval_t base_value, jsval_t *value_ptr);
+int jsval_url_parse(jsval_region_t *region, jsval_t input_value,
+		int have_base, jsval_t base_value, jsval_t *value_ptr);
 int jsval_url_href(jsval_region_t *region, jsval_t url_value,
 		jsval_t *value_ptr);
 int jsval_url_origin(jsval_region_t *region, jsval_t url_value,
