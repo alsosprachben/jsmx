@@ -130,6 +130,7 @@ Treat these as direct-lowerable when the entrypoint stays inside the current fla
     - `jsval_base64_encode(...)` — standard base64 encode (btoa-shaped)
     - `jsval_base64_decode(...)` — standard base64 decode (atob-shaped)
     - `jsval_microtask_enqueue(...)`
+    - `jsval_queue_microtask(...)` — queueMicrotask(callback) equivalent
     - `jsval_microtask_drain(...)`
     - `jsval_microtask_pending(...)`
     - `jsval_region_set_scheduler(...)`

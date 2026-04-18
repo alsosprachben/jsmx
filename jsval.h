@@ -519,6 +519,7 @@ int jsval_promise_any(jsval_region_t *region, const jsval_t *inputs,
 		size_t n, jsval_t *out_promise);
 int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
 		size_t argc, const jsval_t *argv);
+int jsval_queue_microtask(jsval_region_t *region, jsval_t callback);
 size_t jsval_microtask_pending(jsval_region_t *region);
 int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error);
 int jsval_object_new(jsval_region_t *region, size_t cap, jsval_t *value_ptr);

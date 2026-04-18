@@ -19845,6 +19845,11 @@ size_t jsval_microtask_pending(jsval_region_t *region)
 	return region->microtask_count;
 }
 
+int jsval_queue_microtask(jsval_region_t *region, jsval_t callback)
+{
+	return jsval_microtask_enqueue(region, callback, 0, NULL);
+}
+
 int jsval_microtask_enqueue(jsval_region_t *region, jsval_t function,
 		size_t argc, const jsval_t *argv)
 {

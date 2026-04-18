@@ -5155,6 +5155,26 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored base64 error fixture: decode rejects base64url-only characters (- and _), non-multiple-of-4 length, non-string input; encode rejects non-buffer input."
+    },
+    {
+      "id": "jsmx-wintertc-queuemicrotask-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/queuemicrotask-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/queuemicrotask-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored queueMicrotask parity fixture: enqueue a native callback via jsval_queue_microtask; verify it runs exactly once on microtask drain and doesn't re-run on an empty drain."
+    },
+    {
+      "id": "jsmx-wintertc-queuemicrotask-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/queuemicrotask-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/queuemicrotask-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored queueMicrotask error fixture: non-function callback (number, undefined) returns -1."
     }
   ]
 }

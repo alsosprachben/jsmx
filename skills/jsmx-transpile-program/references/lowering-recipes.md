@@ -78,6 +78,12 @@ WinterTC handlers:
   Base64url characters (`-`, `_`) are rejected by the standard
   decoder — use the internal base64url path for JWK transport.
 
+**`queueMicrotask` lowering**. `queueMicrotask(fn)` →
+`jsval_queue_microtask(region, fn)`, a thin named wrapper over
+`jsval_microtask_enqueue` with `argc=0`. The callback runs on
+the next `jsval_microtask_drain` pass; rejects non-function
+arguments with -1.
+
 ## Objects, Arrays, Sets, And Maps
 
 Prefer the direct helper surface already established in the corpus:
