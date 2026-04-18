@@ -5365,6 +5365,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Response body already-used error path: first text() fulfills and sets bodyUsed; second text() (and cross-consumer json()) returns a Promise rejected with DOMException(name='TypeError', message='body already used')."
+    },
+    {
+      "id": "jsmx-bigint-bigint-construct-i64",
+      "suite": "bigint",
+      "source": "compliance/js/bigint/jsmx/bigint-construct-i64.js",
+      "generated": "compliance/generated/bigint/jsmx/bigint-construct-i64.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored BigInt 64-bit construction parity: jsval_bigint_new_i64(0/42/INT64_MIN) and _new_u64(UINT64_MAX) round-trip via jsval_bigint_copy_utf8; typeof yields 'bigint'; zero is falsy. Exercises full 64-bit signed and unsigned ranges beyond IEEE-754 safe integers."
+    },
+    {
+      "id": "jsmx-bigint-bigint-construct-utf8-parse",
+      "suite": "bigint",
+      "source": "compliance/js/bigint/jsmx/bigint-construct-utf8-parse.js",
+      "generated": "compliance/generated/bigint/jsmx/bigint-construct-utf8-parse.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored BigInt UTF-8 parse round-trip: '0', '-0000', and i64(0) all normalize strict-equal; 20-digit positives/negatives past 2^63 round-trip via copy_utf8; unary_minus of a big positive equals parsed negative; jsval_to_number on BigInt returns -1/ENOTSUP."
+    },
+    {
+      "id": "jsmx-bigint-bigint-compare-ordering",
+      "suite": "bigint",
+      "source": "compliance/js/bigint/jsmx/bigint-compare-ordering.js",
+      "generated": "compliance/generated/bigint/jsmx/bigint-compare-ordering.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored jsval_bigint_compare ordering parity: memcmp-style sign for (0,42)<0, (42,0)>0, equal values ==0; cross-sign (big-, big+)<0 past 2^63; reflexive compare(big,big)==0."
+    },
+    {
+      "id": "jsmx-bigint-bigint-equality-loose-number",
+      "suite": "bigint",
+      "source": "compliance/js/bigint/jsmx/bigint-equality-loose-number.js",
+      "generated": "compliance/generated/bigint/jsmx/bigint-equality-loose-number.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored BigInt loose-equality parity: 42n==42.0 true, 42n==42.5 false, 42n=='42' true, 42n=='42.5' false; 42n===42.0 false (strict distinguishes types); jsval_add/subtract/multiply mixing BigInt with Number returns -1/ENOTSUP."
     }
   ]
 }
