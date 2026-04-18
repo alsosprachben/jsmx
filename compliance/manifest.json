@@ -5405,6 +5405,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored BigInt loose-equality parity: 42n==42.0 true, 42n==42.5 false, 42n=='42' true, 42n=='42.5' false; 42n===42.0 false (strict distinguishes types); jsval_add/subtract/multiply mixing BigInt with Number returns -1/ENOTSUP."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-array-buffer-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-array-buffer-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-array-buffer-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Request.arrayBuffer() parity: POST Request with in-memory string body consumed via jsval_request_array_buffer resolves synchronously with an ArrayBuffer whose bytes equal the source UTF-8; bodyUsed flips 0→1."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-bytes-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-bytes-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-bytes-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Request.bytes() parity: POST Request with multi-byte 'café' body produces a synchronous Uint8Array (UINT8 typed-array kind) whose backing bytes equal the UTF-8 encoding; bodyUsed updates correctly."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-json-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-json-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-json-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Request.json() parity: POST Request with body '{\"x\":1,\"y\":[2,3]}' resolves synchronously to a parsed object; obj.x==1; obj.y is a length-2 array of [2,3]; bodyUsed flips 0→1."
+    },
+    {
+      "id": "jsmx-wintertc-fetch-request-body-consumed-error",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/fetch-request-body-consumed-error.js",
+      "generated": "compliance/generated/wintertc/jsmx/fetch-request-body-consumed-error.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Request body already-used error path: first text() fulfills and sets bodyUsed; second text() (and cross-consumer json()) returns a Promise rejected with DOMException(name='TypeError', message='body already used')."
     }
   ]
 }
