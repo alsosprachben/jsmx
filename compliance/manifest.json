@@ -5305,6 +5305,36 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Set/Map error-path: over-capacity add/set returns -1 with ENOBUFS; set_clone/map_clone grow to a larger capacity; accessors on wrong-kind receivers fail."
+    },
+    {
+      "id": "jsmx-iterators-array-iterator-parity",
+      "suite": "iterators",
+      "source": "compliance/js/iterators/jsmx/array-iterator-parity.js",
+      "generated": "compliance/generated/iterators/jsmx/array-iterator-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored array iterator parity: DEFAULT/KEYS/VALUES selectors via jsval_iterator_next; ENTRIES via jsval_iterator_next_entry (generic _next on ENTRIES fails). Covers [10,20,30] and empty array."
+    },
+    {
+      "id": "jsmx-iterators-collection-iterator-parity",
+      "suite": "iterators",
+      "source": "compliance/js/iterators/jsmx/collection-iterator-parity.js",
+      "generated": "compliance/generated/iterators/jsmx/collection-iterator-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Set + Map iterator parity: Set DEFAULT yields values in insertion order; Map KEYS / VALUES / ENTRIES preserve insertion order. Uses _next for keys/values, _next_entry for entries."
+    },
+    {
+      "id": "jsmx-iterators-string-iterator-parity",
+      "suite": "iterators",
+      "source": "compliance/js/iterators/jsmx/string-iterator-parity.js",
+      "generated": "compliance/generated/iterators/jsmx/string-iterator-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored string iterator parity: ASCII 'abc' yields 3 single-byte code points; 'café' yields 4 code points (é is 2 UTF-8 bytes); '🎉' yields exactly one 4-byte code point (surrogate pair is NOT split by UTF-16 unit)."
     }
   ]
 }
