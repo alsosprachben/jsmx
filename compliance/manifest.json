@@ -5045,6 +5045,46 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Promise.any fixture: empty input rejects synchronously with AggregateError(errors=[]). Exercises the jsval_promise_any n==0 fast path."
+    },
+    {
+      "id": "jsmx-wintertc-url-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/url-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/url-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WinterTC URL parity fixture: parse a fully-specified URL (userinfo, explicit port, path, query, fragment), exercise all eight component getters, href round-trip, and a setter round-trip (pathname rewrite updates href)."
+    },
+    {
+      "id": "jsmx-wintertc-url-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/url-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/url-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WinterTC URL error fixture: jsval_url_new rejects relative URLs without a base and URLs with invalid hostnames (empty labels), returning -1."
+    },
+    {
+      "id": "jsmx-wintertc-urlsearchparams-parity",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/urlsearchparams-parity.js",
+      "generated": "compliance/generated/wintertc/jsmx/urlsearchparams-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WinterTC URLSearchParams parity fixture: parse wire-form query (with %20 percent-decoding), exercise size/has/get/append/set/delete/sort/toString, verify multi-value ordering and round-trip serialization."
+    },
+    {
+      "id": "jsmx-wintertc-urlsearchparams-errors",
+      "suite": "wintertc",
+      "source": "compliance/js/wintertc/jsmx/urlsearchparams-errors.js",
+      "generated": "compliance/generated/wintertc/jsmx/urlsearchparams-errors.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WinterTC URLSearchParams error fixture: get() on a missing name returns null (not an error); accessor methods called on a non-URLSearchParams receiver return -1."
     }
   ]
 }
