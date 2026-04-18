@@ -217,6 +217,9 @@ That makes semantic correctness more important than surface familiarity:
     - identity-bearing Promise values with pending / fulfilled / rejected
       state
     - explicit `then`, `catch`, and `finally` chaining
+    - Promise combinators: `Promise.all`, `Promise.race`,
+      `Promise.allSettled`, `Promise.any` (rejecting with
+      `AggregateError`)
     - a runtime-owned microtask queue with optional scheduler wake hooks so
       standalone `jsmx` and later outer runtimes can share the same Promise
       semantics
@@ -282,6 +285,8 @@ That makes semantic correctness more important than surface familiarity:
     - `regex`
     - `values`
     - `objects`
+    - `wintertc` (WHATWG Fetch + WebCrypto + FaaS bridge)
+    - `promises` (Promise.all / race / allSettled / any)
 - `bench/`
   - dedicated runtime benchmark corpus for Node versus committed generated C
   - local JSON timing output and manifest-driven pairing
