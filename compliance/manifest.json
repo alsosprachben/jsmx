@@ -5695,6 +5695,56 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored pipeTo locked-stream parity (Phase 6-2): pipe_to on a ReadableStream that already has a default reader fails synchronously with errno EBUSY before scheduling any microtask."
+    },
+    {
+      "id": "jsmx-streams-compression-stream-gzip-round-trip-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/compression-stream-gzip-round-trip-parity.js",
+      "generated": "compliance/generated/streams/jsmx/compression-stream-gzip-round-trip-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored CompressionStream gzip round-trip parity (Phase 5-2): a ReadableStream of bytes piped through CompressionStream('gzip') produces bytes starting with the 1F 8B gzip magic; re-piping through DecompressionStream('gzip') round-trips back to the original input."
+    },
+    {
+      "id": "jsmx-streams-compression-stream-deflate-round-trip-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/compression-stream-deflate-round-trip-parity.js",
+      "generated": "compliance/generated/streams/jsmx/compression-stream-deflate-round-trip-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored CompressionStream deflate round-trip parity (Phase 5-2): same shape as gzip but with the 'deflate' format; intermediate bytes begin with zlib CMF 0x78."
+    },
+    {
+      "id": "jsmx-streams-compression-stream-deflate-raw-round-trip-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/compression-stream-deflate-raw-round-trip-parity.js",
+      "generated": "compliance/generated/streams/jsmx/compression-stream-deflate-raw-round-trip-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored CompressionStream deflate-raw round-trip parity (Phase 5-2): raw deflate (no envelope) round-trips byte-identical through Compression + Decompression."
+    },
+    {
+      "id": "jsmx-streams-decompression-stream-invalid-input-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/decompression-stream-invalid-input-parity.js",
+      "generated": "compliance/generated/streams/jsmx/decompression-stream-invalid-input-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored DecompressionStream invalid-input parity (Phase 5-2): 8 bytes of garbage piped through DecompressionStream('gzip') cause the readable side's first read to reject with a TypeError DOMException."
+    },
+    {
+      "id": "jsmx-streams-compression-stream-empty-input-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/compression-stream-empty-input-parity.js",
+      "generated": "compliance/generated/streams/jsmx/compression-stream-empty-input-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored CompressionStream empty-input parity (Phase 5-2): an empty ReadableStream piped through CompressionStream('gzip') still emits a non-empty envelope (flush runs); decompressing that envelope yields zero bytes."
     }
   ]
 }
