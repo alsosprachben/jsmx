@@ -462,6 +462,116 @@ and note the known divergence.
 For a worked reference pair see `example/stream_reader_demo.js` ↔
 `example/stream_reader_demo_handler.c`.
 
+### Streaming-Body Read Loop (CPS)
+
+The previous recipe's sync-extract shape applies only to
+in-memory Response bodies (the transport materialized the body
+before the reader existed). A streaming transport — e.g., the
+mnvkd vk_jsmx_fetch driver with `spec.streaming = 1` — makes
+each `reader.read()` Promise legitimately PENDING while the
+producer coroutine's next push hasn't landed. The lowered
+`reader.read()` call can no longer sync-extract; the JS
+`await reader.read()` lowers to a per-iteration CPS
+continuation registered on the read Promise via
+`jsval_promise_then`. Lowering class: `production_slow_path`.
+
+**State threading across iterations.** `jsval_promise_then`
+takes no closure userdata and `jsval_native_function_fn`
+receives only `region / argc / argv / result_ptr / error`.
+The read loop's state (reader handle, accumulator bytes,
+captured status / statusText / headers) lives in a single
+file-scope `static struct` in the handler. This is sufficient
+for one in-flight chain per handler process — adequate for
+the FaaS single-fetch contract. A handler that drives
+multiple concurrent streaming chains cannot be transpiled
+from this template until a jsmx promise-then closure API
+lands; mark it `manual_runtime_needed`.
+
+**Skeleton**:
+
+```c
+struct streaming_chain_state {
+    jsval_t reader;
+    uint8_t accum[BODY_MAX];
+    size_t accum_len;
+    uint16_t status;
+    jsval_t status_text_value;
+    jsval_t headers_value;
+    int active;
+};
+static struct streaming_chain_state g_state;
+
+/* CPS continuation #1: after `await fetch(url)`. */
+static int on_upstream_fulfilled(jsval_region_t *region, size_t argc,
+        const jsval_t *argv, jsval_t *result_ptr,
+        jsmethod_error_t *error)
+{
+    /* argv[0] is the upstream Response. Capture status, statusText,
+     * headers into g_state. Then get the body stream and a reader. */
+    /* jsval_response_status / _status_text / _headers → g_state */
+    /* jsval_response_body → stream; get_reader → reader */
+    g_state.reader = reader;
+    g_state.accum_len = 0;
+    g_state.active = 1;
+
+    /* Kick off the read loop: first reader.read() + register self. */
+    jsval_readable_stream_reader_read(region, reader, &first_promise);
+    jsval_function_new(region, on_chunk, 1, 0,
+            jsval_undefined(), &continuation_fn);
+    jsval_promise_then(region, first_promise, continuation_fn,
+            jsval_undefined(), &downstream_promise);
+    *result_ptr = downstream_promise;
+    return 0;
+}
+
+/* CPS continuation #2: per-chunk, registered repeatedly. */
+static int on_chunk(jsval_region_t *region, size_t argc,
+        const jsval_t *argv, jsval_t *result_ptr,
+        jsmethod_error_t *error)
+{
+    /* argv[0] is { value, done }. */
+    jsval_t done_value;
+    jsval_object_get_utf8(region, argv[0],
+            (const uint8_t *)"done", 4, &done_value);
+    if (done_value.kind == JSVAL_KIND_BOOL && done_value.as.boolean) {
+        /* Build the final Response from g_state.accum + captured
+         * status / statusText / headers and return it synchronously.
+         * The outer Promise chain settles with this Response. */
+        build_final_response(region, &final_response);
+        g_state.active = 0;
+        *result_ptr = final_response;
+        return 0;
+    }
+    /* Accumulate the chunk's Uint8Array bytes via the
+     * typed-array sub-recipe above (jsval_typed_array_buffer +
+     * jsval_array_buffer_bytes_mut), appending into g_state.accum. */
+
+    /* Register self on the next read Promise. */
+    jsval_readable_stream_reader_read(region, g_state.reader,
+            &next_promise);
+    jsval_function_new(region, on_chunk, 1, 0,
+            jsval_undefined(), &continuation_fn);
+    jsval_promise_then(region, next_promise, continuation_fn,
+            jsval_undefined(), &downstream_promise);
+    *result_ptr = downstream_promise;
+    return 0;
+}
+```
+
+The handler entrypoint looks identical to the sync-extract
+handler's outer shape — `jsval_fetch` + single
+`jsval_promise_then(upstream_promise, on_upstream_fulfilled,
+...)` — but the continuation chain goes through
+`on_upstream_fulfilled → on_chunk → on_chunk → ... → on_chunk
+(done)` instead of extracting the body inline.
+
+For a worked reference pair see
+`example/wintertc_proxy_streaming.js` ↔
+`example/wintertc_proxy_streaming_handler.c`. End-to-end
+exercising requires the mnvkd `vk_fetch_url_launch_streaming`
+macro (passes `spec.streaming = 1` to the driver) — build the
+demo as `vk_test_faas_demo_streaming` in mnvkd.
+
 ### Response Construction
 
 `return new Response(body, { status, statusText, headers })` lowers
