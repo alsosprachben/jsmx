@@ -51,7 +51,8 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_READABLE_STREAM = 28,
 	JSVAL_KIND_READABLE_STREAM_READER = 29,
 	JSVAL_KIND_WRITABLE_STREAM = 30,
-	JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER = 31
+	JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER = 31,
+	JSVAL_KIND_TRANSFORM_STREAM = 32
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -1473,6 +1474,67 @@ int jsval_writable_stream_abort(jsval_region_t *region, jsval_t stream,
  * jsval_response_body_source_off on the read side.
  */
 int jsval_writable_stream_sink_off(jsval_region_t *region, jsval_t stream,
+		jsval_off_t *out);
+
+/*
+ * TransformStream: WHATWG-shaped composition of a ReadableStream
+ * and a WritableStream connected through a C-callable transformer.
+ *
+ * A transformer's transform() callback runs once per writer.write()
+ * with a controller that can enqueue zero or more output chunks
+ * onto the readable side, signal an error, or terminate the stream
+ * early. flush() (optional) runs once on writer.close(), giving the
+ * transformer a final opportunity to enqueue trailing bytes (e.g.
+ * a Z_FINISH flush for compression) before the readable side
+ * reports EOF.
+ *
+ * Phase 4-1 scope: no constructor-based construction
+ * (new TransformStream({transform})), no high-water mark / bounded
+ * channel (the chunk FIFO is unbounded and the writable side is
+ * always READY), no pipeTo / pipeThrough. The C API is symmetric
+ * with the *_new_from_source / *_new_from_sink factories on the
+ * Read and Write halves.
+ *
+ * The controller is a synchronous handle valid only for the
+ * duration of a transform()/flush() call. enqueue() copies the
+ * supplied bytes into a region-allocated chunk node and notifies
+ * any reader parked on the readable side; error() flips the
+ * channel into ERROR with the given reason and notifies; terminate()
+ * is the controller-side equivalent of writer.close() and flips
+ * the channel into a closed state.
+ */
+typedef struct jsval_transform_controller_s jsval_transform_controller_t;
+
+int jsval_transform_controller_enqueue(
+		jsval_transform_controller_t *controller,
+		const uint8_t *bytes, size_t len);
+int jsval_transform_controller_error(
+		jsval_transform_controller_t *controller, jsval_t reason);
+int jsval_transform_controller_terminate(
+		jsval_transform_controller_t *controller);
+
+typedef struct jsval_transformer_vtable_s {
+	int (*transform)(jsval_region_t *region, void *userdata,
+			const uint8_t *chunk, size_t chunk_len,
+			jsval_transform_controller_t *controller);
+	int (*flush)(jsval_region_t *region, void *userdata,
+			jsval_transform_controller_t *controller);
+} jsval_transformer_vtable_t;
+
+int jsval_transform_stream_new(jsval_region_t *region,
+		const jsval_transformer_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr);
+
+int jsval_transform_stream_readable(jsval_region_t *region, jsval_t stream,
+		jsval_t *value_ptr);
+int jsval_transform_stream_writable(jsval_region_t *region, jsval_t stream,
+		jsval_t *value_ptr);
+
+/*
+ * Returns the internal channel offset of a TransformStream. Reserved
+ * for future producer-side wake hooks; callers can ignore in v1.
+ */
+int jsval_transform_stream_channel_off(jsval_region_t *region, jsval_t stream,
 		jsval_off_t *out);
 
 typedef enum jsval_body_consume_mode_e {

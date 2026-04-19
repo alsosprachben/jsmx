@@ -13755,6 +13755,414 @@ static void test_writable_stream_semantics(void)
 	}
 }
 
+/* ----------- TransformStream test fixtures ----------- */
+
+static int identity_transformer_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	(void)region;
+	(void)userdata;
+	return jsval_transform_controller_enqueue(controller, chunk, chunk_len);
+}
+
+static const jsval_transformer_vtable_t identity_transformer_vtable = {
+	identity_transformer_transform,
+	NULL,
+};
+
+typedef struct uppercase_transformer_s {
+	int transform_calls;
+	int flush_calls;
+} uppercase_transformer_t;
+
+static int uppercase_transformer_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	uppercase_transformer_t *state = (uppercase_transformer_t *)userdata;
+	uint8_t buf[64];
+	size_t i;
+
+	(void)region;
+	state->transform_calls++;
+	assert(chunk_len <= sizeof(buf));
+	for (i = 0; i < chunk_len; i++) {
+		uint8_t c = chunk[i];
+		buf[i] = (c >= 'a' && c <= 'z') ? (uint8_t)(c - ('a' - 'A')) : c;
+	}
+	return jsval_transform_controller_enqueue(controller, buf, chunk_len);
+}
+
+static const jsval_transformer_vtable_t uppercase_transformer_vtable = {
+	uppercase_transformer_transform,
+	NULL,
+};
+
+static int splitter_transformer_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	size_t start = 0;
+	size_t i;
+
+	(void)region;
+	(void)userdata;
+	for (i = 0; i < chunk_len; i++) {
+		if (chunk[i] == ',') {
+			if (jsval_transform_controller_enqueue(controller,
+					chunk + start, i - start) < 0) {
+				return -1;
+			}
+			start = i + 1;
+		}
+	}
+	if (start < chunk_len) {
+		if (jsval_transform_controller_enqueue(controller, chunk + start,
+				chunk_len - start) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static const jsval_transformer_vtable_t splitter_transformer_vtable = {
+	splitter_transformer_transform,
+	NULL,
+};
+
+typedef struct flush_transformer_s {
+	int transform_calls;
+	int flush_calls;
+} flush_transformer_t;
+
+static int flush_transformer_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	flush_transformer_t *state = (flush_transformer_t *)userdata;
+
+	(void)region;
+	state->transform_calls++;
+	return jsval_transform_controller_enqueue(controller, chunk, chunk_len);
+}
+
+static int flush_transformer_flush(jsval_region_t *region, void *userdata,
+		jsval_transform_controller_t *controller)
+{
+	flush_transformer_t *state = (flush_transformer_t *)userdata;
+
+	(void)region;
+	state->flush_calls++;
+	return jsval_transform_controller_enqueue(controller,
+			(const uint8_t *)"!END", 4);
+}
+
+static const jsval_transformer_vtable_t flush_transformer_vtable = {
+	flush_transformer_transform,
+	flush_transformer_flush,
+};
+
+static int erroring_transformer_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	jsval_t name_v;
+	jsval_t msg_v;
+	jsval_t reason = jsval_undefined();
+
+	(void)userdata;
+	(void)chunk;
+	(void)chunk_len;
+	if (jsval_string_new_utf8(region, (const uint8_t *)"TypeError", 9,
+			&name_v) == 0 &&
+			jsval_string_new_utf8(region, (const uint8_t *)"bad chunk", 9,
+			&msg_v) == 0) {
+		(void)jsval_dom_exception_new(region, name_v, msg_v, &reason);
+	}
+	(void)jsval_transform_controller_error(controller, reason);
+	return -1;
+}
+
+static const jsval_transformer_vtable_t erroring_transformer_vtable = {
+	erroring_transformer_transform,
+	NULL,
+};
+
+static void test_transform_stream_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. identity: bytes round-trip end-to-end. */
+	{
+		jsval_t stream;
+		jsval_t readable;
+		jsval_t writable;
+		jsval_t writer;
+		jsval_t reader;
+		jsval_t pwrite1, pwrite2, pclose;
+		jsval_t pread1, pread2, pread3;
+		jsval_t result;
+		jsval_promise_state_t state;
+		uint8_t chunk[64];
+		size_t len = 0;
+
+		assert(jsval_transform_stream_new(&region,
+				&identity_transformer_vtable, NULL, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_TRANSFORM_STREAM);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(readable.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(writable.kind == JSVAL_KIND_WRITABLE_STREAM);
+
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"hello, ", 7, &pwrite1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"world", 5, &pwrite2) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread1)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread2)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread3)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pwrite1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pwrite2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pclose, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(jsval_promise_state(&region, pread1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread1, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 7 && memcmp(chunk, "hello, ", 7) == 0);
+
+		assert(jsval_promise_state(&region, pread2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread2, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 5 && memcmp(chunk, "world", 5) == 0);
+
+		assert(jsval_promise_state(&region, pread3, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread3, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 2. uppercase transformer. */
+	{
+		uppercase_transformer_t state_data = { 0, 0 };
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pwrite, pclose, pread, pread_eof;
+		jsval_t result;
+		jsval_promise_state_t pstate;
+		uint8_t chunk[64];
+		size_t len = 0;
+
+		assert(jsval_transform_stream_new(&region,
+				&uppercase_transformer_vtable, &state_data, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"abc", 3, &pwrite) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader,
+				&pread_eof) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(state_data.transform_calls == 1);
+		assert(jsval_promise_state(&region, pread, &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 3 && memcmp(chunk, "ABC", 3) == 0);
+		assert(jsval_promise_state(&region, pread_eof, &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread_eof, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 3. one-to-many: comma splitter. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pwrite, pclose;
+		jsval_t reads[5];
+		jsval_t result;
+		jsval_promise_state_t pstate;
+		uint8_t chunk[16];
+		size_t len = 0;
+		int i;
+		const char *expected[3] = { "foo", "bar", "baz" };
+		size_t expected_lens[3] = { 3, 3, 3 };
+
+		assert(jsval_transform_stream_new(&region,
+				&splitter_transformer_vtable, NULL, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"foo,bar,baz", 11, &pwrite) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+		for (i = 0; i < 4; i++) {
+			assert(jsval_readable_stream_reader_read(&region, reader,
+					&reads[i]) == 0);
+		}
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		for (i = 0; i < 3; i++) {
+			assert(jsval_promise_state(&region, reads[i], &pstate) == 0
+					&& pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region, reads[i], &result) == 0);
+			assert(read_result_done(&region, result) == 0);
+			assert(read_result_value_bytes(&region, result, chunk,
+					sizeof(chunk), &len) == 0);
+			assert(len == expected_lens[i]
+					&& memcmp(chunk, expected[i], len) == 0);
+		}
+		assert(jsval_promise_state(&region, reads[3], &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, reads[3], &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 4. flush emits trailing bytes before EOF. */
+	{
+		flush_transformer_t state_data = { 0, 0 };
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pwrite, pclose;
+		jsval_t reads[3];
+		jsval_t result;
+		jsval_promise_state_t pstate;
+		uint8_t chunk[16];
+		size_t len = 0;
+
+		assert(jsval_transform_stream_new(&region,
+				&flush_transformer_vtable, &state_data, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"data", 4, &pwrite) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &reads[0])
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &reads[1])
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &reads[2])
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(state_data.flush_calls == 1);
+		assert(jsval_promise_result(&region, reads[0], &result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 4 && memcmp(chunk, "data", 4) == 0);
+		assert(jsval_promise_result(&region, reads[1], &result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 4 && memcmp(chunk, "!END", 4) == 0);
+		assert(jsval_promise_state(&region, reads[2], &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, reads[2], &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 5. error: controller.error rejects readers + future writes. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pwrite, pread, ppost;
+		jsval_t reason;
+		jsval_promise_state_t pstate;
+
+		assert(jsval_transform_stream_new(&region,
+				&erroring_transformer_vtable, NULL, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"x", 1, &pwrite) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pwrite, &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_state(&region, pread, &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, pread, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+
+		/* Subsequent write fails too — writable side errored. */
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"y", 1, &ppost) == 0);
+		assert(jsval_promise_state(&region, ppost, &pstate) == 0
+				&& pstate == JSVAL_PROMISE_STATE_REJECTED);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -13866,6 +14274,7 @@ int main(void)
 	test_fetch_body_drain_semantics();
 	test_readable_stream_semantics();
 	test_writable_stream_semantics();
+	test_transform_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

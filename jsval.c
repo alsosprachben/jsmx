@@ -2127,6 +2127,7 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		return 1;
 	default:
 		return 0;
@@ -3700,6 +3701,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -3859,6 +3861,7 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3944,6 +3947,7 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -4048,6 +4052,7 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -4230,6 +4235,7 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -33153,6 +33159,7 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -33261,6 +33268,7 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		return 1;
 	default:
 		return 0;
@@ -33356,6 +33364,7 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_READABLE_STREAM_READER:
 	case JSVAL_KIND_WRITABLE_STREAM:
 	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
+	case JSVAL_KIND_TRANSFORM_STREAM:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -40066,5 +40075,600 @@ static int jsval_writable_stream_run_pump(jsval_region_t *region,
 		}
 	}
 
+	return 0;
+}
+
+/* -------------------- TransformStream --------------------- */
+
+/*
+ * Bridge between a writable side (driven by writer.write()) and a
+ * readable side (drained by reader.read()) through a C-callable
+ * transformer. Storage layout:
+ *   - jsval_native_transform_channel_t       (one per stream)
+ *   - jsval_native_body_source_t for readable (allocated by
+ *     jsval_readable_stream_new_wrapping_source via the explicit
+ *     `transform_source_off` we hand it)
+ *
+ * The chunk FIFO (jsval_native_transform_chunk_t) carries
+ * controller->enqueue() output; the source's read() vtable pops
+ * one node per call (with partial-accept retry for nodes larger
+ * than the caller's scratch buffer).
+ */
+typedef struct jsval_native_transform_chunk_s {
+	jsval_off_t next_off;
+	size_t len;
+	size_t consumed;
+	/* `len` bytes follow the struct. */
+} jsval_native_transform_chunk_t;
+
+typedef struct jsval_native_transform_channel_s {
+	jsval_off_t source_off;          /* readable's body source */
+	jsval_off_t pending_chunks_head;
+	jsval_off_t pending_chunks_tail;
+	jsval_off_t wrapper_off;         /* back to the wrapper */
+	jsval_t error_reason;
+	uint8_t writable_closed;
+	uint8_t errored;
+	uint8_t terminated;
+	uint8_t reserved;
+} jsval_native_transform_channel_t;
+
+typedef struct jsval_native_transform_stream_s {
+	jsval_off_t channel_off;
+	jsval_off_t readable_off;        /* off of native readable stream */
+	jsval_off_t writable_off;        /* off of native writable stream */
+	const jsval_transformer_vtable_t *vtable;
+	void *userdata;
+} jsval_native_transform_stream_t;
+
+/*
+ * Synchronous controller handed to transformer->transform/flush.
+ * Lives only on the C stack of the sink-glue functions; not arena
+ * storage. enqueue/error/terminate operate on the linked channel.
+ */
+struct jsval_transform_controller_s {
+	jsval_region_t *region;
+	jsval_off_t channel_off;
+};
+
+static jsval_native_transform_channel_t *
+jsval_native_transform_channel(jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_transform_channel_t *)jsval_region_ptr(region, off);
+}
+
+static jsval_native_transform_stream_t *
+jsval_native_transform_stream(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_TRANSFORM_STREAM) {
+		return NULL;
+	}
+	return (jsval_native_transform_stream_t *)jsval_region_ptr(region,
+			value.off);
+}
+
+static jsval_native_transform_stream_t *
+jsval_native_transform_stream_off(jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_transform_stream_t *)jsval_region_ptr(region, off);
+}
+
+static int jsval_transform_channel_push_chunk(jsval_region_t *region,
+		jsval_off_t channel_off, const uint8_t *bytes, size_t len)
+{
+	jsval_native_transform_channel_t *channel;
+	jsval_native_transform_chunk_t *chunk;
+	jsval_off_t chunk_off;
+	uint8_t *chunk_bytes;
+	size_t total;
+
+	if (len > SIZE_MAX - sizeof(jsval_native_transform_chunk_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total = sizeof(*chunk) + len;
+	if (jsval_region_reserve(region, total,
+			_Alignof(jsval_native_transform_chunk_t), &chunk_off,
+			(void **)&chunk) < 0) {
+		return -1;
+	}
+	chunk->next_off = 0;
+	chunk->len = len;
+	chunk->consumed = 0;
+	chunk_bytes = (uint8_t *)(chunk + 1);
+	if (len > 0 && bytes != NULL) {
+		memcpy(chunk_bytes, bytes, len);
+	}
+
+	channel = jsval_native_transform_channel(region, channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (channel->pending_chunks_tail == 0) {
+		channel->pending_chunks_head = chunk_off;
+		channel->pending_chunks_tail = chunk_off;
+	} else {
+		jsval_native_transform_chunk_t *tail;
+		tail = (jsval_native_transform_chunk_t *)jsval_region_ptr(region,
+				channel->pending_chunks_tail);
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = chunk_off;
+		channel->pending_chunks_tail = chunk_off;
+	}
+	return 0;
+}
+
+int jsval_transform_controller_enqueue(
+		jsval_transform_controller_t *controller,
+		const uint8_t *bytes, size_t len)
+{
+	jsval_native_transform_channel_t *channel;
+	jsval_off_t source_off;
+
+	if (controller == NULL || (bytes == NULL && len != 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel = jsval_native_transform_channel(controller->region,
+			controller->channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (channel->errored || channel->terminated) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_transform_channel_push_chunk(controller->region,
+			controller->channel_off, bytes, len) < 0) {
+		return -1;
+	}
+	channel = jsval_native_transform_channel(controller->region,
+			controller->channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	source_off = channel->source_off;
+	if (source_off != 0) {
+		return jsval_body_source_notify(controller->region, source_off);
+	}
+	return 0;
+}
+
+int jsval_transform_controller_error(
+		jsval_transform_controller_t *controller, jsval_t reason)
+{
+	jsval_native_transform_channel_t *channel;
+	jsval_off_t source_off;
+
+	if (controller == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel = jsval_native_transform_channel(controller->region,
+			controller->channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (channel->errored) {
+		return 0;
+	}
+	channel->errored = 1;
+	channel->error_reason = reason;
+	source_off = channel->source_off;
+	if (source_off != 0) {
+		return jsval_body_source_notify(controller->region, source_off);
+	}
+	return 0;
+}
+
+int jsval_transform_controller_terminate(
+		jsval_transform_controller_t *controller)
+{
+	jsval_native_transform_channel_t *channel;
+	jsval_off_t source_off;
+
+	if (controller == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel = jsval_native_transform_channel(controller->region,
+			controller->channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel->terminated = 1;
+	channel->writable_closed = 1;
+	source_off = channel->source_off;
+	if (source_off != 0) {
+		return jsval_body_source_notify(controller->region, source_off);
+	}
+	return 0;
+}
+
+/*
+ * Body-source vtable for the readable side. Body-source callbacks
+ * receive only their userdata pointer (no region), so we allocate
+ * a small dispatch struct in the arena at construction time
+ * carrying the region pointer + channel offset; the read callback
+ * walks it to find the channel.
+ */
+typedef struct jsval_transform_source_dispatch_s {
+	jsval_region_t *region;
+	jsval_off_t channel_off;
+} jsval_transform_source_dispatch_t;
+
+static void jsval_transform_source_close(void *userdata)
+{
+	(void)userdata;
+}
+
+static int jsval_transform_source_read_real(void *userdata, uint8_t *buf,
+		size_t cap, size_t *out_len, jsval_body_source_status_t *status_ptr)
+{
+	jsval_transform_source_dispatch_t *disp;
+	jsval_native_transform_channel_t *channel;
+	jsval_native_transform_chunk_t *chunk;
+	size_t take;
+
+	if (userdata == NULL || out_len == NULL || status_ptr == NULL
+			|| (cap > 0 && buf == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	disp = (jsval_transform_source_dispatch_t *)userdata;
+	channel = jsval_native_transform_channel(disp->region, disp->channel_off);
+	if (channel == NULL) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (channel->errored) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
+		return 0;
+	}
+
+	if (channel->pending_chunks_head == 0) {
+		*out_len = 0;
+		*status_ptr = channel->writable_closed
+				? JSVAL_BODY_SOURCE_STATUS_EOF
+				: JSVAL_BODY_SOURCE_STATUS_PENDING;
+		return 0;
+	}
+
+	chunk = (jsval_native_transform_chunk_t *)jsval_region_ptr(disp->region,
+			channel->pending_chunks_head);
+	if (chunk == NULL) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
+		errno = EINVAL;
+		return -1;
+	}
+	take = chunk->len - chunk->consumed;
+	if (take > cap) {
+		take = cap;
+	}
+	if (take > 0) {
+		const uint8_t *src_bytes = (const uint8_t *)(chunk + 1) +
+				chunk->consumed;
+		memcpy(buf, src_bytes, take);
+		chunk->consumed += take;
+	}
+	if (chunk->consumed >= chunk->len) {
+		channel->pending_chunks_head = chunk->next_off;
+		if (channel->pending_chunks_head == 0) {
+			channel->pending_chunks_tail = 0;
+		}
+	}
+	*out_len = take;
+	if (channel->pending_chunks_head == 0 && channel->writable_closed
+			&& take == 0) {
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_EOF;
+	} else {
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_READY;
+	}
+	return 0;
+}
+
+static const jsval_body_source_vtable_t
+		jsval_transform_source_vtable_real = {
+	jsval_transform_source_read_real,
+	jsval_transform_source_close,
+};
+
+/*
+ * Underlying-sink for the writable side. userdata is a dispatch
+ * struct pointing at the wrapper offset so the sink-glue can find
+ * both the channel and the user transformer vtable.
+ */
+typedef struct jsval_transform_sink_dispatch_s {
+	jsval_region_t *region;
+	jsval_off_t wrapper_off;
+} jsval_transform_sink_dispatch_t;
+
+static jsval_underlying_sink_status_t jsval_transform_sink_write(
+		jsval_region_t *region, void *userdata, const uint8_t *chunk,
+		size_t chunk_len, size_t *accepted_len, jsval_t *error_value)
+{
+	jsval_transform_sink_dispatch_t *disp;
+	jsval_native_transform_stream_t *wrapper;
+	jsval_transform_controller_t controller;
+	int rc;
+
+	(void)region;
+	(void)error_value;
+	if (userdata == NULL) {
+		*accepted_len = 0;
+		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	disp = (jsval_transform_sink_dispatch_t *)userdata;
+	wrapper = jsval_native_transform_stream_off(disp->region,
+			disp->wrapper_off);
+	if (wrapper == NULL || wrapper->vtable == NULL
+			|| wrapper->vtable->transform == NULL) {
+		*accepted_len = 0;
+		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	controller.region = disp->region;
+	controller.channel_off = wrapper->channel_off;
+	rc = wrapper->vtable->transform(disp->region, wrapper->userdata,
+			chunk, chunk_len, &controller);
+	if (rc < 0) {
+		jsval_native_transform_channel_t *channel;
+
+		channel = jsval_native_transform_channel(disp->region,
+				wrapper->channel_off);
+		if (channel != NULL && channel->errored) {
+			*error_value = channel->error_reason;
+		}
+		*accepted_len = 0;
+		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	*accepted_len = chunk_len;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static jsval_underlying_sink_status_t jsval_transform_sink_close(
+		jsval_region_t *region, void *userdata, jsval_t *error_value)
+{
+	jsval_transform_sink_dispatch_t *disp;
+	jsval_native_transform_stream_t *wrapper;
+	jsval_native_transform_channel_t *channel;
+	jsval_transform_controller_t controller;
+
+	(void)region;
+	(void)error_value;
+	if (userdata == NULL) {
+		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	disp = (jsval_transform_sink_dispatch_t *)userdata;
+	wrapper = jsval_native_transform_stream_off(disp->region,
+			disp->wrapper_off);
+	if (wrapper == NULL) {
+		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	if (wrapper->vtable != NULL && wrapper->vtable->flush != NULL) {
+		int rc;
+
+		controller.region = disp->region;
+		controller.channel_off = wrapper->channel_off;
+		rc = wrapper->vtable->flush(disp->region, wrapper->userdata,
+				&controller);
+		if (rc < 0) {
+			channel = jsval_native_transform_channel(disp->region,
+					wrapper->channel_off);
+			if (channel != NULL && channel->errored) {
+				*error_value = channel->error_reason;
+			}
+			return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+		}
+	}
+	channel = jsval_native_transform_channel(disp->region,
+			wrapper->channel_off);
+	if (channel != NULL) {
+		channel->writable_closed = 1;
+		if (channel->source_off != 0) {
+			(void)jsval_body_source_notify(disp->region,
+					channel->source_off);
+		}
+	}
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static const jsval_underlying_sink_vtable_t jsval_transform_sink_vtable = {
+	jsval_transform_sink_write,
+	jsval_transform_sink_close,
+};
+
+int jsval_transform_stream_new(jsval_region_t *region,
+		const jsval_transformer_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr)
+{
+	jsval_native_transform_channel_t *channel;
+	jsval_native_transform_stream_t *wrapper;
+	jsval_native_body_source_t *source;
+	jsval_transform_source_dispatch_t *src_disp;
+	jsval_transform_sink_dispatch_t *sink_disp;
+	jsval_off_t channel_off;
+	jsval_off_t wrapper_off;
+	jsval_off_t source_off;
+	jsval_off_t src_disp_off;
+	jsval_off_t sink_disp_off;
+	jsval_t readable;
+	jsval_t writable;
+	void *ptr = NULL;
+
+	if (region == NULL || vtable == NULL || vtable->transform == NULL
+			|| value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_region_reserve(region, sizeof(*channel),
+			_Alignof(jsval_native_transform_channel_t), &channel_off,
+			(void **)&channel) < 0) {
+		return -1;
+	}
+	memset(channel, 0, sizeof(*channel));
+	channel->error_reason = jsval_undefined();
+
+	if (jsval_region_reserve(region, sizeof(*wrapper),
+			_Alignof(jsval_native_transform_stream_t), &wrapper_off,
+			(void **)&wrapper) < 0) {
+		return -1;
+	}
+	memset(wrapper, 0, sizeof(*wrapper));
+	wrapper->channel_off = channel_off;
+	wrapper->vtable = vtable;
+	wrapper->userdata = userdata;
+
+	channel = jsval_native_transform_channel(region, channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel->wrapper_off = wrapper_off;
+
+	/* Source dispatch struct (region-allocated, lives with the
+	 * stream). */
+	if (jsval_region_reserve(region, sizeof(*src_disp),
+			_Alignof(jsval_transform_source_dispatch_t), &src_disp_off,
+			(void **)&src_disp) < 0) {
+		return -1;
+	}
+	src_disp->region = region;
+	src_disp->channel_off = channel_off;
+
+	/* Body source struct that the readable wraps. */
+	if (jsval_region_reserve(region, sizeof(*source),
+			_Alignof(jsval_native_body_source_t), &source_off,
+			(void **)&source) < 0) {
+		return -1;
+	}
+	source->vtable = &jsval_transform_source_vtable_real;
+	source->userdata = src_disp;
+	source->content_length_hint = SIZE_MAX;
+	source->closed = 0;
+	memset(source->reserved, 0, sizeof(source->reserved));
+	source->parked_stream_off = 0;
+	source->parked_drain_off = 0;
+
+	channel = jsval_native_transform_channel(region, channel_off);
+	if (channel == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	channel->source_off = source_off;
+
+	if (jsval_readable_stream_new_wrapping_source(region, source_off,
+			&readable) < 0) {
+		return -1;
+	}
+
+	/* Sink dispatch struct, then the writable side wrapping our
+	 * sink vtable. */
+	if (jsval_region_reserve(region, sizeof(*sink_disp),
+			_Alignof(jsval_transform_sink_dispatch_t), &sink_disp_off,
+			(void **)&sink_disp) < 0) {
+		return -1;
+	}
+	sink_disp->region = region;
+	sink_disp->wrapper_off = wrapper_off;
+
+	if (jsval_writable_stream_new_from_sink(region,
+			&jsval_transform_sink_vtable, sink_disp, &writable) < 0) {
+		return -1;
+	}
+
+	wrapper = jsval_native_transform_stream_off(region, wrapper_off);
+	if (wrapper == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	wrapper->readable_off = readable.off;
+	wrapper->writable_off = writable.off;
+
+	*value_ptr = jsval_native_make_value(region, wrapper,
+			JSVAL_KIND_TRANSFORM_STREAM);
+	(void)ptr;
+	return 0;
+}
+
+int jsval_transform_stream_readable(jsval_region_t *region, jsval_t stream,
+		jsval_t *value_ptr)
+{
+	jsval_native_transform_stream_t *wrapper;
+	jsval_t out = jsval_undefined();
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	wrapper = jsval_native_transform_stream(region, stream);
+	if (wrapper == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	out.kind = JSVAL_KIND_READABLE_STREAM;
+	out.repr = JSVAL_REPR_NATIVE;
+	out.off = wrapper->readable_off;
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_transform_stream_writable(jsval_region_t *region, jsval_t stream,
+		jsval_t *value_ptr)
+{
+	jsval_native_transform_stream_t *wrapper;
+	jsval_t out = jsval_undefined();
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	wrapper = jsval_native_transform_stream(region, stream);
+	if (wrapper == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	out.kind = JSVAL_KIND_WRITABLE_STREAM;
+	out.repr = JSVAL_REPR_NATIVE;
+	out.off = wrapper->writable_off;
+	*value_ptr = out;
+	return 0;
+}
+
+int jsval_transform_stream_channel_off(jsval_region_t *region, jsval_t stream,
+		jsval_off_t *out)
+{
+	jsval_native_transform_stream_t *wrapper;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	wrapper = jsval_native_transform_stream(region, stream);
+	if (wrapper == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out = wrapper->channel_off;
 	return 0;
 }
