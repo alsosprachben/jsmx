@@ -642,6 +642,12 @@ typedef struct jsval_native_body_source_s {
 	 * hits PENDING with no buffered chunk; cleared when a wake
 	 * (via jsval_body_source_notify) reschedules the pump. */
 	jsval_off_t parked_stream_off;
+	/* 0 = no parked consumer. Set when a FETCH_BODY_DRAIN
+	 * microtask hits PENDING; cleared when a wake re-enqueues
+	 * the same task. A given source uses one of the two park
+	 * slots at a time (a body is consumed via either the
+	 * stream pump or a Body-mixin method, never both). */
+	jsval_off_t parked_drain_off;
 } jsval_native_body_source_t;
 
 typedef struct jsval_native_microtask_fetch_body_drain_s {
@@ -37277,7 +37283,8 @@ int jsval_response_body_source_off(jsval_region_t *region,
 int jsval_body_source_notify(jsval_region_t *region, jsval_off_t source_off)
 {
 	jsval_native_body_source_t *source;
-	jsval_off_t parked;
+	jsval_off_t parked_stream;
+	jsval_off_t parked_drain;
 
 	if (region == NULL || source_off == 0) {
 		errno = EINVAL;
@@ -37288,12 +37295,31 @@ int jsval_body_source_notify(jsval_region_t *region, jsval_off_t source_off)
 		errno = EINVAL;
 		return -1;
 	}
-	parked = source->parked_stream_off;
-	if (parked == 0) {
-		return 0;
+	/* A given source uses one of the two consumer patterns at a
+	 * time, but check both slots so notify is safe regardless. */
+	parked_stream = source->parked_stream_off;
+	parked_drain = source->parked_drain_off;
+	if (parked_stream != 0) {
+		source->parked_stream_off = 0;
+		if (jsval_readable_stream_schedule_pump(region, parked_stream)
+				< 0) {
+			return -1;
+		}
 	}
-	source->parked_stream_off = 0;
-	return jsval_readable_stream_schedule_pump(region, parked);
+	if (parked_drain != 0) {
+		jsval_native_microtask_t *task;
+
+		source->parked_drain_off = 0;
+		task = jsval_native_microtask(region, parked_drain);
+		if (task == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_microtask_push(region, parked_drain, task) < 0) {
+			return -1;
+		}
+	}
+	return 0;
 }
 
 int jsval_response_body(jsval_region_t *region, jsval_t response,
@@ -37704,6 +37730,7 @@ static int jsval_body_source_new(jsval_region_t *region,
 	src->closed = 0;
 	memset(src->reserved, 0, sizeof(src->reserved));
 	src->parked_stream_off = 0;
+	src->parked_drain_off = 0;
 	*off_ptr = off;
 	return 0;
 }
@@ -38088,11 +38115,13 @@ static int jsval_fetch_run_body_drain(jsval_region_t *region,
 				"network error reading body");
 	}
 	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING) {
-		/* No native scheduler integration yet: treat PENDING as a
-		 * re-poll by pushing the task back onto the tail. The caller is
-		 * expected not to produce PENDING indefinitely in the current
-		 * slice; real async integration lands with the mnvkd adapter. */
-		return jsval_microtask_push(region, task_off, &task->base);
+		/* Park on source. The producer side calls
+		 * jsval_body_source_notify after each push / mark_eof /
+		 * mark_error; that wake will re-enqueue this task. The
+		 * task struct stays valid because it's region-allocated
+		 * and the region isn't reset between park and wake. */
+		src->parked_drain_off = task_off;
+		return 0;
 	}
 	if (n > 0) {
 		size_t new_total;
@@ -38476,6 +38505,7 @@ int jsval_readable_stream_new_from_source(jsval_region_t *region,
 	source->closed = 0;
 	memset(source->reserved, 0, sizeof(source->reserved));
 	source->parked_stream_off = 0;
+	source->parked_drain_off = 0;
 
 	if (jsval_region_alloc(region, sizeof(*stream),
 			_Alignof(jsval_native_readable_stream_t), &ptr) < 0) {

@@ -12671,6 +12671,7 @@ typedef struct fake_body_source_s {
 	int fail_after;       /* -1 = never; >=0 = return ERROR after N reads */
 	int reads;
 	int close_calls;
+	int pending;          /* nonzero: return PENDING regardless of data */
 } fake_body_source_t;
 
 static int fake_body_read(void *userdata, uint8_t *buf, size_t cap,
@@ -12681,6 +12682,11 @@ static int fake_body_read(void *userdata, uint8_t *buf, size_t cap,
 	size_t n;
 
 	src->reads++;
+	if (src->pending) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_PENDING;
+		return 0;
+	}
 	if (src->fail_after >= 0 && src->reads > src->fail_after) {
 		*out_len = 0;
 		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
@@ -12920,6 +12926,57 @@ static void test_fetch_body_drain_semantics(void)
 		assert(jsval_microtask_drain(&region, &error) == 0);
 		assert(jsval_promise_state(&region, promise, &state) == 0);
 		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(src.close_calls == 1);
+	}
+
+	/* 4. PENDING -> wake on the FETCH_BODY_DRAIN path. text() against a
+	 * streaming body whose source first returns PENDING parks on
+	 * source->parked_drain_off. The drain queue empties; jsval_body_source_notify
+	 * re-enqueues the task; next drain delivers the text. */
+	{
+		static const uint8_t body[] = "drained at last";
+		fake_body_source_t src = {
+			.data = body, .total = sizeof(body) - 1, .cursor = 0,
+			.chunk_size = 0, .fail_after = -1,
+			.reads = 0, .close_calls = 0, .pending = 1,
+		};
+		jsval_off_t source_off = 0;
+
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers,
+				&fake_body_vtable, &src, sizeof(body) - 1, &response)
+				== 0);
+		assert(jsval_response_body_source_off(&region, response,
+				&source_off) == 0);
+		assert(source_off != 0);
+
+		assert(jsval_response_text(&region, response, &promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(src.reads == 1);  /* drain ran exactly once, parked */
+
+		/* Drain-and-stay-idle: a second drain must not re-poll the
+		 * source (no busy-loop). */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(src.reads == 1);
+
+		/* Producer signals data + wakes the drain. */
+		src.pending = 0;
+		assert(jsval_body_source_notify(&region, source_off) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(fetch_drain_str_equals(&region, got, "drained at last"));
 		assert(src.close_calls == 1);
 	}
 }
