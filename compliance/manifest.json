@@ -5595,6 +5595,56 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored TransformStream error propagation parity (Phase 4-2): controller.error(TypeError) inside the transformer rejects both the parked reader.read() and the queued writer.write() with the same DOMException reason, and a subsequent writer.write() rejects synchronously from the stored error."
+    },
+    {
+      "id": "jsmx-streams-text-decoder-stream-boundary-split-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/text-decoder-stream-boundary-split-parity.js",
+      "generated": "compliance/generated/streams/jsmx/text-decoder-stream-boundary-split-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextDecoderStream boundary-split parity (Phase 5b-2): a 4-byte UTF-8 payload (CE B1 CE B2 = alpha+beta) arriving as 3+1 bytes is reassembled so each readable chunk contains exactly one complete codepoint."
+    },
+    {
+      "id": "jsmx-streams-text-decoder-stream-valid-full-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/text-decoder-stream-valid-full-parity.js",
+      "generated": "compliance/generated/streams/jsmx/text-decoder-stream-valid-full-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextDecoderStream valid-full parity (Phase 5b-2): a single write of well-formed UTF-8 (every codepoint boundary aligned within the chunk) round-trips byte-identical to the readable side, then EOF."
+    },
+    {
+      "id": "jsmx-streams-text-decoder-stream-invalid-sequence-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/text-decoder-stream-invalid-sequence-parity.js",
+      "generated": "compliance/generated/streams/jsmx/text-decoder-stream-invalid-sequence-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextDecoderStream invalid-sequence parity (Phase 5b-2): a lone UTF-8 continuation byte (0x80) is replaced with U+FFFD (EF BF BD) on the readable side."
+    },
+    {
+      "id": "jsmx-streams-text-decoder-stream-flush-trailing-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/text-decoder-stream-flush-trailing-parity.js",
+      "generated": "compliance/generated/streams/jsmx/text-decoder-stream-flush-trailing-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextDecoderStream flush-trailing parity (Phase 5b-2): writing a single 0xCE (incomplete leading byte) and then closing causes flush() to emit U+FFFD before EOF; trailing bytes are not silently dropped."
+    },
+    {
+      "id": "jsmx-streams-text-encoder-stream-validator-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/text-encoder-stream-validator-parity.js",
+      "generated": "compliance/generated/streams/jsmx/text-encoder-stream-validator-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TextEncoderStream validator parity (Phase 5b-2): valid UTF-8 chunks pass through unchanged; malformed sequences (lone 0x80) are replaced with U+FFFD; chunks land separately on the readable side."
     }
   ]
 }
