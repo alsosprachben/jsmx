@@ -5495,6 +5495,56 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored Request.body parity (Phase 1D, symmetric to Response.body): new Request(url, {method:'POST', body:'world'}).body returns a ReadableStream; accessing .body flips bodyUsed; subsequent request.text() rejects with TypeError('body already used'); reader.read() drains to {value: Uint8Array, done:false} then {done:true}."
+    },
+    {
+      "id": "jsmx-streams-writable-stream-basic-write-close-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/writable-stream-basic-write-close-parity.js",
+      "generated": "compliance/generated/streams/jsmx/writable-stream-basic-write-close-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WritableStream basic write+close parity (Phase 3a-2): three writer.write() chunks plus writer.close() against a capturing sink resolve all four promises after a microtask drain; sink observes 'foobarbaz' in order and close runs exactly once."
+    },
+    {
+      "id": "jsmx-streams-writable-stream-pending-park-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/writable-stream-pending-park-parity.js",
+      "generated": "compliance/generated/streams/jsmx/writable-stream-pending-park-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WritableStream PENDING -> wake parity (Phase 3a-2): when the underlying sink returns PENDING the pump parks on the sink (no busy-loop across drains); jsval_underlying_sink_notify with the sink_off re-schedules the pump and the queued write fulfills."
+    },
+    {
+      "id": "jsmx-streams-writable-stream-error-propagation-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/writable-stream-error-propagation-parity.js",
+      "generated": "compliance/generated/streams/jsmx/writable-stream-error-propagation-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WritableStream error propagation parity (Phase 3a-2): when the sink returns ERROR with a TypeError DOMException, queued writes and writer.close() all reject with that reason, and a subsequent writer.write() rejects synchronously from the stored error."
+    },
+    {
+      "id": "jsmx-streams-writable-stream-locked-release-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/writable-stream-locked-release-parity.js",
+      "generated": "compliance/generated/streams/jsmx/writable-stream-locked-release-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WritableStream lock parity (Phase 3a-2): first getWriter() succeeds and locked==1; second getWriter() fails with errno EBUSY; releaseLock() clears the lock so a fresh getWriter() succeeds; write() on the released writer fails with EINVAL."
+    },
+    {
+      "id": "jsmx-streams-writable-stream-abort-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/writable-stream-abort-parity.js",
+      "generated": "compliance/generated/streams/jsmx/writable-stream-abort-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored WritableStream abort parity (Phase 3a-2): with a write parked behind a PENDING sink, jsval_writable_stream_abort with a TypeError DOMException reason rejects the queued write with that reason, fulfills abort() with undefined, runs the sink's close callback, and rejects subsequent writes synchronously."
     }
   ]
 }

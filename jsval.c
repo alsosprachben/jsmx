@@ -39358,6 +39358,7 @@ static int jsval_writable_stream_reject_pending(jsval_region_t *region,
 {
 	jsval_native_writable_stream_t *stream;
 	jsval_off_t node_off;
+	jsval_off_t close_off;
 
 	for (;;) {
 		stream = jsval_native_writable_stream_off(region, stream_off);
@@ -39367,7 +39368,7 @@ static int jsval_writable_stream_reject_pending(jsval_region_t *region,
 		}
 		node_off = jsval_writable_stream_dequeue_write(region, stream);
 		if (node_off == 0) {
-			return 0;
+			break;
 		}
 		{
 			jsval_native_writable_stream_pending_write_t *node;
@@ -39385,6 +39386,22 @@ static int jsval_writable_stream_reject_pending(jsval_region_t *region,
 			}
 		}
 	}
+	/* Drain a parked writer.close() promise too, if any. */
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	close_off = stream->close_promise_off;
+	if (close_off != 0) {
+		jsval_t p = jsval_promise_value(close_off);
+
+		stream->close_promise_off = 0;
+		if (jsval_promise_reject(region, p, reason) < 0) {
+			return -1;
+		}
+	}
+	return 0;
 }
 
 int jsval_writable_stream_new_from_sink(jsval_region_t *region,
