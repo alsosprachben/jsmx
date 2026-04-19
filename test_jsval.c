@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "jsval.h"
@@ -14608,6 +14609,249 @@ static void test_stream_pipe_semantics(void)
 	}
 }
 
+/* ----------- CompressionStream / DecompressionStream tests ----------- */
+
+static int compression_pipe_bytes_through(jsval_region_t *region,
+		const uint8_t *input, size_t input_len, jsval_t transform_stream,
+		uint8_t *out, size_t out_cap, size_t *out_len)
+{
+	jsval_t readable;
+	jsval_t out_readable;
+	jsval_t reader;
+	jsval_t promise;
+	jsval_t result;
+	jsval_t value;
+	jsval_t backing;
+	jsval_t done_value;
+	jsval_promise_state_t state;
+	uint8_t *bytes;
+	size_t backing_len;
+	size_t len;
+	size_t total = 0;
+	jsmethod_error_t error;
+
+	if (jsval_readable_stream_new_from_bytes(region, input, input_len,
+			&readable) != 0) {
+		return -1;
+	}
+	if (jsval_readable_stream_pipe_through(region, readable,
+			transform_stream, &out_readable) != 0) {
+		return -1;
+	}
+	if (jsval_readable_stream_get_reader(region, out_readable, &reader)
+			!= 0) {
+		return -1;
+	}
+
+	for (;;) {
+		if (jsval_readable_stream_reader_read(region, reader, &promise)
+				!= 0) {
+			return -1;
+		}
+		memset(&error, 0, sizeof(error));
+		if (jsval_microtask_drain(region, &error) != 0) {
+			return -1;
+		}
+		if (jsval_promise_state(region, promise, &state) != 0) {
+			return -1;
+		}
+		if (state != JSVAL_PROMISE_STATE_FULFILLED) {
+			return -1;
+		}
+		if (jsval_promise_result(region, promise, &result) != 0) {
+			return -1;
+		}
+		if (jsval_object_get_utf8(region, result,
+				(const uint8_t *)"done", 4, &done_value) != 0) {
+			return -1;
+		}
+		if (done_value.kind == JSVAL_KIND_BOOL && done_value.as.boolean) {
+			break;
+		}
+		if (jsval_object_get_utf8(region, result,
+				(const uint8_t *)"value", 5, &value) != 0
+				|| value.kind != JSVAL_KIND_TYPED_ARRAY) {
+			return -1;
+		}
+		len = jsval_typed_array_length(region, value);
+		if (jsval_typed_array_buffer(region, value, &backing) != 0
+				|| jsval_array_buffer_bytes_mut(region, backing, &bytes,
+					&backing_len) != 0
+				|| backing_len < len
+				|| total + len > out_cap) {
+			return -1;
+		}
+		memcpy(out + total, bytes, len);
+		total += len;
+	}
+	*out_len = total;
+	return 0;
+}
+
+static void compression_round_trip_for_format(jsval_compression_format_t fmt,
+		const uint8_t *input, size_t input_len, uint8_t *compressed,
+		size_t compressed_cap, size_t *compressed_len, uint8_t *decoded,
+		size_t decoded_cap, size_t *decoded_len)
+{
+	/* zlib deflate state at memLevel=8 needs ~260 KB; use separate
+	 * heap-allocated regions per half (compress + decompress) so
+	 * each has a fresh arena to hold the state. */
+	const size_t storage_len = 1 * 1024 * 1024;
+	uint8_t *storage;
+	jsval_region_t region;
+	jsval_t cs;
+	jsval_t ds;
+
+	storage = malloc(storage_len);
+	assert(storage != NULL);
+
+	jsval_region_init(&region, storage, storage_len);
+	assert(jsval_compression_stream_new(&region, fmt, &cs) == 0);
+	assert(compression_pipe_bytes_through(&region, input, input_len, cs,
+			compressed, compressed_cap, compressed_len) == 0);
+
+	jsval_region_init(&region, storage, storage_len);
+	assert(jsval_decompression_stream_new(&region, fmt, &ds) == 0);
+	assert(compression_pipe_bytes_through(&region, compressed,
+			*compressed_len, ds, decoded, decoded_cap, decoded_len) == 0);
+
+	free(storage);
+}
+
+static void test_compression_stream_semantics(void)
+{
+	/* 1-3. Round-trip for each format. */
+	{
+		static const uint8_t input[] =
+				"Hello, streams! This is a test payload with some "
+				"repeated words words words and numbers 123456.";
+		const size_t input_len = sizeof(input) - 1;
+		uint8_t compressed[512];
+		uint8_t decoded[256];
+		size_t compressed_len = 0;
+		size_t decoded_len = 0;
+
+		compression_round_trip_for_format(JSVAL_COMPRESSION_FORMAT_GZIP,
+				input, input_len,
+				compressed, sizeof(compressed), &compressed_len,
+				decoded, sizeof(decoded), &decoded_len);
+		assert(decoded_len == input_len);
+		assert(memcmp(decoded, input, input_len) == 0);
+		/* gzip magic bytes. */
+		assert(compressed_len >= 2);
+		assert(compressed[0] == 0x1F && compressed[1] == 0x8B);
+
+		compression_round_trip_for_format(JSVAL_COMPRESSION_FORMAT_DEFLATE,
+				input, input_len,
+				compressed, sizeof(compressed), &compressed_len,
+				decoded, sizeof(decoded), &decoded_len);
+		assert(decoded_len == input_len);
+		assert(memcmp(decoded, input, input_len) == 0);
+		/* zlib deflate magic: first byte 0x78 (CMF for 32k window,
+		 * deflate method). */
+		assert(compressed_len >= 1 && compressed[0] == 0x78);
+
+		compression_round_trip_for_format(
+				JSVAL_COMPRESSION_FORMAT_DEFLATE_RAW,
+				input, input_len,
+				compressed, sizeof(compressed), &compressed_len,
+				decoded, sizeof(decoded), &decoded_len);
+		assert(decoded_len == input_len);
+		assert(memcmp(decoded, input, input_len) == 0);
+	}
+
+	/* 4. Decompression of garbage bytes errors the readable. */
+	{
+		const size_t storage_len = 512 * 1024;
+		uint8_t *storage = malloc(storage_len);
+		jsval_region_t region;
+		jsval_t ds;
+		assert(storage != NULL);
+		jsval_t readable;
+		jsval_t out_readable;
+		jsval_t reader;
+		jsval_t promise;
+		jsval_t reason;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		static const uint8_t garbage[] =
+				{ 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE };
+
+		jsval_region_init(&region, storage, storage_len);
+		assert(jsval_decompression_stream_new(&region,
+				JSVAL_COMPRESSION_FORMAT_GZIP, &ds) == 0);
+		assert(jsval_readable_stream_new_from_bytes(&region, garbage,
+				sizeof(garbage), &readable) == 0);
+		assert(jsval_readable_stream_pipe_through(&region, readable, ds,
+				&out_readable) == 0);
+		assert(jsval_readable_stream_get_reader(&region, out_readable,
+				&reader) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &promise)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, promise, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+		free(storage);
+	}
+
+	/* 5. Empty-input round-trip. */
+	{
+		static const uint8_t empty[1] = { 0 };
+		uint8_t compressed[64];
+		uint8_t decoded[16];
+		size_t compressed_len = 0;
+		size_t decoded_len = 1; /* sentinel */
+
+		compression_round_trip_for_format(JSVAL_COMPRESSION_FORMAT_GZIP,
+				empty, 0,
+				compressed, sizeof(compressed), &compressed_len,
+				decoded, sizeof(decoded), &decoded_len);
+		assert(decoded_len == 0);
+		/* gzip empty stream still has a 20-byte envelope. */
+		assert(compressed_len > 0);
+	}
+
+	/* 6. Large-input round-trip exercises multiple pump iterations. */
+	{
+		uint8_t *large_input;
+		uint8_t *compressed;
+		uint8_t *decoded;
+		size_t compressed_len = 0;
+		size_t decoded_len = 0;
+		size_t i;
+		const size_t large_len = 64 * 1024;
+
+		large_input = malloc(large_len);
+		compressed = malloc(large_len * 2);
+		decoded = malloc(large_len + 16);
+		assert(large_input != NULL && compressed != NULL && decoded != NULL);
+
+		/* Compressible pattern: 'A' * large_len compresses heavily. */
+		for (i = 0; i < large_len; i++) {
+			large_input[i] = (uint8_t)('A' + (i % 26));
+		}
+
+		compression_round_trip_for_format(JSVAL_COMPRESSION_FORMAT_GZIP,
+				large_input, large_len,
+				compressed, large_len * 2, &compressed_len,
+				decoded, large_len + 16, &decoded_len);
+		assert(decoded_len == large_len);
+		assert(memcmp(decoded, large_input, large_len) == 0);
+		/* Sanity: 64KB of repeating A-Z pattern compresses to
+		 * well under half the input size. */
+		assert(compressed_len < large_len / 2);
+
+		free(large_input);
+		free(compressed);
+		free(decoded);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -14722,6 +14966,7 @@ int main(void)
 	test_transform_stream_semantics();
 	test_text_decoder_encoder_stream_semantics();
 	test_stream_pipe_semantics();
+	test_compression_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

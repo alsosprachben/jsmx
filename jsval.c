@@ -13,6 +13,8 @@
 #include "jsregex.h"
 #include "utf8.h"
 
+#include <zlib.h>
+
 #define JSVAL_ALIGN sizeof(void *)
 #define JSVAL_JSON_EMIT_MAX_DEPTH 256
 #define JSVAL_METHOD_CASE_EXPANSION_MAX 3u
@@ -41216,4 +41218,257 @@ int jsval_readable_stream_pipe_through(jsval_region_t *region,
 	                      progress via reads on inner_readable. */
 	*out = inner_readable;
 	return 0;
+}
+
+/* ----------- CompressionStream / DecompressionStream ----------- */
+
+/*
+ * Per-instance zlib state. Allocated in the region; userdata is the
+ * offset cast through uintptr_t, recovered via jsval_region_ptr in
+ * the transformer callbacks (same pattern as TextDecoderStream).
+ */
+typedef struct jsval_native_compression_state_s {
+	z_stream strm;
+	jsval_region_t *region;
+	uint8_t is_decompress;
+	uint8_t finalized;
+	uint8_t reserved[6];
+} jsval_native_compression_state_t;
+
+static jsval_native_compression_state_t *
+jsval_native_compression_state(jsval_region_t *region, void *userdata)
+{
+	jsval_off_t off = (jsval_off_t)(uintptr_t)userdata;
+
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_compression_state_t *)
+			jsval_region_ptr(region, off);
+}
+
+static voidpf jsval_compression_zalloc(voidpf opaque, uInt items, uInt size)
+{
+	jsval_region_t *region = (jsval_region_t *)opaque;
+	size_t total = (size_t)items * (size_t)size;
+	void *ptr = NULL;
+
+	if (region == NULL || total == 0) {
+		return Z_NULL;
+	}
+	if (jsval_region_alloc(region, total, 16, &ptr) < 0) {
+		return Z_NULL;
+	}
+	return (voidpf)ptr;
+}
+
+static void jsval_compression_zfree(voidpf opaque, voidpf address)
+{
+	(void)opaque;
+	(void)address;
+}
+
+static int jsval_compression_emit_error(jsval_region_t *region,
+		jsval_transform_controller_t *controller, const char *msg)
+{
+	jsval_t name_v;
+	jsval_t msg_v;
+	jsval_t reason = jsval_undefined();
+
+	if (jsval_string_new_utf8(region, (const uint8_t *)"TypeError", 9,
+				&name_v) == 0 &&
+			jsval_string_new_utf8(region, (const uint8_t *)msg,
+				strlen(msg), &msg_v) == 0) {
+		(void)jsval_dom_exception_new(region, name_v, msg_v, &reason);
+	}
+	(void)jsval_transform_controller_error(controller, reason);
+	return -1;
+}
+
+static int jsval_compression_run_stream(jsval_region_t *region,
+		jsval_native_compression_state_t *state,
+		jsval_transform_controller_t *controller,
+		const uint8_t *chunk, size_t chunk_len, int flush_mode)
+{
+	uint8_t scratch[JSVAL_FETCH_BODY_DRAIN_BATCH];
+	int reached_end = 0;
+
+	state->strm.next_in = (Bytef *)(uintptr_t)chunk;
+	state->strm.avail_in = (uInt)chunk_len;
+
+	for (;;) {
+		int rc;
+		size_t produced;
+
+		state->strm.next_out = scratch;
+		state->strm.avail_out = sizeof(scratch);
+
+		if (state->is_decompress) {
+			rc = inflate(&state->strm, flush_mode);
+		} else {
+			rc = deflate(&state->strm, flush_mode);
+		}
+
+		produced = sizeof(scratch) - state->strm.avail_out;
+		if (produced > 0) {
+			if (jsval_transform_controller_enqueue(controller, scratch,
+					produced) < 0) {
+				return -1;
+			}
+		}
+
+		if (rc == Z_STREAM_END) {
+			reached_end = 1;
+			break;
+		}
+		if (rc == Z_BUF_ERROR) {
+			/* Not an error in zlib's vocabulary when avail_in is 0 or
+			 * output buffer cannot make progress; break the loop and
+			 * wait for more input (or the caller's next flush). */
+			break;
+		}
+		if (rc != Z_OK) {
+			return jsval_compression_emit_error(region, controller,
+					state->is_decompress
+					? "decompression failed"
+					: "compression failed");
+		}
+		if (state->strm.avail_in == 0 && produced == 0) {
+			break;
+		}
+		if (state->strm.avail_in == 0 && flush_mode == Z_NO_FLUSH) {
+			break;
+		}
+	}
+
+	(void)reached_end;
+	return 0;
+}
+
+static int jsval_compression_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	jsval_native_compression_state_t *state;
+
+	state = jsval_native_compression_state(region, userdata);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (state->finalized) {
+		return jsval_compression_emit_error(region, controller,
+				"transform after flush");
+	}
+	if (chunk_len == 0) {
+		return 0;
+	}
+	return jsval_compression_run_stream(region, state, controller,
+			chunk, chunk_len, Z_NO_FLUSH);
+}
+
+static int jsval_compression_flush(jsval_region_t *region, void *userdata,
+		jsval_transform_controller_t *controller)
+{
+	jsval_native_compression_state_t *state;
+	int rc;
+
+	state = jsval_native_compression_state(region, userdata);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (state->finalized) {
+		return 0;
+	}
+	state->finalized = 1;
+	rc = jsval_compression_run_stream(region, state, controller,
+			NULL, 0, Z_FINISH);
+	if (state->is_decompress) {
+		(void)inflateEnd(&state->strm);
+	} else {
+		(void)deflateEnd(&state->strm);
+	}
+	return rc;
+}
+
+static const jsval_transformer_vtable_t jsval_compression_vtable = {
+	jsval_compression_transform,
+	jsval_compression_flush,
+};
+
+static int jsval_compression_window_bits(jsval_compression_format_t format,
+		int *bits_out)
+{
+	switch (format) {
+	case JSVAL_COMPRESSION_FORMAT_GZIP:
+		*bits_out = 31;
+		return 0;
+	case JSVAL_COMPRESSION_FORMAT_DEFLATE:
+		*bits_out = 15;
+		return 0;
+	case JSVAL_COMPRESSION_FORMAT_DEFLATE_RAW:
+		*bits_out = -15;
+		return 0;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+
+static int jsval_compression_stream_new_internal(jsval_region_t *region,
+		jsval_compression_format_t format, int is_decompress,
+		jsval_t *value_ptr)
+{
+	jsval_native_compression_state_t *state;
+	jsval_off_t state_off;
+	int window_bits;
+	int rc;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_compression_window_bits(format, &window_bits) < 0) {
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*state),
+			_Alignof(jsval_native_compression_state_t), &state_off,
+			(void **)&state) < 0) {
+		return -1;
+	}
+	memset(state, 0, sizeof(*state));
+	state->region = region;
+	state->is_decompress = (uint8_t)(is_decompress ? 1 : 0);
+	state->strm.zalloc = jsval_compression_zalloc;
+	state->strm.zfree = jsval_compression_zfree;
+	state->strm.opaque = (voidpf)region;
+
+	if (is_decompress) {
+		rc = inflateInit2(&state->strm, window_bits);
+	} else {
+		rc = deflateInit2(&state->strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+				window_bits, 8, Z_DEFAULT_STRATEGY);
+	}
+	if (rc != Z_OK) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_transform_stream_new(region, &jsval_compression_vtable,
+			(void *)(uintptr_t)state_off, value_ptr);
+}
+
+int jsval_compression_stream_new(jsval_region_t *region,
+		jsval_compression_format_t format, jsval_t *value_ptr)
+{
+	return jsval_compression_stream_new_internal(region, format, 0,
+			value_ptr);
+}
+
+int jsval_decompression_stream_new(jsval_region_t *region,
+		jsval_compression_format_t format, jsval_t *value_ptr)
+{
+	return jsval_compression_stream_new_internal(region, format, 1,
+			value_ptr);
 }

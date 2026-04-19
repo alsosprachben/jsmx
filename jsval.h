@@ -1591,6 +1591,36 @@ int jsval_readable_stream_pipe_to(jsval_region_t *region,
 int jsval_readable_stream_pipe_through(jsval_region_t *region,
 		jsval_t readable, jsval_t transform_stream, jsval_t *out);
 
+/*
+ * WHATWG Compression Streams: zlib-backed CompressionStream and
+ * DecompressionStream factories. Both return JSVAL_KIND_TRANSFORM_STREAM
+ * jsvals usable like any other transform stream (access via
+ * jsval_transform_stream_readable / _writable).
+ *
+ * Format selects the wire framing via zlib's windowBits:
+ *   GZIP        — windowBits = 31 (deflate + gzip wrapper)
+ *   DEFLATE     — windowBits = 15 (deflate + zlib wrapper)
+ *   DEFLATE_RAW — windowBits = -15 (raw deflate, no wrapper)
+ *
+ * Per-instance zlib state is allocated through the jsmx arena
+ * (zalloc/zfree shims backed by jsval_region_alloc); deflateEnd /
+ * inflateEnd run on writer.close().
+ *
+ * Decompression input that does not parse as the declared format
+ * causes the readable side to error with a TypeError DOMException
+ * (matching WHATWG).
+ */
+typedef enum jsval_compression_format_e {
+	JSVAL_COMPRESSION_FORMAT_GZIP        = 0,
+	JSVAL_COMPRESSION_FORMAT_DEFLATE     = 1,
+	JSVAL_COMPRESSION_FORMAT_DEFLATE_RAW = 2
+} jsval_compression_format_t;
+
+int jsval_compression_stream_new(jsval_region_t *region,
+		jsval_compression_format_t format, jsval_t *value_ptr);
+int jsval_decompression_stream_new(jsval_region_t *region,
+		jsval_compression_format_t format, jsval_t *value_ptr);
+
 typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,
 	JSVAL_BODY_CONSUME_JSON = 1,

@@ -1,6 +1,9 @@
 # You can put your build options here
 -include config.mk
 
+# libjsmx.a uses zlib for CompressionStream / DecompressionStream.
+LDLIBS += -lz
+
 all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod test_jsurl test_utf8 test_unicode test_collation test_jsnum test_jscrypto test_jsval test_codegen test_compliance
 
 libjsmn.a: jsmn.o
@@ -94,7 +97,7 @@ test_faas: test_faas.c example/wintertc_proxy_handler.c jsnum.c jscrypto.c jsval
 	./$@
 
 test_compliance: scripts/run_compliance_manifest.py compliance/manifest.json compliance/generated/test_contract.h
-	python3 scripts/run_compliance_manifest.py
+	LDLIBS="$(LDLIBS)" python3 scripts/run_compliance_manifest.py
 
 bench: scripts/run_bench_manifest.py bench/manifest.json bench/generated/bench_util.h
 	python3 scripts/run_bench_manifest.py
