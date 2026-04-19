@@ -337,7 +337,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_FETCH_REQUEST = 15,
 	JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP = 16,
 	JSVAL_MICROTASK_KIND_WRITABLE_STREAM_PUMP = 17,
-	JSVAL_MICROTASK_KIND_STREAM_PIPE_PUMP = 18
+	JSVAL_MICROTASK_KIND_STREAM_PIPE_PUMP = 18,
+	JSVAL_MICROTASK_KIND_READABLE_BODY_CONSUMER = 19
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -673,6 +674,24 @@ typedef struct jsval_native_microtask_fetch_body_drain_s {
 	uint8_t reserved[7];
 } jsval_native_microtask_fetch_body_drain_t;
 
+/* Phase 3c-4: drain a JS-supplied ReadableStream Request body on
+ * demand for .text()/.json()/.arrayBuffer()/.bytes(). Drives the
+ * stream through a locked reader, accumulating chunks into an
+ * arena-allocated ArrayBuffer, and on EOF hands the buffer to the
+ * existing jsval_body_resolve_* family. Parks on each reader.read()
+ * promise via Phase 6.5's parked_microtask_off. */
+typedef struct jsval_native_microtask_readable_body_consumer_s {
+	jsval_native_microtask_t base;
+	jsval_off_t promise_off;
+	jsval_off_t reader_off;
+	jsval_off_t buffer_off;
+	jsval_off_t in_flight_off;
+	size_t written_len;
+	size_t budget;
+	uint8_t consume_mode;
+	uint8_t reserved[7];
+} jsval_native_microtask_readable_body_consumer_t;
+
 /*
  * ReadableStream state. `state` is 0=readable, 1=closed, 2=errored.
  * `reader_off` is 0 when unlocked. Pending reads form a FIFO of
@@ -953,6 +972,9 @@ static int jsval_writable_stream_schedule_pump(jsval_region_t *region,
 		jsval_off_t stream_off);
 static int jsval_stream_pipe_run_pump(jsval_region_t *region,
 		jsval_native_microtask_stream_pipe_pump_t *task,
+		jsval_off_t task_off);
+static int jsval_readable_body_consumer_run(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task,
 		jsval_off_t task_off);
 
 static size_t jsval_align_up(size_t value, size_t align)
@@ -20955,6 +20977,18 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			}
 			break;
 		}
+		case JSVAL_MICROTASK_KIND_READABLE_BODY_CONSUMER:
+		{
+			jsval_native_microtask_readable_body_consumer_t *consumer_task =
+				(jsval_native_microtask_readable_body_consumer_t *)task;
+
+			if (jsval_readable_body_consumer_run(region, consumer_task,
+					off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
 		default:
 			region->microtask_draining = 0;
 			errno = EINVAL;
@@ -36838,6 +36872,13 @@ int jsval_request_body_used(jsval_region_t *region, jsval_t request,
 	return 0;
 }
 
+/* Phase 3c-4: forward declaration. Defined after the fetch body-drain
+ * machinery so it can reuse JSVAL_FETCH_BODY_DRAIN_BATCH and share the
+ * park-on-promise idiom. */
+static int jsval_readable_body_consumer_schedule(jsval_region_t *region,
+		jsval_t readable_stream, size_t budget, uint8_t consume_mode,
+		jsval_t *promise_out);
+
 static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_out, int (*resolver)(jsval_region_t *, jsval_t, int,
 				jsval_t *), uint8_t consume_mode)
@@ -36863,23 +36904,14 @@ static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
 		return 0;
 	}
 	if (native->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
-		/* Phase 3c v1: consumer methods are not supported on a
-		 * JS-supplied ReadableStream body. The handler must
-		 * consume via request.body. A future slice will drain
-		 * the readable into a transient buffer on demand. */
-		jsval_t promise;
-		jsval_t reason;
-		if (jsval_promise_new(region, &promise) < 0) { return -1; }
-		if (jsval_dom_exception_new_utf8(region, "TypeError",
-				"body consumer methods unsupported on a readable body",
-				&reason) < 0) {
-			return -1;
-		}
-		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
-		*promise_out = promise;
-		(void)consume_mode;
+		/* Phase 3c-4: drain the JS-supplied ReadableStream into a
+		 * transient buffer on demand, then apply the consume_mode
+		 * resolver. */
 		(void)resolver;
-		return 0;
+		native->body_used = 1;
+		return jsval_readable_body_consumer_schedule(region,
+				native->body_readable, JSVAL_FETCH_BODY_DEFAULT_LIMIT,
+				consume_mode, promise_out);
 	}
 	if (native->body_is_streaming) {
 		jsval_off_t source_off = native->body_source_off;
@@ -38475,6 +38507,444 @@ static int jsval_body_consume_streaming(jsval_region_t *region,
 	}
 	return jsval_body_drain_schedule(region, source_off, budget, consume_mode,
 			promise_out);
+}
+
+/* -------- Phase 3c-4: readable-body consumer microtask --------
+ *
+ * Drains a JS-supplied ReadableStream body for .text()/.json()/
+ * .arrayBuffer()/.bytes(). Acquires a reader on the stream,
+ * drives reader.read() in a loop, accumulates chunks into an
+ * arena-allocated ArrayBuffer, and on done=true dispatches to
+ * the consume_mode-specific resolver (mirrors fetch-drain's EOF
+ * path). Parks on each reader.read() promise via Phase 6.5's
+ * parked_microtask_off so it wakes when the stream produces a
+ * chunk instead of busy-polling. */
+
+static int jsval_readable_body_consumer_release_reader(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task)
+{
+	jsval_t reader_value;
+
+	if (task->reader_off == 0) {
+		return 0;
+	}
+	reader_value = jsval_undefined();
+	reader_value.kind = JSVAL_KIND_READABLE_STREAM_READER;
+	reader_value.repr = JSVAL_REPR_NATIVE;
+	reader_value.off = task->reader_off;
+	(void)jsval_readable_stream_reader_release_lock(region, reader_value);
+	task->reader_off = 0;
+	return 0;
+}
+
+static int jsval_readable_body_consumer_reject_message(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task,
+		const char *dom_name, const char *message)
+{
+	jsval_t promise_value;
+	jsval_t reason;
+
+	(void)jsval_readable_body_consumer_release_reader(region, task);
+	promise_value = jsval_promise_value(task->promise_off);
+	if (jsval_dom_exception_new_utf8(region, dom_name, message, &reason) < 0) {
+		return -1;
+	}
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
+static int jsval_readable_body_consumer_reject_value(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task, jsval_t reason)
+{
+	jsval_t promise_value;
+
+	(void)jsval_readable_body_consumer_release_reader(region, task);
+	promise_value = jsval_promise_value(task->promise_off);
+	return jsval_promise_reject(region, promise_value, reason);
+}
+
+static int jsval_readable_body_consumer_grow(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task, size_t need)
+{
+	jsval_t old_value;
+	jsval_t new_value;
+	jsval_native_array_buffer_t *old_buf;
+	jsval_native_array_buffer_t *new_buf;
+	size_t old_cap = 0;
+	size_t new_cap;
+
+	old_value = jsval_undefined();
+	old_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+	old_value.repr = JSVAL_REPR_NATIVE;
+	old_value.off = task->buffer_off;
+	if (jsval_array_buffer_byte_length(region, old_value, &old_cap) < 0) {
+		return -1;
+	}
+	if (need <= old_cap) {
+		return 0;
+	}
+	new_cap = old_cap == 0 ? JSVAL_FETCH_BODY_DRAIN_BATCH : old_cap;
+	while (new_cap < need) {
+		if (new_cap > SIZE_MAX / 2) {
+			errno = EOVERFLOW;
+			return -1;
+		}
+		new_cap *= 2;
+	}
+	if (jsval_array_buffer_new(region, new_cap, &new_value) < 0) {
+		return -1;
+	}
+	new_buf = jsval_native_array_buffer(region, new_value);
+	if (new_buf == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	old_buf = jsval_native_array_buffer(region, old_value);
+	if (old_buf == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (task->written_len > 0) {
+		memcpy(jsval_native_array_buffer_bytes(new_buf),
+				jsval_native_array_buffer_bytes(old_buf), task->written_len);
+	}
+	task->buffer_off = new_value.off;
+	return 0;
+}
+
+static int jsval_readable_body_consumer_resolve_eof(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task)
+{
+	jsval_t promise_value;
+	jsval_t buffer_value;
+	jsval_t resolved = jsval_undefined();
+	jsval_native_array_buffer_t *buffer;
+	size_t len = task->written_len;
+	uint8_t *bytes;
+
+	(void)jsval_readable_body_consumer_release_reader(region, task);
+	promise_value = jsval_promise_value(task->promise_off);
+
+	buffer_value = jsval_undefined();
+	buffer_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+	buffer_value.repr = JSVAL_REPR_NATIVE;
+	buffer_value.off = task->buffer_off;
+	buffer = jsval_native_array_buffer(region, buffer_value);
+	if (buffer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	bytes = jsval_native_array_buffer_bytes(buffer);
+
+	switch ((jsval_body_consume_mode_t)task->consume_mode) {
+	case JSVAL_BODY_CONSUME_TEXT:
+		if (jsval_string_new_utf8(region, bytes, len, &resolved) < 0) {
+			return -1;
+		}
+		break;
+	case JSVAL_BODY_CONSUME_JSON:
+	{
+		if (len == 0) {
+			jsval_t reason;
+			if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+					"empty body", &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		if (jsval_json_parse(region, bytes, len, 256, &resolved) < 0) {
+			jsval_t reason;
+			if (jsval_dom_exception_new_utf8(region, "SyntaxError",
+					"invalid JSON", &reason) < 0) {
+				return -1;
+			}
+			return jsval_promise_reject(region, promise_value, reason);
+		}
+		break;
+	}
+	case JSVAL_BODY_CONSUME_ARRAY_BUFFER:
+	{
+		jsval_t out;
+		if (jsval_array_buffer_new(region, len, &out) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, out);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, buffer_value);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst),
+					jsval_native_array_buffer_bytes(buffer), len);
+		}
+		resolved = out;
+		break;
+	}
+	case JSVAL_BODY_CONSUME_BYTES:
+	{
+		jsval_t typed;
+		if (jsval_typed_array_new(region, JSVAL_TYPED_ARRAY_UINT8, len,
+				&typed) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_t backing;
+			jsval_native_array_buffer_t *dst;
+			if (jsval_typed_array_buffer(region, typed, &backing) < 0) {
+				return -1;
+			}
+			dst = jsval_native_array_buffer(region, backing);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			buffer = jsval_native_array_buffer(region, buffer_value);
+			if (buffer == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst),
+					jsval_native_array_buffer_bytes(buffer), len);
+		}
+		resolved = typed;
+		break;
+	}
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return jsval_promise_resolve(region, promise_value, resolved);
+}
+
+static int jsval_readable_body_consumer_park(jsval_region_t *region,
+		jsval_off_t task_off,
+		jsval_native_microtask_readable_body_consumer_t *task,
+		jsval_off_t in_flight_off)
+{
+	jsval_native_promise_t *p;
+
+	if (in_flight_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	p = (jsval_native_promise_t *)jsval_region_ptr(region, in_flight_off);
+	if (p == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)p->state != JSVAL_PROMISE_STATE_PENDING) {
+		task->base.next_off = 0;
+		return jsval_microtask_push(region, task_off, &task->base);
+	}
+	task->base.next_off = 0;
+	p->parked_microtask_off = task_off;
+	return 0;
+}
+
+static int jsval_readable_body_consumer_run(jsval_region_t *region,
+		jsval_native_microtask_readable_body_consumer_t *task,
+		jsval_off_t task_off)
+{
+	jsval_t reader_value;
+	jsval_t in_flight;
+	jsval_t result;
+	jsval_promise_state_t pstate;
+	jsval_t value;
+	jsval_t done_value;
+	int done;
+	size_t chunk_len;
+	jsval_t backing;
+	uint8_t *chunk_bytes;
+	size_t backing_len;
+
+	if (region == NULL || task == NULL || task_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	reader_value = jsval_undefined();
+	reader_value.kind = JSVAL_KIND_READABLE_STREAM_READER;
+	reader_value.repr = JSVAL_REPR_NATIVE;
+	reader_value.off = task->reader_off;
+
+	/* Step 1: issue a read if none is in flight. */
+	if (task->in_flight_off == 0) {
+		jsval_t promise;
+
+		if (task->reader_off == 0) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (jsval_readable_stream_reader_read(region, reader_value,
+				&promise) != 0) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"TypeError", "stream reader.read() failed");
+		}
+		task->in_flight_off = promise.off;
+	}
+
+	/* Step 2: inspect the in-flight promise. */
+	in_flight = jsval_promise_value(task->in_flight_off);
+	if (jsval_promise_state(region, in_flight, &pstate) != 0) {
+		return jsval_readable_body_consumer_reject_message(region, task,
+				"TypeError", "invalid read promise");
+	}
+
+	if (pstate == JSVAL_PROMISE_STATE_PENDING) {
+		return jsval_readable_body_consumer_park(region, task_off, task,
+				task->in_flight_off);
+	}
+
+	if (jsval_promise_result(region, in_flight, &result) != 0) {
+		return jsval_readable_body_consumer_reject_message(region, task,
+				"TypeError", "could not read result");
+	}
+
+	if (pstate == JSVAL_PROMISE_STATE_REJECTED) {
+		return jsval_readable_body_consumer_reject_value(region, task, result);
+	}
+
+	/* Fulfilled — extract {value, done}. */
+	task->in_flight_off = 0;
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"done", 4,
+			&done_value) != 0) {
+		return jsval_readable_body_consumer_reject_message(region, task,
+				"TypeError", "invalid read result (missing done)");
+	}
+	done = (done_value.kind == JSVAL_KIND_BOOL && done_value.as.boolean)
+			? 1 : 0;
+	if (done) {
+		return jsval_readable_body_consumer_resolve_eof(region, task);
+	}
+
+	/* Not done: extract the Uint8Array chunk and append to accumulator. */
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"value", 5,
+			&value) != 0 || value.kind != JSVAL_KIND_TYPED_ARRAY) {
+		return jsval_readable_body_consumer_reject_message(region, task,
+				"TypeError", "invalid read result (chunk not Uint8Array)");
+	}
+	chunk_len = jsval_typed_array_length(region, value);
+	if (chunk_len > 0) {
+		size_t new_total;
+		jsval_native_array_buffer_t *buf;
+		jsval_t buffer_value;
+
+		if (jsval_typed_array_buffer(region, value, &backing) != 0) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"TypeError", "invalid chunk backing");
+		}
+		if (chunk_len > SIZE_MAX - task->written_len) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"RangeError", "body exceeds length limit");
+		}
+		new_total = task->written_len + chunk_len;
+		if (new_total > task->budget) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"RangeError", "body exceeds length limit");
+		}
+		if (jsval_readable_body_consumer_grow(region, task, new_total) < 0) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"RangeError", "body buffer grow failed");
+		}
+		/* Re-extract chunk pointer post-grow (region may have moved). */
+		if (jsval_array_buffer_bytes_mut(region, backing, &chunk_bytes,
+				&backing_len) != 0 || backing_len < chunk_len) {
+			return jsval_readable_body_consumer_reject_message(region, task,
+					"TypeError", "invalid chunk backing");
+		}
+		buffer_value = jsval_undefined();
+		buffer_value.kind = JSVAL_KIND_ARRAY_BUFFER;
+		buffer_value.repr = JSVAL_REPR_NATIVE;
+		buffer_value.off = task->buffer_off;
+		buf = jsval_native_array_buffer(region, buffer_value);
+		if (buf == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memcpy(jsval_native_array_buffer_bytes(buf) + task->written_len,
+				chunk_bytes, chunk_len);
+		task->written_len = new_total;
+	}
+
+	/* Still more to read — re-enqueue ourselves for the next read. */
+	task->base.next_off = 0;
+	return jsval_microtask_push(region, task_off, &task->base);
+}
+
+static int jsval_readable_body_consumer_schedule(jsval_region_t *region,
+		jsval_t readable_stream, size_t budget, uint8_t consume_mode,
+		jsval_t *promise_out)
+{
+	jsval_native_microtask_readable_body_consumer_t *task;
+	jsval_off_t task_off;
+	jsval_t promise;
+	jsval_t reader;
+	jsval_t initial_buffer;
+	size_t initial_cap;
+
+	if (readable_stream.kind != JSVAL_KIND_READABLE_STREAM
+			|| promise_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_readable_stream_get_reader(region, readable_stream,
+			&reader) < 0) {
+		/* Stream already locked (manual getReader() outstanding) or
+		 * other acquisition failure — surface as a rejected TypeError
+		 * so the caller still receives a promise. */
+		jsval_t reject_promise;
+		jsval_t reason;
+		if (jsval_promise_new(region, &reject_promise) < 0) {
+			return -1;
+		}
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"body stream is locked", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, reject_promise, reason) < 0) {
+			return -1;
+		}
+		*promise_out = reject_promise;
+		return 0;
+	}
+	if (jsval_promise_new(region, &promise) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	initial_cap = budget == 0 || budget == SIZE_MAX
+			? JSVAL_FETCH_BODY_DRAIN_BATCH
+			: (budget < JSVAL_FETCH_BODY_DRAIN_BATCH
+					? budget : JSVAL_FETCH_BODY_DRAIN_BATCH);
+	if (jsval_array_buffer_new(region, initial_cap, &initial_buffer) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_READABLE_BODY_CONSUMER;
+	task->promise_off = promise.off;
+	task->reader_off = reader.off;
+	task->buffer_off = initial_buffer.off;
+	task->in_flight_off = 0;
+	task->written_len = 0;
+	task->budget = budget;
+	task->consume_mode = consume_mode;
+	if (jsval_microtask_push(region, task_off, &task->base) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	*promise_out = promise;
+	return 0;
 }
 
 /*
