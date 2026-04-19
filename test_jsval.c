@@ -14163,6 +14163,278 @@ static void test_transform_stream_semantics(void)
 	}
 }
 
+/* ----------- TextDecoderStream / TextEncoderStream tests ----------- */
+
+static int collect_uint8_chunks(jsval_region_t *region, jsval_t reader,
+		uint8_t *out, size_t out_cap, size_t *out_len, int *done_out)
+{
+	jsval_t promise;
+	jsval_t result;
+	jsval_promise_state_t state;
+	uint8_t chunk[256];
+	size_t len;
+	size_t total = 0;
+
+	for (;;) {
+		assert(jsval_readable_stream_reader_read(region, reader, &promise)
+				== 0);
+		assert(jsval_promise_state(region, promise, &state) == 0);
+		if (state != JSVAL_PROMISE_STATE_FULFILLED) {
+			return -1;
+		}
+		assert(jsval_promise_result(region, promise, &result) == 0);
+		if (read_result_done(region, result) == 1) {
+			if (done_out != NULL) {
+				*done_out = 1;
+			}
+			break;
+		}
+		len = 0;
+		assert(read_result_value_bytes(region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		if (total + len > out_cap) {
+			return -1;
+		}
+		memcpy(out + total, chunk, len);
+		total += len;
+	}
+	if (out_len != NULL) {
+		*out_len = total;
+	}
+	return 0;
+}
+
+static void test_text_decoder_encoder_stream_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Decoder boundary-split: 4-byte UTF-8 'αβ' arrives as 3 + 1.
+	 *    First write (CE B1 CE) carries one full codepoint plus a
+	 *    one-byte trailing tail; second write (B2) completes the tail. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pwrite1, pwrite2, pclose;
+		jsval_t pread1, pread2, pread3;
+		jsval_t result;
+		jsval_promise_state_t state;
+		uint8_t chunk[16];
+		size_t len = 0;
+		static const uint8_t part1[3] = { 0xCE, 0xB1, 0xCE };
+		static const uint8_t part2[1] = { 0xB2 };
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_TRANSFORM_STREAM);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer, part1, 3,
+				&pwrite1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer, part2, 1,
+				&pwrite2) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread1)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread2)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread3)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pwrite1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pwrite2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pclose, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(jsval_promise_state(&region, pread1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread1, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 2 && chunk[0] == 0xCE && chunk[1] == 0xB1);
+
+		assert(jsval_promise_state(&region, pread2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread2, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 2 && chunk[0] == 0xCE && chunk[1] == 0xB2);
+
+		assert(jsval_promise_state(&region, pread3, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pread3, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 2. Decoder valid full chunk: bytes round-trip unchanged. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[64];
+		size_t out_len = 0;
+		int done = 0;
+		static const uint8_t input[] =
+				{ 'h', 'i', 0xCE, 0xB1, 0xCE, 0xB2 };
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer, input,
+				sizeof(input), &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == sizeof(input));
+		assert(memcmp(out, input, sizeof(input)) == 0);
+	}
+
+	/* 3. Decoder invalid sequence: lone continuation byte → U+FFFD. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[64];
+		size_t out_len = 0;
+		int done = 0;
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\x80", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 3 &&
+				out[0] == 0xEF && out[1] == 0xBF && out[2] == 0xBD);
+	}
+
+	/* 4. Decoder flush drains trailing: incomplete 0xCE → U+FFFD on flush. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[64];
+		size_t out_len = 0;
+		int done = 0;
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\xCE", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pcl, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 3 &&
+				out[0] == 0xEF && out[1] == 0xBF && out[2] == 0xBD);
+	}
+
+	/* 5. Encoder passthrough + replace. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw1, pw2, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[64];
+		size_t out_len = 0;
+		int done = 0;
+		static const uint8_t valid_in[] = { 'A', 'B', 0xCE, 0xB1 };
+
+		assert(jsval_text_encoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer, valid_in,
+				sizeof(valid_in), &pw1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\x80", 1, &pw2) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pw2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		/* "ABαU+FFFD" = AB + CE B1 + EF BF BD = 7 bytes. */
+		assert(out_len == 7);
+		assert(out[0] == 'A' && out[1] == 'B');
+		assert(out[2] == 0xCE && out[3] == 0xB1);
+		assert(out[4] == 0xEF && out[5] == 0xBF && out[6] == 0xBD);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -14275,6 +14547,7 @@ int main(void)
 	test_readable_stream_semantics();
 	test_writable_stream_semantics();
 	test_transform_stream_semantics();
+	test_text_decoder_encoder_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

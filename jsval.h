@@ -1537,6 +1537,32 @@ int jsval_transform_stream_writable(jsval_region_t *region, jsval_t stream,
 int jsval_transform_stream_channel_off(jsval_region_t *region, jsval_t stream,
 		jsval_off_t *out);
 
+/*
+ * Factory: a TransformStream whose transformer guarantees that no
+ * UTF-8 codepoint is split across an output chunk boundary. Trailing
+ * incomplete sequences are buffered until the next input chunk;
+ * malformed sequences are replaced with U+FFFD; if the writable
+ * side is closed while a partial sequence is buffered, flush emits
+ * a single U+FFFD before EOF.
+ *
+ * Returned value is JSVAL_KIND_TRANSFORM_STREAM; access via
+ * jsval_transform_stream_readable / jsval_transform_stream_writable.
+ */
+int jsval_text_decoder_stream_new(jsval_region_t *region,
+		jsval_t *value_ptr);
+
+/*
+ * Factory: a TransformStream whose transformer validates each input
+ * chunk as UTF-8, replacing any malformed sequence with U+FFFD.
+ * Stateless across chunks (incomplete sequences at a chunk boundary
+ * become U+FFFDs at that boundary); use a TextDecoderStream upstream
+ * if chunk-boundary correctness on the input bytes is required.
+ *
+ * Returned value is JSVAL_KIND_TRANSFORM_STREAM.
+ */
+int jsval_text_encoder_stream_new(jsval_region_t *region,
+		jsval_t *value_ptr);
+
 typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,
 	JSVAL_BODY_CONSUME_JSON = 1,

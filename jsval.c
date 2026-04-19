@@ -40672,3 +40672,193 @@ int jsval_transform_stream_channel_off(jsval_region_t *region, jsval_t stream,
 	*out = wrapper->channel_off;
 	return 0;
 }
+
+/* ----------- TextDecoderStream / TextEncoderStream ----------- */
+
+/*
+ * TextDecoderStream per-instance state: trailing bytes of an
+ * incomplete UTF-8 sequence carried over from the previous chunk.
+ * Up to 3 bytes (max sequence length 4 - 1 leading byte already
+ * present). Allocated in the region; userdata is the offset cast
+ * through uintptr_t to void*. The transformer callbacks recover
+ * the state pointer via jsval_region_ptr against the region they
+ * receive as their first argument.
+ */
+typedef struct jsval_native_text_decoder_state_s {
+	uint8_t trailing[3];
+	uint8_t trailing_len;
+	uint8_t reserved[4];
+} jsval_native_text_decoder_state_t;
+
+static jsval_native_text_decoder_state_t *
+jsval_native_text_decoder_state(jsval_region_t *region, void *userdata)
+{
+	jsval_off_t off = (jsval_off_t)(uintptr_t)userdata;
+
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_text_decoder_state_t *)
+			jsval_region_ptr(region, off);
+}
+
+static int jsval_text_decoder_stream_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	jsval_native_text_decoder_state_t *state;
+	uint8_t buf[JSVAL_FETCH_BODY_DRAIN_BATCH + 4];
+	uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH + 16];
+	size_t buf_len;
+	size_t out_len = 0;
+	const uint8_t *bc;
+	const uint8_t *bs;
+
+	state = jsval_native_text_decoder_state(region, userdata);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (chunk_len > JSVAL_FETCH_BODY_DRAIN_BATCH) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	buf_len = 0;
+	if (state->trailing_len > 0) {
+		memcpy(buf, state->trailing, state->trailing_len);
+		buf_len = state->trailing_len;
+	}
+	if (chunk_len > 0) {
+		memcpy(buf + buf_len, chunk, chunk_len);
+		buf_len += chunk_len;
+	}
+
+	bc = buf;
+	bs = buf + buf_len;
+	while (bc < bs) {
+		int l;
+		uint32_t c;
+
+		UTF8_CHAR(bc, bs, &c, &l);
+		if (l > 0) {
+			int i;
+
+			if (out_len + (size_t)l > sizeof(out)) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			for (i = 0; i < l; i++) {
+				out[out_len++] = bc[i];
+			}
+			bc += l;
+		} else if (l == 0) {
+			break;
+		} else {
+			if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
+				errno = ENOBUFS;
+				return -1;
+			}
+			memcpy(out + out_len, UTF8_REPLACEMENT_CHAR,
+					sizeof(UTF8_REPLACEMENT_CHAR));
+			out_len += sizeof(UTF8_REPLACEMENT_CHAR);
+			bc += -l;
+		}
+	}
+
+	state->trailing_len = (uint8_t)(bs - bc);
+	if (state->trailing_len > sizeof(state->trailing)) {
+		/* Should not happen — bs - bc <= 3 because UTF8_CHAR
+		 * stops at the first incomplete leading sequence and
+		 * UTF-8 sequences are at most 4 bytes. */
+		errno = EINVAL;
+		return -1;
+	}
+	if (state->trailing_len > 0) {
+		memcpy(state->trailing, bc, state->trailing_len);
+	}
+
+	if (out_len > 0) {
+		return jsval_transform_controller_enqueue(controller, out, out_len);
+	}
+	return 0;
+}
+
+static int jsval_text_decoder_stream_flush(jsval_region_t *region,
+		void *userdata, jsval_transform_controller_t *controller)
+{
+	jsval_native_text_decoder_state_t *state;
+
+	state = jsval_native_text_decoder_state(region, userdata);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (state->trailing_len == 0) {
+		return 0;
+	}
+	state->trailing_len = 0;
+	return jsval_transform_controller_enqueue(controller,
+			UTF8_REPLACEMENT_CHAR, sizeof(UTF8_REPLACEMENT_CHAR));
+}
+
+static const jsval_transformer_vtable_t jsval_text_decoder_stream_vtable = {
+	jsval_text_decoder_stream_transform,
+	jsval_text_decoder_stream_flush,
+};
+
+int jsval_text_decoder_stream_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	jsval_native_text_decoder_state_t *state;
+	jsval_off_t state_off;
+
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*state),
+			_Alignof(jsval_native_text_decoder_state_t), &state_off,
+			(void **)&state) < 0) {
+		return -1;
+	}
+	memset(state, 0, sizeof(*state));
+	return jsval_transform_stream_new(region,
+			&jsval_text_decoder_stream_vtable,
+			(void *)(uintptr_t)state_off, value_ptr);
+}
+
+static int jsval_text_encoder_stream_transform(jsval_region_t *region,
+		void *userdata, const uint8_t *chunk, size_t chunk_len,
+		jsval_transform_controller_t *controller)
+{
+	uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH * 3 + 16];
+	size_t out_len;
+
+	(void)region;
+	(void)userdata;
+	if (chunk_len > JSVAL_FETCH_BODY_DRAIN_BATCH) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	out_len = UTF8_TO_WELL_FORMED(chunk, chunk + chunk_len, out, sizeof(out));
+	if (out_len == 0 && chunk_len == 0) {
+		return 0;
+	}
+	return jsval_transform_controller_enqueue(controller, out, out_len);
+}
+
+static const jsval_transformer_vtable_t jsval_text_encoder_stream_vtable = {
+	jsval_text_encoder_stream_transform,
+	NULL,
+};
+
+int jsval_text_encoder_stream_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	if (region == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	return jsval_transform_stream_new(region,
+			&jsval_text_encoder_stream_vtable, NULL, value_ptr);
+}
