@@ -5545,6 +5545,56 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored WritableStream abort parity (Phase 3a-2): with a write parked behind a PENDING sink, jsval_writable_stream_abort with a TypeError DOMException reason rejects the queued write with that reason, fulfills abort() with undefined, runs the sink's close callback, and rejects subsequent writes synchronously."
+    },
+    {
+      "id": "jsmx-streams-transform-stream-identity-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/transform-stream-identity-parity.js",
+      "generated": "compliance/generated/streams/jsmx/transform-stream-identity-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TransformStream identity parity (Phase 4-2): a pass-through transformer round-trips bytes from writer.write() on the writable side to reader.read() on the readable side; writer.close() drives EOF after a microtask drain."
+    },
+    {
+      "id": "jsmx-streams-transform-stream-uppercase-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/transform-stream-uppercase-parity.js",
+      "generated": "compliance/generated/streams/jsmx/transform-stream-uppercase-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TransformStream uppercase parity (Phase 4-2): per-byte ASCII uppercase transformation in-flight (a -> A); 'abc' written on the writable side reads back as 'ABC' on the readable side."
+    },
+    {
+      "id": "jsmx-streams-transform-stream-one-to-many-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/transform-stream-one-to-many-parity.js",
+      "generated": "compliance/generated/streams/jsmx/transform-stream-one-to-many-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TransformStream one-to-many parity (Phase 4-2): a single writer.write of 'foo,bar,baz' is split on commas; the comma-splitter transformer enqueues three readable chunks via repeated controller.enqueue calls before EOF."
+    },
+    {
+      "id": "jsmx-streams-transform-stream-flush-emits-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/transform-stream-flush-emits-parity.js",
+      "generated": "compliance/generated/streams/jsmx/transform-stream-flush-emits-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TransformStream flush parity (Phase 4-2): the optional flush() callback runs once on writer.close(), enqueues '!END' onto the readable side between the last data chunk and the {done:true} sentinel."
+    },
+    {
+      "id": "jsmx-streams-transform-stream-error-propagation-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/transform-stream-error-propagation-parity.js",
+      "generated": "compliance/generated/streams/jsmx/transform-stream-error-propagation-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored TransformStream error propagation parity (Phase 4-2): controller.error(TypeError) inside the transformer rejects both the parked reader.read() and the queued writer.write() with the same DOMException reason, and a subsequent writer.write() rejects synchronously from the stored error."
     }
   ]
 }
