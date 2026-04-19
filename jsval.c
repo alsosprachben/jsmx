@@ -103,8 +103,15 @@ typedef struct jsval_native_promise_s {
 	jsval_t result;
 	jsval_off_t reactions_head;
 	jsval_off_t reactions_tail;
+	/* Phase 6.5: native-microtask wake slot. Orthogonal to the
+	 * reaction list. When non-zero, promise settle re-pushes that
+	 * microtask onto the queue (and clears the slot) BEFORE running
+	 * any JS-side reactions. Used by the pipe pump so it can park
+	 * on an in-flight read/write/close promise instead of busy-
+	 * re-polling the microtask queue. */
+	jsval_off_t parked_microtask_off;
 	uint8_t state;
-	uint8_t reserved[7];
+	uint8_t reserved[3];
 } jsval_native_promise_t;
 
 typedef enum jsval_promise_reaction_mode_e {
@@ -20182,6 +20189,7 @@ static int jsval_promise_settle(jsval_region_t *region, jsval_t promise_value,
 		jsval_promise_state_t state, jsval_t result)
 {
 	jsval_native_promise_t *promise;
+	jsval_off_t parked_off;
 
 	promise = jsval_native_promise(region, promise_value);
 	if (promise == NULL) {
@@ -20193,6 +20201,24 @@ static int jsval_promise_settle(jsval_region_t *region, jsval_t promise_value,
 	}
 	promise->state = (uint8_t)state;
 	promise->result = result;
+
+	/* Phase 6.5: native-microtask wake. Re-push any parked task
+	 * BEFORE running the reaction chain so native consumers (e.g.
+	 * the pipe pump) see the settle before JS .then() handlers.
+	 * Clearing the slot first makes the hook idempotent. */
+	parked_off = promise->parked_microtask_off;
+	if (parked_off != 0) {
+		jsval_native_microtask_t *task;
+
+		promise->parked_microtask_off = 0;
+		task = jsval_native_microtask(region, parked_off);
+		if (task != NULL) {
+			if (jsval_microtask_push(region, parked_off, task) < 0) {
+				return -1;
+			}
+		}
+	}
+
 	return jsval_promise_schedule_reactions(region, promise_value);
 }
 
@@ -41055,6 +41081,38 @@ static int jsval_stream_pipe_reschedule(jsval_region_t *region,
 	return jsval_microtask_push(region, task_off, &task->base);
 }
 
+/*
+ * Phase 6.5: park the pipe pump on a PENDING in-flight promise.
+ * Settle on that promise re-pushes the pump via the native-wake
+ * hook in jsval_promise_settle. If the promise has already
+ * settled by the time we get here (e.g. a subtle ordering edge),
+ * fall back to an immediate reschedule so the pump picks up the
+ * new state on the next tick.
+ */
+static int jsval_stream_pipe_park_on_promise(jsval_region_t *region,
+		jsval_off_t task_off,
+		jsval_native_microtask_stream_pipe_pump_t *task,
+		jsval_off_t in_flight_off)
+{
+	jsval_native_promise_t *p;
+
+	if (in_flight_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	p = (jsval_native_promise_t *)jsval_region_ptr(region, in_flight_off);
+	if (p == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)p->state != JSVAL_PROMISE_STATE_PENDING) {
+		return jsval_stream_pipe_reschedule(region, task_off, task);
+	}
+	task->base.next_off = 0;
+	p->parked_microtask_off = task_off;
+	return 0;
+}
+
 static int jsval_stream_pipe_release_locks(jsval_region_t *region,
 		jsval_native_microtask_stream_pipe_pump_t *task)
 {
@@ -41192,7 +41250,8 @@ static int jsval_stream_pipe_run_pump(jsval_region_t *region,
 	}
 
 	if (pstate == JSVAL_PROMISE_STATE_PENDING) {
-		return jsval_stream_pipe_reschedule(region, task_off, task);
+		return jsval_stream_pipe_park_on_promise(region, task_off, task,
+				task->in_flight_off);
 	}
 
 	if (jsval_promise_result(region, in_flight, &result) != 0) {

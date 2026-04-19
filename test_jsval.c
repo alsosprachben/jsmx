@@ -14882,6 +14882,82 @@ static void test_stream_pipe_semantics(void)
 				&pipe_promise) < 0);
 		assert(errno == EBUSY);
 	}
+
+	/* 6. Phase 6.5 park-wake: an async source that returns PENDING
+	 * must NOT busy-loop the pipe pump. First drain should park;
+	 * subsequent drains without notify stay idle; notify + drain
+	 * advances the pump; mark EOF + notify completes the pipe. */
+	{
+		static const uint8_t payload[] = "wake-piped";
+		pending_wake_source_t src = {
+			.data = payload, .len = sizeof(payload) - 1, .cursor = 0,
+			.ready = 0, .reads = 0,
+		};
+		capturing_sink_t sink;
+		jsval_t headers;
+		jsval_t response;
+		jsval_off_t source_off = 0;
+		jsval_t readable;
+		jsval_t writable;
+		jsval_t pipe_promise;
+		jsval_promise_state_t state;
+		int initial_reads;
+
+		memset(&sink, 0, sizeof(sink));
+
+		/* Build a streaming Response with our pending-wake source
+		 * so we can notify() from outside. Take its body stream as
+		 * the readable side of the pipe. */
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers, &pending_wake_vtable, &src,
+				SIZE_MAX, &response) == 0);
+		assert(jsval_response_body_source_off(&region, response,
+				&source_off) == 0);
+		assert(source_off != 0);
+
+		assert(jsval_response_body(&region, response, &readable) == 0);
+		assert(readable.kind == JSVAL_KIND_READABLE_STREAM);
+
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, &sink, &writable) == 0);
+
+		assert(jsval_readable_stream_pipe_to(&region, readable, writable,
+				&pipe_promise) == 0);
+
+		/* First drain: pipe pump issues read, source returns
+		 * PENDING, pump parks on the read promise. */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pipe_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(src.reads >= 1);
+		initial_reads = src.reads;
+		assert(sink.written == 0);
+
+		/* Second drain without notify: pump must stay parked, not
+		 * busy-loop. Regression guard — pre-6.5 this would hang. */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(src.reads == initial_reads);
+		assert(sink.written == 0);
+
+		/* Flip ready + notify: pipe pump wakes, reads bytes,
+		 * writes into sink, re-issues another read, parks again. */
+		src.ready = 1;
+		assert(jsval_body_source_notify(&region, source_off) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(sink.written == sizeof(payload) - 1);
+		assert(memcmp(sink.buf, payload, sizeof(payload) - 1) == 0);
+
+		/* Further reads on an empty source with ready=1 return EOF
+		 * synchronously. The pipe pump continues to close; pipe
+		 * promise fulfills. */
+		assert(jsval_promise_state(&region, pipe_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	}
 }
 
 /* ----------- CompressionStream / DecompressionStream tests ----------- */
