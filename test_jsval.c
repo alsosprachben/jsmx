@@ -12975,6 +12975,56 @@ static int read_result_value_bytes(jsval_region_t *region, jsval_t result,
 	return 0;
 }
 
+/* Custom source for the PENDING->wake scenario. Returns PENDING
+ * while `ready` is 0; emits payload bytes + EOF once flipped. */
+typedef struct pending_wake_source_s {
+	const uint8_t *data;
+	size_t len;
+	size_t cursor;
+	int ready;
+	int reads;
+} pending_wake_source_t;
+
+static int pending_wake_source_read(void *userdata, uint8_t *buf,
+		size_t cap, size_t *out_len,
+		jsval_body_source_status_t *status_ptr)
+{
+	pending_wake_source_t *src = (pending_wake_source_t *)userdata;
+	size_t remaining;
+	size_t n;
+
+	src->reads++;
+	if (!src->ready) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_PENDING;
+		return 0;
+	}
+	remaining = src->len - src->cursor;
+	if (remaining == 0) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_EOF;
+		return 0;
+	}
+	n = remaining < cap ? remaining : cap;
+	memcpy(buf, src->data + src->cursor, n);
+	src->cursor += n;
+	*out_len = n;
+	*status_ptr = (src->cursor >= src->len)
+			? JSVAL_BODY_SOURCE_STATUS_EOF
+			: JSVAL_BODY_SOURCE_STATUS_READY;
+	return 0;
+}
+
+static void pending_wake_source_close(void *userdata)
+{
+	(void)userdata;
+}
+
+static const jsval_body_source_vtable_t pending_wake_vtable = {
+	pending_wake_source_read,
+	pending_wake_source_close,
+};
+
 static void test_readable_stream_semantics(void)
 {
 	uint8_t storage[262144];
@@ -13180,6 +13230,71 @@ static void test_readable_stream_semantics(void)
 		assert(state == JSVAL_PROMISE_STATE_REJECTED);
 		assert(jsval_promise_result(&region, promise, &reason) == 0);
 		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+
+	/* 6. PENDING -> wake: source returns PENDING first, park on source;
+	 * microtask drain stays idle (no busy loop); producer flips the
+	 * ready flag + calls jsval_body_source_notify; next drain fulfills. */
+	{
+		static const uint8_t payload[] = "wake me";
+		pending_wake_source_t src = {
+			.data = payload, .len = sizeof(payload) - 1, .cursor = 0,
+			.ready = 0, .reads = 0,
+		};
+		jsval_t headers;
+		jsval_t response;
+		jsval_off_t source_off = 0;
+		jsval_t stream;
+		jsval_t reader;
+		jsval_t promise;
+		jsval_promise_state_t state;
+		jsval_t result;
+		uint8_t chunk[16];
+		size_t len = 0;
+
+		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_RESPONSE,
+				&headers) == 0);
+		assert(jsval_response_new_from_parts(&region, 200,
+				jsval_undefined(), headers, &pending_wake_vtable, &src,
+				SIZE_MAX, &response) == 0);
+		assert(jsval_response_body_source_off(&region, response,
+				&source_off) == 0);
+		assert(source_off != 0);
+
+		assert(jsval_response_body(&region, response, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(jsval_readable_stream_get_reader(&region, stream, &reader)
+				== 0);
+
+		/* Read: source returns PENDING; Promise parks. */
+		assert(jsval_readable_stream_reader_read(&region, reader,
+				&promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(src.reads == 1);
+
+		/* Drain should NOT busy-loop. Source must not be re-called
+		 * (there's nothing on the microtask queue). */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(src.reads == 1);
+
+		/* Flip ready and notify. */
+		src.ready = 1;
+		assert(jsval_body_source_notify(&region, source_off) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 7);
+		assert(memcmp(chunk, "wake me", 7) == 0);
 	}
 }
 

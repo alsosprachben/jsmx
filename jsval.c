@@ -637,7 +637,11 @@ typedef struct jsval_native_body_source_s {
 	void *userdata;
 	size_t content_length_hint;
 	uint8_t closed;
-	uint8_t reserved[7];
+	uint8_t reserved[3];
+	/* 0 = no parked consumer. Set when a ReadableStream pump
+	 * hits PENDING with no buffered chunk; cleared when a wake
+	 * (via jsval_body_source_notify) reschedules the pump. */
+	jsval_off_t parked_stream_off;
 } jsval_native_body_source_t;
 
 typedef struct jsval_native_microtask_fetch_body_drain_s {
@@ -838,6 +842,10 @@ static int jsval_fetch_run_request(jsval_region_t *region,
 		jsval_native_microtask_fetch_request_t *task, jsval_off_t task_off);
 static int jsval_readable_stream_run_pump(jsval_region_t *region,
 		jsval_native_microtask_readable_stream_pump_t *task);
+static int jsval_readable_stream_schedule_pump(jsval_region_t *region,
+		jsval_off_t stream_off);
+static int jsval_readable_stream_new_wrapping_source(jsval_region_t *region,
+		jsval_off_t source_off, jsval_t *value_ptr);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -37248,6 +37256,46 @@ int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 			jsval_body_resolve_bytes, JSVAL_BODY_CONSUME_BYTES);
 }
 
+int jsval_response_body_source_off(jsval_region_t *region,
+		jsval_t response, jsval_off_t *out)
+{
+	jsval_native_response_t *native;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_response(region, response);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out = native->body_is_streaming ? native->body_source_off : 0;
+	return 0;
+}
+
+int jsval_body_source_notify(jsval_region_t *region, jsval_off_t source_off)
+{
+	jsval_native_body_source_t *source;
+	jsval_off_t parked;
+
+	if (region == NULL || source_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	source = jsval_native_body_source(region, source_off);
+	if (source == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	parked = source->parked_stream_off;
+	if (parked == 0) {
+		return 0;
+	}
+	source->parked_stream_off = 0;
+	return jsval_readable_stream_schedule_pump(region, parked);
+}
+
 int jsval_response_body(jsval_region_t *region, jsval_t response,
 		jsval_t *value_ptr)
 {
@@ -37274,8 +37322,12 @@ int jsval_response_body(jsval_region_t *region, jsval_t response,
 			errno = EINVAL;
 			return -1;
 		}
-		if (jsval_readable_stream_new_from_source(region, src->vtable,
-				src->userdata, &stream) < 0) {
+		/* Share the Response's existing body source so that producer
+		 * wakes (via jsval_body_source_notify on the Response's
+		 * source_off) reach this stream's pump. A fresh source copy
+		 * would park on a different struct and never be woken. */
+		if (jsval_readable_stream_new_wrapping_source(region,
+				native->body_source_off, &stream) < 0) {
 			return -1;
 		}
 	} else {
@@ -37651,6 +37703,7 @@ static int jsval_body_source_new(jsval_region_t *region,
 	src->content_length_hint = content_length_hint;
 	src->closed = 0;
 	memset(src->reserved, 0, sizeof(src->reserved));
+	src->parked_stream_off = 0;
 	*off_ptr = off;
 	return 0;
 }
@@ -38368,6 +38421,37 @@ static int jsval_readable_stream_schedule_pump(jsval_region_t *region,
 	return jsval_microtask_push(region, task_off, &task->base);
 }
 
+/*
+ * Like jsval_readable_stream_new_from_source but reuses an existing
+ * source allocated elsewhere (e.g. a streaming Request/Response). The
+ * caller keeps ownership of the source storage. Parking + notify on
+ * the shared source wake this stream's pump.
+ */
+static int jsval_readable_stream_new_wrapping_source(jsval_region_t *region,
+		jsval_off_t source_off, jsval_t *value_ptr)
+{
+	jsval_native_readable_stream_t *stream;
+	void *ptr = NULL;
+
+	if (region == NULL || source_off == 0 || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*stream),
+			_Alignof(jsval_native_readable_stream_t), &ptr) < 0) {
+		return -1;
+	}
+	stream = (jsval_native_readable_stream_t *)ptr;
+	memset(stream, 0, sizeof(*stream));
+	stream->source_off = source_off;
+	stream->error_reason = jsval_undefined();
+	stream->state = JSVAL_READABLE_STREAM_STATE_READABLE;
+
+	*value_ptr = jsval_native_make_value(region, stream,
+			JSVAL_KIND_READABLE_STREAM);
+	return 0;
+}
+
 int jsval_readable_stream_new_from_source(jsval_region_t *region,
 		const jsval_body_source_vtable_t *vtable, void *userdata,
 		jsval_t *value_ptr)
@@ -38391,6 +38475,7 @@ int jsval_readable_stream_new_from_source(jsval_region_t *region,
 	source->content_length_hint = SIZE_MAX;
 	source->closed = 0;
 	memset(source->reserved, 0, sizeof(source->reserved));
+	source->parked_stream_off = 0;
 
 	if (jsval_region_alloc(region, sizeof(*stream),
 			_Alignof(jsval_native_readable_stream_t), &ptr) < 0) {
@@ -38668,13 +38753,21 @@ int jsval_readable_stream_reader_read(jsval_region_t *region,
 	}
 
 	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING || n == 0) {
+		/* Queue this read and park on the source. The producer
+		 * calls jsval_body_source_notify after it pushes more
+		 * bytes (or flags EOF/ERROR), which schedules a fresh
+		 * pump microtask. Without this parking, re-scheduling
+		 * the pump here would busy-loop the microtask drain. */
 		if (jsval_readable_stream_enqueue_read(region, stream_off,
 				promise.off) < 0) {
 			return -1;
 		}
-		if (jsval_readable_stream_schedule_pump(region, stream_off) < 0) {
+		source = jsval_native_body_source(region, stream->source_off);
+		if (source == NULL) {
+			errno = EINVAL;
 			return -1;
 		}
+		source->parked_stream_off = stream_off;
 		*promise_ptr = promise;
 		return 0;
 	}
@@ -38885,7 +38978,12 @@ static int jsval_readable_stream_run_pump(jsval_region_t *region,
 	}
 
 	if (status == JSVAL_BODY_SOURCE_STATUS_PENDING || n == 0) {
-		return jsval_readable_stream_schedule_pump(region, stream_off);
+		/* Park on source instead of re-enqueuing the pump. The
+		 * producer will call jsval_body_source_notify after it
+		 * pushes more data (or flags EOF/ERROR), which will
+		 * schedule a fresh pump microtask for this stream. */
+		source->parked_stream_off = stream_off;
+		return 0;
 	}
 
 	{

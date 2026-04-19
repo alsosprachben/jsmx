@@ -1308,6 +1308,30 @@ typedef struct jsval_body_source_vtable_s {
 } jsval_body_source_vtable_t;
 
 /*
+ * Producer-side wake: signals to jsmx that the body source at
+ * `source_off` has new data or has transitioned to EOF/ERROR.
+ * If a ReadableStream pump was parked waiting on this source,
+ * a fresh pump microtask is scheduled. No-op if nothing is
+ * parked. The producer typically calls this after each push,
+ * mark-eof, or mark-error on its own buffering layer.
+ *
+ * `source_off` must be a value previously obtained via
+ * jsval_response_body_source_off (or the future Request
+ * equivalent). Returns 0 on success, -1 with errno on error.
+ */
+int jsval_body_source_notify(jsval_region_t *region,
+		jsval_off_t source_off);
+
+/*
+ * Returns the internal body-source offset of a streaming
+ * Response via *out. For non-streaming Responses (in-memory
+ * body_buffer), *out is set to 0. Intended for producer-side
+ * embedders that need to call jsval_body_source_notify.
+ */
+int jsval_response_body_source_off(jsval_region_t *region,
+		jsval_t response, jsval_off_t *out);
+
+/*
  * ReadableStream: minimal WHATWG-shaped facade over the body-source vtable.
  *
  * A stream wraps a jsval_body_source_vtable_t + userdata (foundational path)
