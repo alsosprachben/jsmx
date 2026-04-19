@@ -200,10 +200,50 @@ int wintertc_proxy_fetch_handler(jsval_region_t *region,
 			&upstream_url, &error) < 0) {
 		return -1;
 	}
+#ifdef WINTERTC_PROXY_FORWARD_BODY
+	/* Phase 3c-2c: forward the inbound method + body onto the
+	 * outbound fetch so the upstream sees a faithful proxy.
+	 * request.body returns the inbound Request's body as a
+	 * ReadableStream (Phase 3c-1); jsval_request_new (Phase 3c-1)
+	 * accepts a ReadableStream as init.body; the mnvkd driver
+	 * drains it via pipeTo + sink (Phase 3c-2 refactor). */
+	{
+		jsval_t init_value;
+		jsval_t body_value;
+		jsval_t method_value;
+
+		if (jsval_request_body(region, request_value, &body_value) < 0) {
+			return -1;
+		}
+		if (jsval_request_method(region, request_value, &method_value)
+				< 0) {
+			return -1;
+		}
+		if (jsval_object_new(region, 2, &init_value) < 0) {
+			return -1;
+		}
+		if (jsval_object_set_utf8(region, init_value,
+				(const uint8_t *)"method", 6, method_value) < 0) {
+			return -1;
+		}
+		if (body_value.kind != JSVAL_KIND_NULL
+				&& body_value.kind != JSVAL_KIND_UNDEFINED) {
+			if (jsval_object_set_utf8(region, init_value,
+					(const uint8_t *)"body", 4, body_value) < 0) {
+				return -1;
+			}
+		}
+		if (jsval_fetch(region, upstream_url, init_value, 1,
+				&upstream_promise) < 0) {
+			return -1;
+		}
+	}
+#else
 	if (jsval_fetch(region, upstream_url, jsval_undefined(), 0,
 			&upstream_promise) < 0) {
 		return -1;
 	}
+#endif
 
 	/* Install the CPS continuation. The downstream Promise is the
 	 * handler's output. */
