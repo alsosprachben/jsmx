@@ -12664,6 +12664,118 @@ static void test_fetch_api_semantics(void)
 	}
 }
 
+/* ----------- Phase 3c: readable-body Request tests ----------- */
+
+static void test_request_readable_body_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Body as ReadableStream: stored on the Request, retrievable
+	 * via body_readable accessor, request.body returns the same
+	 * stream (not a wrapper). */
+	{
+		jsval_t readable;
+		jsval_t init;
+		jsval_t request;
+		jsval_t got;
+		jsval_t body_value;
+		int used = 0;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello", 5, &readable) == 0);
+		assert(readable.kind == JSVAL_KIND_READABLE_STREAM);
+
+		assert(jsval_object_new(&region, 4, &init) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"method", 6,
+				fetch_test_str(&region, "POST")) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"body", 4, readable) == 0);
+
+		assert(jsval_request_new(&region,
+				fetch_test_str(&region, "https://ex.com"), init, 1,
+				&request) == 0);
+
+		/* body_readable returns our stream. */
+		assert(jsval_request_body_readable(&region, request, &got) == 0);
+		assert(got.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(got.off == readable.off);
+
+		/* body_used is 0 before consumption. */
+		assert(jsval_request_body_used(&region, request, &used) == 0);
+		assert(used == 0);
+
+		/* request.body returns the same stream (not a wrapper). */
+		assert(jsval_request_body(&region, request, &body_value) == 0);
+		assert(body_value.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(body_value.off == readable.off);
+
+		/* body_used flipped to 1 after .body. */
+		assert(jsval_request_body_used(&region, request, &used) == 0);
+		assert(used == 1);
+
+		/* Subsequent .body returns null (body already used). */
+		assert(jsval_request_body(&region, request, &body_value) == 0);
+		assert(body_value.kind == JSVAL_KIND_NULL);
+	}
+
+	/* 2. Consumer methods (.text/.json/.arrayBuffer/.bytes) reject
+	 * with TypeError on a readable-body Request. */
+	{
+		jsval_t readable;
+		jsval_t init;
+		jsval_t request;
+		jsval_t promise;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hi", 2, &readable) == 0);
+
+		assert(jsval_object_new(&region, 4, &init) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"method", 6,
+				fetch_test_str(&region, "POST")) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"body", 4, readable) == 0);
+
+		assert(jsval_request_new(&region,
+				fetch_test_str(&region, "https://ex.com"), init, 1,
+				&request) == 0);
+
+		assert(jsval_request_text(&region, request, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, promise, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+
+	/* 3. Buffered-body Request: body_readable returns undefined. */
+	{
+		jsval_t init;
+		jsval_t request;
+		jsval_t got;
+
+		assert(jsval_object_new(&region, 4, &init) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"method", 6,
+				fetch_test_str(&region, "POST")) == 0);
+		assert(jsval_object_set_utf8(&region, init,
+				(const uint8_t *)"body", 4,
+				fetch_test_str(&region, "buffered")) == 0);
+
+		assert(jsval_request_new(&region,
+				fetch_test_str(&region, "https://ex.com"), init, 1,
+				&request) == 0);
+
+		assert(jsval_request_body_readable(&region, request, &got) == 0);
+		assert(got.kind == JSVAL_KIND_UNDEFINED);
+	}
+}
+
 typedef struct fake_body_source_s {
 	const uint8_t *data;
 	size_t total;
@@ -12773,8 +12885,8 @@ static void test_fetch_body_drain_semantics(void)
 		assert(jsval_headers_new(&region, JSVAL_HEADERS_GUARD_REQUEST,
 				&headers) == 0);
 		assert(jsval_request_new_from_parts(&region,
-				fetch_drain_str(&region, "POST"),
-				fetch_drain_str(&region, "https://ex.com"),
+				fetch_test_str(&region, "POST"),
+				fetch_test_str(&region, "https://ex.com"),
 				headers, &fake_body_vtable, &src, 5, &request) == 0);
 		assert(jsval_request_body_used(&region, request, &used) == 0);
 		assert(used == 0);
@@ -15123,6 +15235,7 @@ int main(void)
 	test_lookup_and_capacity_contracts();
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
+	test_request_readable_body_semantics();
 	test_fetch_body_drain_semantics();
 	test_readable_stream_semantics();
 	test_writable_stream_semantics();

@@ -280,6 +280,7 @@ typedef struct jsval_native_request_s {
 	jsval_t url;
 	jsval_t headers;
 	jsval_t body_buffer;
+	jsval_t body_readable;  /* ReadableStream jsval, or undefined */
 	jsval_off_t body_source_off;
 	uint8_t method;
 	uint8_t mode;
@@ -36652,6 +36653,7 @@ int jsval_request_new(jsval_region_t *region, jsval_t input_value,
 	jsval_t url_value;
 	jsval_t headers_value;
 	jsval_t body_buffer = jsval_undefined();
+	jsval_t body_readable = jsval_undefined();
 	int has_body = 0;
 	uint8_t method = JSVAL_HTTP_METHOD_GET;
 
@@ -36726,7 +36728,10 @@ int jsval_request_new(jsval_region_t *region, jsval_t input_value,
 		}
 		if (body_val.kind != JSVAL_KIND_UNDEFINED
 				&& body_val.kind != JSVAL_KIND_NULL) {
-			if (jsval_body_snapshot_from_value(region, body_val,
+			if (body_val.kind == JSVAL_KIND_READABLE_STREAM) {
+				body_readable = body_val;
+				has_body = 1;
+			} else if (jsval_body_snapshot_from_value(region, body_val,
 					&body_buffer, &has_body) < 0) {
 				return -1;
 			}
@@ -36744,8 +36749,12 @@ int jsval_request_new(jsval_region_t *region, jsval_t input_value,
 	native->url = url_value;
 	native->headers = headers_value;
 	native->body_buffer = body_buffer;
+	native->body_readable = body_readable;
 	native->method = method;
 	native->has_body = (uint8_t)(has_body ? 1 : 0);
+	/* body_is_streaming is the mnvkd-side producer flag (paired with
+	 * body_source_off). A JS-supplied ReadableStream body is indicated
+	 * by body_readable != undefined and is orthogonal. */
 	*value_ptr = jsval_undefined();
 	value_ptr->kind = JSVAL_KIND_REQUEST;
 	value_ptr->repr = JSVAL_REPR_NATIVE;
@@ -36825,6 +36834,25 @@ static int jsval_request_mark_used(jsval_region_t *region, jsval_t request,
 		}
 		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
 		*promise_out = promise;
+		return 0;
+	}
+	if (native->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* Phase 3c v1: consumer methods are not supported on a
+		 * JS-supplied ReadableStream body. The handler must
+		 * consume via request.body. A future slice will drain
+		 * the readable into a transient buffer on demand. */
+		jsval_t promise;
+		jsval_t reason;
+		if (jsval_promise_new(region, &promise) < 0) { return -1; }
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"body consumer methods unsupported on a readable body",
+				&reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
+		*promise_out = promise;
+		(void)consume_mode;
+		(void)resolver;
 		return 0;
 	}
 	if (native->body_is_streaming) {
@@ -37559,6 +37587,17 @@ int jsval_request_body(jsval_region_t *region, jsval_t request,
 		*value_ptr = jsval_null();
 		return 0;
 	}
+	if (native->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* JS-supplied readable body (Phase 3c): return it directly.
+		 * The WHATWG request.body getter yields the same stream
+		 * object; pipeTo / getReader on it drains the underlying
+		 * JS-side source. Flipping body_used enforces the
+		 * single-consumer invariant. */
+		stream = native->body_readable;
+		native->body_used = 1;
+		*value_ptr = stream;
+		return 0;
+	}
 	if (native->body_is_streaming) {
 		jsval_native_body_source_t *src =
 				jsval_native_body_source(region, native->body_source_off);
@@ -37592,6 +37631,24 @@ int jsval_request_body(jsval_region_t *region, jsval_t request,
 	}
 	native->body_used = 1;
 	*value_ptr = stream;
+	return 0;
+}
+
+int jsval_request_body_readable(jsval_region_t *region, jsval_t request,
+		jsval_t *out_ptr)
+{
+	jsval_native_request_t *native;
+
+	if (out_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out_ptr = native->body_readable;
 	return 0;
 }
 

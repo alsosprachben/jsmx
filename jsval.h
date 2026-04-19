@@ -1247,6 +1247,16 @@ int jsval_request_bytes(jsval_region_t *region, jsval_t request,
 int jsval_request_body(jsval_region_t *region, jsval_t request,
 		jsval_t *value_ptr);
 
+/*
+ * If the Request was constructed with init.body = a ReadableStream
+ * (Phase 3c), returns that readable via *out_ptr. Otherwise returns
+ * jsval_undefined(). Embedders (e.g. the mnvkd fetch driver) use
+ * this to branch between a materialized body-write path and a
+ * stream-drain path. Does NOT flip body_used.
+ */
+int jsval_request_body_readable(jsval_region_t *region, jsval_t request,
+		jsval_t *out_ptr);
+
 int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 		int have_body, jsval_t init_value, int have_init, jsval_t *value_ptr);
 int jsval_response_error(jsval_region_t *region, jsval_t *value_ptr);
