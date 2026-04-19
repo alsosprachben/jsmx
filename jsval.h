@@ -1302,6 +1302,15 @@ int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 int jsval_response_body(jsval_region_t *region, jsval_t response,
 		jsval_t *value_ptr);
 
+/*
+ * Phase 3c-5: returns the JS-supplied ReadableStream stored on a
+ * Response when constructed with `new Response(readable, init)`, or
+ * `undefined` for buffered/streaming bodies that don't have a
+ * directly-supplied stream. Mirrors jsval_request_body_readable.
+ */
+int jsval_response_body_readable(jsval_region_t *region, jsval_t response,
+		jsval_t *out_ptr);
+
 int jsval_fetch(jsval_region_t *region, jsval_t input_value,
 		jsval_t init_value, int have_init, jsval_t *promise_ptr);
 

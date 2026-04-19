@@ -308,6 +308,7 @@ typedef struct jsval_native_response_s {
 	jsval_t headers;
 	jsval_t status_text;
 	jsval_t body_buffer;
+	jsval_t body_readable;  /* ReadableStream jsval, or undefined */
 	jsval_off_t body_source_off;
 	uint16_t status;
 	uint8_t type;
@@ -37024,6 +37025,7 @@ int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 	jsval_t headers_value;
 	jsval_t status_text;
 	jsval_t body_buffer = jsval_undefined();
+	jsval_t body_readable = jsval_undefined();
 	int has_body = 0;
 	uint16_t status = 200;
 
@@ -37042,8 +37044,11 @@ int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 	}
 
 	if (have_body) {
-		if (jsval_body_snapshot_from_value(region, body_value, &body_buffer,
-				&has_body) < 0) {
+		if (body_value.kind == JSVAL_KIND_READABLE_STREAM) {
+			body_readable = body_value;
+			has_body = 1;
+		} else if (jsval_body_snapshot_from_value(region, body_value,
+				&body_buffer, &has_body) < 0) {
 			return -1;
 		}
 		if (has_body && body_value.kind == JSVAL_KIND_STRING) {
@@ -37120,6 +37125,7 @@ int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 	native->headers = headers_value;
 	native->status_text = status_text;
 	native->body_buffer = body_buffer;
+	native->body_readable = body_readable;
 	native->status = status;
 	native->type = JSVAL_RESPONSE_TYPE_DEFAULT;
 	native->has_body = (uint8_t)(has_body ? 1 : 0);
@@ -37372,6 +37378,17 @@ int jsval_response_clone(jsval_region_t *region, jsval_t response,
 		errno = EACCES;
 		return -1;
 	}
+	if (src->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* Phase 3c-5: cloning a readable-body Response requires
+		 * teeing the underlying stream (WHATWG semantics). Not
+		 * implemented yet; reject explicitly to avoid the silent
+		 * body-loss that would otherwise occur (body_buffer is
+		 * undefined for readable-body Responses, so the
+		 * snapshot-from-value branch below would produce a
+		 * has_body=0 clone). */
+		errno = ENOTSUP;
+		return -1;
+	}
 	if (jsval_headers_new_from_init(region, JSVAL_HEADERS_GUARD_RESPONSE,
 			src->headers, &headers_copy) < 0) {
 		return -1;
@@ -37442,6 +37459,16 @@ static int jsval_response_mark_used(jsval_region_t *region, jsval_t response,
 		if (jsval_promise_reject(region, promise, reason) < 0) { return -1; }
 		*promise_out = promise;
 		return 0;
+	}
+	if (native->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* Phase 3c-5: drain the JS-supplied ReadableStream into a
+		 * transient buffer on demand, then apply the consume_mode
+		 * resolver. Reuses the Phase 3c-4 consumer microtask. */
+		(void)resolver;
+		native->body_used = 1;
+		return jsval_readable_body_consumer_schedule(region,
+				native->body_readable, JSVAL_FETCH_BODY_DEFAULT_LIMIT,
+				consume_mode, promise_out);
 	}
 	if (native->body_is_streaming) {
 		jsval_off_t source_off = native->body_source_off;
@@ -37570,6 +37597,14 @@ int jsval_response_body(jsval_region_t *region, jsval_t response,
 		*value_ptr = jsval_null();
 		return 0;
 	}
+	if (native->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* JS-supplied readable body (Phase 3c-5): return it directly,
+		 * mirroring jsval_request_body. */
+		stream = native->body_readable;
+		native->body_used = 1;
+		*value_ptr = stream;
+		return 0;
+	}
 	if (native->body_is_streaming) {
 		jsval_native_body_source_t *src =
 				jsval_native_body_source(region, native->body_source_off);
@@ -37605,6 +37640,24 @@ int jsval_response_body(jsval_region_t *region, jsval_t response,
 	}
 	native->body_used = 1;
 	*value_ptr = stream;
+	return 0;
+}
+
+int jsval_response_body_readable(jsval_region_t *region, jsval_t response,
+		jsval_t *out_ptr)
+{
+	jsval_native_response_t *native;
+
+	if (out_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_response(region, response);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out_ptr = native->body_readable;
 	return 0;
 }
 

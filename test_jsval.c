@@ -12918,6 +12918,215 @@ static void test_request_readable_body_semantics(void)
 	}
 }
 
+/* Phase 3c-5: Response-side parity for readable-body init + consumer
+ * methods. Mirrors test_request_readable_body_semantics scenario by
+ * scenario. */
+static void test_response_readable_body_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Body as ReadableStream: stored on the Response, retrievable
+	 * via body_readable accessor, response.body returns the same
+	 * stream (not a wrapper). */
+	{
+		jsval_t readable;
+		jsval_t response;
+		jsval_t got;
+		jsval_t body_value;
+		int used = 0;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello", 5, &readable) == 0);
+		assert(readable.kind == JSVAL_KIND_READABLE_STREAM);
+
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+
+		/* body_readable returns our stream. */
+		assert(jsval_response_body_readable(&region, response, &got) == 0);
+		assert(got.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(got.off == readable.off);
+
+		/* body_used is 0 before consumption. */
+		assert(jsval_response_body_used(&region, response, &used) == 0);
+		assert(used == 0);
+
+		/* response.body returns the same stream (not a wrapper). */
+		assert(jsval_response_body(&region, response, &body_value) == 0);
+		assert(body_value.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(body_value.off == readable.off);
+
+		/* body_used flipped to 1 after .body. */
+		assert(jsval_response_body_used(&region, response, &used) == 0);
+		assert(used == 1);
+
+		/* Subsequent .body returns null (body already used). */
+		assert(jsval_response_body(&region, response, &body_value) == 0);
+		assert(body_value.kind == JSVAL_KIND_NULL);
+	}
+
+	/* 2. .text() on a readable-body Response: drains the stream on
+	 * demand, then resolves the promise with the decoded string. */
+	{
+		jsval_t readable;
+		jsval_t response;
+		jsval_t promise;
+		jsval_t got;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		size_t got_len = 0;
+		uint8_t got_buf[2];
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hi", 2, &readable) == 0);
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+
+		assert(jsval_response_text(&region, response, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_STRING);
+		assert(jsval_string_copy_utf8(&region, got, NULL, 0, &got_len) == 0);
+		assert(got_len == 2);
+		assert(jsval_string_copy_utf8(&region, got, got_buf, 2, NULL) == 0);
+		assert(memcmp(got_buf, "hi", 2) == 0);
+	}
+
+	/* 3. .json() on a readable-body Response: drains and parses. */
+	{
+		jsval_t readable;
+		jsval_t response;
+		jsval_t promise;
+		jsval_t got;
+		jsval_t a_value;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"{\"a\":1}", 7, &readable) == 0);
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+
+		assert(jsval_response_json_body(&region, response, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_OBJECT);
+		assert(jsval_object_get_utf8(&region, got, (const uint8_t *)"a", 1,
+				&a_value) == 0);
+		assert(jsval_strict_eq(&region, a_value, jsval_number(1.0)) == 1);
+	}
+
+	/* 4. .arrayBuffer() on a readable-body Response: drains into an
+	 * ArrayBuffer of exactly the drained length. */
+	{
+		static const uint8_t body[] = {0x01, 0x02, 0x03};
+		jsval_t readable;
+		jsval_t response;
+		jsval_t promise;
+		jsval_t got;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		size_t bl = 0;
+		uint8_t buf[3];
+
+		assert(jsval_readable_stream_new_from_bytes(&region, body, 3,
+				&readable) == 0);
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+
+		assert(jsval_response_array_buffer(&region, response, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_byte_length(&region, got, &bl) == 0);
+		assert(bl == 3);
+		assert(jsval_array_buffer_copy_bytes(&region, got, buf, 3, NULL) == 0);
+		assert(memcmp(buf, body, 3) == 0);
+	}
+
+	/* 5. .bytes() on a readable-body Response: drains into Uint8Array. */
+	{
+		static const uint8_t body[] = {0xde, 0xad, 0xbe, 0xef};
+		jsval_t readable;
+		jsval_t response;
+		jsval_t promise;
+		jsval_t got;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		size_t bl = 0;
+		uint8_t buf[4];
+
+		assert(jsval_readable_stream_new_from_bytes(&region, body, 4,
+				&readable) == 0);
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+
+		assert(jsval_response_bytes(&region, response, &promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &got) == 0);
+		assert(got.kind == JSVAL_KIND_TYPED_ARRAY);
+		assert(jsval_typed_array_byte_length(&region, got, &bl) == 0);
+		assert(bl == 4);
+		assert(jsval_typed_array_copy_bytes(&region, got, buf, 4, NULL) == 0);
+		assert(memcmp(buf, body, 4) == 0);
+	}
+
+	/* 6. Buffered-body Response: body_readable returns undefined. */
+	{
+		jsval_t response;
+		jsval_t got;
+
+		assert(jsval_response_new(&region,
+				fetch_test_str(&region, "buffered"), 1, jsval_undefined(),
+				0, &response) == 0);
+
+		assert(jsval_response_body_readable(&region, response, &got) == 0);
+		assert(got.kind == JSVAL_KIND_UNDEFINED);
+	}
+
+	/* 7. clone() of a readable-body Response rejects (Response.clone()
+	 * tee-semantics not yet implemented). */
+	{
+		jsval_t readable;
+		jsval_t response;
+		jsval_t cloned;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"x", 1, &readable) == 0);
+		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
+				0, &response) == 0);
+		assert(jsval_response_clone(&region, response, &cloned) == -1);
+		assert(errno == ENOTSUP);
+	}
+}
+
 typedef struct fake_body_source_s {
 	const uint8_t *data;
 	size_t total;
@@ -15454,6 +15663,7 @@ int main(void)
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
 	test_request_readable_body_semantics();
+	test_response_readable_body_semantics();
 	test_fetch_body_drain_semantics();
 	test_readable_stream_semantics();
 	test_writable_stream_semantics();
