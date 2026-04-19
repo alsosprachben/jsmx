@@ -325,7 +325,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_SUBTLE_ED25519 = 13,
 	JSVAL_MICROTASK_KIND_FETCH_BODY_DRAIN = 14,
 	JSVAL_MICROTASK_KIND_FETCH_REQUEST = 15,
-	JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP = 16
+	JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP = 16,
+	JSVAL_MICROTASK_KIND_WRITABLE_STREAM_PUMP = 17
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -700,6 +701,63 @@ typedef struct jsval_native_microtask_readable_stream_pump_s {
 } jsval_native_microtask_readable_stream_pump_t;
 
 /*
+ * Underlying-sink storage for a WritableStream. `parked_writer_off`
+ * is the day-one analogue of jsval_native_body_source_t's
+ * parked_stream_off: when the sink reports PENDING the pump stores
+ * the stream's offset here and yields; jsval_underlying_sink_notify
+ * clears it and schedules a fresh pump.
+ */
+typedef struct jsval_native_underlying_sink_s {
+	const jsval_underlying_sink_vtable_t *vtable;
+	void *userdata;
+	uint8_t closed;
+	uint8_t reserved[3];
+	jsval_off_t parked_stream_off;
+} jsval_native_underlying_sink_t;
+
+typedef enum jsval_writable_stream_state_e {
+	JSVAL_WRITABLE_STREAM_STATE_WRITABLE = 0,
+	JSVAL_WRITABLE_STREAM_STATE_CLOSING = 1,
+	JSVAL_WRITABLE_STREAM_STATE_CLOSED = 2,
+	JSVAL_WRITABLE_STREAM_STATE_ERRORED = 3
+} jsval_writable_stream_state_t;
+
+typedef struct jsval_native_writable_stream_s {
+	jsval_off_t sink_off;
+	jsval_off_t writer_off;
+	jsval_off_t pending_writes_head;
+	jsval_off_t pending_writes_tail;
+	/* Promise resolved by close pump after queue + sink->close drain. */
+	jsval_off_t close_promise_off;
+	jsval_t error_reason;
+	uint8_t state;
+	uint8_t pump_scheduled;
+	uint8_t reserved[6];
+} jsval_native_writable_stream_t;
+
+typedef struct jsval_native_writable_stream_writer_s {
+	jsval_off_t stream_off;
+	uint8_t reserved[4];
+} jsval_native_writable_stream_writer_t;
+
+/*
+ * One queued writer.write() call. Bytes follow the struct in the same
+ * region allocation; `accepted` tracks how many have already been
+ * forwarded to the sink (for partial-accept retry).
+ */
+typedef struct jsval_native_writable_stream_pending_write_s {
+	jsval_off_t next_off;
+	jsval_off_t promise_off;
+	size_t len;
+	size_t accepted;
+} jsval_native_writable_stream_pending_write_t;
+
+typedef struct jsval_native_microtask_writable_stream_pump_s {
+	jsval_native_microtask_t base;
+	jsval_off_t stream_off;
+} jsval_native_microtask_writable_stream_pump_t;
+
+/*
  * In-memory byte source userdata for jsval_readable_stream_new_from_bytes.
  * Allocated immediately after a jsval_native_body_source_t in the region;
  * the `len` bytes follow the struct.
@@ -852,6 +910,10 @@ static int jsval_readable_stream_schedule_pump(jsval_region_t *region,
 		jsval_off_t stream_off);
 static int jsval_readable_stream_new_wrapping_source(jsval_region_t *region,
 		jsval_off_t source_off, jsval_t *value_ptr);
+static int jsval_writable_stream_run_pump(jsval_region_t *region,
+		jsval_native_microtask_writable_stream_pump_t *task);
+static int jsval_writable_stream_schedule_pump(jsval_region_t *region,
+		jsval_off_t stream_off);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -2063,6 +2125,8 @@ static int jsval_kind_is_object_like(uint8_t kind)
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		return 1;
 	default:
 		return 0;
@@ -3634,6 +3698,8 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 	case JSVAL_KIND_UNDEFINED:
 	default:
 		errno = ENOTSUP;
@@ -3791,6 +3857,8 @@ static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3874,6 +3942,8 @@ static int jsval_value_copy_utf16(jsval_region_t *region, jsval_t value, uint16_
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -3976,6 +4046,8 @@ int jsval_to_number(jsval_region_t *region, jsval_t value, double *number_ptr)
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		errno = ENOTSUP;
 		return -1;
 	case JSVAL_KIND_STRING:
@@ -4156,6 +4228,8 @@ static int jsval_method_value_from_jsval(jsval_region_t *region, jsval_t value,
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		errno = ENOTSUP;
 		return -1;
 	default:
@@ -20794,6 +20868,17 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			}
 			break;
 		}
+		case JSVAL_MICROTASK_KIND_WRITABLE_STREAM_PUMP:
+		{
+			jsval_native_microtask_writable_stream_pump_t *pump_task =
+				(jsval_native_microtask_writable_stream_pump_t *)task;
+
+			if (jsval_writable_stream_run_pump(region, pump_task) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
 		default:
 			region->microtask_draining = 0;
 			errno = EINVAL;
@@ -33066,6 +33151,8 @@ int jsval_typeof(jsval_region_t *region, jsval_t value, jsval_t *value_ptr)
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		text = (const uint8_t *)"object";
 		len = 6;
 		break;
@@ -33172,6 +33259,8 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		return 1;
 	default:
 		return 0;
@@ -33265,6 +33354,8 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 	case JSVAL_KIND_RESPONSE:
 	case JSVAL_KIND_READABLE_STREAM:
 	case JSVAL_KIND_READABLE_STREAM_READER:
+	case JSVAL_KIND_WRITABLE_STREAM:
+	case JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER:
 		if (left.repr != right.repr) {
 			return 0;
 		}
@@ -39112,5 +39203,851 @@ static int jsval_readable_stream_run_pump(jsval_region_t *region,
 			return jsval_readable_stream_schedule_pump(region, stream_off);
 		}
 	}
+	return 0;
+}
+
+/* -------------------- WritableStream --------------------- */
+
+static jsval_native_writable_stream_t *jsval_native_writable_stream(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_WRITABLE_STREAM) {
+		return NULL;
+	}
+	return (jsval_native_writable_stream_t *)jsval_region_ptr(region,
+			value.off);
+}
+
+static jsval_native_writable_stream_t *jsval_native_writable_stream_off(
+		jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_writable_stream_t *)jsval_region_ptr(region, off);
+}
+
+static jsval_native_writable_stream_writer_t *
+jsval_native_writable_stream_writer(jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER) {
+		return NULL;
+	}
+	return (jsval_native_writable_stream_writer_t *)jsval_region_ptr(region,
+			value.off);
+}
+
+static jsval_native_underlying_sink_t *jsval_native_underlying_sink(
+		jsval_region_t *region, jsval_off_t off)
+{
+	if (off == 0) {
+		return NULL;
+	}
+	return (jsval_native_underlying_sink_t *)jsval_region_ptr(region, off);
+}
+
+static int jsval_writable_stream_enqueue_write(jsval_region_t *region,
+		jsval_off_t stream_off, const uint8_t *chunk, size_t chunk_len,
+		jsval_off_t promise_off)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_native_writable_stream_pending_write_t *node;
+	jsval_off_t node_off;
+	uint8_t *node_bytes;
+	size_t total;
+
+	if (chunk_len > SIZE_MAX
+			- sizeof(jsval_native_writable_stream_pending_write_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total = sizeof(*node) + chunk_len;
+	if (jsval_region_reserve(region, total,
+			_Alignof(jsval_native_writable_stream_pending_write_t),
+			&node_off, (void **)&node) < 0) {
+		return -1;
+	}
+	node->next_off = 0;
+	node->promise_off = promise_off;
+	node->len = chunk_len;
+	node->accepted = 0;
+	node_bytes = (uint8_t *)(node + 1);
+	if (chunk_len > 0 && chunk != NULL) {
+		memcpy(node_bytes, chunk, chunk_len);
+	}
+
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->pending_writes_tail == 0) {
+		stream->pending_writes_head = node_off;
+		stream->pending_writes_tail = node_off;
+	} else {
+		jsval_native_writable_stream_pending_write_t *tail;
+		tail = (jsval_native_writable_stream_pending_write_t *)
+				jsval_region_ptr(region, stream->pending_writes_tail);
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = node_off;
+		stream->pending_writes_tail = node_off;
+	}
+	return 0;
+}
+
+static jsval_off_t jsval_writable_stream_dequeue_write(jsval_region_t *region,
+		jsval_native_writable_stream_t *stream)
+{
+	jsval_native_writable_stream_pending_write_t *node;
+	jsval_off_t node_off;
+
+	if (stream == NULL || stream->pending_writes_head == 0) {
+		return 0;
+	}
+	node_off = stream->pending_writes_head;
+	node = (jsval_native_writable_stream_pending_write_t *)
+			jsval_region_ptr(region, node_off);
+	if (node == NULL) {
+		return 0;
+	}
+	stream->pending_writes_head = node->next_off;
+	if (stream->pending_writes_head == 0) {
+		stream->pending_writes_tail = 0;
+	}
+	return node_off;
+}
+
+static int jsval_writable_stream_schedule_pump(jsval_region_t *region,
+		jsval_off_t stream_off)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_native_microtask_writable_stream_pump_t *task;
+	jsval_off_t task_off;
+
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->pump_scheduled) {
+		return 0;
+	}
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_WRITABLE_STREAM_PUMP;
+	task->stream_off = stream_off;
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->pump_scheduled = 1;
+	return jsval_microtask_push(region, task_off, &task->base);
+}
+
+static int jsval_writable_stream_reject_pending(jsval_region_t *region,
+		jsval_off_t stream_off, jsval_t reason)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_off_t node_off;
+
+	for (;;) {
+		stream = jsval_native_writable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		node_off = jsval_writable_stream_dequeue_write(region, stream);
+		if (node_off == 0) {
+			return 0;
+		}
+		{
+			jsval_native_writable_stream_pending_write_t *node;
+			jsval_t p;
+
+			node = (jsval_native_writable_stream_pending_write_t *)
+					jsval_region_ptr(region, node_off);
+			if (node == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			p = jsval_promise_value(node->promise_off);
+			if (jsval_promise_reject(region, p, reason) < 0) {
+				return -1;
+			}
+		}
+	}
+}
+
+int jsval_writable_stream_new_from_sink(jsval_region_t *region,
+		const jsval_underlying_sink_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_native_underlying_sink_t *sink;
+	jsval_off_t sink_off;
+	void *ptr = NULL;
+
+	if (region == NULL || vtable == NULL || value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_region_reserve(region, sizeof(*sink),
+			_Alignof(jsval_native_underlying_sink_t), &sink_off,
+			(void **)&sink) < 0) {
+		return -1;
+	}
+	sink->vtable = vtable;
+	sink->userdata = userdata;
+	sink->closed = 0;
+	memset(sink->reserved, 0, sizeof(sink->reserved));
+	sink->parked_stream_off = 0;
+
+	if (jsval_region_alloc(region, sizeof(*stream),
+			_Alignof(jsval_native_writable_stream_t), &ptr) < 0) {
+		return -1;
+	}
+	stream = (jsval_native_writable_stream_t *)ptr;
+	memset(stream, 0, sizeof(*stream));
+	stream->sink_off = sink_off;
+	stream->error_reason = jsval_undefined();
+	stream->state = JSVAL_WRITABLE_STREAM_STATE_WRITABLE;
+
+	*value_ptr = jsval_native_make_value(region, stream,
+			JSVAL_KIND_WRITABLE_STREAM);
+	return 0;
+}
+
+int jsval_writable_stream_locked(jsval_region_t *region, jsval_t stream_value,
+		int *locked_ptr)
+{
+	jsval_native_writable_stream_t *stream;
+
+	if (locked_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_writable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*locked_ptr = stream->writer_off != 0 ? 1 : 0;
+	return 0;
+}
+
+int jsval_writable_stream_get_writer(jsval_region_t *region,
+		jsval_t stream_value, jsval_t *writer_ptr)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_native_writable_stream_writer_t *writer;
+	jsval_t writer_value;
+	void *ptr = NULL;
+
+	if (writer_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_writable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->writer_off != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	if (jsval_region_alloc(region, sizeof(*writer),
+			_Alignof(jsval_native_writable_stream_writer_t), &ptr) < 0) {
+		return -1;
+	}
+	writer = (jsval_native_writable_stream_writer_t *)ptr;
+	memset(writer, 0, sizeof(*writer));
+	writer->stream_off = stream_value.off;
+	writer_value = jsval_native_make_value(region, writer,
+			JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER);
+	stream = jsval_native_writable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->writer_off = writer_value.off;
+	*writer_ptr = writer_value;
+	return 0;
+}
+
+int jsval_writable_stream_writer_release_lock(jsval_region_t *region,
+		jsval_t writer_value)
+{
+	jsval_native_writable_stream_writer_t *writer;
+	jsval_native_writable_stream_t *stream;
+
+	writer = jsval_native_writable_stream_writer(region, writer_value);
+	if (writer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_writable_stream_off(region, writer->stream_off);
+	if (stream == NULL) {
+		return 0;
+	}
+	if (stream->pending_writes_head != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	stream->writer_off = 0;
+	writer->stream_off = 0;
+	return 0;
+}
+
+int jsval_writable_stream_writer_write(jsval_region_t *region,
+		jsval_t writer_value, const uint8_t *chunk, size_t chunk_len,
+		jsval_t *promise_ptr)
+{
+	jsval_native_writable_stream_writer_t *writer;
+	jsval_native_writable_stream_t *stream;
+	jsval_off_t stream_off;
+	jsval_t promise;
+
+	if (promise_ptr == NULL || (chunk == NULL && chunk_len != 0)) {
+		errno = EINVAL;
+		return -1;
+	}
+	writer = jsval_native_writable_stream_writer(region, writer_value);
+	if (writer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = writer->stream_off;
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (stream->state != JSVAL_WRITABLE_STREAM_STATE_WRITABLE) {
+		jsval_t reason;
+
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"stream is closing or closed", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	if (jsval_writable_stream_enqueue_write(region, stream_off, chunk,
+			chunk_len, promise.off) < 0) {
+		return -1;
+	}
+	if (jsval_writable_stream_schedule_pump(region, stream_off) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+int jsval_writable_stream_writer_ready(jsval_region_t *region,
+		jsval_t writer_value, jsval_t *promise_ptr)
+{
+	jsval_native_writable_stream_writer_t *writer;
+	jsval_native_writable_stream_t *stream;
+	jsval_off_t stream_off;
+	jsval_t promise;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	writer = jsval_native_writable_stream_writer(region, writer_value);
+	if (writer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = writer->stream_off;
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (stream->pending_writes_head != 0) {
+		/* Queue still draining; piggy-back this ready promise as a
+		 * 0-byte sentinel at the tail. The pump resolves it when all
+		 * preceding writes have been accepted by the sink. */
+		if (jsval_writable_stream_enqueue_write(region, stream_off, NULL, 0,
+				promise.off) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	/* No backpressure: resolve immediately. */
+	if (jsval_promise_resolve(region, promise, jsval_undefined()) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+int jsval_writable_stream_writer_close(jsval_region_t *region,
+		jsval_t writer_value, jsval_t *promise_ptr)
+{
+	jsval_native_writable_stream_writer_t *writer;
+	jsval_native_writable_stream_t *stream;
+	jsval_off_t stream_off;
+	jsval_t promise;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	writer = jsval_native_writable_stream_writer(region, writer_value);
+	if (writer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = writer->stream_off;
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (stream->state != JSVAL_WRITABLE_STREAM_STATE_WRITABLE) {
+		jsval_t reason;
+
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"stream is already closing or closed", &reason) < 0) {
+			return -1;
+		}
+		if (jsval_promise_reject(region, promise, reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	stream->state = JSVAL_WRITABLE_STREAM_STATE_CLOSING;
+	stream->close_promise_off = promise.off;
+	if (jsval_writable_stream_schedule_pump(region, stream_off) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+int jsval_writable_stream_abort(jsval_region_t *region, jsval_t stream_value,
+		jsval_t reason, jsval_t *promise_ptr)
+{
+	jsval_native_writable_stream_t *stream;
+	jsval_native_underlying_sink_t *sink;
+	jsval_off_t stream_off;
+	jsval_t promise;
+	jsval_t error_reason = reason;
+	jsval_t close_error = jsval_undefined();
+	jsval_underlying_sink_status_t close_status =
+			JSVAL_UNDERLYING_SINK_STATUS_READY;
+
+	if (promise_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_writable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = stream_value.off;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_ERRORED) {
+		if (jsval_promise_reject(region, promise, stream->error_reason) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_CLOSED) {
+		if (jsval_promise_resolve(region, promise, jsval_undefined()) < 0) {
+			return -1;
+		}
+		*promise_ptr = promise;
+		return 0;
+	}
+
+	if (error_reason.kind == JSVAL_KIND_UNDEFINED) {
+		if (jsval_dom_exception_new_utf8(region, "AbortError",
+				"stream aborted", &error_reason) < 0) {
+			return -1;
+		}
+	}
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->state = JSVAL_WRITABLE_STREAM_STATE_ERRORED;
+	stream->error_reason = error_reason;
+
+	if (jsval_writable_stream_reject_pending(region, stream_off, error_reason)
+			< 0) {
+		return -1;
+	}
+
+	sink = jsval_native_underlying_sink(region, stream->sink_off);
+	if (sink != NULL) {
+		sink->parked_stream_off = 0;
+		if (!sink->closed && sink->vtable != NULL
+				&& sink->vtable->close != NULL) {
+			close_status = sink->vtable->close(region, sink->userdata,
+					&close_error);
+			sink = jsval_native_underlying_sink(region, stream->sink_off);
+			if (sink != NULL) {
+				sink->closed = 1;
+			}
+			(void)close_status;
+			(void)close_error;
+		}
+	}
+
+	if (jsval_promise_resolve(region, promise, jsval_undefined()) < 0) {
+		return -1;
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
+int jsval_writable_stream_sink_off(jsval_region_t *region, jsval_t stream_value,
+		jsval_off_t *out)
+{
+	jsval_native_writable_stream_t *stream;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream = jsval_native_writable_stream(region, stream_value);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out = stream->sink_off;
+	return 0;
+}
+
+int jsval_underlying_sink_notify(jsval_region_t *region, jsval_off_t sink_off)
+{
+	jsval_native_underlying_sink_t *sink;
+	jsval_off_t parked_stream;
+
+	if (region == NULL || sink_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	sink = jsval_native_underlying_sink(region, sink_off);
+	if (sink == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	parked_stream = sink->parked_stream_off;
+	if (parked_stream != 0) {
+		sink->parked_stream_off = 0;
+		if (jsval_writable_stream_schedule_pump(region, parked_stream) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int jsval_writable_stream_run_pump(jsval_region_t *region,
+		jsval_native_microtask_writable_stream_pump_t *task)
+{
+	jsval_off_t stream_off;
+	jsval_native_writable_stream_t *stream;
+	jsval_native_underlying_sink_t *sink;
+
+	if (region == NULL || task == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream_off = task->stream_off;
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->pump_scheduled = 0;
+
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_ERRORED) {
+		return jsval_writable_stream_reject_pending(region, stream_off,
+				stream->error_reason);
+	}
+
+	for (;;) {
+		jsval_off_t node_off;
+		jsval_native_writable_stream_pending_write_t *node;
+		const uint8_t *bytes;
+		size_t remaining;
+		size_t accepted = 0;
+		jsval_t error_value = jsval_undefined();
+		jsval_underlying_sink_status_t status;
+
+		stream = jsval_native_writable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (stream->pending_writes_head == 0) {
+			break;
+		}
+		sink = jsval_native_underlying_sink(region, stream->sink_off);
+		if (sink == NULL || sink->vtable == NULL
+				|| sink->vtable->write == NULL) {
+			jsval_t reason;
+
+			if (jsval_dom_exception_new_utf8(region, "TypeError",
+					"invalid stream sink", &reason) < 0) {
+				return -1;
+			}
+			stream = jsval_native_writable_stream_off(region, stream_off);
+			if (stream == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			stream->state = JSVAL_WRITABLE_STREAM_STATE_ERRORED;
+			stream->error_reason = reason;
+			return jsval_writable_stream_reject_pending(region, stream_off,
+					reason);
+		}
+
+		node_off = stream->pending_writes_head;
+		node = (jsval_native_writable_stream_pending_write_t *)
+				jsval_region_ptr(region, node_off);
+		if (node == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		/* Empty payload (writer.ready ratchet): resolve immediately. */
+		if (node->len == 0) {
+			jsval_t p = jsval_promise_value(node->promise_off);
+
+			(void)jsval_writable_stream_dequeue_write(region, stream);
+			if (jsval_promise_resolve(region, p, jsval_undefined()) < 0) {
+				return -1;
+			}
+			continue;
+		}
+
+		bytes = (const uint8_t *)(node + 1) + node->accepted;
+		remaining = node->len - node->accepted;
+
+		status = sink->vtable->write(region, sink->userdata, bytes,
+				remaining, &accepted, &error_value);
+		/* Re-lookup after write: vtable may have allocated. */
+		stream = jsval_native_writable_stream_off(region, stream_off);
+		if (stream == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		sink = jsval_native_underlying_sink(region, stream->sink_off);
+		node = (jsval_native_writable_stream_pending_write_t *)
+				jsval_region_ptr(region, node_off);
+		if (sink == NULL || node == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		if (status == JSVAL_UNDERLYING_SINK_STATUS_ERROR) {
+			jsval_t reason;
+
+			if (error_value.kind == JSVAL_KIND_UNDEFINED) {
+				if (jsval_dom_exception_new_utf8(region, "TypeError",
+						"stream sink error", &reason) < 0) {
+					return -1;
+				}
+			} else {
+				reason = error_value;
+			}
+			stream = jsval_native_writable_stream_off(region, stream_off);
+			if (stream == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			stream->state = JSVAL_WRITABLE_STREAM_STATE_ERRORED;
+			stream->error_reason = reason;
+			return jsval_writable_stream_reject_pending(region, stream_off,
+					reason);
+		}
+
+		if (status == JSVAL_UNDERLYING_SINK_STATUS_PENDING) {
+			/* Park on the sink. The producer must call
+			 * jsval_underlying_sink_notify when capacity is
+			 * available; that re-schedules a fresh pump
+			 * microtask. Without parking, re-enqueuing the pump
+			 * here would busy-loop the microtask drain. */
+			sink->parked_stream_off = stream_off;
+			return 0;
+		}
+
+		/* READY. Fold partial accept into the node; resolve when done. */
+		if (accepted > remaining) {
+			accepted = remaining;
+		}
+		node->accepted += accepted;
+		if (node->accepted < node->len) {
+			/* Partial accept: re-loop. */
+			continue;
+		}
+		{
+			jsval_t p = jsval_promise_value(node->promise_off);
+
+			(void)jsval_writable_stream_dequeue_write(region, stream);
+			if (jsval_promise_resolve(region, p, jsval_undefined()) < 0) {
+				return -1;
+			}
+		}
+	}
+
+	stream = jsval_native_writable_stream_off(region, stream_off);
+	if (stream == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (stream->state == JSVAL_WRITABLE_STREAM_STATE_CLOSING
+			&& stream->pending_writes_head == 0) {
+		jsval_t close_error = jsval_undefined();
+		jsval_underlying_sink_status_t status =
+				JSVAL_UNDERLYING_SINK_STATUS_READY;
+
+		sink = jsval_native_underlying_sink(region, stream->sink_off);
+		if (sink != NULL && !sink->closed && sink->vtable != NULL
+				&& sink->vtable->close != NULL) {
+			status = sink->vtable->close(region, sink->userdata,
+					&close_error);
+			stream = jsval_native_writable_stream_off(region, stream_off);
+			if (stream == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			sink = jsval_native_underlying_sink(region, stream->sink_off);
+		}
+
+		if (status == JSVAL_UNDERLYING_SINK_STATUS_PENDING) {
+			if (sink != NULL) {
+				sink->parked_stream_off = stream_off;
+			}
+			return 0;
+		}
+		if (sink != NULL) {
+			sink->closed = 1;
+		}
+		if (status == JSVAL_UNDERLYING_SINK_STATUS_ERROR) {
+			jsval_t reason;
+
+			if (close_error.kind == JSVAL_KIND_UNDEFINED) {
+				if (jsval_dom_exception_new_utf8(region, "TypeError",
+						"stream sink close error", &reason) < 0) {
+					return -1;
+				}
+			} else {
+				reason = close_error;
+			}
+			stream = jsval_native_writable_stream_off(region, stream_off);
+			if (stream == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			stream->state = JSVAL_WRITABLE_STREAM_STATE_ERRORED;
+			stream->error_reason = reason;
+			if (stream->close_promise_off != 0) {
+				jsval_t p = jsval_promise_value(stream->close_promise_off);
+
+				stream->close_promise_off = 0;
+				if (jsval_promise_reject(region, p, reason) < 0) {
+					return -1;
+				}
+			}
+			return 0;
+		}
+		stream->state = JSVAL_WRITABLE_STREAM_STATE_CLOSED;
+		if (stream->close_promise_off != 0) {
+			jsval_t p = jsval_promise_value(stream->close_promise_off);
+
+			stream->close_promise_off = 0;
+			if (jsval_promise_resolve(region, p, jsval_undefined()) < 0) {
+				return -1;
+			}
+		}
+	}
+
 	return 0;
 }

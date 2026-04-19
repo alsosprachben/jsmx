@@ -13355,6 +13355,406 @@ static void test_readable_stream_semantics(void)
 	}
 }
 
+/* ----------- WritableStream test fixtures ----------- */
+
+typedef struct capturing_sink_s {
+	uint8_t buf[256];
+	size_t written;
+	int write_calls;
+	int close_calls;
+} capturing_sink_t;
+
+static jsval_underlying_sink_status_t capturing_sink_write(
+		jsval_region_t *region, void *userdata, const uint8_t *chunk,
+		size_t chunk_len, size_t *accepted_len, jsval_t *error_value)
+{
+	capturing_sink_t *sink = (capturing_sink_t *)userdata;
+	size_t cap;
+	size_t take;
+
+	(void)region;
+	(void)error_value;
+	sink->write_calls++;
+	cap = sizeof(sink->buf) - sink->written;
+	take = chunk_len < cap ? chunk_len : cap;
+	if (take > 0) {
+		memcpy(sink->buf + sink->written, chunk, take);
+		sink->written += take;
+	}
+	*accepted_len = take;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static jsval_underlying_sink_status_t capturing_sink_close(
+		jsval_region_t *region, void *userdata, jsval_t *error_value)
+{
+	capturing_sink_t *sink = (capturing_sink_t *)userdata;
+
+	(void)region;
+	(void)error_value;
+	sink->close_calls++;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static const jsval_underlying_sink_vtable_t capturing_sink_vtable = {
+	capturing_sink_write,
+	capturing_sink_close,
+};
+
+typedef struct pending_sink_s {
+	int ready;
+	int write_calls;
+	int close_calls;
+	uint8_t buf[64];
+	size_t written;
+} pending_sink_t;
+
+static jsval_underlying_sink_status_t pending_sink_write(
+		jsval_region_t *region, void *userdata, const uint8_t *chunk,
+		size_t chunk_len, size_t *accepted_len, jsval_t *error_value)
+{
+	pending_sink_t *sink = (pending_sink_t *)userdata;
+
+	(void)region;
+	(void)error_value;
+	sink->write_calls++;
+	if (!sink->ready) {
+		*accepted_len = 0;
+		return JSVAL_UNDERLYING_SINK_STATUS_PENDING;
+	}
+	memcpy(sink->buf + sink->written, chunk, chunk_len);
+	sink->written += chunk_len;
+	*accepted_len = chunk_len;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static jsval_underlying_sink_status_t pending_sink_close(
+		jsval_region_t *region, void *userdata, jsval_t *error_value)
+{
+	pending_sink_t *sink = (pending_sink_t *)userdata;
+
+	(void)region;
+	(void)error_value;
+	sink->close_calls++;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static const jsval_underlying_sink_vtable_t pending_sink_vtable = {
+	pending_sink_write,
+	pending_sink_close,
+};
+
+typedef struct bounded_sink_s {
+	size_t budget;       /* bytes that may be accepted before next pause */
+	int write_calls;
+	int close_calls;
+	uint8_t buf[64];
+	size_t written;
+} bounded_sink_t;
+
+static jsval_underlying_sink_status_t bounded_sink_write(
+		jsval_region_t *region, void *userdata, const uint8_t *chunk,
+		size_t chunk_len, size_t *accepted_len, jsval_t *error_value)
+{
+	bounded_sink_t *sink = (bounded_sink_t *)userdata;
+	size_t take;
+
+	(void)region;
+	(void)error_value;
+	sink->write_calls++;
+	if (sink->budget == 0) {
+		*accepted_len = 0;
+		return JSVAL_UNDERLYING_SINK_STATUS_PENDING;
+	}
+	take = chunk_len < sink->budget ? chunk_len : sink->budget;
+	memcpy(sink->buf + sink->written, chunk, take);
+	sink->written += take;
+	sink->budget -= take;
+	*accepted_len = take;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static jsval_underlying_sink_status_t bounded_sink_close(
+		jsval_region_t *region, void *userdata, jsval_t *error_value)
+{
+	bounded_sink_t *sink = (bounded_sink_t *)userdata;
+
+	(void)region;
+	(void)error_value;
+	sink->close_calls++;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static const jsval_underlying_sink_vtable_t bounded_sink_vtable = {
+	bounded_sink_write,
+	bounded_sink_close,
+};
+
+static jsval_underlying_sink_status_t erroring_sink_write(
+		jsval_region_t *region, void *userdata, const uint8_t *chunk,
+		size_t chunk_len, size_t *accepted_len, jsval_t *error_value)
+{
+	jsval_t name_v;
+	jsval_t msg_v;
+
+	(void)userdata;
+	(void)chunk;
+	(void)chunk_len;
+	*accepted_len = 0;
+	*error_value = jsval_undefined();
+	if (jsval_string_new_utf8(region, (const uint8_t *)"TypeError", 9,
+			&name_v) == 0 &&
+			jsval_string_new_utf8(region, (const uint8_t *)"boom", 4,
+			&msg_v) == 0) {
+		(void)jsval_dom_exception_new(region, name_v, msg_v, error_value);
+	}
+	return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+}
+
+static jsval_underlying_sink_status_t erroring_sink_close(
+		jsval_region_t *region, void *userdata, jsval_t *error_value)
+{
+	(void)region;
+	(void)userdata;
+	(void)error_value;
+	return JSVAL_UNDERLYING_SINK_STATUS_READY;
+}
+
+static const jsval_underlying_sink_vtable_t erroring_sink_vtable = {
+	erroring_sink_write,
+	erroring_sink_close,
+};
+
+static void test_writable_stream_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. basic_write_close: three writes + close, all promises resolve. */
+	{
+		capturing_sink_t sink;
+		jsval_t stream;
+		jsval_t writer;
+		jsval_t p1, p2, p3, pclose;
+		jsval_promise_state_t state;
+		int locked = 0;
+
+		memset(&sink, 0, sizeof(sink));
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, &sink, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_WRITABLE_STREAM);
+		assert(jsval_writable_stream_locked(&region, stream, &locked) == 0);
+		assert(locked == 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer)
+				== 0);
+		assert(writer.kind == JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER);
+		assert(jsval_writable_stream_locked(&region, stream, &locked) == 0);
+		assert(locked == 1);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"foo", 3, &p1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"bar", 3, &p2) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"baz", 3, &p3) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, p2, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, p3, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, pclose, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(sink.written == 9);
+		assert(memcmp(sink.buf, "foobarbaz", 9) == 0);
+		assert(sink.close_calls == 1);
+	}
+
+	/* 2. pending_writer_parks: sink returns PENDING; pump must NOT
+	 * busy-loop. notify resolves the queued write. */
+	{
+		pending_sink_t sink;
+		jsval_t stream;
+		jsval_t writer;
+		jsval_t p1;
+		jsval_promise_state_t state;
+		jsval_off_t sink_off = 0;
+
+		memset(&sink, 0, sizeof(sink));
+		sink.ready = 0;
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&pending_sink_vtable, &sink, &stream) == 0);
+		assert(jsval_writable_stream_sink_off(&region, stream, &sink_off)
+				== 0);
+		assert(sink_off != 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"hi", 2, &p1) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(sink.write_calls == 1);
+
+		/* Drain again: must NOT re-call sink.write (parked, no task). */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(sink.write_calls == 1);
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		/* Flip ready and notify: pump resumes, write resolves. */
+		sink.ready = 1;
+		assert(jsval_underlying_sink_notify(&region, sink_off) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(sink.written == 2);
+		assert(memcmp(sink.buf, "hi", 2) == 0);
+	}
+
+	/* 3. ready_backpressure: bounded sink accepts N bytes per notify;
+	 * writer.ready resolves once a notify clears the parked pump. */
+	{
+		bounded_sink_t sink;
+		jsval_t stream;
+		jsval_t writer;
+		jsval_t p1, p2, ready1, ready2;
+		jsval_promise_state_t state;
+		jsval_off_t sink_off = 0;
+
+		memset(&sink, 0, sizeof(sink));
+		sink.budget = 2; /* accept 2 bytes, then PENDING */
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&bounded_sink_vtable, &sink, &stream) == 0);
+		assert(jsval_writable_stream_sink_off(&region, stream, &sink_off)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer)
+				== 0);
+
+		/* Write "12345": 2 bytes accepted, then PENDING on remainder. */
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"12345", 5, &p1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"AB", 2, &p2) == 0);
+		assert(jsval_writable_stream_writer_ready(&region, writer, &ready1)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		/* Pump is parked: p1 hasn't fully accepted, so ready1 queued
+		 * behind it should still be pending. */
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(jsval_promise_state(&region, ready1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(sink.written == 2);
+		assert(memcmp(sink.buf, "12", 2) == 0);
+
+		/* Top up budget and notify; pump drains the rest. */
+		sink.budget = 100;
+		assert(jsval_underlying_sink_notify(&region, sink_off) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, p2, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, ready1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(sink.written == 7);
+		assert(memcmp(sink.buf, "12345AB", 7) == 0);
+
+		/* writer.ready when not parked resolves immediately. */
+		assert(jsval_writable_stream_writer_ready(&region, writer, &ready2)
+				== 0);
+		assert(jsval_promise_state(&region, ready2, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	}
+
+	/* 4. error_propagates: sink returns ERROR; queued + subsequent writes
+	 * + close all reject with the same DOMException. */
+	{
+		jsval_t stream;
+		jsval_t writer;
+		jsval_t p1, p2, p3, pclose;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&erroring_sink_vtable, NULL, &stream) == 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"x", 1, &p1) == 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"y", 1, &p2) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, p1, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_state(&region, p2, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, p1, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+
+		/* Subsequent write: rejected immediately with stored reason. */
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"z", 1, &p3) == 0);
+		assert(jsval_promise_state(&region, p3, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+
+		/* close: rejected immediately. */
+		assert(jsval_writable_stream_writer_close(&region, writer, &pclose)
+				== 0);
+		assert(jsval_promise_state(&region, pclose, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	}
+
+	/* 5. locked_release: getWriter twice fails; release; getWriter
+	 * succeeds; writer methods after release fail. */
+	{
+		capturing_sink_t sink;
+		jsval_t stream;
+		jsval_t writer1;
+		jsval_t writer2;
+		jsval_t promise;
+
+		memset(&sink, 0, sizeof(sink));
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, &sink, &stream) == 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer1)
+				== 0);
+		errno = 0;
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer2)
+				< 0);
+		assert(errno == EBUSY);
+		assert(jsval_writable_stream_writer_release_lock(&region, writer1)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, stream, &writer2)
+				== 0);
+		errno = 0;
+		assert(jsval_writable_stream_writer_write(&region, writer1,
+				(const uint8_t *)"x", 1, &promise) < 0);
+		assert(errno == EINVAL);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -13465,6 +13865,7 @@ int main(void)
 	test_fetch_api_semantics();
 	test_fetch_body_drain_semantics();
 	test_readable_stream_semantics();
+	test_writable_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

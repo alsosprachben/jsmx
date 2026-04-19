@@ -49,7 +49,9 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_REQUEST = 26,
 	JSVAL_KIND_RESPONSE = 27,
 	JSVAL_KIND_READABLE_STREAM = 28,
-	JSVAL_KIND_READABLE_STREAM_READER = 29
+	JSVAL_KIND_READABLE_STREAM_READER = 29,
+	JSVAL_KIND_WRITABLE_STREAM = 30,
+	JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER = 31
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -1382,6 +1384,96 @@ int jsval_readable_stream_reader_read(jsval_region_t *region, jsval_t reader,
 		jsval_t *promise_ptr);
 int jsval_readable_stream_cancel(jsval_region_t *region, jsval_t stream,
 		jsval_t reason, jsval_t *promise_ptr);
+
+/*
+ * Underlying-sink abstraction for WritableStream.
+ *
+ * Symmetric to jsval_body_source_vtable_t on the read side. An embedder
+ * implements this vtable to accept bytes pushed from JavaScript via
+ * writer.write(). The pump microtask drains the stream's pending-writes
+ * FIFO, calling write() per chunk; if the sink reports PENDING the pump
+ * parks on parked_writer_off and the producer must call
+ * jsval_underlying_sink_notify when capacity is available to re-wake
+ * the pump.
+ *
+ * Status semantics:
+ *   READY    - bytes were accepted; *accepted_len >= 0 (may be < chunk_len
+ *              for partial accept, in which case the pump re-tries the
+ *              tail on the next tick).
+ *   PENDING  - sink cannot accept now; producer must notify when ready.
+ *              *accepted_len ignored.
+ *   ERROR    - sink failed; *error_value carries the rejection reason
+ *              (e.g. a DOMException or TypeError) for all queued writes.
+ *
+ * close() is invoked once after all queued writes drain (or immediately
+ * on abort, with a TypeError-shaped error_value supplied by abort's
+ * reason). It may also return PENDING/ERROR.
+ */
+typedef enum jsval_underlying_sink_status_e {
+	JSVAL_UNDERLYING_SINK_STATUS_READY = 0,
+	JSVAL_UNDERLYING_SINK_STATUS_PENDING = 1,
+	JSVAL_UNDERLYING_SINK_STATUS_ERROR = 2
+} jsval_underlying_sink_status_t;
+
+typedef struct jsval_underlying_sink_vtable_s {
+	jsval_underlying_sink_status_t (*write)(jsval_region_t *region,
+			void *userdata, const uint8_t *chunk, size_t chunk_len,
+			size_t *accepted_len, jsval_t *error_value);
+	jsval_underlying_sink_status_t (*close)(jsval_region_t *region,
+			void *userdata, jsval_t *error_value);
+} jsval_underlying_sink_vtable_t;
+
+/*
+ * Producer-side wake symmetric to jsval_body_source_notify. Signals
+ * that the underlying sink at `sink_off` has cleared backpressure
+ * (write() will now return READY) or has otherwise transitioned. If
+ * the writable stream's pump was parked, a fresh pump microtask is
+ * scheduled. No-op when nothing is parked.
+ *
+ * `sink_off` must be a value previously obtained via
+ * jsval_writable_stream_sink_off.
+ */
+int jsval_underlying_sink_notify(jsval_region_t *region,
+		jsval_off_t sink_off);
+
+/*
+ * WritableStream: minimal WHATWG-shaped facade over the underlying-sink
+ * vtable. Single-writer (one default writer at a time).
+ *
+ * Phase 3a-1 scope: no controller-based construction (new
+ * WritableStream({write})), no pipeTo/pipeThrough, no size/highWaterMark
+ * queueing strategy (queue depth is unbounded; backpressure is signaled
+ * solely by the sink returning PENDING). writer.write() and
+ * writer.close() return Promise<undefined> resolved when the chunk is
+ * accepted by the sink (or close runs); writer.ready returns a Promise
+ * that fulfils once the sink reports READY (or immediately if no write
+ * is currently parked).
+ */
+int jsval_writable_stream_new_from_sink(jsval_region_t *region,
+		const jsval_underlying_sink_vtable_t *vtable, void *userdata,
+		jsval_t *value_ptr);
+int jsval_writable_stream_locked(jsval_region_t *region, jsval_t stream,
+		int *locked_ptr);
+int jsval_writable_stream_get_writer(jsval_region_t *region, jsval_t stream,
+		jsval_t *writer_ptr);
+int jsval_writable_stream_writer_release_lock(jsval_region_t *region,
+		jsval_t writer);
+int jsval_writable_stream_writer_write(jsval_region_t *region, jsval_t writer,
+		const uint8_t *chunk, size_t chunk_len, jsval_t *promise_ptr);
+int jsval_writable_stream_writer_ready(jsval_region_t *region, jsval_t writer,
+		jsval_t *promise_ptr);
+int jsval_writable_stream_writer_close(jsval_region_t *region, jsval_t writer,
+		jsval_t *promise_ptr);
+int jsval_writable_stream_abort(jsval_region_t *region, jsval_t stream,
+		jsval_t reason, jsval_t *promise_ptr);
+
+/*
+ * Returns the internal underlying-sink offset of a WritableStream via
+ * *out (for producer-side jsval_underlying_sink_notify). Mirrors
+ * jsval_response_body_source_off on the read side.
+ */
+int jsval_writable_stream_sink_off(jsval_region_t *region, jsval_t stream,
+		jsval_off_t *out);
 
 typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,
