@@ -14435,6 +14435,179 @@ static void test_text_decoder_encoder_stream_semantics(void)
 	}
 }
 
+/* ----------- pipeTo / pipeThrough tests ----------- */
+
+static void test_stream_pipe_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Basic pipe: bytes readable → capturing writable. */
+	{
+		capturing_sink_t sink;
+		jsval_t readable;
+		jsval_t stream;
+		jsval_t writable;
+		jsval_t pipe_promise;
+		jsval_promise_state_t state;
+
+		memset(&sink, 0, sizeof(sink));
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello, world", 12, &readable) == 0);
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, &sink, &stream) == 0);
+		writable = stream;
+		assert(jsval_readable_stream_pipe_to(&region, readable, writable,
+				&pipe_promise) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pipe_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(sink.written == 12 &&
+				memcmp(sink.buf, "hello, world", 12) == 0);
+		assert(sink.close_calls == 1);
+	}
+
+	/* 2. Pipe through TextDecoderStream: boundary-split readable
+	 * passes through and reassembles codepoints before hitting the
+	 * downstream reader. */
+	{
+		static const uint8_t payload[] = { 0xCE, 0xB1, 0xCE, 0xB2 };
+		fake_body_source_t src = {
+			.data = payload, .total = sizeof(payload), .cursor = 0,
+			.chunk_size = 3, .fail_after = -1,
+			.reads = 0, .close_calls = 0,
+		};
+		jsval_t readable;
+		jsval_t ts;
+		jsval_t out_readable;
+		jsval_t reader;
+		jsval_t pr1, pr2, pr3;
+		jsval_t result;
+		jsval_promise_state_t state;
+		uint8_t chunk[16];
+		size_t len = 0;
+
+		assert(jsval_readable_stream_new_from_source(&region,
+				&fake_body_vtable, &src, &readable) == 0);
+		assert(jsval_text_decoder_stream_new(&region, &ts) == 0);
+		assert(jsval_readable_stream_pipe_through(&region, readable, ts,
+				&out_readable) == 0);
+		assert(out_readable.kind == JSVAL_KIND_READABLE_STREAM);
+
+		assert(jsval_readable_stream_get_reader(&region, out_readable,
+				&reader) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pr1)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pr2)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pr3)
+				== 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pr1, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pr1, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 2 && chunk[0] == 0xCE && chunk[1] == 0xB1);
+
+		assert(jsval_promise_state(&region, pr2, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pr2, &result) == 0);
+		assert(read_result_done(&region, result) == 0);
+		assert(read_result_value_bytes(&region, result, chunk, sizeof(chunk),
+				&len) == 0);
+		assert(len == 2 && chunk[0] == 0xCE && chunk[1] == 0xB2);
+
+		assert(jsval_promise_state(&region, pr3, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, pr3, &result) == 0);
+		assert(read_result_done(&region, result) == 1);
+	}
+
+	/* 3. Pipe source error rejects the pipe promise. */
+	{
+		static const uint8_t payload[] = "abc";
+		fake_body_source_t src = {
+			.data = payload, .total = 3, .cursor = 0,
+			.chunk_size = 1, .fail_after = 1,
+			.reads = 0, .close_calls = 0,
+		};
+		capturing_sink_t sink;
+		jsval_t readable;
+		jsval_t stream;
+		jsval_t pipe_promise;
+		jsval_promise_state_t state;
+
+		memset(&sink, 0, sizeof(sink));
+		assert(jsval_readable_stream_new_from_source(&region,
+				&fake_body_vtable, &src, &readable) == 0);
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, &sink, &stream) == 0);
+		assert(jsval_readable_stream_pipe_to(&region, readable, stream,
+				&pipe_promise) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pipe_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+	}
+
+	/* 4. Pipe sink error rejects the pipe promise. */
+	{
+		jsval_t readable;
+		jsval_t stream;
+		jsval_t pipe_promise;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"xyz", 3, &readable) == 0);
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&erroring_sink_vtable, NULL, &stream) == 0);
+		assert(jsval_readable_stream_pipe_to(&region, readable, stream,
+				&pipe_promise) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, pipe_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, pipe_promise, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+
+	/* 5. Pipe-to on an already-locked stream fails before scheduling. */
+	{
+		jsval_t readable;
+		jsval_t stream;
+		jsval_t held_reader;
+		jsval_t pipe_promise;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"x", 1, &readable) == 0);
+		assert(jsval_writable_stream_new_from_sink(&region,
+				&capturing_sink_vtable, NULL, &stream) == 0);
+		/* Pre-lock the readable. */
+		assert(jsval_readable_stream_get_reader(&region, readable,
+				&held_reader) == 0);
+		errno = 0;
+		assert(jsval_readable_stream_pipe_to(&region, readable, stream,
+				&pipe_promise) < 0);
+		assert(errno == EBUSY);
+	}
+}
+
 static void test_array_buffer_bytes_mut_helper(void)
 {
 	uint8_t storage[16384];
@@ -14548,6 +14721,7 @@ int main(void)
 	test_writable_stream_semantics();
 	test_transform_stream_semantics();
 	test_text_decoder_encoder_stream_semantics();
+	test_stream_pipe_semantics();
 	test_array_buffer_bytes_mut_helper();
 	puts("test_jsval: ok");
 	return 0;

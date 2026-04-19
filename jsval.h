@@ -1563,6 +1563,34 @@ int jsval_text_decoder_stream_new(jsval_region_t *region,
 int jsval_text_encoder_stream_new(jsval_region_t *region,
 		jsval_t *value_ptr);
 
+/*
+ * Drains `readable` into `writable` end-to-end. Both streams are
+ * locked for the duration via internal default reader/writer
+ * acquisitions; a stream that is already locked makes pipe_to
+ * fail (errno EBUSY) before scheduling.
+ *
+ * Returns a Promise via *promise_ptr that fulfils with undefined
+ * once the readable reaches EOF and the writable's close()
+ * promise has resolved, or rejects with the first error from
+ * either side. Both locks are released on settle.
+ *
+ * Phase 6 v1: no AbortSignal / preventClose / preventAbort /
+ * preventCancel options.
+ */
+int jsval_readable_stream_pipe_to(jsval_region_t *region,
+		jsval_t readable, jsval_t writable, jsval_t *promise_ptr);
+
+/*
+ * Convenience: pipes `readable` into `transform_stream`'s writable
+ * side and returns `transform_stream`'s readable side via *out for
+ * onward chaining (the canonical
+ * `response.body.pipeThrough(new TextDecoderStream())` pattern).
+ * The pipe Promise itself is internal to this call; downstream
+ * errors propagate to the returned readable's reads.
+ */
+int jsval_readable_stream_pipe_through(jsval_region_t *region,
+		jsval_t readable, jsval_t transform_stream, jsval_t *out);
+
 typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,
 	JSVAL_BODY_CONSUME_JSON = 1,
