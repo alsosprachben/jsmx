@@ -5645,6 +5645,56 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored TextEncoderStream validator parity (Phase 5b-2): valid UTF-8 chunks pass through unchanged; malformed sequences (lone 0x80) are replaced with U+FFFD; chunks land separately on the readable side."
+    },
+    {
+      "id": "jsmx-streams-pipe-to-basic-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/pipe-to-basic-parity.js",
+      "generated": "compliance/generated/streams/jsmx/pipe-to-basic-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored pipeTo basic parity (Phase 6-2): a bytes-source ReadableStream piped into a capturing WritableStream delivers all 12 bytes of \"hello, world\" in order, runs the sink's close() exactly once, and fulfils the pipe Promise."
+    },
+    {
+      "id": "jsmx-streams-pipe-through-text-decoder-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/pipe-through-text-decoder-parity.js",
+      "generated": "compliance/generated/streams/jsmx/pipe-through-text-decoder-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored pipeThrough TextDecoderStream parity (Phase 6-2): a chunk-split byte source piped through TextDecoderStream emits two boundary-corrected codepoint chunks then EOF on the chained-readable returned by pipe_through. Validates the chained-readable identity end-to-end."
+    },
+    {
+      "id": "jsmx-streams-pipe-to-source-error-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/pipe-to-source-error-parity.js",
+      "generated": "compliance/generated/streams/jsmx/pipe-to-source-error-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored pipeTo source-error parity (Phase 6-2): a fake source that returns ERROR after one chunk causes the pipe Promise to reject."
+    },
+    {
+      "id": "jsmx-streams-pipe-to-sink-error-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/pipe-to-sink-error-parity.js",
+      "generated": "compliance/generated/streams/jsmx/pipe-to-sink-error-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored pipeTo sink-error parity (Phase 6-2): an erroring sink that returns ERROR with a TypeError DOMException causes the pipe Promise to reject with that DOMException."
+    },
+    {
+      "id": "jsmx-streams-pipe-to-locked-stream-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/pipe-to-locked-stream-parity.js",
+      "generated": "compliance/generated/streams/jsmx/pipe-to-locked-stream-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored pipeTo locked-stream parity (Phase 6-2): pipe_to on a ReadableStream that already has a default reader fails synchronously with errno EBUSY before scheduling any microtask."
     }
   ]
 }
