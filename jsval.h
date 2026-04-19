@@ -1232,6 +1232,17 @@ int jsval_request_array_buffer(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr);
 int jsval_request_bytes(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr);
+/*
+ * Request.body getter: returns a ReadableStream wrapping the Request's
+ * body. If the Request has no body (!has_body) or its body is already
+ * used, returns JSVAL_KIND_NULL. Otherwise returns a new
+ * JSVAL_KIND_READABLE_STREAM and flips bodyUsed to 1 — same Phase-1B
+ * simplification as jsval_response_body. Subsequent consumer calls
+ * (text/json/arrayBuffer/bytes) reject with the body-already-used
+ * TypeError. Returns 0 on success, -1 with errno on error.
+ */
+int jsval_request_body(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr);
 
 int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 		int have_body, jsval_t init_value, int have_init, jsval_t *value_ptr);
@@ -1330,6 +1341,18 @@ int jsval_body_source_notify(jsval_region_t *region,
  */
 int jsval_response_body_source_off(jsval_region_t *region,
 		jsval_t response, jsval_off_t *out);
+
+/*
+ * Parallel to jsval_response_body_source_off for Requests. Returns 0
+ * with *out set to the streaming Request's internal body-source
+ * offset (for producer-side jsval_body_source_notify), or 0 for
+ * non-streaming Requests. Shipped for symmetry so a future streaming
+ * inbound-body adapter (when the FaaS bridge feeds Request bodies
+ * through vk_jsmx_body_source instead of pre-materializing) has a
+ * ready producer hook.
+ */
+int jsval_request_body_source_off(jsval_region_t *region,
+		jsval_t request, jsval_off_t *out);
 
 /*
  * ReadableStream: minimal WHATWG-shaped facade over the body-source vtable.

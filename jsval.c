@@ -37379,6 +37379,79 @@ int jsval_response_body(jsval_region_t *region, jsval_t response,
 	return 0;
 }
 
+int jsval_request_body_source_off(jsval_region_t *region,
+		jsval_t request, jsval_off_t *out)
+{
+	jsval_native_request_t *native;
+
+	if (out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*out = native->body_is_streaming ? native->body_source_off : 0;
+	return 0;
+}
+
+int jsval_request_body(jsval_region_t *region, jsval_t request,
+		jsval_t *value_ptr)
+{
+	jsval_native_request_t *native;
+	jsval_t stream = jsval_undefined();
+
+	if (value_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (!native->has_body || native->body_used) {
+		*value_ptr = jsval_null();
+		return 0;
+	}
+	if (native->body_is_streaming) {
+		jsval_native_body_source_t *src =
+				jsval_native_body_source(region, native->body_source_off);
+		if (src == NULL || src->vtable == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		/* Share the Request's existing body source so producer wakes
+		 * (via jsval_body_source_notify on the Request's source_off)
+		 * reach this stream's pump. Same pattern as jsval_response_body. */
+		if (jsval_readable_stream_new_wrapping_source(region,
+				native->body_source_off, &stream) < 0) {
+			return -1;
+		}
+	} else {
+		uint8_t *bytes = NULL;
+		size_t len = 0;
+		if (jsval_array_buffer_bytes_mut(region, native->body_buffer,
+				&bytes, &len) < 0) {
+			return -1;
+		}
+		if (jsval_readable_stream_new_from_bytes(region, bytes, len,
+				&stream) < 0) {
+			return -1;
+		}
+	}
+	native = jsval_native_request(region, request);
+	if (native == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	native->body_used = 1;
+	*value_ptr = stream;
+	return 0;
+}
+
 /* -------------------- fetch() stub --------------------- */
 
 int jsval_request_body_snapshot(jsval_region_t *region, jsval_t request,

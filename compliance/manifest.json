@@ -5485,6 +5485,16 @@
       "translation_mode": "idiomatic_flattened",
       "expected_status": "pass",
       "notes": "Repo-authored ReadableStream cancel parity: cancel() fulfills with undefined, drops buffered source bytes, and subsequent reader.read() resolves with {done:true} instead of the unread payload."
+    },
+    {
+      "id": "jsmx-streams-readable-stream-request-body-parity",
+      "suite": "streams",
+      "source": "compliance/js/streams/jsmx/readable-stream-request-body-parity.js",
+      "generated": "compliance/generated/streams/jsmx/readable-stream-request-body-parity.c",
+      "lowering_class": "static_pass",
+      "translation_mode": "idiomatic_flattened",
+      "expected_status": "pass",
+      "notes": "Repo-authored Request.body parity (Phase 1D, symmetric to Response.body): new Request(url, {method:'POST', body:'world'}).body returns a ReadableStream; accessing .body flips bodyUsed; subsequent request.text() rejects with TypeError('body already used'); reader.read() drains to {value: Uint8Array, done:false} then {done:true}."
     }
   ]
 }
