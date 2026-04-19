@@ -40750,12 +40750,8 @@ static int jsval_text_decoder_stream_transform(jsval_region_t *region,
 		jsval_transform_controller_t *controller)
 {
 	jsval_native_text_decoder_state_t *state;
-	uint8_t buf[JSVAL_FETCH_BODY_DRAIN_BATCH + 4];
-	uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH + 16];
-	size_t buf_len;
-	size_t out_len = 0;
-	const uint8_t *bc;
-	const uint8_t *bs;
+	size_t remaining = chunk_len;
+	const uint8_t *input = chunk;
 
 	state = jsval_native_text_decoder_state(region, userdata);
 	if (state == NULL) {
@@ -40763,68 +40759,104 @@ static int jsval_text_decoder_stream_transform(jsval_region_t *region,
 		return -1;
 	}
 
-	if (chunk_len > JSVAL_FETCH_BODY_DRAIN_BATCH) {
-		errno = EOVERFLOW;
-		return -1;
-	}
+	/* Process the chunk in bounded internal iterations so the stack
+	 * buffers stay fixed-size regardless of the input length. Each
+	 * iteration combines (trailing + up to JSVAL_FETCH_BODY_DRAIN_BATCH
+	 * bytes) into a scratch buf, decodes complete sequences out,
+	 * updates the trailing buffer, and enqueues the emitted bytes.
+	 * If an iteration leaves more than sizeof(state->trailing) bytes
+	 * unconsumed (a pathologically long invalid leading run), one
+	 * byte is force-consumed as U+FFFD to guarantee progress. */
+	while (remaining > 0) {
+		uint8_t buf[JSVAL_FETCH_BODY_DRAIN_BATCH + 4];
+		uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH + 16];
+		size_t input_step = JSVAL_FETCH_BODY_DRAIN_BATCH;
+		size_t take;
+		size_t buf_len;
+		size_t out_len = 0;
+		const uint8_t *bc;
+		const uint8_t *bs;
 
-	buf_len = 0;
-	if (state->trailing_len > 0) {
-		memcpy(buf, state->trailing, state->trailing_len);
-		buf_len = state->trailing_len;
-	}
-	if (chunk_len > 0) {
-		memcpy(buf + buf_len, chunk, chunk_len);
-		buf_len += chunk_len;
-	}
-
-	bc = buf;
-	bs = buf + buf_len;
-	while (bc < bs) {
-		int l;
-		uint32_t c;
-
-		UTF8_CHAR(bc, bs, &c, &l);
-		if (l > 0) {
-			int i;
-
-			if (out_len + (size_t)l > sizeof(out)) {
-				errno = ENOBUFS;
-				return -1;
-			}
-			for (i = 0; i < l; i++) {
-				out[out_len++] = bc[i];
-			}
-			bc += l;
-		} else if (l == 0) {
-			break;
-		} else {
-			if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
-				errno = ENOBUFS;
-				return -1;
-			}
-			memcpy(out + out_len, UTF8_REPLACEMENT_CHAR,
-					sizeof(UTF8_REPLACEMENT_CHAR));
-			out_len += sizeof(UTF8_REPLACEMENT_CHAR);
-			bc += -l;
+		if (input_step > remaining) {
+			input_step = remaining;
 		}
+		take = input_step;
+
+		buf_len = 0;
+		if (state->trailing_len > 0) {
+			memcpy(buf, state->trailing, state->trailing_len);
+			buf_len = state->trailing_len;
+			state->trailing_len = 0;
+		}
+		if (take > 0) {
+			memcpy(buf + buf_len, input, take);
+			buf_len += take;
+		}
+
+		bc = buf;
+		bs = buf + buf_len;
+		while (bc < bs) {
+			int l;
+			uint32_t c;
+
+			UTF8_CHAR(bc, bs, &c, &l);
+			if (l > 0) {
+				int i;
+
+				if (out_len + (size_t)l > sizeof(out)) {
+					break; /* flush + continue below */
+				}
+				for (i = 0; i < l; i++) {
+					out[out_len++] = bc[i];
+				}
+				bc += l;
+			} else if (l == 0) {
+				break;
+			} else {
+				if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
+					break;
+				}
+				memcpy(out + out_len, UTF8_REPLACEMENT_CHAR,
+						sizeof(UTF8_REPLACEMENT_CHAR));
+				out_len += sizeof(UTF8_REPLACEMENT_CHAR);
+				bc += -l;
+			}
+		}
+
+		{
+			size_t tail_len = (size_t)(bs - bc);
+			if (tail_len > sizeof(state->trailing)) {
+				/* The scratch held a long invalid leading run that
+				 * UTF8_CHAR deferred. Force-consume one byte as
+				 * U+FFFD and re-stash the remainder; guarantees
+				 * forward progress without relying on the decoder
+				 * consuming l==0 bytes. */
+				if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) <=
+						sizeof(out)) {
+					memcpy(out + out_len, UTF8_REPLACEMENT_CHAR,
+							sizeof(UTF8_REPLACEMENT_CHAR));
+					out_len += sizeof(UTF8_REPLACEMENT_CHAR);
+				}
+				bc += 1;
+				tail_len = (size_t)(bs - bc);
+			}
+			state->trailing_len = (uint8_t)tail_len;
+			if (tail_len > 0) {
+				memcpy(state->trailing, bc, tail_len);
+			}
+		}
+
+		if (out_len > 0) {
+			if (jsval_transform_controller_enqueue(controller, out,
+					out_len) < 0) {
+				return -1;
+			}
+		}
+
+		input += take;
+		remaining -= take;
 	}
 
-	state->trailing_len = (uint8_t)(bs - bc);
-	if (state->trailing_len > sizeof(state->trailing)) {
-		/* Should not happen — bs - bc <= 3 because UTF8_CHAR
-		 * stops at the first incomplete leading sequence and
-		 * UTF-8 sequences are at most 4 bytes. */
-		errno = EINVAL;
-		return -1;
-	}
-	if (state->trailing_len > 0) {
-		memcpy(state->trailing, bc, state->trailing_len);
-	}
-
-	if (out_len > 0) {
-		return jsval_transform_controller_enqueue(controller, out, out_len);
-	}
 	return 0;
 }
 
@@ -40875,20 +40907,70 @@ static int jsval_text_encoder_stream_transform(jsval_region_t *region,
 		void *userdata, const uint8_t *chunk, size_t chunk_len,
 		jsval_transform_controller_t *controller)
 {
-	uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH * 3 + 16];
-	size_t out_len;
+	uint8_t out[JSVAL_FETCH_BODY_DRAIN_BATCH];
+	size_t produced = 0;
+	const uint8_t *bc = chunk;
+	const uint8_t *bs = chunk + chunk_len;
 
 	(void)region;
 	(void)userdata;
-	if (chunk_len > JSVAL_FETCH_BODY_DRAIN_BATCH) {
-		errno = EOVERFLOW;
-		return -1;
+	while (bc < bs) {
+		int l;
+		uint32_t c;
+
+		UTF8_CHAR(bc, bs, &c, &l);
+		if (l > 0) {
+			int i;
+
+			/* A valid sequence is up to 4 bytes. If it would
+			 * overflow the scratch, flush first. */
+			if (produced + (size_t)l > sizeof(out)) {
+				if (jsval_transform_controller_enqueue(controller, out,
+						produced) < 0) {
+					return -1;
+				}
+				produced = 0;
+			}
+			for (i = 0; i < l; i++) {
+				out[produced++] = bc[i];
+			}
+			bc += l;
+		} else if (l == 0) {
+			/* Incomplete trailing sequence at end of input. The
+			 * encoder is stateless across chunks (the contract is
+			 * "well-formed UTF-8 input"); emit U+FFFD for each
+			 * trailing byte to signal the truncation, consistent
+			 * with UTF8_TO_WELL_FORMED's "incomplete-at-bs is
+			 * treated as malformed" semantics on a chunk boundary. */
+			if (produced + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
+				if (jsval_transform_controller_enqueue(controller, out,
+						produced) < 0) {
+					return -1;
+				}
+				produced = 0;
+			}
+			memcpy(out + produced, UTF8_REPLACEMENT_CHAR,
+					sizeof(UTF8_REPLACEMENT_CHAR));
+			produced += sizeof(UTF8_REPLACEMENT_CHAR);
+			break;
+		} else {
+			if (produced + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
+				if (jsval_transform_controller_enqueue(controller, out,
+						produced) < 0) {
+					return -1;
+				}
+				produced = 0;
+			}
+			memcpy(out + produced, UTF8_REPLACEMENT_CHAR,
+					sizeof(UTF8_REPLACEMENT_CHAR));
+			produced += sizeof(UTF8_REPLACEMENT_CHAR);
+			bc += -l;
+		}
 	}
-	out_len = UTF8_TO_WELL_FORMED(chunk, chunk + chunk_len, out, sizeof(out));
-	if (out_len == 0 && chunk_len == 0) {
-		return 0;
+	if (produced > 0) {
+		return jsval_transform_controller_enqueue(controller, out, produced);
 	}
-	return jsval_transform_controller_enqueue(controller, out, out_len);
+	return 0;
 }
 
 static const jsval_transformer_vtable_t jsval_text_encoder_stream_vtable = {

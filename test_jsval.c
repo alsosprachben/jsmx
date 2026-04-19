@@ -14434,6 +14434,169 @@ static void test_text_decoder_encoder_stream_semantics(void)
 		assert(out[2] == 0xCE && out[3] == 0xB1);
 		assert(out[4] == 0xEF && out[5] == 0xBF && out[6] == 0xBD);
 	}
+
+	/* 6. Decoder accepts large chunks (>4 KB) and round-trips them
+	 * across multiple internal iterations. */
+	{
+		const size_t big_len = 16 * 1024;
+		uint8_t *input;
+		uint8_t *out;
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_t promise;
+		jsval_t result;
+		jsval_t value;
+		jsval_t done_value;
+		jsval_t backing;
+		jsval_promise_state_t state;
+		uint8_t *bytes;
+		size_t backing_len;
+		size_t len;
+		size_t total = 0;
+		int read_calls = 0;
+		size_t i;
+
+		input = malloc(big_len);
+		out = malloc(big_len + 16);
+		assert(input != NULL && out != NULL);
+		/* Valid UTF-8: mostly ASCII + a multi-byte sprinkle. */
+		for (i = 0; i < big_len; i++) {
+			input[i] = (uint8_t)('A' + (i % 26));
+		}
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer, input,
+				big_len, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		for (;;) {
+			assert(jsval_readable_stream_reader_read(&region, reader,
+					&promise) == 0);
+			assert(jsval_promise_state(&region, promise, &state) == 0
+					&& state == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region, promise, &result) == 0);
+			assert(jsval_object_get_utf8(&region, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean) {
+				break;
+			}
+			read_calls++;
+			assert(jsval_object_get_utf8(&region, result,
+					(const uint8_t *)"value", 5, &value) == 0
+					&& value.kind == JSVAL_KIND_TYPED_ARRAY);
+			len = jsval_typed_array_length(&region, value);
+			assert(jsval_typed_array_buffer(&region, value, &backing) == 0);
+			assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+					&backing_len) == 0 && backing_len >= len);
+			assert(total + len <= big_len + 16);
+			memcpy(out + total, bytes, len);
+			total += len;
+		}
+
+		assert(total == big_len);
+		assert(memcmp(out, input, big_len) == 0);
+		/* Multi-chunk emission: a single 16 KB input must be chunked
+		 * internally (4 KB scratch → at least 4 output chunks). */
+		assert(read_calls > 1);
+
+		free(input);
+		free(out);
+	}
+
+	/* 7. Encoder accepts large chunks (>4 KB) and round-trips valid
+	 * UTF-8 across multiple internal iterations. */
+	{
+		const size_t big_len = 16 * 1024;
+		uint8_t *input;
+		uint8_t *out;
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_t promise;
+		jsval_t result;
+		jsval_t value;
+		jsval_t done_value;
+		jsval_t backing;
+		jsval_promise_state_t state;
+		uint8_t *bytes;
+		size_t backing_len;
+		size_t len;
+		size_t total = 0;
+		int read_calls = 0;
+		size_t i;
+
+		input = malloc(big_len);
+		out = malloc(big_len + 16);
+		assert(input != NULL && out != NULL);
+		for (i = 0; i < big_len; i++) {
+			input[i] = (uint8_t)('a' + (i % 26));
+		}
+
+		assert(jsval_text_encoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+
+		assert(jsval_writable_stream_writer_write(&region, writer, input,
+				big_len, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		for (;;) {
+			assert(jsval_readable_stream_reader_read(&region, reader,
+					&promise) == 0);
+			assert(jsval_promise_state(&region, promise, &state) == 0
+					&& state == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region, promise, &result) == 0);
+			assert(jsval_object_get_utf8(&region, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean) {
+				break;
+			}
+			read_calls++;
+			assert(jsval_object_get_utf8(&region, result,
+					(const uint8_t *)"value", 5, &value) == 0
+					&& value.kind == JSVAL_KIND_TYPED_ARRAY);
+			len = jsval_typed_array_length(&region, value);
+			assert(jsval_typed_array_buffer(&region, value, &backing) == 0);
+			assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+					&backing_len) == 0 && backing_len >= len);
+			assert(total + len <= big_len + 16);
+			memcpy(out + total, bytes, len);
+			total += len;
+		}
+
+		assert(total == big_len);
+		assert(memcmp(out, input, big_len) == 0);
+		assert(read_calls > 1);
+
+		free(input);
+		free(out);
+	}
 }
 
 /* ----------- pipeTo / pipeThrough tests ----------- */
