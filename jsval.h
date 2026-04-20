@@ -1406,6 +1406,19 @@ int jsval_readable_stream_cancel(jsval_region_t *region, jsval_t stream,
 		jsval_t reason, jsval_t *promise_ptr);
 
 /*
+ * Phase 3c-6: WHATWG ReadableStream.tee(). Splits one upstream
+ * stream into two independent branches that observe the same
+ * chunks, EOFs, and errors. On success, the upstream stream is
+ * locked to tee's internal reader (subsequent getReader() on
+ * upstream fails with EBUSY). Drains are driven by an internal
+ * tee pump microtask. Both branches must be drained by the
+ * consumer; v1 has no branch.cancel() hook so an undrained
+ * branch buffers chunks unboundedly.
+ */
+int jsval_readable_stream_tee(jsval_region_t *region, jsval_t readable,
+		jsval_t *branch_a_ptr, jsval_t *branch_b_ptr);
+
+/*
  * Underlying-sink abstraction for WritableStream.
  *
  * Symmetric to jsval_body_source_vtable_t on the read side. An embedder

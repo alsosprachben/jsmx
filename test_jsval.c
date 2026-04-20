@@ -13111,19 +13111,268 @@ static void test_response_readable_body_semantics(void)
 		assert(got.kind == JSVAL_KIND_UNDEFINED);
 	}
 
-	/* 7. clone() of a readable-body Response rejects (Response.clone()
-	 * tee-semantics not yet implemented). */
+	/* 7. clone() of a readable-body Response tees the underlying
+	 * stream — both original.text() and clone.text() drain "x"
+	 * independently. */
 	{
 		jsval_t readable;
 		jsval_t response;
 		jsval_t cloned;
+		jsval_t orig_promise;
+		jsval_t clone_promise;
+		jsval_t orig_text;
+		jsval_t clone_text;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		size_t got_len = 0;
+		uint8_t buf[1];
 
 		assert(jsval_readable_stream_new_from_bytes(&region,
 				(const uint8_t *)"x", 1, &readable) == 0);
 		assert(jsval_response_new(&region, readable, 1, jsval_undefined(),
 				0, &response) == 0);
-		assert(jsval_response_clone(&region, response, &cloned) == -1);
-		assert(errno == ENOTSUP);
+		assert(jsval_response_clone(&region, response, &cloned) == 0);
+		assert(cloned.kind == JSVAL_KIND_RESPONSE);
+
+		/* Both .text() calls return promises that drain in parallel
+		 * via the tee pump. */
+		assert(jsval_response_text(&region, response, &orig_promise) == 0);
+		assert(jsval_response_text(&region, cloned, &clone_promise) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, orig_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, orig_promise, &orig_text) == 0);
+		assert(orig_text.kind == JSVAL_KIND_STRING);
+		assert(jsval_string_copy_utf8(&region, orig_text, NULL, 0,
+				&got_len) == 0);
+		assert(got_len == 1);
+		assert(jsval_string_copy_utf8(&region, orig_text, buf, 1, NULL) == 0);
+		assert(buf[0] == 'x');
+
+		assert(jsval_promise_state(&region, clone_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, clone_promise, &clone_text)
+				== 0);
+		assert(clone_text.kind == JSVAL_KIND_STRING);
+		got_len = 0;
+		assert(jsval_string_copy_utf8(&region, clone_text, NULL, 0,
+				&got_len) == 0);
+		assert(got_len == 1);
+		assert(jsval_string_copy_utf8(&region, clone_text, buf, 1, NULL) == 0);
+		assert(buf[0] == 'x');
+	}
+}
+
+/* Phase 3c-6: jsval_readable_stream_tee() splits one ReadableStream
+ * into two independent branches. Tests cover (a) both branches
+ * drain to the same bytes, (b) interleaved drains, (c) EOF
+ * propagates to both branches. Each scenario asserts PENDING +
+ * microtask drain to prove we go through the tee pump. */
+static void test_readable_stream_tee_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Bytes source → tee → both branches drain to "hello". */
+	{
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t reader_a;
+		jsval_t reader_b;
+		jsval_t promise_a;
+		jsval_t promise_b;
+		jsval_t result_a;
+		jsval_t result_b;
+		jsval_t value_a;
+		jsval_t value_b;
+		jsval_t done_value;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		size_t len_a;
+		size_t len_b;
+		jsval_t backing;
+		uint8_t *bytes;
+		size_t backing_len;
+		uint8_t got_a[5];
+		uint8_t got_b[5];
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello", 5, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+		assert(branch_a.kind == JSVAL_KIND_READABLE_STREAM);
+		assert(branch_b.kind == JSVAL_KIND_READABLE_STREAM);
+
+		/* Acquire readers on each branch. */
+		assert(jsval_readable_stream_get_reader(&region, branch_a,
+				&reader_a) == 0);
+		assert(jsval_readable_stream_get_reader(&region, branch_b,
+				&reader_b) == 0);
+
+		/* Issue reads on each branch — both pending until the tee
+		 * pump runs and distributes the upstream's "hello" chunk. */
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise_a) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader_b,
+				&promise_b) == 0);
+		assert(jsval_promise_state(&region, promise_a, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+		assert(jsval_promise_state(&region, promise_b, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+
+		assert(jsval_promise_state(&region, promise_a, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_state(&region, promise_b, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		assert(jsval_promise_result(&region, promise_a, &result_a) == 0);
+		assert(jsval_object_get_utf8(&region, result_a,
+				(const uint8_t *)"value", 5, &value_a) == 0);
+		assert(value_a.kind == JSVAL_KIND_TYPED_ARRAY);
+		len_a = jsval_typed_array_length(&region, value_a);
+		assert(len_a == 5);
+		assert(jsval_typed_array_buffer(&region, value_a, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&backing_len) == 0);
+		memcpy(got_a, bytes, 5);
+		assert(memcmp(got_a, "hello", 5) == 0);
+
+		assert(jsval_promise_result(&region, promise_b, &result_b) == 0);
+		assert(jsval_object_get_utf8(&region, result_b,
+				(const uint8_t *)"value", 5, &value_b) == 0);
+		assert(value_b.kind == JSVAL_KIND_TYPED_ARRAY);
+		len_b = jsval_typed_array_length(&region, value_b);
+		assert(len_b == 5);
+		assert(jsval_typed_array_buffer(&region, value_b, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&backing_len) == 0);
+		memcpy(got_b, bytes, 5);
+		assert(memcmp(got_b, "hello", 5) == 0);
+
+		/* Subsequent read on each branch yields done:true (EOF
+		 * propagated by the tee pump). */
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise_a) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader_b,
+				&promise_b) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise_a, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise_a, &result_a) == 0);
+		assert(jsval_object_get_utf8(&region, result_a,
+				(const uint8_t *)"done", 4, &done_value) == 0);
+		assert(done_value.kind == JSVAL_KIND_BOOL);
+		assert(done_value.as.boolean == 1);
+		assert(jsval_promise_state(&region, promise_b, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise_b, &result_b) == 0);
+		assert(jsval_object_get_utf8(&region, result_b,
+				(const uint8_t *)"done", 4, &done_value) == 0);
+		assert(done_value.kind == JSVAL_KIND_BOOL);
+		assert(done_value.as.boolean == 1);
+	}
+
+	/* 2. Drain branch A fully, then branch B — branch B still gets
+	 * the full payload (queue-buffered). */
+	{
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t reader_a;
+		jsval_t reader_b;
+		jsval_t promise;
+		jsval_t result;
+		jsval_t value;
+		jsval_t done_value;
+		jsval_t backing;
+		uint8_t *bytes;
+		size_t backing_len;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"abcd", 4, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+		assert(jsval_readable_stream_get_reader(&region, branch_a,
+				&reader_a) == 0);
+		assert(jsval_readable_stream_get_reader(&region, branch_b,
+				&reader_b) == 0);
+
+		/* Drain A first, fully. */
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"value", 5, &value) == 0);
+		assert(jsval_typed_array_length(&region, value) == 4);
+		assert(jsval_typed_array_buffer(&region, value, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&backing_len) == 0);
+		assert(memcmp(bytes, "abcd", 4) == 0);
+
+		/* A's EOF read. */
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"done", 4, &done_value) == 0);
+		assert(done_value.as.boolean == 1);
+
+		/* Now drain B — chunks were queued while A was reading. */
+		assert(jsval_readable_stream_reader_read(&region, reader_b,
+				&promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		/* Branch B's queue already has the chunk from when A's read
+		 * triggered the tee pump; the read may resolve synchronously. */
+		if (state == JSVAL_PROMISE_STATE_PENDING) {
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region, &error) == 0);
+			assert(jsval_promise_state(&region, promise, &state) == 0);
+		}
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"value", 5, &value) == 0);
+		assert(jsval_typed_array_length(&region, value) == 4);
+		assert(jsval_typed_array_buffer(&region, value, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&backing_len) == 0);
+		assert(memcmp(bytes, "abcd", 4) == 0);
+	}
+
+	/* 3. Tee locks the upstream — subsequent getReader on upstream
+	 * fails. */
+	{
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t direct_reader;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"q", 1, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+		assert(jsval_readable_stream_get_reader(&region, upstream,
+				&direct_reader) == -1);
 	}
 }
 
@@ -15664,6 +15913,7 @@ int main(void)
 	test_fetch_api_semantics();
 	test_request_readable_body_semantics();
 	test_response_readable_body_semantics();
+	test_readable_stream_tee_semantics();
 	test_fetch_body_drain_semantics();
 	test_readable_stream_semantics();
 	test_writable_stream_semantics();

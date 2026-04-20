@@ -339,7 +339,8 @@ typedef enum jsval_microtask_kind_e {
 	JSVAL_MICROTASK_KIND_READABLE_STREAM_PUMP = 16,
 	JSVAL_MICROTASK_KIND_WRITABLE_STREAM_PUMP = 17,
 	JSVAL_MICROTASK_KIND_STREAM_PIPE_PUMP = 18,
-	JSVAL_MICROTASK_KIND_READABLE_BODY_CONSUMER = 19
+	JSVAL_MICROTASK_KIND_READABLE_BODY_CONSUMER = 19,
+	JSVAL_MICROTASK_KIND_READABLE_STREAM_TEE_PUMP = 20
 } jsval_microtask_kind_t;
 
 typedef struct jsval_native_microtask_s {
@@ -693,6 +694,46 @@ typedef struct jsval_native_microtask_readable_body_consumer_s {
 	uint8_t reserved[7];
 } jsval_native_microtask_readable_body_consumer_t;
 
+/* Phase 3c-6: ReadableStream.tee() machinery. The tee pump
+ * microtask drives a locked reader on the upstream stream and
+ * distributes each chunk to two per-branch FIFO queues. Each
+ * branch is a regular jsval_native_readable_stream_t backed by a
+ * tee-branch body source that pops from the queue. */
+typedef struct jsval_native_tee_chunk_s {
+	jsval_off_t next_off;
+	size_t len;
+	/* len bytes follow inline */
+} jsval_native_tee_chunk_t;
+
+typedef struct jsval_native_tee_state_s {
+	jsval_off_t reader_off;            /* locked reader on upstream */
+	jsval_off_t branch_a_queue_head;
+	jsval_off_t branch_a_queue_tail;
+	jsval_off_t branch_b_queue_head;
+	jsval_off_t branch_b_queue_tail;
+	jsval_off_t branch_a_stream_off;   /* schedule_pump on chunk arrival */
+	jsval_off_t branch_b_stream_off;
+	jsval_t error_reason;              /* stored upstream rejection */
+	uint8_t upstream_state;            /* 0=open, 1=eof, 2=errored */
+	uint8_t branch_a_cancelled;
+	uint8_t branch_b_cancelled;
+	uint8_t reserved[5];
+} jsval_native_tee_state_t;
+
+typedef struct jsval_native_tee_branch_ud_s {
+	jsval_region_t *region;
+	jsval_off_t tee_state_off;
+	uint8_t branch;                    /* 0 = A, 1 = B */
+	uint8_t reserved[7];
+} jsval_native_tee_branch_ud_t;
+
+typedef struct jsval_native_microtask_tee_pump_s {
+	jsval_native_microtask_t base;
+	jsval_off_t tee_state_off;
+	jsval_off_t in_flight_off;         /* reader.read() promise */
+	uint8_t reserved[8];
+} jsval_native_microtask_tee_pump_t;
+
 /*
  * ReadableStream state. `state` is 0=readable, 1=closed, 2=errored.
  * `reader_off` is 0 when unlocked. Pending reads form a FIFO of
@@ -977,6 +1018,8 @@ static int jsval_stream_pipe_run_pump(jsval_region_t *region,
 static int jsval_readable_body_consumer_run(jsval_region_t *region,
 		jsval_native_microtask_readable_body_consumer_t *task,
 		jsval_off_t task_off);
+static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
+		jsval_native_microtask_tee_pump_t *task, jsval_off_t task_off);
 
 static size_t jsval_align_up(size_t value, size_t align)
 {
@@ -20990,6 +21033,18 @@ int jsval_microtask_drain(jsval_region_t *region, jsmethod_error_t *error)
 			}
 			break;
 		}
+		case JSVAL_MICROTASK_KIND_READABLE_STREAM_TEE_PUMP:
+		{
+			jsval_native_microtask_tee_pump_t *tee_task =
+				(jsval_native_microtask_tee_pump_t *)task;
+
+			if (jsval_readable_stream_tee_pump_run(region, tee_task,
+					off) < 0) {
+				region->microtask_draining = 0;
+				return -1;
+			}
+			break;
+		}
 		default:
 			region->microtask_draining = 0;
 			errno = EINVAL;
@@ -37378,17 +37433,6 @@ int jsval_response_clone(jsval_region_t *region, jsval_t response,
 		errno = EACCES;
 		return -1;
 	}
-	if (src->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
-		/* Phase 3c-5: cloning a readable-body Response requires
-		 * teeing the underlying stream (WHATWG semantics). Not
-		 * implemented yet; reject explicitly to avoid the silent
-		 * body-loss that would otherwise occur (body_buffer is
-		 * undefined for readable-body Responses, so the
-		 * snapshot-from-value branch below would produce a
-		 * has_body=0 clone). */
-		errno = ENOTSUP;
-		return -1;
-	}
 	if (jsval_headers_new_from_init(region, JSVAL_HEADERS_GUARD_RESPONSE,
 			src->headers, &headers_copy) < 0) {
 		return -1;
@@ -37397,6 +37441,50 @@ int jsval_response_clone(jsval_region_t *region, jsval_t response,
 	if (src == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+	if (src->body_readable.kind == JSVAL_KIND_READABLE_STREAM) {
+		/* Phase 3c-6: tee the readable body. Original gets branch
+		 * A, clone gets branch B. WHATWG tee locks the upstream
+		 * but doesn't mark it consumed, so body_used stays 0 on
+		 * both. */
+		jsval_t branch_a;
+		jsval_t branch_b;
+		if (jsval_readable_stream_tee(region, src->body_readable,
+				&branch_a, &branch_b) < 0) {
+			return -1;
+		}
+		src = jsval_native_response(region, response);
+		if (src == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		src->body_readable = branch_a;
+		if (jsval_region_reserve(region, sizeof(*dst), JSVAL_ALIGN,
+				&off, (void **)&dst) < 0) {
+			return -1;
+		}
+		src = jsval_native_response(region, response);
+		if (src == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		memset(dst, 0, sizeof(*dst));
+		dst->url = src->url;
+		dst->headers = headers_copy;
+		dst->status_text = src->status_text;
+		dst->body_buffer = jsval_undefined();
+		dst->body_readable = branch_b;
+		dst->status = src->status;
+		dst->type = src->type;
+		dst->redirected = src->redirected;
+		dst->body_used = 0;
+		dst->has_body = 1;
+		out = jsval_undefined();
+		out.kind = JSVAL_KIND_RESPONSE;
+		out.repr = JSVAL_REPR_NATIVE;
+		out.off = off;
+		*value_ptr = out;
+		return 0;
 	}
 	if (src->has_body) {
 		if (jsval_body_snapshot_from_value(region, src->body_buffer,
@@ -38997,6 +39085,505 @@ static int jsval_readable_body_consumer_schedule(jsval_region_t *region,
 		return -1;
 	}
 	*promise_out = promise;
+	return 0;
+}
+
+/* -------- Phase 3c-6: ReadableStream.tee() machinery --------
+ *
+ * Public API jsval_readable_stream_tee() splits one upstream
+ * ReadableStream into two independent branches. A new tee pump
+ * microtask owns a locked reader on upstream and distributes
+ * each received chunk into both branch queues. Each branch is a
+ * regular jsval_native_readable_stream_t whose body source pops
+ * from its dedicated queue. Park-on-promise (Phase 6.5) covers
+ * pending upstream reads, so async sources work uniformly.
+ *
+ * Notes:
+ *   - Chunks are duplicated per branch (separate region nodes,
+ *     each with its own byte copy). Sharing would require
+ *     refcounting; deferred.
+ *   - branch.cancel() not yet wired (close vtable is a no-op).
+ *     Until then, both branches must be drained by the consumer.
+ */
+
+static int jsval_tee_branch_source_read(void *userdata,
+		uint8_t *buf, size_t cap, size_t *out_len,
+		jsval_body_source_status_t *status_ptr)
+{
+	jsval_native_tee_branch_ud_t *ud;
+	jsval_native_tee_state_t *state;
+	jsval_off_t *head_ptr;
+	jsval_off_t *tail_ptr;
+	jsval_native_tee_chunk_t *chunk;
+	size_t n;
+
+	if (userdata == NULL || out_len == NULL || status_ptr == NULL
+			|| (cap > 0 && buf == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	ud = (jsval_native_tee_branch_ud_t *)userdata;
+	state = (jsval_native_tee_state_t *)jsval_region_ptr(ud->region,
+			ud->tee_state_off);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (ud->branch == 0) {
+		head_ptr = &state->branch_a_queue_head;
+		tail_ptr = &state->branch_a_queue_tail;
+	} else {
+		head_ptr = &state->branch_b_queue_head;
+		tail_ptr = &state->branch_b_queue_tail;
+	}
+
+	if (*head_ptr != 0) {
+		chunk = (jsval_native_tee_chunk_t *)jsval_region_ptr(ud->region,
+				*head_ptr);
+		if (chunk == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (chunk->len > cap) {
+			/* In practice the readable stream pump uses a 4096-byte
+			 * scratch and upstream chunks are bounded by the same
+			 * batch; chunk->len <= cap always holds. Defensive
+			 * rejection keeps the partial-chunk case explicit. */
+			errno = EINVAL;
+			return -1;
+		}
+		n = chunk->len;
+		if (n > 0) {
+			memcpy(buf, (const uint8_t *)(chunk + 1), n);
+		}
+		*out_len = n;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_READY;
+		*head_ptr = chunk->next_off;
+		if (*head_ptr == 0) {
+			*tail_ptr = 0;
+		}
+		return 0;
+	}
+
+	if (state->upstream_state == 1) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_EOF;
+		return 0;
+	}
+	if (state->upstream_state == 2) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_ERROR;
+		return 0;
+	}
+
+	*out_len = 0;
+	*status_ptr = JSVAL_BODY_SOURCE_STATUS_PENDING;
+	return 0;
+}
+
+static void jsval_tee_branch_source_close(void *userdata)
+{
+	(void)userdata;
+	/* v1: no cancellation propagation. Branch cancellation is a
+	 * follow-up. */
+}
+
+static const jsval_body_source_vtable_t jsval_tee_branch_source_vtable = {
+	jsval_tee_branch_source_read,
+	jsval_tee_branch_source_close
+};
+
+/* Append `len` bytes (copied) as a fresh chunk node to a branch's
+ * FIFO queue. head_off / tail_off are pointers into the tee state
+ * struct. */
+static int jsval_tee_branch_enqueue_chunk(jsval_region_t *region,
+		jsval_off_t *head_off, jsval_off_t *tail_off,
+		const uint8_t *bytes, size_t len)
+{
+	jsval_native_tee_chunk_t *chunk;
+	jsval_off_t chunk_off;
+	size_t total;
+
+	if (len > SIZE_MAX - sizeof(*chunk)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total = sizeof(*chunk) + len;
+	if (jsval_region_reserve(region, total,
+			_Alignof(jsval_native_tee_chunk_t), &chunk_off,
+			(void **)&chunk) < 0) {
+		return -1;
+	}
+	chunk->next_off = 0;
+	chunk->len = len;
+	if (len > 0) {
+		memcpy((uint8_t *)(chunk + 1), bytes, len);
+	}
+	if (*head_off == 0) {
+		*head_off = chunk_off;
+		*tail_off = chunk_off;
+	} else {
+		jsval_native_tee_chunk_t *tail =
+				(jsval_native_tee_chunk_t *)jsval_region_ptr(region,
+						*tail_off);
+		if (tail == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		tail->next_off = chunk_off;
+		*tail_off = chunk_off;
+	}
+	return 0;
+}
+
+static int jsval_tee_pump_release_reader(jsval_region_t *region,
+		jsval_native_tee_state_t *state)
+{
+	jsval_t reader_value;
+
+	if (state->reader_off == 0) {
+		return 0;
+	}
+	reader_value = jsval_undefined();
+	reader_value.kind = JSVAL_KIND_READABLE_STREAM_READER;
+	reader_value.repr = JSVAL_REPR_NATIVE;
+	reader_value.off = state->reader_off;
+	(void)jsval_readable_stream_reader_release_lock(region, reader_value);
+	state->reader_off = 0;
+	return 0;
+}
+
+static int jsval_tee_pump_park_on_promise(jsval_region_t *region,
+		jsval_off_t task_off, jsval_native_microtask_tee_pump_t *task,
+		jsval_off_t in_flight_off)
+{
+	jsval_native_promise_t *p;
+
+	if (in_flight_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	p = (jsval_native_promise_t *)jsval_region_ptr(region, in_flight_off);
+	if (p == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if ((jsval_promise_state_t)p->state != JSVAL_PROMISE_STATE_PENDING) {
+		task->base.next_off = 0;
+		return jsval_microtask_push(region, task_off, &task->base);
+	}
+	task->base.next_off = 0;
+	p->parked_microtask_off = task_off;
+	return 0;
+}
+
+/* Wake both branches: their pending reads are settled by run_pump,
+ * which calls our branch-source read() to learn the new state. */
+static int jsval_tee_pump_wake_both_branches(jsval_region_t *region,
+		jsval_native_tee_state_t *state)
+{
+	if (state->branch_a_stream_off != 0
+			&& !state->branch_a_cancelled) {
+		if (jsval_readable_stream_schedule_pump(region,
+				state->branch_a_stream_off) < 0) {
+			return -1;
+		}
+	}
+	if (state->branch_b_stream_off != 0
+			&& !state->branch_b_cancelled) {
+		if (jsval_readable_stream_schedule_pump(region,
+				state->branch_b_stream_off) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
+		jsval_native_microtask_tee_pump_t *task, jsval_off_t task_off)
+{
+	jsval_native_tee_state_t *state;
+	jsval_t reader_value;
+	jsval_t in_flight;
+	jsval_t result;
+	jsval_promise_state_t pstate;
+	jsval_t value;
+	jsval_t done_value;
+	int done;
+	jsval_t backing;
+	uint8_t *chunk_bytes;
+	size_t chunk_len;
+	size_t backing_len;
+
+	if (region == NULL || task == NULL || task_off == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+			task->tee_state_off);
+	if (state == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Step 1: issue a read if none is in flight. */
+	if (task->in_flight_off == 0) {
+		jsval_t promise;
+
+		if (state->reader_off == 0) {
+			/* Both branches cancelled or already terminated. */
+			return 0;
+		}
+		reader_value = jsval_undefined();
+		reader_value.kind = JSVAL_KIND_READABLE_STREAM_READER;
+		reader_value.repr = JSVAL_REPR_NATIVE;
+		reader_value.off = state->reader_off;
+		if (jsval_readable_stream_reader_read(region, reader_value,
+				&promise) != 0) {
+			state->upstream_state = 2;
+			(void)jsval_tee_pump_wake_both_branches(region, state);
+			(void)jsval_tee_pump_release_reader(region, state);
+			return 0;
+		}
+		/* Re-resolve state pointer after potential region growth. */
+		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+				task->tee_state_off);
+		if (state == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		task->in_flight_off = promise.off;
+	}
+
+	/* Step 2: inspect the in-flight promise. */
+	in_flight = jsval_promise_value(task->in_flight_off);
+	if (jsval_promise_state(region, in_flight, &pstate) != 0) {
+		state->upstream_state = 2;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+
+	if (pstate == JSVAL_PROMISE_STATE_PENDING) {
+		return jsval_tee_pump_park_on_promise(region, task_off, task,
+				task->in_flight_off);
+	}
+
+	if (jsval_promise_result(region, in_flight, &result) != 0) {
+		state->upstream_state = 2;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+
+	if (pstate == JSVAL_PROMISE_STATE_REJECTED) {
+		state->upstream_state = 2;
+		state->error_reason = result;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+
+	/* Fulfilled — extract {value, done}. */
+	task->in_flight_off = 0;
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"done", 4,
+			&done_value) != 0) {
+		state->upstream_state = 2;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+	done = (done_value.kind == JSVAL_KIND_BOOL && done_value.as.boolean)
+			? 1 : 0;
+	if (done) {
+		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+				task->tee_state_off);
+		if (state == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		state->upstream_state = 1;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+
+	/* Not done: extract Uint8Array chunk and distribute. */
+	if (jsval_object_get_utf8(region, result, (const uint8_t *)"value", 5,
+			&value) != 0 || value.kind != JSVAL_KIND_TYPED_ARRAY) {
+		state->upstream_state = 2;
+		(void)jsval_tee_pump_wake_both_branches(region, state);
+		(void)jsval_tee_pump_release_reader(region, state);
+		return 0;
+	}
+	chunk_len = jsval_typed_array_length(region, value);
+	chunk_bytes = NULL;
+	backing_len = 0;
+	if (chunk_len > 0) {
+		if (jsval_typed_array_buffer(region, value, &backing) != 0
+				|| jsval_array_buffer_bytes_mut(region, backing,
+						&chunk_bytes, &backing_len) != 0
+				|| backing_len < chunk_len) {
+			state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+					task->tee_state_off);
+			if (state != NULL) {
+				state->upstream_state = 2;
+				(void)jsval_tee_pump_wake_both_branches(region, state);
+				(void)jsval_tee_pump_release_reader(region, state);
+			}
+			return 0;
+		}
+	}
+
+	/* Enqueue into branch A (if not cancelled). Re-resolve state
+	 * after each potentially-growing allocation. */
+	state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+			task->tee_state_off);
+	if (state == NULL) { errno = EINVAL; return -1; }
+	if (!state->branch_a_cancelled) {
+		if (jsval_tee_branch_enqueue_chunk(region,
+				&state->branch_a_queue_head,
+				&state->branch_a_queue_tail,
+				chunk_bytes, chunk_len) < 0) {
+			return -1;
+		}
+		/* Re-resolve chunk_bytes after the alloc may have shifted
+		 * the backing buffer's resolved pointer. */
+		if (chunk_len > 0) {
+			if (jsval_array_buffer_bytes_mut(region, backing,
+					&chunk_bytes, &backing_len) != 0) {
+				return -1;
+			}
+		}
+		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+				task->tee_state_off);
+		if (state == NULL) { errno = EINVAL; return -1; }
+	}
+	if (!state->branch_b_cancelled) {
+		if (jsval_tee_branch_enqueue_chunk(region,
+				&state->branch_b_queue_head,
+				&state->branch_b_queue_tail,
+				chunk_bytes, chunk_len) < 0) {
+			return -1;
+		}
+		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
+				task->tee_state_off);
+		if (state == NULL) { errno = EINVAL; return -1; }
+	}
+
+	/* Wake both branches so their pending reads pick up the new
+	 * chunks. */
+	if (jsval_tee_pump_wake_both_branches(region, state) < 0) {
+		return -1;
+	}
+
+	/* Re-enqueue ourselves to issue the next upstream read. */
+	task->base.next_off = 0;
+	return jsval_microtask_push(region, task_off, &task->base);
+}
+
+int jsval_readable_stream_tee(jsval_region_t *region, jsval_t readable,
+		jsval_t *branch_a_ptr, jsval_t *branch_b_ptr)
+{
+	jsval_native_tee_state_t *state;
+	jsval_native_tee_branch_ud_t *ud_a;
+	jsval_native_tee_branch_ud_t *ud_b;
+	jsval_native_microtask_tee_pump_t *task;
+	jsval_off_t state_off;
+	jsval_off_t ud_a_off;
+	jsval_off_t ud_b_off;
+	jsval_off_t task_off;
+	jsval_t reader;
+	jsval_t branch_a;
+	jsval_t branch_b;
+	jsval_native_readable_stream_t *branch_native;
+
+	if (region == NULL || branch_a_ptr == NULL || branch_b_ptr == NULL
+			|| readable.kind != JSVAL_KIND_READABLE_STREAM) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (jsval_readable_stream_get_reader(region, readable, &reader) < 0) {
+		return -1;
+	}
+
+	/* Allocate tee state. */
+	if (jsval_region_reserve(region, sizeof(*state),
+			_Alignof(jsval_native_tee_state_t), &state_off,
+			(void **)&state) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	memset(state, 0, sizeof(*state));
+	state->reader_off = reader.off;
+	state->error_reason = jsval_undefined();
+	state->upstream_state = 0;
+
+	/* Allocate branch A userdata and stream. */
+	if (jsval_region_reserve(region, sizeof(*ud_a),
+			_Alignof(jsval_native_tee_branch_ud_t), &ud_a_off,
+			(void **)&ud_a) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	memset(ud_a, 0, sizeof(*ud_a));
+	ud_a->region = region;
+	ud_a->tee_state_off = state_off;
+	ud_a->branch = 0;
+	if (jsval_readable_stream_new_from_source(region,
+			&jsval_tee_branch_source_vtable, ud_a, &branch_a) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+
+	/* Allocate branch B userdata and stream. */
+	if (jsval_region_reserve(region, sizeof(*ud_b),
+			_Alignof(jsval_native_tee_branch_ud_t), &ud_b_off,
+			(void **)&ud_b) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	memset(ud_b, 0, sizeof(*ud_b));
+	ud_b->region = region;
+	ud_b->tee_state_off = state_off;
+	ud_b->branch = 1;
+	if (jsval_readable_stream_new_from_source(region,
+			&jsval_tee_branch_source_vtable, ud_b, &branch_b) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+
+	/* Re-resolve state and record branch stream offsets. */
+	state = (jsval_native_tee_state_t *)jsval_region_ptr(region, state_off);
+	if (state == NULL) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		errno = EINVAL;
+		return -1;
+	}
+	branch_native = (jsval_native_readable_stream_t *)jsval_region_ptr(
+			region, branch_a.off);
+	(void)branch_native;
+	state->branch_a_stream_off = branch_a.off;
+	state->branch_b_stream_off = branch_b.off;
+
+	/* Schedule the tee pump microtask. */
+	if (jsval_region_reserve(region, sizeof(*task), JSVAL_ALIGN, &task_off,
+			(void **)&task) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	task->base.kind = JSVAL_MICROTASK_KIND_READABLE_STREAM_TEE_PUMP;
+	task->tee_state_off = state_off;
+	task->in_flight_off = 0;
+	if (jsval_microtask_push(region, task_off, &task->base) < 0) {
+		(void)jsval_readable_stream_reader_release_lock(region, reader);
+		return -1;
+	}
+
+	*branch_a_ptr = branch_a;
+	*branch_b_ptr = branch_b;
 	return 0;
 }
 
