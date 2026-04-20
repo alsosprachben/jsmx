@@ -105,6 +105,18 @@ static int wintertc_proxy_on_upstream_fulfilled(jsval_region_t *region,
 		return -1;
 	}
 
+#ifdef WINTERTC_PROXY_RESPONSE_STREAM
+	/* Phase 3c-8: forward upstream.body as a ReadableStream. The
+	 * downstream Response's body_readable becomes the stream;
+	 * mnvkd's responder (compiled with VK_JSMX_RESPONSE_CHUNKED)
+	 * detects this and emits the response with Transfer-Encoding:
+	 * chunked, streaming bytes to the client as they're produced. */
+	(void)body_promise;
+	(void)body_state;
+	if (jsval_response_body(region, upstream, &body_value) < 0) {
+		return -1;
+	}
+#else
 	/* await upstream.arrayBuffer() — resolved eagerly for in-memory
 	 * Response bodies. */
 	if (jsval_response_array_buffer(region, upstream, &body_promise) < 0) {
@@ -123,6 +135,7 @@ static int wintertc_proxy_on_upstream_fulfilled(jsval_region_t *region,
 	if (jsval_promise_result(region, body_promise, &body_value) < 0) {
 		return -1;
 	}
+#endif
 
 	/* Extract upstream.status / statusText / headers. */
 	if (jsval_response_status(region, upstream, &status) < 0) {

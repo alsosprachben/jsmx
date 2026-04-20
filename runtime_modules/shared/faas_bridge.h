@@ -307,6 +307,141 @@ static int faas_serialize_response(jsval_region_t *region,
 	return 0;
 }
 
+/*
+ * Phase 3c-8: serialize the response status line + headers + the
+ * end-of-headers CRLF for a chunked-body response. Strips
+ * Content-Length and Transfer-Encoding from the handler-supplied
+ * headers (we own framing) and emits exactly one
+ * "Transfer-Encoding: chunked\r\n" line. Body is NOT emitted —
+ * the caller streams it as chunked frames.
+ *
+ * Same 2-pass measure-then-fill discipline as
+ * faas_serialize_response: pass NULL/0 to measure, allocate, pass
+ * the buffer to fill.
+ */
+static int faas_serialize_response_headers_chunked(jsval_region_t *region,
+		jsval_t response_value, uint8_t *out_buf, size_t out_cap,
+		size_t *out_len)
+{
+	uint32_t status = 0;
+	jsval_t status_text_value;
+	jsval_t headers_value;
+	size_t header_count = 0;
+	size_t status_text_len = 0;
+	size_t pos = 0;
+	char numbuf[32];
+	int numlen;
+	size_t i;
+
+	if (region == NULL || out_len == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (response_value.kind != JSVAL_KIND_RESPONSE) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_response_status(region, response_value, &status) < 0) {
+		return -1;
+	}
+	if (status == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_response_status_text(region, response_value,
+			&status_text_value) < 0) {
+		return -1;
+	}
+	if (jsval_response_headers(region, response_value, &headers_value) < 0) {
+		return -1;
+	}
+
+	if (faas_emit_literal(out_buf, out_cap, &pos, "HTTP/1.1 ") < 0) {
+		return -1;
+	}
+	numlen = snprintf(numbuf, sizeof(numbuf), "%u", (unsigned)status);
+	if (numlen < 0) { errno = EINVAL; return -1; }
+	faas_emit_bytes(out_buf, out_cap, &pos, (const uint8_t *)numbuf,
+			(size_t)numlen);
+	faas_emit_literal(out_buf, out_cap, &pos, " ");
+	if (status_text_value.kind == JSVAL_KIND_STRING) {
+		if (jsval_string_copy_utf8(region, status_text_value, NULL, 0,
+				&status_text_len) < 0) {
+			return -1;
+		}
+		if (status_text_len > 0) {
+			uint8_t stbuf[status_text_len];
+			if (jsval_string_copy_utf8(region, status_text_value, stbuf,
+					status_text_len, NULL) < 0) {
+				return -1;
+			}
+			faas_emit_bytes(out_buf, out_cap, &pos, stbuf, status_text_len);
+		}
+	}
+	faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
+
+	if (jsval_headers_size(region, headers_value, &header_count) < 0) {
+		return -1;
+	}
+	for (i = 0; i < header_count; i++) {
+		jsval_t name_val;
+		jsval_t value_val;
+		size_t name_len = 0;
+		size_t value_len = 0;
+
+		if (jsval_headers_entry_at(region, headers_value, i, &name_val,
+				&value_val) < 0) {
+			return -1;
+		}
+		if (jsval_string_copy_utf8(region, name_val, NULL, 0,
+				&name_len) < 0) {
+			return -1;
+		}
+		if (jsval_string_copy_utf8(region, value_val, NULL, 0,
+				&value_len) < 0) {
+			return -1;
+		}
+		{
+			uint8_t name_buf[name_len ? name_len : 1];
+			uint8_t value_buf[value_len ? value_len : 1];
+
+			if (name_len > 0
+					&& jsval_string_copy_utf8(region, name_val, name_buf,
+							name_len, NULL) < 0) {
+				return -1;
+			}
+			if (value_len > 0
+					&& jsval_string_copy_utf8(region, value_val, value_buf,
+							value_len, NULL) < 0) {
+				return -1;
+			}
+			if (faas_ascii_ci_equal(name_buf, name_len, "content-length")
+					|| faas_ascii_ci_equal(name_buf, name_len,
+							"transfer-encoding")) {
+				continue;
+			}
+			faas_emit_bytes(out_buf, out_cap, &pos, name_buf, name_len);
+			faas_emit_literal(out_buf, out_cap, &pos, ": ");
+			if (value_len > 0) {
+				faas_emit_bytes(out_buf, out_cap, &pos, value_buf,
+						value_len);
+			}
+			faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
+		}
+	}
+
+	faas_emit_literal(out_buf, out_cap, &pos,
+			"Transfer-Encoding: chunked\r\n");
+	faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
+
+	*out_len = pos;
+	if (pos > out_cap) {
+		errno = ENOBUFS;
+		return -1;
+	}
+	return 0;
+}
+
 /* =========================================================================
  * Higher-level glue: assemble a Request, run a handler, extract a Response.
  *
