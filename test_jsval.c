@@ -13166,11 +13166,59 @@ static void test_response_readable_body_semantics(void)
 	}
 }
 
+/* Minimal close-counting body source for the tee cancellation
+ * scenarios. Reports one chunk READY then EOF (so the tee pump
+ * exits cleanly in scenarios that let it drain); `close_calls` is
+ * the observable signal that the upstream's close ran. */
+typedef struct tee_test_close_source_s {
+	const uint8_t *data;
+	size_t len;
+	int served;
+	int close_calls;
+} tee_test_close_source_t;
+
+static int tee_test_close_source_read(void *userdata, uint8_t *buf,
+		size_t cap, size_t *out_len,
+		jsval_body_source_status_t *status_ptr)
+{
+	tee_test_close_source_t *s = (tee_test_close_source_t *)userdata;
+	if (s->served) {
+		*out_len = 0;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_EOF;
+		return 0;
+	}
+	{
+		size_t n = s->len < cap ? s->len : cap;
+		if (n > 0) {
+			memcpy(buf, s->data, n);
+		}
+		*out_len = n;
+		s->served = 1;
+		*status_ptr = JSVAL_BODY_SOURCE_STATUS_READY;
+		return 0;
+	}
+}
+
+static void tee_test_close_source_close(void *userdata)
+{
+	tee_test_close_source_t *s = (tee_test_close_source_t *)userdata;
+	s->close_calls++;
+}
+
+static const jsval_body_source_vtable_t tee_test_close_source_vtable = {
+	tee_test_close_source_read,
+	tee_test_close_source_close
+};
+
 /* Phase 3c-6: jsval_readable_stream_tee() splits one ReadableStream
  * into two independent branches. Tests cover (a) both branches
  * drain to the same bytes, (b) interleaved drains, (c) EOF
  * propagates to both branches. Each scenario asserts PENDING +
- * microtask drain to prove we go through the tee pump. */
+ * microtask drain to prove we go through the tee pump.
+ *
+ * Phase 3c-7: adds cancellation scenarios (4) cancel one branch;
+ * (5) cancel both branches → upstream close_calls fires;
+ * (6) cancel with a pending read. */
 static void test_readable_stream_tee_semantics(void)
 {
 	uint8_t storage[262144];
@@ -13373,6 +13421,146 @@ static void test_readable_stream_tee_semantics(void)
 				&branch_b) == 0);
 		assert(jsval_readable_stream_get_reader(&region, upstream,
 				&direct_reader) == -1);
+	}
+
+	/* 4. Cancel branch A — subsequent A.read returns done:true,
+	 * branch B still drains the full payload. */
+	{
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t cancel_promise;
+		jsval_t reader_a;
+		jsval_t reader_b;
+		jsval_t promise;
+		jsval_t result;
+		jsval_t value;
+		jsval_t done_value;
+		jsval_t backing;
+		uint8_t *bytes;
+		size_t backing_len;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"hello", 5, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+
+		/* Cancel A before any reads. */
+		assert(jsval_readable_stream_cancel(&region, branch_a,
+				jsval_undefined(), &cancel_promise) == 0);
+		assert(jsval_promise_state(&region, cancel_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+
+		/* A.read now returns {done:true} immediately (state CLOSED). */
+		assert(jsval_readable_stream_get_reader(&region, branch_a,
+				&reader_a) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"done", 4, &done_value) == 0);
+		assert(done_value.kind == JSVAL_KIND_BOOL);
+		assert(done_value.as.boolean == 1);
+
+		/* B still drains "hello". */
+		assert(jsval_readable_stream_get_reader(&region, branch_b,
+				&reader_b) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader_b,
+				&promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"value", 5, &value) == 0);
+		assert(value.kind == JSVAL_KIND_TYPED_ARRAY);
+		assert(jsval_typed_array_length(&region, value) == 5);
+		assert(jsval_typed_array_buffer(&region, value, &backing) == 0);
+		assert(jsval_array_buffer_bytes_mut(&region, backing, &bytes,
+				&backing_len) == 0);
+		assert(memcmp(bytes, "hello", 5) == 0);
+	}
+
+	/* 5. Cancel both branches → microtask drain → upstream's
+	 * body source close() runs (tee propagates cancel). Uses a
+	 * close-counting upstream source to observe. */
+	{
+		tee_test_close_source_t src = {
+			.data = (const uint8_t *)"payload",
+			.len = 7,
+			.served = 0,
+			.close_calls = 0,
+		};
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t cancel_a;
+		jsval_t cancel_b;
+		jsmethod_error_t error;
+
+		assert(jsval_readable_stream_new_from_source(&region,
+				&tee_test_close_source_vtable, &src, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+		/* Before any cancellation, close hasn't run. */
+		assert(src.close_calls == 0);
+
+		/* Cancel A. Upstream still alive → close hasn't run. */
+		assert(jsval_readable_stream_cancel(&region, branch_a,
+				jsval_undefined(), &cancel_a) == 0);
+		assert(src.close_calls == 0);
+
+		/* Cancel B. Now both cancelled; teardown happens on next
+		 * pump iteration during microtask drain. */
+		assert(jsval_readable_stream_cancel(&region, branch_b,
+				jsval_undefined(), &cancel_b) == 0);
+
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(src.close_calls == 1);
+	}
+
+	/* 6. Cancel branch with a pending read → that read settles
+	 * done:true. */
+	{
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t reader_a;
+		jsval_t promise;
+		jsval_t cancel_promise;
+		jsval_t result;
+		jsval_t done_value;
+		jsval_promise_state_t state;
+
+		assert(jsval_readable_stream_new_from_bytes(&region,
+				(const uint8_t *)"z", 1, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region, upstream, &branch_a,
+				&branch_b) == 0);
+		assert(jsval_readable_stream_get_reader(&region, branch_a,
+				&reader_a) == 0);
+		assert(jsval_readable_stream_reader_read(&region, reader_a,
+				&promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_PENDING);
+
+		/* Cancel A before the tee pump distributes the chunk. The
+		 * pending read should settle done:true via the existing
+		 * jsval_readable_stream_cancel teardown path. */
+		assert(jsval_readable_stream_cancel(&region, branch_a,
+				jsval_undefined(), &cancel_promise) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(jsval_object_get_utf8(&region, result,
+				(const uint8_t *)"done", 4, &done_value) == 0);
+		assert(done_value.kind == JSVAL_KIND_BOOL);
+		assert(done_value.as.boolean == 1);
 	}
 }
 

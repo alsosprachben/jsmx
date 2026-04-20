@@ -1008,6 +1008,8 @@ static int jsval_readable_stream_schedule_pump(jsval_region_t *region,
 		jsval_off_t stream_off);
 static int jsval_readable_stream_new_wrapping_source(jsval_region_t *region,
 		jsval_off_t source_off, jsval_t *value_ptr);
+static jsval_native_readable_stream_reader_t *jsval_native_readable_stream_reader(
+		jsval_region_t *region, jsval_t value);
 static int jsval_writable_stream_run_pump(jsval_region_t *region,
 		jsval_native_microtask_writable_stream_pump_t *task);
 static int jsval_writable_stream_schedule_pump(jsval_region_t *region,
@@ -39183,9 +39185,38 @@ static int jsval_tee_branch_source_read(void *userdata,
 
 static void jsval_tee_branch_source_close(void *userdata)
 {
-	(void)userdata;
-	/* v1: no cancellation propagation. Branch cancellation is a
-	 * follow-up. */
+	/* Phase 3c-7: branch cancellation. Flip the matching
+	 * branch_X_cancelled flag on the tee state and drop that
+	 * branch's queued chunks so the pump stops wasting work on
+	 * it. The pump's dual-cancel early-exit (at the top of
+	 * jsval_readable_stream_tee_pump_run) handles actual
+	 * teardown on the next iteration — we can't release the
+	 * upstream reader from here because an in-flight read may
+	 * still be pending (release_lock would EBUSY). */
+	jsval_native_tee_branch_ud_t *ud;
+	jsval_native_tee_state_t *state;
+
+	if (userdata == NULL) {
+		return;
+	}
+	ud = (jsval_native_tee_branch_ud_t *)userdata;
+	state = (jsval_native_tee_state_t *)jsval_region_ptr(ud->region,
+			ud->tee_state_off);
+	if (state == NULL) {
+		return;
+	}
+
+	if (ud->branch == 0) {
+		if (state->branch_a_cancelled) { return; }
+		state->branch_a_cancelled = 1;
+		state->branch_a_queue_head = 0;
+		state->branch_a_queue_tail = 0;
+	} else {
+		if (state->branch_b_cancelled) { return; }
+		state->branch_b_cancelled = 1;
+		state->branch_b_queue_head = 0;
+		state->branch_b_queue_tail = 0;
+	}
 }
 
 static const jsval_body_source_vtable_t jsval_tee_branch_source_vtable = {
@@ -39299,6 +39330,47 @@ static int jsval_tee_pump_wake_both_branches(jsval_region_t *region,
 	return 0;
 }
 
+/* Phase 3c-7: when both branches cancel, release the upstream
+ * reader and cancel the upstream stream so its underlying body
+ * source close() fires. Called from the pump once any in-flight
+ * read has settled. */
+static int jsval_tee_pump_release_and_cancel_upstream(jsval_region_t *region,
+		jsval_native_tee_state_t *state)
+{
+	jsval_native_readable_stream_reader_t *reader_native;
+	jsval_t reader_value;
+	jsval_off_t upstream_stream_off = 0;
+
+	if (state->reader_off == 0) {
+		return 0;
+	}
+
+	reader_value = jsval_undefined();
+	reader_value.kind = JSVAL_KIND_READABLE_STREAM_READER;
+	reader_value.repr = JSVAL_REPR_NATIVE;
+	reader_value.off = state->reader_off;
+
+	reader_native = jsval_native_readable_stream_reader(region, reader_value);
+	if (reader_native != NULL) {
+		upstream_stream_off = reader_native->stream_off;
+	}
+
+	(void)jsval_readable_stream_reader_release_lock(region, reader_value);
+	state->reader_off = 0;
+
+	if (upstream_stream_off != 0) {
+		jsval_t upstream_value;
+		jsval_t cancel_promise;
+		upstream_value = jsval_undefined();
+		upstream_value.kind = JSVAL_KIND_READABLE_STREAM;
+		upstream_value.repr = JSVAL_REPR_NATIVE;
+		upstream_value.off = upstream_stream_off;
+		(void)jsval_readable_stream_cancel(region, upstream_value,
+				jsval_undefined(), &cancel_promise);
+	}
+	return 0;
+}
+
 static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
 		jsval_native_microtask_tee_pump_t *task, jsval_off_t task_off)
 {
@@ -39324,6 +39396,26 @@ static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
 	if (state == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+
+	/* Phase 3c-7: both branches cancelled — tear down. If an
+	 * in-flight upstream read is still pending, park on it; when
+	 * it settles we'll re-enter and proceed. */
+	if (state->branch_a_cancelled && state->branch_b_cancelled) {
+		if (task->in_flight_off != 0) {
+			jsval_t in_flight_prom;
+			jsval_promise_state_t in_flight_state;
+
+			in_flight_prom = jsval_promise_value(task->in_flight_off);
+			if (jsval_promise_state(region, in_flight_prom,
+					&in_flight_state) == 0
+					&& in_flight_state == JSVAL_PROMISE_STATE_PENDING) {
+				return jsval_tee_pump_park_on_promise(region, task_off,
+						task, task->in_flight_off);
+			}
+			task->in_flight_off = 0;
+		}
+		return jsval_tee_pump_release_and_cancel_upstream(region, state);
 	}
 
 	/* Step 1: issue a read if none is in flight. */
