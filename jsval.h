@@ -1584,6 +1584,27 @@ int jsval_text_decoder_stream_new(jsval_region_t *region,
 		jsval_t *value_ptr);
 
 /*
+ * Phase 5b-4: TextDecoderStream with options.
+ *   label_value   — jsval_undefined() defaults to "utf-8". Accepted
+ *                   string labels (case-insensitive, ASCII-whitespace-
+ *                   trimmed): "utf-8", "utf8", "unicode-1-1-utf-8".
+ *                   Any other value → -1 / errno=EINVAL
+ *                   (embedders translate to RangeError).
+ *   options_value — jsval_undefined() / null / object with optional
+ *                   { fatal: bool, ignoreBOM: bool }. Both default
+ *                   to false. Strict boolean coercion.
+ *   have_options  — 1 if options_value is present; 0 uses defaults.
+ *
+ * fatal:true errors the stream (via the transformer's error hook)
+ * on malformed sequences or incomplete trailing bytes at flush,
+ * instead of the default U+FFFD substitution. ignoreBOM:false
+ * (default) strips a leading U+FEFF BOM; true emits it literally.
+ */
+int jsval_text_decoder_stream_new_with_init(jsval_region_t *region,
+		jsval_t label_value, jsval_t options_value, int have_options,
+		jsval_t *value_ptr);
+
+/*
  * Factory: a TransformStream whose transformer validates each input
  * chunk as UTF-8, replacing any malformed sequence with U+FFFD.
  * Stateless across chunks (incomplete sequences at a chunk boundary

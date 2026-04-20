@@ -42015,7 +42015,10 @@ int jsval_transform_stream_channel_off(jsval_region_t *region, jsval_t stream,
 typedef struct jsval_native_text_decoder_state_s {
 	uint8_t trailing[3];
 	uint8_t trailing_len;
-	uint8_t reserved[4];
+	uint8_t fatal;        /* Phase 5b-4: 1 if {fatal: true} option set. */
+	uint8_t ignore_bom;   /* Phase 5b-4: 1 if {ignoreBOM: true} option set. */
+	uint8_t bom_checked;  /* Phase 5b-4: 1 after leading-BOM check done. */
+	uint8_t reserved[1];
 } jsval_native_text_decoder_state_t;
 
 static jsval_native_text_decoder_state_t *
@@ -42078,6 +42081,28 @@ static int jsval_text_decoder_stream_transform(jsval_region_t *region,
 			buf_len += take;
 		}
 
+		/* Phase 5b-4: leading-BOM handling. Only the very first
+		 * three input bytes are considered. If the first byte isn't
+		 * 0xEF we can decide immediately (no BOM); if it is, we
+		 * need ≥3 bytes to confirm the BB BF suffix. Until then,
+		 * defer — the partial-sequence loop below will buffer the
+		 * bytes in `trailing` and the next call re-checks. */
+		if (!state->bom_checked && buf_len > 0) {
+			if (buf[0] != 0xEF) {
+				state->bom_checked = 1;
+			} else if (buf_len >= 3) {
+				if (buf[1] == 0xBB && buf[2] == 0xBF) {
+					if (!state->ignore_bom) {
+						memmove(buf, buf + 3, buf_len - 3);
+						buf_len -= 3;
+					}
+					/* else: leave bytes; decode emits U+FEFF. */
+				}
+				state->bom_checked = 1;
+			}
+			/* else: buf_len is 1 or 2 and starts with 0xEF; defer. */
+		}
+
 		bc = buf;
 		bs = buf + buf_len;
 		while (bc < bs) {
@@ -42098,6 +42123,20 @@ static int jsval_text_decoder_stream_transform(jsval_region_t *region,
 			} else if (l == 0) {
 				break;
 			} else {
+				if (state->fatal) {
+					/* Phase 5b-4: fatal mode errors the stream on
+					 * malformed sequences. Drop trailing so a
+					 * subsequent flush doesn't try to emit U+FFFD. */
+					jsval_t reason;
+					state->trailing_len = 0;
+					if (jsval_dom_exception_new_utf8(region, "TypeError",
+							"malformed UTF-8 byte sequence",
+							&reason) < 0) {
+						return -1;
+					}
+					return jsval_transform_controller_error(controller,
+							reason);
+				}
 				if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) > sizeof(out)) {
 					break;
 				}
@@ -42113,9 +42152,19 @@ static int jsval_text_decoder_stream_transform(jsval_region_t *region,
 			if (tail_len > sizeof(state->trailing)) {
 				/* The scratch held a long invalid leading run that
 				 * UTF8_CHAR deferred. Force-consume one byte as
-				 * U+FFFD and re-stash the remainder; guarantees
-				 * forward progress without relying on the decoder
-				 * consuming l==0 bytes. */
+				 * U+FFFD (or error if fatal) to guarantee forward
+				 * progress. */
+				if (state->fatal) {
+					jsval_t reason;
+					state->trailing_len = 0;
+					if (jsval_dom_exception_new_utf8(region, "TypeError",
+							"malformed UTF-8 byte sequence",
+							&reason) < 0) {
+						return -1;
+					}
+					return jsval_transform_controller_error(controller,
+							reason);
+				}
 				if (out_len + sizeof(UTF8_REPLACEMENT_CHAR) <=
 						sizeof(out)) {
 					memcpy(out + out_len, UTF8_REPLACEMENT_CHAR,
@@ -42158,6 +42207,19 @@ static int jsval_text_decoder_stream_flush(jsval_region_t *region,
 	if (state->trailing_len == 0) {
 		return 0;
 	}
+	/* Phase 5b-4: fatal mode treats incomplete trailing bytes at
+	 * end-of-input as a decoding error. Default mode emits U+FFFD
+	 * as before. */
+	if (state->fatal) {
+		jsval_t reason;
+		state->trailing_len = 0;
+		if (jsval_dom_exception_new_utf8(region, "TypeError",
+				"truncated UTF-8 byte sequence at end of input",
+				&reason) < 0) {
+			return -1;
+		}
+		return jsval_transform_controller_error(controller, reason);
+	}
 	state->trailing_len = 0;
 	return jsval_transform_controller_enqueue(controller,
 			UTF8_REPLACEMENT_CHAR, sizeof(UTF8_REPLACEMENT_CHAR));
@@ -42168,13 +42230,153 @@ static const jsval_transformer_vtable_t jsval_text_decoder_stream_vtable = {
 	jsval_text_decoder_stream_flush,
 };
 
-int jsval_text_decoder_stream_new(jsval_region_t *region, jsval_t *value_ptr)
+/* Phase 5b-4: parse the label argument. UTF-8 is the only
+ * supported encoding; accepted labels (case-insensitive,
+ * ASCII-whitespace-trimmed) are "utf-8", "utf8", and
+ * "unicode-1-1-utf-8" per the WHATWG Encoding Standard.
+ * Undefined → default to UTF-8. Anything else → EINVAL
+ * (embedders translate to RangeError). */
+static int jsval_text_decoder_parse_label(jsval_region_t *region,
+		jsval_t label_value)
+{
+	static const char *const utf8_aliases[] = {
+		"utf-8", "utf8", "unicode-1-1-utf-8"
+	};
+	size_t needed = 0;
+	size_t i;
+	size_t start;
+	size_t end;
+	size_t len;
+
+	if (label_value.kind == JSVAL_KIND_UNDEFINED) {
+		return 0;
+	}
+	if (label_value.kind != JSVAL_KIND_STRING) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_string_copy_utf8(region, label_value, NULL, 0, &needed) < 0) {
+		return -1;
+	}
+	{
+		uint8_t label_buf[64];
+		if (needed > sizeof(label_buf)) {
+			errno = EINVAL;
+			return -1;
+		}
+		if (needed > 0) {
+			if (jsval_string_copy_utf8(region, label_value, label_buf,
+					needed, NULL) < 0) {
+				return -1;
+			}
+		}
+		/* ASCII-whitespace trim (spec: U+0009/0A/0C/0D/20). */
+		start = 0;
+		end = needed;
+		while (start < end) {
+			uint8_t b = label_buf[start];
+			if (b == 0x09 || b == 0x0A || b == 0x0C || b == 0x0D
+					|| b == 0x20) {
+				start++;
+			} else {
+				break;
+			}
+		}
+		while (end > start) {
+			uint8_t b = label_buf[end - 1];
+			if (b == 0x09 || b == 0x0A || b == 0x0C || b == 0x0D
+					|| b == 0x20) {
+				end--;
+			} else {
+				break;
+			}
+		}
+		len = end - start;
+		/* ASCII-lowercase in place. */
+		for (i = 0; i < len; i++) {
+			uint8_t b = label_buf[start + i];
+			if (b >= 'A' && b <= 'Z') {
+				label_buf[start + i] = (uint8_t)(b + ('a' - 'A'));
+			}
+		}
+		for (i = 0; i < sizeof(utf8_aliases) / sizeof(utf8_aliases[0]); i++) {
+			size_t alias_len = strlen(utf8_aliases[i]);
+			if (alias_len == len
+					&& memcmp(label_buf + start, utf8_aliases[i],
+							len) == 0) {
+				return 0;
+			}
+		}
+	}
+	errno = EINVAL;
+	return -1;
+}
+
+/* Phase 5b-4: parse the { fatal, ignoreBOM } options dict. Both
+ * default to 0. Strict boolean coercion (JSVAL_KIND_BOOL or
+ * undefined only) — anything else → EINVAL. */
+static int jsval_text_decoder_parse_options(jsval_region_t *region,
+		jsval_t options_value, int have_options,
+		uint8_t *fatal_out, uint8_t *ignore_bom_out)
+{
+	jsval_t fatal_val;
+	jsval_t ignore_bom_val;
+
+	*fatal_out = 0;
+	*ignore_bom_out = 0;
+
+	if (!have_options) {
+		return 0;
+	}
+	if (options_value.kind == JSVAL_KIND_UNDEFINED
+			|| options_value.kind == JSVAL_KIND_NULL) {
+		return 0;
+	}
+	if (options_value.kind != JSVAL_KIND_OBJECT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_get_utf8(region, options_value,
+			(const uint8_t *)"fatal", 5, &fatal_val) < 0) {
+		return -1;
+	}
+	if (fatal_val.kind == JSVAL_KIND_BOOL) {
+		*fatal_out = fatal_val.as.boolean ? 1 : 0;
+	} else if (fatal_val.kind != JSVAL_KIND_UNDEFINED) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_object_get_utf8(region, options_value,
+			(const uint8_t *)"ignoreBOM", 9, &ignore_bom_val) < 0) {
+		return -1;
+	}
+	if (ignore_bom_val.kind == JSVAL_KIND_BOOL) {
+		*ignore_bom_out = ignore_bom_val.as.boolean ? 1 : 0;
+	} else if (ignore_bom_val.kind != JSVAL_KIND_UNDEFINED) {
+		errno = EINVAL;
+		return -1;
+	}
+	return 0;
+}
+
+int jsval_text_decoder_stream_new_with_init(jsval_region_t *region,
+		jsval_t label_value, jsval_t options_value, int have_options,
+		jsval_t *value_ptr)
 {
 	jsval_native_text_decoder_state_t *state;
 	jsval_off_t state_off;
+	uint8_t fatal = 0;
+	uint8_t ignore_bom = 0;
 
 	if (region == NULL || value_ptr == NULL) {
 		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_text_decoder_parse_label(region, label_value) < 0) {
+		return -1;
+	}
+	if (jsval_text_decoder_parse_options(region, options_value,
+			have_options, &fatal, &ignore_bom) < 0) {
 		return -1;
 	}
 	if (jsval_region_reserve(region, sizeof(*state),
@@ -42183,9 +42385,17 @@ int jsval_text_decoder_stream_new(jsval_region_t *region, jsval_t *value_ptr)
 		return -1;
 	}
 	memset(state, 0, sizeof(*state));
+	state->fatal = fatal;
+	state->ignore_bom = ignore_bom;
 	return jsval_transform_stream_new(region,
 			&jsval_text_decoder_stream_vtable,
 			(void *)(uintptr_t)state_off, value_ptr);
+}
+
+int jsval_text_decoder_stream_new(jsval_region_t *region, jsval_t *value_ptr)
+{
+	return jsval_text_decoder_stream_new_with_init(region, jsval_undefined(),
+			jsval_undefined(), 0, value_ptr);
 }
 
 static int jsval_text_encoder_stream_transform(jsval_region_t *region,

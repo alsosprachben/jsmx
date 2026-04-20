@@ -15499,6 +15499,325 @@ static void test_text_decoder_encoder_stream_semantics(void)
 	}
 }
 
+/* Phase 5b-4: TextDecoderStream options (label, fatal, ignoreBOM).
+ * Eleven scenarios covering the full option matrix plus label
+ * validation and BOM handling. */
+static void test_text_decoder_stream_options_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsmethod_error_t error;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Default constructor still works (regression). */
+	{
+		jsval_t stream;
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(stream.kind == JSVAL_KIND_TRANSFORM_STREAM);
+	}
+
+	/* 2. Explicit "utf-8" label accepted. */
+	{
+		jsval_t stream;
+		jsval_t label;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"utf-8", 5,
+				&label) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region, label,
+				jsval_undefined(), 0, &stream) == 0);
+	}
+
+	/* 3. "utf8" alias and "UTF-8" case variation accepted. */
+	{
+		jsval_t stream;
+		jsval_t label;
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"utf8", 4,
+				&label) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region, label,
+				jsval_undefined(), 0, &stream) == 0);
+		assert(jsval_string_new_utf8(&region, (const uint8_t *)"UTF-8", 5,
+				&label) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region, label,
+				jsval_undefined(), 0, &stream) == 0);
+		/* Whitespace-trimmed. */
+		assert(jsval_string_new_utf8(&region,
+				(const uint8_t *)"  utf-8  ", 9, &label) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region, label,
+				jsval_undefined(), 0, &stream) == 0);
+	}
+
+	/* 4. Unknown label → EINVAL (embedder translates to RangeError). */
+	{
+		jsval_t stream;
+		jsval_t label;
+		assert(jsval_string_new_utf8(&region,
+				(const uint8_t *)"windows-1252", 12, &label) == 0);
+		errno = 0;
+		assert(jsval_text_decoder_stream_new_with_init(&region, label,
+				jsval_undefined(), 0, &stream) == -1);
+		assert(errno == EINVAL);
+	}
+
+	/* 5. Default ignoreBOM:false strips a leading UTF-8 BOM. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[16];
+		size_t out_len = 0;
+		int done = 0;
+		static const uint8_t bom_and_hi[] = {
+			0xEF, 0xBB, 0xBF, 'h', 'i'
+		};
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				bom_and_hi, sizeof(bom_and_hi), &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 2);
+		assert(out[0] == 'h' && out[1] == 'i');
+	}
+
+	/* 6. ignoreBOM:true passes the BOM through as U+FEFF. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t options;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[16];
+		size_t out_len = 0;
+		int done = 0;
+		static const uint8_t bom_and_hi[] = {
+			0xEF, 0xBB, 0xBF, 'h', 'i'
+		};
+
+		assert(jsval_object_new(&region, 2, &options) == 0);
+		assert(jsval_object_set_utf8(&region, options,
+				(const uint8_t *)"ignoreBOM", 9, jsval_bool(1)) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region,
+				jsval_undefined(), options, 1, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				bom_and_hi, sizeof(bom_and_hi), &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 5);
+		assert(out[0] == 0xEF && out[1] == 0xBB && out[2] == 0xBF);
+		assert(out[3] == 'h' && out[4] == 'i');
+	}
+
+	/* 7. BOM appears mid-stream (not leading) — always emitted as
+	 * U+FEFF, even with ignoreBOM:false. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[16];
+		size_t out_len = 0;
+		int done = 0;
+		static const uint8_t hi_and_bom[] = {
+			'h', 'i', 0xEF, 0xBB, 0xBF
+		};
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				hi_and_bom, sizeof(hi_and_bom), &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 5);
+		assert(out[0] == 'h' && out[1] == 'i');
+		assert(out[2] == 0xEF && out[3] == 0xBB && out[4] == 0xBF);
+	}
+
+	/* 8. fatal:true + malformed chunk → stream errors (writer.write
+	 * rejects, close rejects, reader.read eventually rejects). */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t options;
+		jsval_t pw, pcl;
+		jsval_t pread;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_object_new(&region, 2, &options) == 0);
+		assert(jsval_object_set_utf8(&region, options,
+				(const uint8_t *)"fatal", 5, jsval_bool(1)) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region,
+				jsval_undefined(), options, 1, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		/* Lone continuation byte 0x80 is malformed. */
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\x80", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pread, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, pread, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+
+	/* 9. fatal:false (default) + malformed chunk → U+FFFD (regression). */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[16];
+		size_t out_len = 0;
+		int done = 0;
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\x80", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 3);
+		assert(out[0] == 0xEF && out[1] == 0xBF && out[2] == 0xBD);
+	}
+
+	/* 10. fatal:true + truncated trailing at flush → stream errors. */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t options;
+		jsval_t pw, pcl;
+		jsval_t pread;
+		jsval_t reason;
+		jsval_promise_state_t state;
+
+		assert(jsval_object_new(&region, 2, &options) == 0);
+		assert(jsval_object_set_utf8(&region, options,
+				(const uint8_t *)"fatal", 5, jsval_bool(1)) == 0);
+		assert(jsval_text_decoder_stream_new_with_init(&region,
+				jsval_undefined(), options, 1, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		/* 0xCE starts a 2-byte sequence; close without the continuation
+		 * byte leaves an incomplete sequence for flush to catch. */
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\xCE", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		assert(jsval_readable_stream_reader_read(&region, reader, &pread)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pread, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_REJECTED);
+		assert(jsval_promise_result(&region, pread, &reason) == 0);
+		assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+	}
+
+	/* 11. fatal:false + truncated trailing at flush → U+FFFD
+	 * (regression, matches pre-5b-4 behavior). */
+	{
+		jsval_t stream, readable, writable, writer, reader;
+		jsval_t pw, pcl;
+		jsval_promise_state_t state;
+		uint8_t out[16];
+		size_t out_len = 0;
+		int done = 0;
+
+		assert(jsval_text_decoder_stream_new(&region, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region, readable, &reader)
+				== 0);
+		assert(jsval_writable_stream_writer_write(&region, writer,
+				(const uint8_t *)"\xCE", 1, &pw) == 0);
+		assert(jsval_writable_stream_writer_close(&region, writer, &pcl)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, pw, &state) == 0
+				&& state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(collect_uint8_chunks(&region, reader, out, sizeof(out),
+				&out_len, &done) == 0);
+		assert(done == 1);
+		assert(out_len == 3);
+		assert(out[0] == 0xEF && out[1] == 0xBF && out[2] == 0xBD);
+	}
+}
+
 /* ----------- pipeTo / pipeThrough tests ----------- */
 
 static void test_stream_pipe_semantics(void)
@@ -16107,6 +16426,7 @@ int main(void)
 	test_writable_stream_semantics();
 	test_transform_stream_semantics();
 	test_text_decoder_encoder_stream_semantics();
+	test_text_decoder_stream_options_semantics();
 	test_stream_pipe_semantics();
 	test_compression_stream_semantics();
 	test_array_buffer_bytes_mut_helper();
