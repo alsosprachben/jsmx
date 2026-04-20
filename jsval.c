@@ -41493,6 +41493,14 @@ typedef struct jsval_native_transform_chunk_s {
 	/* `len` bytes follow the struct. */
 } jsval_native_transform_chunk_t;
 
+/* Phase 4-3: per-channel high-water mark for TransformStream
+ * backpressure. When queue_bytes (unread bytes across the
+ * pending_chunks FIFO) reaches this threshold, the sink's next
+ * write returns PENDING and parks the writable stream. A pop on
+ * the readable side that drops queue_bytes below the threshold
+ * calls jsval_underlying_sink_notify to resume. */
+#define JSVAL_TRANSFORM_HIGHWATER_BYTES (16u * 1024u)
+
 typedef struct jsval_native_transform_channel_s {
 	jsval_off_t source_off;          /* readable's body source */
 	jsval_off_t pending_chunks_head;
@@ -41503,6 +41511,9 @@ typedef struct jsval_native_transform_channel_s {
 	uint8_t errored;
 	uint8_t terminated;
 	uint8_t reserved;
+	/* Phase 4-3: backpressure bookkeeping. */
+	size_t queue_bytes;              /* sum of (chunk->len - consumed) for pending chunks */
+	jsval_off_t sink_off;            /* writable's underlying sink offset; 0 before wiring */
 } jsval_native_transform_channel_t;
 
 typedef struct jsval_native_transform_stream_s {
@@ -41598,6 +41609,7 @@ static int jsval_transform_channel_push_chunk(jsval_region_t *region,
 		tail->next_off = chunk_off;
 		channel->pending_chunks_tail = chunk_off;
 	}
+	channel->queue_bytes += len;
 	return 0;
 }
 
@@ -41762,6 +41774,19 @@ static int jsval_transform_source_read_real(void *userdata, uint8_t *buf,
 				chunk->consumed;
 		memcpy(buf, src_bytes, take);
 		chunk->consumed += take;
+		/* Phase 4-3: decrement queue_bytes; if this crossed the
+		 * high-water threshold, wake the parked writable pump. */
+		{
+			size_t before = channel->queue_bytes;
+			channel->queue_bytes -= take;
+			if (channel->sink_off != 0
+					&& before >= JSVAL_TRANSFORM_HIGHWATER_BYTES
+					&& channel->queue_bytes
+							< JSVAL_TRANSFORM_HIGHWATER_BYTES) {
+				(void)jsval_underlying_sink_notify(disp->region,
+						channel->sink_off);
+			}
+		}
 	}
 	if (chunk->consumed >= chunk->len) {
 		channel->pending_chunks_head = chunk->next_off;
@@ -41817,6 +41842,21 @@ static jsval_underlying_sink_status_t jsval_transform_sink_write(
 			|| wrapper->vtable->transform == NULL) {
 		*accepted_len = 0;
 		return JSVAL_UNDERLYING_SINK_STATUS_ERROR;
+	}
+	/* Phase 4-3: backpressure. If the channel's FIFO has queued
+	 * bytes at/above the high-water mark, park the writable
+	 * stream. The transformer is NOT invoked; the same chunk
+	 * will be re-offered on the next sink_write call (after
+	 * jsval_underlying_sink_notify wakes us from source_read). */
+	{
+		jsval_native_transform_channel_t *channel;
+		channel = jsval_native_transform_channel(disp->region,
+				wrapper->channel_off);
+		if (channel != NULL
+				&& channel->queue_bytes >= JSVAL_TRANSFORM_HIGHWATER_BYTES) {
+			*accepted_len = 0;
+			return JSVAL_UNDERLYING_SINK_STATUS_PENDING;
+		}
 	}
 	controller.region = disp->region;
 	controller.channel_off = wrapper->channel_off;
@@ -41987,6 +42027,21 @@ int jsval_transform_stream_new(jsval_region_t *region,
 	if (jsval_writable_stream_new_from_sink(region,
 			&jsval_transform_sink_vtable, sink_disp, &writable) < 0) {
 		return -1;
+	}
+
+	/* Phase 4-3: record the writable's underlying sink offset so
+	 * that jsval_transform_source_read_real can wake the parked
+	 * writable pump via jsval_underlying_sink_notify when the
+	 * readable drains below the high-water mark. */
+	{
+		jsval_off_t sink_off_local = 0;
+		if (jsval_writable_stream_sink_off(region, writable,
+				&sink_off_local) == 0) {
+			channel = jsval_native_transform_channel(region, channel_off);
+			if (channel != NULL) {
+				channel->sink_off = sink_off_local;
+			}
+		}
 	}
 
 	wrapper = jsval_native_transform_stream_off(region, wrapper_off);

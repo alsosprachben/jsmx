@@ -15311,6 +15311,106 @@ static void test_transform_stream_semantics(void)
 		assert(jsval_promise_state(&region, ppost, &pstate) == 0
 				&& pstate == JSVAL_PROMISE_STATE_REJECTED);
 	}
+
+	/* 6. Phase 4-3 backpressure: 32 × 1 KB writes through an
+	 * identity TransformStream produce 32 KB of queued bytes.
+	 * With the 16 KB high-water mark, the sink parks after the
+	 * channel's queue reaches the threshold — observable as
+	 * later writes staying PENDING across a microtask drain.
+	 * Draining the readable drops queue_bytes below the
+	 * threshold and wakes the sink via
+	 * jsval_underlying_sink_notify; all writes eventually
+	 * fulfill and bytes round-trip. */
+	{
+		static uint8_t storage2[1u << 20];  /* 1 MB region */
+		static uint8_t pattern[32u * 1024u];
+		static uint8_t got[32u * 1024u];
+		jsval_region_t region2;
+		jsval_t stream;
+		jsval_t readable;
+		jsval_t writable;
+		jsval_t writer;
+		jsval_t reader;
+		jsval_t writes[32];
+		jsval_t pread;
+		jsval_t presult;
+		jsval_promise_state_t pstate;
+		uint8_t chunk[4096];
+		size_t got_len = 0;
+		size_t i;
+		int parked_observed = 0;
+
+		jsval_region_init(&region2, storage2, sizeof(storage2));
+		for (i = 0; i < sizeof(pattern); i++) {
+			pattern[i] = (uint8_t)(i & 0xff);
+		}
+
+		assert(jsval_transform_stream_new(&region2,
+				&identity_transformer_vtable, NULL, &stream) == 0);
+		assert(jsval_transform_stream_readable(&region2, stream, &readable)
+				== 0);
+		assert(jsval_transform_stream_writable(&region2, stream, &writable)
+				== 0);
+		assert(jsval_writable_stream_get_writer(&region2, writable, &writer)
+				== 0);
+		assert(jsval_readable_stream_get_reader(&region2, readable, &reader)
+				== 0);
+
+		/* Issue 32 × 1 KB writes up front without any reads. */
+		for (i = 0; i < 32; i++) {
+			assert(jsval_writable_stream_writer_write(&region2, writer,
+					pattern + i * 1024, 1024, &writes[i]) == 0);
+		}
+
+		/* Drain without reading. Writes up to the high-water mark
+		 * fulfill; the remainder stay PENDING because the channel
+		 * crossed 16 KB and the sink parked. Without the Phase 4-3
+		 * pre-check, ALL writes would have fulfilled immediately
+		 * (unbounded queue). */
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region2, &error) == 0);
+		for (i = 0; i < 16; i++) {
+			assert(jsval_promise_state(&region2, writes[i], &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		}
+		for (i = 16; i < 32; i++) {
+			assert(jsval_promise_state(&region2, writes[i], &pstate) == 0);
+			if (pstate == JSVAL_PROMISE_STATE_PENDING) {
+				parked_observed = 1;
+			}
+		}
+		assert(parked_observed == 1);
+
+		/* Drain the readable. Each read pops a chunk, dropping
+		 * queue_bytes below the threshold, waking the parked sink
+		 * via jsval_underlying_sink_notify. After 32 reads + drains
+		 * all writes fulfill and the pattern round-trips. */
+		while (got_len < sizeof(pattern)) {
+			size_t got_chunk_len = 0;
+			assert(jsval_readable_stream_reader_read(&region2, reader,
+					&pread) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region2, &error) == 0);
+			assert(jsval_promise_state(&region2, pread, &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region2, pread, &presult) == 0);
+			assert(read_result_done(&region2, presult) == 0);
+			assert(read_result_value_bytes(&region2, presult, chunk,
+					sizeof(chunk), &got_chunk_len) == 0);
+			assert(got_chunk_len > 0);
+			assert(got_len + got_chunk_len <= sizeof(got));
+			memcpy(got + got_len, chunk, got_chunk_len);
+			got_len += got_chunk_len;
+		}
+		assert(got_len == sizeof(pattern));
+		assert(memcmp(got, pattern, sizeof(pattern)) == 0);
+
+		/* All writes should now be fulfilled. */
+		for (i = 0; i < 32; i++) {
+			assert(jsval_promise_state(&region2, writes[i], &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+		}
+	}
 }
 
 /* ----------- TextDecoderStream / TextEncoderStream tests ----------- */
