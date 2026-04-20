@@ -705,6 +705,13 @@ typedef struct jsval_native_tee_chunk_s {
 	/* len bytes follow inline */
 } jsval_native_tee_chunk_t;
 
+/* Phase 3c-11: per-branch high-water mark for tee backpressure.
+ * When either branch's queue_bytes reaches this threshold, the
+ * tee pump pauses (does not re-enqueue itself). A subsequent
+ * pop that drops both branches below the threshold re-pushes
+ * the pump via its saved task offset. */
+#define JSVAL_TEE_HIGHWATER_BYTES (16u * 1024u)
+
 typedef struct jsval_native_tee_state_s {
 	jsval_off_t reader_off;            /* locked reader on upstream */
 	jsval_off_t branch_a_queue_head;
@@ -718,6 +725,10 @@ typedef struct jsval_native_tee_state_s {
 	uint8_t branch_a_cancelled;
 	uint8_t branch_b_cancelled;
 	uint8_t reserved[5];
+	/* Phase 3c-11: backpressure bookkeeping. */
+	size_t branch_a_queue_bytes;       /* sum of chunk->len in branch_a queue */
+	size_t branch_b_queue_bytes;       /* sum of chunk->len in branch_b queue */
+	jsval_off_t parked_pump_task_off;  /* 0 = pump not parked for backpressure */
 } jsval_native_tee_state_t;
 
 typedef struct jsval_native_tee_branch_ud_s {
@@ -39164,6 +39175,27 @@ static int jsval_tee_branch_source_read(void *userdata,
 		if (*head_ptr == 0) {
 			*tail_ptr = 0;
 		}
+		/* Phase 3c-11: update queue_bytes and wake the pump if it
+		 * was parked for backpressure and both branches are now
+		 * below the high-water mark. */
+		if (ud->branch == 0) {
+			state->branch_a_queue_bytes -= n;
+		} else {
+			state->branch_b_queue_bytes -= n;
+		}
+		if (state->parked_pump_task_off != 0
+				&& state->branch_a_queue_bytes < JSVAL_TEE_HIGHWATER_BYTES
+				&& state->branch_b_queue_bytes < JSVAL_TEE_HIGHWATER_BYTES) {
+			jsval_off_t __wake_off = state->parked_pump_task_off;
+			jsval_native_microtask_t *__wake_task =
+					(jsval_native_microtask_t *)jsval_region_ptr(
+							ud->region, __wake_off);
+			if (__wake_task != NULL) {
+				state->parked_pump_task_off = 0;
+				(void)jsval_microtask_push(ud->region, __wake_off,
+						__wake_task);
+			}
+		}
 		return 0;
 	}
 
@@ -39211,11 +39243,30 @@ static void jsval_tee_branch_source_close(void *userdata)
 		state->branch_a_cancelled = 1;
 		state->branch_a_queue_head = 0;
 		state->branch_a_queue_tail = 0;
+		state->branch_a_queue_bytes = 0;
 	} else {
 		if (state->branch_b_cancelled) { return; }
 		state->branch_b_cancelled = 1;
 		state->branch_b_queue_head = 0;
 		state->branch_b_queue_tail = 0;
+		state->branch_b_queue_bytes = 0;
+	}
+	/* Phase 3c-11: a cancel is a full drain for backpressure
+	 * purposes. Wake the pump if it was parked and the other
+	 * branch is below the threshold (or also cancelled, which
+	 * means queue_bytes == 0). */
+	if (state->parked_pump_task_off != 0
+			&& state->branch_a_queue_bytes < JSVAL_TEE_HIGHWATER_BYTES
+			&& state->branch_b_queue_bytes < JSVAL_TEE_HIGHWATER_BYTES) {
+		jsval_off_t __wake_off = state->parked_pump_task_off;
+		jsval_native_microtask_t *__wake_task =
+				(jsval_native_microtask_t *)jsval_region_ptr(ud->region,
+						__wake_off);
+		if (__wake_task != NULL) {
+			state->parked_pump_task_off = 0;
+			(void)jsval_microtask_push(ud->region, __wake_off,
+					__wake_task);
+		}
 	}
 }
 
@@ -39550,6 +39601,7 @@ static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
 		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
 				task->tee_state_off);
 		if (state == NULL) { errno = EINVAL; return -1; }
+		state->branch_a_queue_bytes += chunk_len;
 	}
 	if (!state->branch_b_cancelled) {
 		if (jsval_tee_branch_enqueue_chunk(region,
@@ -39561,12 +39613,24 @@ static int jsval_readable_stream_tee_pump_run(jsval_region_t *region,
 		state = (jsval_native_tee_state_t *)jsval_region_ptr(region,
 				task->tee_state_off);
 		if (state == NULL) { errno = EINVAL; return -1; }
+		state->branch_b_queue_bytes += chunk_len;
 	}
 
 	/* Wake both branches so their pending reads pick up the new
 	 * chunks. */
 	if (jsval_tee_pump_wake_both_branches(region, state) < 0) {
 		return -1;
+	}
+
+	/* Phase 3c-11: pause the pump if either branch's queue
+	 * crossed the high-water mark. A subsequent branch pop that
+	 * drops both branches below the threshold will re-push us
+	 * via state->parked_pump_task_off. */
+	if (state->branch_a_queue_bytes >= JSVAL_TEE_HIGHWATER_BYTES
+			|| state->branch_b_queue_bytes >= JSVAL_TEE_HIGHWATER_BYTES) {
+		state->parked_pump_task_off = task_off;
+		task->base.next_off = 0;
+		return 0;
 	}
 
 	/* Re-enqueue ourselves to issue the next upstream read. */

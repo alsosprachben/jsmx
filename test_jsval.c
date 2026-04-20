@@ -13210,6 +13210,48 @@ static const jsval_body_source_vtable_t tee_test_close_source_vtable = {
 	tee_test_close_source_close
 };
 
+/* Phase 3c-11: multi-chunk upstream source for the tee
+ * backpressure scenario. Serves `total` bytes in fixed-size
+ * chunks so the tee pump's per-iteration distribution + the
+ * 16 KB high-water mark can be exercised deterministically. */
+typedef struct tee_backpressure_source_s {
+	const uint8_t *data;
+	size_t total;
+	size_t cursor;
+	size_t chunk_size;
+} tee_backpressure_source_t;
+
+static int tee_backpressure_source_read(void *userdata, uint8_t *buf,
+		size_t cap, size_t *out_len,
+		jsval_body_source_status_t *status_ptr)
+{
+	tee_backpressure_source_t *s = (tee_backpressure_source_t *)userdata;
+	size_t n;
+
+	n = s->total - s->cursor;
+	if (n > s->chunk_size) { n = s->chunk_size; }
+	if (n > cap) { n = cap; }
+	if (n > 0) {
+		memcpy(buf, s->data + s->cursor, n);
+		s->cursor += n;
+	}
+	*out_len = n;
+	*status_ptr = (s->cursor >= s->total)
+			? JSVAL_BODY_SOURCE_STATUS_EOF
+			: JSVAL_BODY_SOURCE_STATUS_READY;
+	return 0;
+}
+
+static void tee_backpressure_source_close(void *userdata)
+{
+	(void)userdata;
+}
+
+static const jsval_body_source_vtable_t tee_backpressure_source_vtable = {
+	tee_backpressure_source_read,
+	tee_backpressure_source_close
+};
+
 /* Phase 3c-6: jsval_readable_stream_tee() splits one ReadableStream
  * into two independent branches. Tests cover (a) both branches
  * drain to the same bytes, (b) interleaved drains, (c) EOF
@@ -13218,7 +13260,12 @@ static const jsval_body_source_vtable_t tee_test_close_source_vtable = {
  *
  * Phase 3c-7: adds cancellation scenarios (4) cancel one branch;
  * (5) cancel both branches → upstream close_calls fires;
- * (6) cancel with a pending read. */
+ * (6) cancel with a pending read.
+ *
+ * Phase 3c-11: adds scenario (7) backpressure — asymmetric drain
+ * of a 32 KB source forces the pump to park when the slow branch
+ * crosses the 16 KB high-water mark, then resumes cleanly when
+ * the slow branch drains. */
 static void test_readable_stream_tee_semantics(void)
 {
 	uint8_t storage[262144];
@@ -13561,6 +13608,208 @@ static void test_readable_stream_tee_semantics(void)
 				(const uint8_t *)"done", 4, &done_value) == 0);
 		assert(done_value.kind == JSVAL_KIND_BOOL);
 		assert(done_value.as.boolean == 1);
+	}
+
+	/* 7. Phase 3c-11 backpressure: 32 KB upstream in 1024-byte
+	 * chunks → teed → branch A drained eagerly while branch B
+	 * idles. The pump must park once B's queued bytes cross the
+	 * 16 KB high-water mark (observable as a subsequent A.read
+	 * staying PENDING after a microtask drain). Draining B then
+	 * resumes the pump and the remaining chunks flow to A. Both
+	 * branches round-trip the full 32 KB pattern. */
+	{
+		static uint8_t storage2[1u << 20];  /* 1 MB region */
+		static uint8_t pattern[32u * 1024u];
+		static uint8_t got_a[32u * 1024u];
+		static uint8_t got_b[32u * 1024u];
+		jsval_region_t region2;
+		tee_backpressure_source_t src;
+		jsval_t upstream;
+		jsval_t branch_a;
+		jsval_t branch_b;
+		jsval_t reader_a;
+		jsval_t reader_b;
+		jsval_t promise;
+		jsval_t pending_a = jsval_undefined();
+		jsval_t result;
+		jsval_t value;
+		jsval_t done_value;
+		jsval_t backing;
+		uint8_t *bytes;
+		size_t backing_len;
+		jsval_promise_state_t pstate;
+		jsmethod_error_t error;
+		size_t got_a_len = 0;
+		size_t got_b_len = 0;
+		size_t i;
+		int a_done = 0;
+		int b_done = 0;
+		int saved_pending_a = 0;
+		int forced_park_observed = 0;
+
+		jsval_region_init(&region2, storage2, sizeof(storage2));
+		for (i = 0; i < sizeof(pattern); i++) {
+			pattern[i] = (uint8_t)(i & 0xff);
+		}
+		src.data = pattern;
+		src.total = sizeof(pattern);
+		src.cursor = 0;
+		src.chunk_size = 1024;
+
+		assert(jsval_readable_stream_new_from_source(&region2,
+				&tee_backpressure_source_vtable, &src, &upstream) == 0);
+		assert(jsval_readable_stream_tee(&region2, upstream, &branch_a,
+				&branch_b) == 0);
+		assert(jsval_readable_stream_get_reader(&region2, branch_a,
+				&reader_a) == 0);
+		assert(jsval_readable_stream_get_reader(&region2, branch_b,
+				&reader_b) == 0);
+
+		/* Phase 1: drain A until either EOF or the pump parks
+		 * (A's read stays PENDING after a drain because B's
+		 * queue crossed the high-water mark with no pops). */
+		while (!a_done) {
+			assert(jsval_readable_stream_reader_read(&region2, reader_a,
+					&promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region2, &error) == 0);
+			assert(jsval_promise_state(&region2, promise, &pstate) == 0);
+			if (pstate == JSVAL_PROMISE_STATE_PENDING) {
+				forced_park_observed = 1;
+				pending_a = promise;
+				saved_pending_a = 1;
+				break;
+			}
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region2, promise, &result) == 0);
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean == 1) {
+				a_done = 1;
+				break;
+			}
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"value", 5, &value) == 0);
+			assert(value.kind == JSVAL_KIND_TYPED_ARRAY);
+			{
+				size_t len = jsval_typed_array_length(&region2, value);
+				assert(len > 0);
+				assert(got_a_len + len <= sizeof(got_a));
+				assert(jsval_typed_array_buffer(&region2, value, &backing)
+						== 0);
+				assert(jsval_array_buffer_bytes_mut(&region2, backing,
+						&bytes, &backing_len) == 0);
+				memcpy(got_a + got_a_len, bytes, len);
+				got_a_len += len;
+			}
+		}
+		/* The whole point of this scenario: the pump must have
+		 * parked for backpressure. Without the Phase 3c-11 code,
+		 * the pump would happily keep enqueueing into B's idle
+		 * queue and A's reads would never block. */
+		assert(forced_park_observed == 1);
+		assert(got_a_len < sizeof(pattern));
+
+		/* Phase 2: drain B to EOF. Each pop drops B's queue_bytes;
+		 * when it (and A's) both fall below the high-water mark,
+		 * the pump resumes and serves more chunks. */
+		while (!b_done) {
+			assert(jsval_readable_stream_reader_read(&region2, reader_b,
+					&promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region2, &error) == 0);
+			assert(jsval_promise_state(&region2, promise, &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region2, promise, &result) == 0);
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean == 1) {
+				b_done = 1;
+				break;
+			}
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"value", 5, &value) == 0);
+			assert(value.kind == JSVAL_KIND_TYPED_ARRAY);
+			{
+				size_t len = jsval_typed_array_length(&region2, value);
+				assert(len > 0);
+				assert(got_b_len + len <= sizeof(got_b));
+				assert(jsval_typed_array_buffer(&region2, value, &backing)
+						== 0);
+				assert(jsval_array_buffer_bytes_mut(&region2, backing,
+						&bytes, &backing_len) == 0);
+				memcpy(got_b + got_b_len, bytes, len);
+				got_b_len += len;
+			}
+		}
+		assert(got_b_len == sizeof(pattern));
+		assert(memcmp(got_b, pattern, sizeof(pattern)) == 0);
+
+		/* Collect the chunk delivered to Phase 1's leftover
+		 * pending A.read (resolved during Phase 2's drains when
+		 * the pump resumed). */
+		if (saved_pending_a) {
+			assert(jsval_promise_state(&region2, pending_a, &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region2, pending_a, &result) == 0);
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean == 1) {
+				a_done = 1;
+			} else {
+				assert(jsval_object_get_utf8(&region2, result,
+						(const uint8_t *)"value", 5, &value) == 0);
+				assert(value.kind == JSVAL_KIND_TYPED_ARRAY);
+				{
+					size_t len = jsval_typed_array_length(&region2, value);
+					assert(len > 0);
+					assert(got_a_len + len <= sizeof(got_a));
+					assert(jsval_typed_array_buffer(&region2, value,
+							&backing) == 0);
+					assert(jsval_array_buffer_bytes_mut(&region2, backing,
+							&bytes, &backing_len) == 0);
+					memcpy(got_a + got_a_len, bytes, len);
+					got_a_len += len;
+				}
+			}
+		}
+
+		/* Phase 3: drain A to EOF. */
+		while (!a_done) {
+			assert(jsval_readable_stream_reader_read(&region2, reader_a,
+					&promise) == 0);
+			memset(&error, 0, sizeof(error));
+			assert(jsval_microtask_drain(&region2, &error) == 0);
+			assert(jsval_promise_state(&region2, promise, &pstate) == 0);
+			assert(pstate == JSVAL_PROMISE_STATE_FULFILLED);
+			assert(jsval_promise_result(&region2, promise, &result) == 0);
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"done", 4, &done_value) == 0);
+			if (done_value.kind == JSVAL_KIND_BOOL
+					&& done_value.as.boolean == 1) {
+				a_done = 1;
+				break;
+			}
+			assert(jsval_object_get_utf8(&region2, result,
+					(const uint8_t *)"value", 5, &value) == 0);
+			assert(value.kind == JSVAL_KIND_TYPED_ARRAY);
+			{
+				size_t len = jsval_typed_array_length(&region2, value);
+				assert(len > 0);
+				assert(got_a_len + len <= sizeof(got_a));
+				assert(jsval_typed_array_buffer(&region2, value, &backing)
+						== 0);
+				assert(jsval_array_buffer_bytes_mut(&region2, backing,
+						&bytes, &backing_len) == 0);
+				memcpy(got_a + got_a_len, bytes, len);
+				got_a_len += len;
+			}
+		}
+		assert(got_a_len == sizeof(pattern));
+		assert(memcmp(got_a, pattern, sizeof(pattern)) == 0);
 	}
 }
 
