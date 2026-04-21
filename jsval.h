@@ -1209,6 +1209,53 @@ int jsval_headers_entry_at(jsval_region_t *region, jsval_t headers,
 
 int jsval_request_new(jsval_region_t *region, jsval_t input_value,
 		jsval_t init_value, int have_init, jsval_t *value_ptr);
+
+/*
+ * Raw header pair handed to jsval_request_new_with_lazy_headers.
+ * The bytes are NOT copied at construction time; they must remain
+ * valid until the Request's headers are materialized (first call to
+ * jsval_request_headers / .get / .has). Materialization is one-shot
+ * and idempotent — after it runs, the lazy pointer is cleared and
+ * subsequent header accesses return the cached Headers value.
+ *
+ * Typical embedder use: a per-request pairs array allocated in
+ * coroutine-local storage that survives across yields. mnvkd's FaaS
+ * dispatcher stores it on `self` so its lifetime spans one HTTP
+ * request iteration; the next iteration overwrites in place AFTER
+ * the prior request's region was reset, so old materialized Headers
+ * are gone too.
+ */
+typedef struct jsval_lazy_header_pair_s {
+	const uint8_t *name;
+	size_t name_len;
+	const uint8_t *value;
+	size_t value_len;
+} jsval_lazy_header_pair_t;
+
+/*
+ * Build a Request without eagerly populating Headers. The Request's
+ * `headers` field stays undefined until first access; on first call
+ * to jsval_request_headers (or any path that reads them, including
+ * jsval_request_clone), the pairs are walked and a real Headers
+ * value is constructed and cached on the Request.
+ *
+ * This is the preferred constructor for the FaaS dispatch path —
+ * handlers that don't read request.headers pay zero header-build
+ * cost. For handlers that do read headers, the work is the same as
+ * the eager path, just deferred to first access.
+ *
+ * `header_pairs` may be NULL iff `header_count == 0`. URL bytes are
+ * copied into the region; method is wrapped to a string in the
+ * region. Body bytes are wrapped as a region-allocated string the
+ * same way the eager init-dict path does.
+ */
+int jsval_request_new_with_lazy_headers(jsval_region_t *region,
+		const char *method,
+		const uint8_t *url_bytes, size_t url_len,
+		const jsval_lazy_header_pair_t *header_pairs, size_t header_count,
+		const uint8_t *body_bytes, size_t body_len,
+		jsval_t *request_out);
+
 int jsval_request_method(jsval_region_t *region, jsval_t request,
 		jsval_t *value_ptr);
 int jsval_request_url(jsval_region_t *region, jsval_t request,

@@ -12918,6 +12918,190 @@ static void test_request_readable_body_semantics(void)
 	}
 }
 
+/* Lazy headers: jsval_request_new_with_lazy_headers defers Headers
+ * Map construction until first read. Materialization is one-shot and
+ * idempotent; subsequent reads return the cached value. Cloning a
+ * lazy Request triggers materialization on the source so the clone
+ * sees real headers to deep-copy. */
+static int lazy_headers_str_equals(jsval_region_t *region, jsval_t v,
+		const char *s)
+{
+	size_t want = strlen(s);
+	size_t len = 0;
+	if (v.kind != JSVAL_KIND_STRING) { return 0; }
+	if (jsval_string_copy_utf8(region, v, NULL, 0, &len) < 0) { return 0; }
+	if (len != want) { return 0; }
+	{
+		uint8_t buf[want ? want : 1];
+		if (want > 0
+				&& jsval_string_copy_utf8(region, v, buf, want, NULL) < 0) {
+			return 0;
+		}
+		return memcmp(buf, s, want) == 0;
+	}
+}
+
+static void test_request_lazy_headers_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Construct a lazy Request, then read headers to trigger
+	 * materialization. Verify all three headers landed and that the
+	 * second read returns the same cached value. */
+	{
+		static const uint8_t name1[] = "Content-Type";
+		static const uint8_t val1[]  = "application/json";
+		static const uint8_t name2[] = "X-Custom";
+		static const uint8_t val2[]  = "value-1";
+		static const uint8_t name3[] = "Host";
+		static const uint8_t val3[]  = "bench";
+		jsval_lazy_header_pair_t pairs[3] = {
+			{ name1, sizeof(name1) - 1, val1, sizeof(val1) - 1 },
+			{ name2, sizeof(name2) - 1, val2, sizeof(val2) - 1 },
+			{ name3, sizeof(name3) - 1, val3, sizeof(val3) - 1 },
+		};
+		jsval_t request;
+		jsval_t headers_first;
+		jsval_t headers_second;
+		jsval_t got_value;
+		size_t size = 0;
+		int has = 0;
+
+		assert(jsval_request_new_with_lazy_headers(&region, "POST",
+				(const uint8_t *)"/api/v1", 7,
+				pairs, 3,
+				(const uint8_t *)"{\"x\":1}", 7,
+				&request) == 0);
+		assert(request.kind == JSVAL_KIND_REQUEST);
+
+		/* First read materializes. */
+		assert(jsval_request_headers(&region, request, &headers_first) == 0);
+		assert(headers_first.kind == JSVAL_KIND_HEADERS);
+		assert(jsval_headers_size(&region, headers_first, &size) == 0);
+		assert(size == 3);
+
+		/* Second read returns the same cached value (same off). */
+		assert(jsval_request_headers(&region, request, &headers_second) == 0);
+		assert(headers_second.kind == JSVAL_KIND_HEADERS);
+		assert(headers_second.off == headers_first.off);
+
+		/* Verify .get works for each (case-insensitive). */
+		assert(jsval_headers_get(&region, headers_first,
+				fetch_test_str(&region, "content-type"),
+				&got_value) == 0);
+		assert(got_value.kind == JSVAL_KIND_STRING);
+		assert(lazy_headers_str_equals(&region, got_value,
+				"application/json"));
+
+		assert(jsval_headers_get(&region, headers_first,
+				fetch_test_str(&region, "x-custom"),
+				&got_value) == 0);
+		assert(lazy_headers_str_equals(&region, got_value, "value-1"));
+
+		assert(jsval_headers_has(&region, headers_first,
+				fetch_test_str(&region, "Host"), &has) == 0);
+		assert(has == 1);
+
+		assert(jsval_headers_has(&region, headers_first,
+				fetch_test_str(&region, "Missing"), &has) == 0);
+		assert(has == 0);
+	}
+
+	/* 2. Empty headers (header_count == 0): materializes to an empty
+	 * Headers Map. */
+	{
+		jsval_t request;
+		jsval_t headers;
+		size_t size = 99;
+
+		assert(jsval_request_new_with_lazy_headers(&region, "GET",
+				(const uint8_t *)"/", 1,
+				NULL, 0,
+				NULL, 0,
+				&request) == 0);
+		assert(jsval_request_headers(&region, request, &headers) == 0);
+		assert(headers.kind == JSVAL_KIND_HEADERS);
+		assert(jsval_headers_size(&region, headers, &size) == 0);
+		assert(size == 0);
+	}
+
+	/* 3. Cloning a lazy Request: the source's headers are
+	 * materialized first, then deep-copied into the clone. */
+	{
+		static const uint8_t name1[] = "Accept";
+		static const uint8_t val1[]  = "*/*";
+		jsval_lazy_header_pair_t pairs[1] = {
+			{ name1, sizeof(name1) - 1, val1, sizeof(val1) - 1 },
+		};
+		jsval_t src_request;
+		jsval_t clone_request;
+		jsval_t src_headers;
+		jsval_t clone_headers;
+		size_t size = 0;
+		jsval_t got;
+
+		assert(jsval_request_new_with_lazy_headers(&region, "GET",
+				(const uint8_t *)"/x", 2,
+				pairs, 1,
+				NULL, 0,
+				&src_request) == 0);
+
+		/* Clone WITHOUT first reading headers from src — the clone
+		 * path must trigger materialization on src. */
+		assert(jsval_request_new(&region, src_request,
+				jsval_undefined(), 0, &clone_request) == 0);
+
+		/* Both Requests now have a Headers value. */
+		assert(jsval_request_headers(&region, src_request,
+				&src_headers) == 0);
+		assert(src_headers.kind == JSVAL_KIND_HEADERS);
+		assert(jsval_request_headers(&region, clone_request,
+				&clone_headers) == 0);
+		assert(clone_headers.kind == JSVAL_KIND_HEADERS);
+		/* Distinct instances (deep copy). */
+		assert(clone_headers.off != src_headers.off);
+		/* Same content. */
+		assert(jsval_headers_size(&region, clone_headers, &size) == 0);
+		assert(size == 1);
+		assert(jsval_headers_get(&region, clone_headers,
+				fetch_test_str(&region, "accept"), &got) == 0);
+		assert(lazy_headers_str_equals(&region, got, "*/*"));
+	}
+
+	/* 4. Body access works without touching headers: lazy_pairs
+	 * stays unmaterialized when the handler only reads body. */
+	{
+		static const uint8_t name1[] = "Content-Type";
+		static const uint8_t val1[]  = "application/json";
+		jsval_lazy_header_pair_t pairs[1] = {
+			{ name1, sizeof(name1) - 1, val1, sizeof(val1) - 1 },
+		};
+		jsval_t request;
+		jsval_t text_promise;
+		jsval_t text_value;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+
+		assert(jsval_request_new_with_lazy_headers(&region, "POST",
+				(const uint8_t *)"/", 1,
+				pairs, 1,
+				(const uint8_t *)"hello", 5,
+				&request) == 0);
+
+		assert(jsval_request_text(&region, request, &text_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, text_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, text_promise,
+				&text_value) == 0);
+		assert(lazy_headers_str_equals(&region, text_value, "hello"));
+	}
+}
+
 /* Phase 3c-5: Response-side parity for readable-body init + consumer
  * methods. Mirrors test_request_readable_body_semantics scenario by
  * scenario. */
@@ -16768,6 +16952,7 @@ int main(void)
 	test_dense_array_observable_behavior();
 	test_fetch_api_semantics();
 	test_request_readable_body_semantics();
+	test_request_lazy_headers_semantics();
 	test_response_readable_body_semantics();
 	test_readable_stream_tee_semantics();
 	test_fetch_body_drain_semantics();

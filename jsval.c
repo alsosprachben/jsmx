@@ -301,6 +301,12 @@ typedef struct jsval_native_request_s {
 	uint8_t has_body;
 	uint8_t body_is_streaming;
 	uint8_t reserved[1];
+	/* Lazy headers: when lazy_pairs != NULL, `headers` is undefined
+	 * and must be materialized on first read access. After
+	 * materialization both fields are cleared and `headers` holds the
+	 * built Headers value. See jsval_request_new_with_lazy_headers. */
+	const jsval_lazy_header_pair_t *lazy_pairs;
+	size_t lazy_count;
 } jsval_native_request_t;
 
 typedef struct jsval_native_response_s {
@@ -36794,9 +36800,24 @@ int jsval_request_new(jsval_region_t *region, jsval_t input_value,
 	if (input_value.kind == JSVAL_KIND_REQUEST) {
 		jsval_native_request_t *src =
 				jsval_native_request(region, input_value);
+		jsval_t src_headers_unused;
 		if (src == NULL) {
 			errno = EINVAL;
 			return -1;
+		}
+		/* Force materialize lazy headers on the source so the clone
+		 * sees a real Headers value to deep-copy from. Idempotent —
+		 * no-op if src is already eager. */
+		if (src->lazy_pairs != NULL) {
+			if (jsval_request_headers(region, input_value,
+					&src_headers_unused) < 0) {
+				return -1;
+			}
+			src = jsval_native_request(region, input_value);
+			if (src == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
 		}
 		url_value = src->url;
 		method = src->method;
@@ -36924,6 +36945,48 @@ int jsval_request_headers(jsval_region_t *region, jsval_t request,
 	if (native == NULL || value_ptr == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+	/* Materialize lazy headers on first access. The lazy_pairs pointer
+	 * is to caller-owned memory (typically a stable per-iteration
+	 * buffer in the dispatcher). After this runs once, both lazy
+	 * fields are cleared and `headers` holds the built value;
+	 * subsequent calls fall through directly. See
+	 * jsval_request_new_with_lazy_headers for the construction side. */
+	if (native->lazy_pairs != NULL) {
+		jsval_t built;
+		size_t count = native->lazy_count;
+		const jsval_lazy_header_pair_t *pairs = native->lazy_pairs;
+		size_t i;
+
+		if (jsval_headers_new(region, JSVAL_HEADERS_GUARD_REQUEST,
+				&built) < 0) {
+			return -1;
+		}
+		for (i = 0; i < count; i++) {
+			jsval_t name_val;
+			jsval_t value_val;
+			if (jsval_string_new_utf8(region, pairs[i].name,
+					pairs[i].name_len, &name_val) < 0) {
+				return -1;
+			}
+			if (jsval_string_new_utf8(region, pairs[i].value,
+					pairs[i].value_len, &value_val) < 0) {
+				return -1;
+			}
+			/* Same silent-skip-on-validation-failure semantics as
+			 * faas_build_request_from_parts. */
+			(void)jsval_headers_append(region, built, name_val, value_val);
+		}
+		/* Re-resolve native after possible region growth from
+		 * jsval_headers_new / jsval_string_new_utf8 / append. */
+		native = jsval_native_request(region, request);
+		if (native == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		native->headers = built;
+		native->lazy_pairs = NULL;
+		native->lazy_count = 0;
 	}
 	*value_ptr = native->headers;
 	return 0;
@@ -38292,6 +38355,117 @@ int jsval_request_new_from_parts(jsval_region_t *region,
 	value_ptr->kind = JSVAL_KIND_REQUEST;
 	value_ptr->repr = JSVAL_REPR_NATIVE;
 	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_request_new_with_lazy_headers(jsval_region_t *region,
+		const char *method_name,
+		const uint8_t *url_bytes, size_t url_len,
+		const jsval_lazy_header_pair_t *header_pairs, size_t header_count,
+		const uint8_t *body_bytes, size_t body_len,
+		jsval_t *request_out)
+{
+	jsval_native_request_t *native;
+	jsval_off_t off;
+	jsval_t url_value;
+	jsval_t method_value;
+	jsval_t headers_value = jsval_undefined();   /* empty-headers case only */
+	jsval_t body_buffer = jsval_undefined();
+	uint8_t method = JSVAL_HTTP_METHOD_GET;
+	int has_body = 0;
+	const char *use_method = (method_name != NULL && method_name[0] != '\0')
+			? method_name : "GET";
+
+	if (region == NULL || request_out == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (header_count > 0 && header_pairs == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (body_len > 0 && body_bytes == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* Empty-headers case: eagerly create an empty Headers value (one
+	 * cheap alloc). The lazy path only kicks in when there's actual
+	 * per-header work to defer. */
+	if (header_count == 0) {
+		if (jsval_headers_new(region, JSVAL_HEADERS_GUARD_REQUEST,
+				&headers_value) < 0) {
+			return -1;
+		}
+	}
+
+	/* Parse method via the same path the eager constructor uses, so
+	 * any forbidden-method check stays consistent. */
+	if (jsval_string_new_utf8(region, (const uint8_t *)use_method,
+			strlen(use_method), &method_value) < 0) {
+		return -1;
+	}
+	if (jsval_http_method_from_string(region, method_value, &method) < 0) {
+		return -1;
+	}
+	if (jsval_http_method_is_forbidden(method)) {
+		errno = EACCES;
+		return -1;
+	}
+
+	/* URL string in the region. */
+	if (jsval_string_new_utf8(region, url_bytes, url_len, &url_value) < 0) {
+		return -1;
+	}
+
+	/* Body materialization: same shape as the eager init-dict path
+	 * (string body → ArrayBuffer copy). The body is eager because all
+	 * known mnvkd handlers that read body do so via request.text() /
+	 * .json() / .arrayBuffer(), which expect the bytes to be already
+	 * resident in the region. Lazy body is a separate optimization
+	 * (deferred — see plan's out-of-scope list). */
+	if (body_len > 0) {
+		if (jsval_array_buffer_new(region, body_len, &body_buffer) < 0) {
+			return -1;
+		}
+		{
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, body_buffer);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst), body_bytes,
+					body_len);
+		}
+		has_body = 1;
+	}
+
+	/* Now allocate the Request native struct. All earlier allocs may
+	 * have grown the region, but we hold no native pointers across
+	 * them — only jsval_t values which are stable. */
+	if (jsval_region_reserve(region, sizeof(*native), JSVAL_ALIGN, &off,
+			(void **)&native) < 0) {
+		return -1;
+	}
+	memset(native, 0, sizeof(*native));
+	native->url = url_value;
+	/* If header_count > 0, headers stays undefined and lazy_pairs
+	 * points at the deferred source. If header_count == 0,
+	 * headers_value already holds an empty Headers and lazy_pairs is
+	 * NULL — first read returns the empty Headers directly. */
+	native->headers = headers_value;
+	native->body_buffer = body_buffer;
+	native->body_readable = jsval_undefined();
+	native->method = method;
+	native->has_body = (uint8_t)(has_body ? 1 : 0);
+	native->lazy_pairs = (header_count > 0) ? header_pairs : NULL;
+	native->lazy_count = header_count;
+
+	*request_out = jsval_undefined();
+	request_out->kind = JSVAL_KIND_REQUEST;
+	request_out->repr = JSVAL_REPR_NATIVE;
+	request_out->off = off;
 	return 0;
 }
 
