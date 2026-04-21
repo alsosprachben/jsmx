@@ -52,7 +52,20 @@ typedef enum jsval_kind_e {
 	JSVAL_KIND_READABLE_STREAM_READER = 29,
 	JSVAL_KIND_WRITABLE_STREAM = 30,
 	JSVAL_KIND_WRITABLE_STREAM_DEFAULT_WRITER = 31,
-	JSVAL_KIND_TRANSFORM_STREAM = 32
+	JSVAL_KIND_TRANSFORM_STREAM = 32,
+	/*
+	 * Byte-pure string: raw UTF-8 bytes, no UTF-16 conversion. Used
+	 * by C handlers / transpiled output that route body bytes
+	 * through a string-shaped value without paying the UTF round-trip
+	 * cost of JSVAL_KIND_STRING (which is jsstr16-backed). Distinct
+	 * kind so callers explicitly opt in — no runtime polymorphism on
+	 * JSVAL_KIND_STRING. JS-side string ops (.length, .charCodeAt,
+	 * .substring, ...) do NOT recognize this kind; the transpiler /
+	 * C handler is responsible for using the right kind for the
+	 * downstream consumer. See jsval_string_jsstr8_new_bytes and
+	 * jsval_request_text_jsstr8.
+	 */
+	JSVAL_KIND_STRING_JSSTR8 = 33
 } jsval_kind_t;
 
 typedef enum jsval_typed_array_kind_e {
@@ -286,6 +299,31 @@ jsval_t jsval_number(double number);
 
 int jsval_string_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len, jsval_t *value_ptr);
 int jsval_string_new_utf16(jsval_region_t *region, const uint16_t *str, size_t len, jsval_t *value_ptr);
+
+/*
+ * Construct a byte-pure string (JSVAL_KIND_STRING_JSSTR8) wrapping
+ * raw UTF-8 bytes. The bytes are copied inline into the region; the
+ * caller may release its source storage after the call returns.
+ *
+ * Distinct from jsval_string_new_utf8 (which allocates a UTF-16
+ * native string and walks the input twice to convert). Use this
+ * when the produced string flows only into byte consumers (response
+ * body, write streams, base64 encoders) — no JS string operations.
+ */
+int jsval_string_jsstr8_new_bytes(jsval_region_t *region,
+		const uint8_t *bytes, size_t len, jsval_t *value_ptr);
+
+/*
+ * Borrow a pointer + length to the inline bytes of a JSSTR8 string.
+ * The pointer is valid until the region grows past this allocation
+ * (i.e. until the next region_reserve that bumps the cursor) or the
+ * region is reset. Caller must NOT free.
+ *
+ * Returns 0 on success, -1 with errno=EINVAL if value is not a
+ * JSVAL_KIND_STRING_JSSTR8.
+ */
+int jsval_string_jsstr8_bytes(jsval_region_t *region, jsval_t value,
+		const uint8_t **bytes_ptr, size_t *len_ptr);
 int jsval_symbol_new(jsval_region_t *region, int have_description,
 		jsval_t description_value, jsval_t *value_ptr);
 int jsval_symbol_description(jsval_region_t *region, jsval_t symbol,
@@ -1283,6 +1321,20 @@ int jsval_request_array_buffer(jsval_region_t *region, jsval_t request,
 int jsval_request_bytes(jsval_region_t *region, jsval_t request,
 		jsval_t *promise_ptr);
 /*
+ * Body-as-bytes Body mixin variant. Promise resolves to a
+ * JSVAL_KIND_STRING_JSSTR8 string holding the raw body bytes — no
+ * UTF-8 → UTF-16 conversion, no per-byte walk. The result is
+ * string-shaped (so it can flow into Response constructors expecting
+ * a body value) but byte-typed; pass it back to jsval_response_new
+ * and the body_snapshot path emits the bytes via a single memcpy
+ * (zero further conversions). For handlers that need real JS string
+ * semantics on the result, use jsval_request_text instead. Same
+ * body_used / streaming-body / readable-stream-body semantics as
+ * jsval_request_text.
+ */
+int jsval_request_text_jsstr8(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr);
+/*
  * Request.body getter: returns a ReadableStream wrapping the Request's
  * body. If the Request has no body (!has_body) or its body is already
  * used, returns JSVAL_KIND_NULL. Otherwise returns a new
@@ -1725,7 +1777,12 @@ typedef enum jsval_body_consume_mode_e {
 	JSVAL_BODY_CONSUME_TEXT = 0,
 	JSVAL_BODY_CONSUME_JSON = 1,
 	JSVAL_BODY_CONSUME_ARRAY_BUFFER = 2,
-	JSVAL_BODY_CONSUME_BYTES = 3
+	JSVAL_BODY_CONSUME_BYTES = 3,
+	/* Byte-pure text consume: returns a JSVAL_KIND_STRING_JSSTR8
+	 * value (no UTF-16 conversion). Streaming-body and
+	 * readable-body paths route through this mode just like _TEXT
+	 * but invoke the JSSTR8 resolver. */
+	JSVAL_BODY_CONSUME_TEXT_JSSTR8 = 4
 } jsval_body_consume_mode_t;
 
 #define JSVAL_FETCH_BODY_DEFAULT_LIMIT ((size_t)(16u * 1024u * 1024u))

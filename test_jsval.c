@@ -13102,6 +13102,102 @@ static void test_request_lazy_headers_semantics(void)
 	}
 }
 
+/* Byte-pure body access via jsval_request_text_jsstr8. Verifies:
+ *  - Promise resolves to a JSVAL_KIND_STRING_JSSTR8 value with bytes
+ *    byte-equal to the request body (no UTF round-trip distortion).
+ *  - jsval_string_jsstr8_bytes returns the inline pointer + length.
+ *  - Passing the JSSTR8 value as a Response body produces an
+ *    ArrayBuffer body via jsval_response_body_snapshot whose bytes
+ *    are byte-equal to the original input. */
+static void test_request_text_jsstr8_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+	jsval_lazy_header_pair_t pairs[1];
+	static const uint8_t body_bytes[] = "{\"k\":\"vvvv\"}";
+	const size_t body_len = sizeof(body_bytes) - 1;
+	jsval_t request;
+	jsval_t promise;
+	jsval_t text_value;
+	jsval_promise_state_t state;
+	jsmethod_error_t error;
+	const uint8_t *got_bytes = NULL;
+	size_t got_len = 0;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+	pairs[0].name = (const uint8_t *)"Content-Type";
+	pairs[0].name_len = 12;
+	pairs[0].value = (const uint8_t *)"application/json";
+	pairs[0].value_len = 16;
+
+	assert(jsval_request_new_with_lazy_headers(&region, "POST",
+			(const uint8_t *)"/", 1, pairs, 1,
+			body_bytes, body_len, &request) == 0);
+
+	/* request.text_jsstr8() resolves synchronously (body already in
+	 * region as ArrayBuffer; resolver runs eagerly in mark_used). */
+	assert(jsval_request_text_jsstr8(&region, request, &promise) == 0);
+	memset(&error, 0, sizeof(error));
+	assert(jsval_microtask_drain(&region, &error) == 0);
+	assert(jsval_promise_state(&region, promise, &state) == 0);
+	assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+	assert(jsval_promise_result(&region, promise, &text_value) == 0);
+	assert(text_value.kind == JSVAL_KIND_STRING_JSSTR8);
+
+	/* Bytes accessor returns the inline bytes + length, byte-equal
+	 * to the input body. */
+	assert(jsval_string_jsstr8_bytes(&region, text_value, &got_bytes,
+			&got_len) == 0);
+	assert(got_len == body_len);
+	assert(memcmp(got_bytes, body_bytes, body_len) == 0);
+
+	/* Pass the JSSTR8 value as a Response body. body_snapshot's new
+	 * branch handles it; the resulting ArrayBuffer body bytes are
+	 * byte-equal to the input. */
+	{
+		jsval_t response;
+		jsval_t body_buffer;
+		uint8_t *ab_bytes = NULL;
+		size_t ab_len = 0;
+
+		assert(jsval_response_new(&region, text_value, 1,
+				jsval_undefined(), 0, &response) == 0);
+		assert(jsval_response_body_snapshot(&region, response,
+				&body_buffer) == 0);
+		assert(body_buffer.kind == JSVAL_KIND_ARRAY_BUFFER);
+		assert(jsval_array_buffer_bytes_mut(&region, body_buffer,
+				&ab_bytes, &ab_len) == 0);
+		assert(ab_len == body_len);
+		assert(memcmp(ab_bytes, body_bytes, body_len) == 0);
+	}
+
+	/* Empty-body case: text_jsstr8 returns an empty JSSTR8. */
+	{
+		jsval_t empty_request;
+		jsval_t empty_promise;
+		jsval_t empty_value;
+
+		assert(jsval_request_new_with_lazy_headers(&region, "GET",
+				(const uint8_t *)"/", 1, NULL, 0, NULL, 0,
+				&empty_request) == 0);
+		assert(jsval_request_text_jsstr8(&region, empty_request,
+				&empty_promise) == 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, empty_promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, empty_promise,
+				&empty_value) == 0);
+		assert(empty_value.kind == JSVAL_KIND_STRING_JSSTR8);
+		got_len = 999;
+		got_bytes = (const uint8_t *)0xdeadbeef;
+		assert(jsval_string_jsstr8_bytes(&region, empty_value,
+				&got_bytes, &got_len) == 0);
+		assert(got_len == 0);
+		assert(got_bytes == NULL);
+	}
+}
+
 /* Phase 3c-5: Response-side parity for readable-body init + consumer
  * methods. Mirrors test_request_readable_body_semantics scenario by
  * scenario. */
@@ -16953,6 +17049,7 @@ int main(void)
 	test_fetch_api_semantics();
 	test_request_readable_body_semantics();
 	test_request_lazy_headers_semantics();
+	test_request_text_jsstr8_semantics();
 	test_response_readable_body_semantics();
 	test_readable_stream_tee_semantics();
 	test_fetch_body_drain_semantics();

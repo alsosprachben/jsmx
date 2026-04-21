@@ -24,6 +24,15 @@ typedef struct jsval_native_string_s {
 	size_t cap;
 } jsval_native_string_t;
 
+/* Byte-pure string. Mirrors jsval_native_string_t but stores raw
+ * UTF-8 bytes inline (no UTF-16 code units, no `cap` since these
+ * strings are immutable post-construction). See JSVAL_KIND_STRING_JSSTR8
+ * in jsval.h for the rationale and intended consumers. */
+typedef struct jsval_native_string_jsstr8_s {
+	size_t len;
+	/* `len` raw UTF-8 bytes follow inline */
+} jsval_native_string_jsstr8_t;
+
 typedef struct jsval_native_symbol_s {
 	jsval_t description;
 } jsval_native_symbol_t;
@@ -1138,6 +1147,22 @@ static jsval_native_string_t *jsval_native_string(jsval_region_t *region, jsval_
 static uint16_t *jsval_native_string_units(jsval_native_string_t *string)
 {
 	return (uint16_t *)(string + 1);
+}
+
+static jsval_native_string_jsstr8_t *jsval_native_string_jsstr8(
+		jsval_region_t *region, jsval_t value)
+{
+	if (value.repr != JSVAL_REPR_NATIVE
+			|| value.kind != JSVAL_KIND_STRING_JSSTR8) {
+		return NULL;
+	}
+	return (jsval_native_string_jsstr8_t *)jsval_region_ptr(region, value.off);
+}
+
+static uint8_t *jsval_native_string_jsstr8_bytes_inline(
+		jsval_native_string_jsstr8_t *string)
+{
+	return (uint8_t *)(string + 1);
 }
 
 static jsval_t jsval_native_string_value(jsval_off_t off)
@@ -6722,6 +6747,59 @@ int jsval_string_new_utf8(jsval_region_t *region, const uint8_t *str, size_t len
 	value_ptr->kind = JSVAL_KIND_STRING;
 	value_ptr->repr = JSVAL_REPR_NATIVE;
 	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_string_jsstr8_new_bytes(jsval_region_t *region,
+		const uint8_t *bytes, size_t len, jsval_t *value_ptr)
+{
+	jsval_native_string_jsstr8_t *string;
+	jsval_off_t off;
+	size_t total;
+
+	if (region == NULL || value_ptr == NULL || (len > 0 && bytes == NULL)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (len > SIZE_MAX - sizeof(*string)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	total = sizeof(*string) + len;
+	if (jsval_region_reserve(region, total, JSVAL_ALIGN, &off,
+			(void **)&string) < 0) {
+		return -1;
+	}
+	string->len = len;
+	if (len > 0) {
+		memcpy(jsval_native_string_jsstr8_bytes_inline(string), bytes, len);
+	}
+
+	*value_ptr = jsval_undefined();
+	value_ptr->kind = JSVAL_KIND_STRING_JSSTR8;
+	value_ptr->repr = JSVAL_REPR_NATIVE;
+	value_ptr->off = off;
+	return 0;
+}
+
+int jsval_string_jsstr8_bytes(jsval_region_t *region, jsval_t value,
+		const uint8_t **bytes_ptr, size_t *len_ptr)
+{
+	jsval_native_string_jsstr8_t *string;
+
+	if (bytes_ptr == NULL || len_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	string = jsval_native_string_jsstr8(region, value);
+	if (string == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	*len_ptr = string->len;
+	*bytes_ptr = (string->len > 0)
+			? jsval_native_string_jsstr8_bytes_inline(string)
+			: NULL;
 	return 0;
 }
 
@@ -36463,6 +36541,50 @@ static int jsval_body_resolve_text(jsval_region_t *region, jsval_t body_buffer,
 	return 0;
 }
 
+/* JSSTR8 sibling of jsval_body_resolve_text. Bytes go straight from
+ * the body ArrayBuffer into a JSVAL_KIND_STRING_JSSTR8 string — no
+ * UTF-8 → UTF-16 conversion. */
+static int jsval_body_resolve_text_jsstr8(jsval_region_t *region,
+		jsval_t body_buffer, int has_body, jsval_t *promise_ptr)
+{
+	jsval_t promise;
+
+	if (jsval_promise_new(region, &promise) < 0) {
+		return -1;
+	}
+	if (!has_body) {
+		jsval_t empty;
+		if (jsval_string_jsstr8_new_bytes(region, NULL, 0, &empty) < 0) {
+			return -1;
+		}
+		if (jsval_promise_resolve(region, promise, empty) < 0) {
+			return -1;
+		}
+	} else {
+		size_t len = 0;
+		if (jsval_array_buffer_byte_length(region, body_buffer, &len) < 0) {
+			return -1;
+		}
+		{
+			uint8_t buf[len ? len : 1];
+			jsval_t out;
+			if (len > 0
+					&& jsval_array_buffer_copy_bytes(region, body_buffer, buf,
+							len, NULL) < 0) {
+				return -1;
+			}
+			if (jsval_string_jsstr8_new_bytes(region, buf, len, &out) < 0) {
+				return -1;
+			}
+			if (jsval_promise_resolve(region, promise, out) < 0) {
+				return -1;
+			}
+		}
+	}
+	*promise_ptr = promise;
+	return 0;
+}
+
 static int jsval_body_resolve_array_buffer(jsval_region_t *region,
 		jsval_t body_buffer, int has_body, jsval_t *promise_ptr)
 {
@@ -36696,6 +36818,35 @@ static int jsval_body_snapshot_from_value(jsval_region_t *region, jsval_t body,
 	*buffer_out = jsval_undefined();
 
 	if (body.kind == JSVAL_KIND_UNDEFINED || body.kind == JSVAL_KIND_NULL) {
+		return 0;
+	}
+	if (body.kind == JSVAL_KIND_STRING_JSSTR8) {
+		const uint8_t *src = NULL;
+		size_t len = 0;
+		jsval_t buf;
+
+		if (jsval_string_jsstr8_bytes(region, body, &src, &len) < 0) {
+			return -1;
+		}
+		if (jsval_array_buffer_new(region, len, &buf) < 0) {
+			return -1;
+		}
+		if (len > 0) {
+			jsval_native_array_buffer_t *dst =
+					jsval_native_array_buffer(region, buf);
+			if (dst == NULL) {
+				errno = EINVAL;
+				return -1;
+			}
+			/* Re-resolve src after possible region growth from
+			 * jsval_array_buffer_new. */
+			if (jsval_string_jsstr8_bytes(region, body, &src, &len) < 0) {
+				return -1;
+			}
+			memcpy(jsval_native_array_buffer_bytes(dst), src, len);
+		}
+		*buffer_out = buf;
+		*has_out = 1;
 		return 0;
 	}
 	if (body.kind == JSVAL_KIND_STRING) {
@@ -37091,6 +37242,14 @@ int jsval_request_bytes(jsval_region_t *region, jsval_t request,
 {
 	return jsval_request_mark_used(region, request, promise_ptr,
 			jsval_body_resolve_bytes, JSVAL_BODY_CONSUME_BYTES);
+}
+
+int jsval_request_text_jsstr8(jsval_region_t *region, jsval_t request,
+		jsval_t *promise_ptr)
+{
+	return jsval_request_mark_used(region, request, promise_ptr,
+			jsval_body_resolve_text_jsstr8,
+			JSVAL_BODY_CONSUME_TEXT_JSSTR8);
 }
 
 static int jsval_request_enum_string(jsval_region_t *region, const char *s,
@@ -38702,6 +38861,12 @@ static int jsval_body_drain_resolve_eof(jsval_region_t *region,
 		resolved = typed;
 		break;
 	}
+	case JSVAL_BODY_CONSUME_TEXT_JSSTR8:
+		if (jsval_string_jsstr8_new_bytes(region, bytes, len, &resolved)
+				< 0) {
+			return -1;
+		}
+		break;
 	default:
 		errno = EINVAL;
 		return -1;
@@ -39053,6 +39218,12 @@ static int jsval_readable_body_consumer_resolve_eof(jsval_region_t *region,
 		resolved = typed;
 		break;
 	}
+	case JSVAL_BODY_CONSUME_TEXT_JSSTR8:
+		if (jsval_string_jsstr8_new_bytes(region, bytes, len, &resolved)
+				< 0) {
+			return -1;
+		}
+		break;
 	default:
 		errno = EINVAL;
 		return -1;
