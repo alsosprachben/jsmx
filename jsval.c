@@ -37831,6 +37831,14 @@ int jsval_response_text(jsval_region_t *region, jsval_t response,
 			jsval_body_resolve_text, JSVAL_BODY_CONSUME_TEXT);
 }
 
+int jsval_response_text_jsstr8(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr)
+{
+	return jsval_response_mark_used(region, response, promise_ptr,
+			jsval_body_resolve_text_jsstr8,
+			JSVAL_BODY_CONSUME_TEXT_JSSTR8);
+}
+
 int jsval_response_json_body(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr)
 {

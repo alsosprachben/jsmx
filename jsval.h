@@ -1389,6 +1389,18 @@ int jsval_response_array_buffer(jsval_region_t *region, jsval_t response,
 int jsval_response_bytes(jsval_region_t *region, jsval_t response,
 		jsval_t *promise_ptr);
 /*
+ * Body mixin variant: resolve a Response's body as a byte-pure
+ * JSVAL_KIND_STRING_JSSTR8 string (no UTF-8 → UTF-16 conversion).
+ * Same body_used / streaming-body / readable-body semantics as
+ * jsval_response_text; the only difference is the shape of the
+ * resolved value. For proxy / echo / pipe patterns that consume
+ * an upstream response body as text and hand it back to Response
+ * as a body, this matches the speed of jsval_response_bytes while
+ * keeping a string-shaped return for downstream API symmetry.
+ */
+int jsval_response_text_jsstr8(jsval_region_t *region, jsval_t response,
+		jsval_t *promise_ptr);
+/*
  * Response.body getter: returns a ReadableStream wrapping the Response's
  * body. If the Response has no body (!has_body) or its body is already
  * used, returns JSVAL_KIND_NULL. Otherwise returns a new

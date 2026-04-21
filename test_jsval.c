@@ -13198,6 +13198,100 @@ static void test_request_text_jsstr8_semantics(void)
 	}
 }
 
+/* Response-side parallel of test_request_text_jsstr8_semantics.
+ * Verifies jsval_response_text_jsstr8 returns a JSVAL_KIND_STRING_JSSTR8
+ * value holding the body bytes byte-equal to input (no UTF round-trip),
+ * covers the empty-body case, and the body_used rejection on second
+ * consume. */
+static void test_response_text_jsstr8_semantics(void)
+{
+	uint8_t storage[262144];
+	jsval_region_t region;
+
+	jsval_region_init(&region, storage, sizeof(storage));
+
+	/* 1. Populated body: text_jsstr8 resolves synchronously to a
+	 * JSSTR8 string whose bytes match the input. */
+	{
+		static const uint8_t body_bytes[] = "{\"k\":\"vvvv\"}";
+		const size_t body_len = sizeof(body_bytes) - 1;
+		jsval_t body_value;
+		jsval_t response;
+		jsval_t promise;
+		jsval_t result;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		const uint8_t *got_bytes = NULL;
+		size_t got_len = 0;
+
+		assert(jsval_array_buffer_new(&region, body_len, &body_value)
+				== 0);
+		{
+			uint8_t *dst = NULL;
+			size_t cap = 0;
+			assert(jsval_array_buffer_bytes_mut(&region, body_value,
+					&dst, &cap) == 0);
+			assert(cap >= body_len);
+			memcpy(dst, body_bytes, body_len);
+		}
+		assert(jsval_response_new(&region, body_value, 1,
+				jsval_undefined(), 0, &response) == 0);
+
+		assert(jsval_response_text_jsstr8(&region, response, &promise)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_STRING_JSSTR8);
+		assert(jsval_string_jsstr8_bytes(&region, result, &got_bytes,
+				&got_len) == 0);
+		assert(got_len == body_len);
+		assert(memcmp(got_bytes, body_bytes, body_len) == 0);
+
+		/* 1b. body_used: a second consume rejects. */
+		{
+			jsval_t p2;
+			jsval_t reason;
+			assert(jsval_response_text_jsstr8(&region, response, &p2)
+					== 0);
+			assert(jsval_promise_state(&region, p2, &state) == 0);
+			assert(state == JSVAL_PROMISE_STATE_REJECTED);
+			assert(jsval_promise_result(&region, p2, &reason) == 0);
+			assert(reason.kind == JSVAL_KIND_DOM_EXCEPTION);
+		}
+	}
+
+	/* 2. Empty-body Response: text_jsstr8 returns an empty JSSTR8. */
+	{
+		jsval_t response;
+		jsval_t promise;
+		jsval_t result;
+		jsval_promise_state_t state;
+		jsmethod_error_t error;
+		const uint8_t *got_bytes = NULL;
+		size_t got_len = 0;
+
+		assert(jsval_response_new(&region, jsval_undefined(), 0,
+				jsval_undefined(), 0, &response) == 0);
+		assert(jsval_response_text_jsstr8(&region, response, &promise)
+				== 0);
+		memset(&error, 0, sizeof(error));
+		assert(jsval_microtask_drain(&region, &error) == 0);
+		assert(jsval_promise_state(&region, promise, &state) == 0);
+		assert(state == JSVAL_PROMISE_STATE_FULFILLED);
+		assert(jsval_promise_result(&region, promise, &result) == 0);
+		assert(result.kind == JSVAL_KIND_STRING_JSSTR8);
+		got_len = 999;
+		got_bytes = (const uint8_t *)0xdeadbeef;
+		assert(jsval_string_jsstr8_bytes(&region, result, &got_bytes,
+				&got_len) == 0);
+		assert(got_len == 0);
+		assert(got_bytes == NULL);
+	}
+}
+
 /* Phase 3c-5: Response-side parity for readable-body init + consumer
  * methods. Mirrors test_request_readable_body_semantics scenario by
  * scenario. */
@@ -17050,6 +17144,7 @@ int main(void)
 	test_request_readable_body_semantics();
 	test_request_lazy_headers_semantics();
 	test_request_text_jsstr8_semantics();
+	test_response_text_jsstr8_semantics();
 	test_response_readable_body_semantics();
 	test_readable_stream_tee_semantics();
 	test_fetch_body_drain_semantics();
