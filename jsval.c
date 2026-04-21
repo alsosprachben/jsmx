@@ -37330,7 +37330,7 @@ int jsval_response_redirect(jsval_region_t *region, jsval_t url_value,
 int jsval_response_json(jsval_region_t *region, jsval_t data_value,
 		int have_init, jsval_t init_value, jsval_t *value_ptr)
 {
-	jsval_t body_string;
+	jsval_t body_buffer;
 	jsval_t out;
 	jsval_native_response_t *native;
 	size_t json_len = 0;
@@ -37338,17 +37338,28 @@ int jsval_response_json(jsval_region_t *region, jsval_t data_value,
 	if (jsval_copy_json(region, data_value, NULL, 0, &json_len) < 0) {
 		return -1;
 	}
-	{
-		uint8_t buf[json_len ? json_len : 1];
-		if (json_len > 0
-				&& jsval_copy_json(region, data_value, buf, json_len, NULL) < 0) {
+	/* Emit JSON bytes directly into an ArrayBuffer body (skipping the
+	 * UTF-8 → UTF-16 round-trip that jsval_string_new_utf8 would
+	 * trigger, and which jsval_body_snapshot_from_value would then
+	 * have to undo on response emit). The result body_buffer is the
+	 * exact wire bytes; jsval_response_new stores it as-is and
+	 * jsval_response_body_snapshot returns it unchanged. */
+	if (jsval_array_buffer_new(region, json_len, &body_buffer) < 0) {
+		return -1;
+	}
+	if (json_len > 0) {
+		jsval_native_array_buffer_t *dst =
+				jsval_native_array_buffer(region, body_buffer);
+		if (dst == NULL) {
+			errno = EINVAL;
 			return -1;
 		}
-		if (jsval_string_new_utf8(region, buf, json_len, &body_string) < 0) {
+		if (jsval_copy_json(region, data_value,
+				jsval_native_array_buffer_bytes(dst), json_len, NULL) < 0) {
 			return -1;
 		}
 	}
-	if (jsval_response_new(region, body_string, 1, init_value, have_init,
+	if (jsval_response_new(region, body_buffer, 1, init_value, have_init,
 			&out) < 0) {
 		return -1;
 	}
