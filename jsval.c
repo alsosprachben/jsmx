@@ -6670,15 +6670,6 @@ int jsval_is_json_backed(jsval_t value)
 	return value.repr == JSVAL_REPR_JSON;
 }
 
-jsval_t jsval_undefined(void)
-{
-	jsval_t value;
-	memset(&value, 0, sizeof(value));
-	value.kind = JSVAL_KIND_UNDEFINED;
-	value.repr = JSVAL_REPR_INLINE;
-	return value;
-}
-
 jsval_t jsval_null(void)
 {
 	jsval_t value = jsval_undefined();

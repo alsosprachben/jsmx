@@ -292,7 +292,11 @@ int jsval_region_set_root(jsval_region_t *region, jsval_t value);
 int jsval_is_native(jsval_t value);
 int jsval_is_json_backed(jsval_t value);
 
-jsval_t jsval_undefined(void);
+static inline jsval_t jsval_undefined(void)
+{
+	jsval_t value = {0};
+	return value;
+}
 jsval_t jsval_null(void);
 jsval_t jsval_bool(int boolean);
 jsval_t jsval_number(double number);
