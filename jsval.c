@@ -2410,7 +2410,9 @@ jsval_typed_array_bytes(jsval_region_t *region, jsval_t typed_array,
 
 static int jsval_key_is_property_name(jsval_t key)
 {
-	return key.kind == JSVAL_KIND_STRING || key.kind == JSVAL_KIND_SYMBOL;
+	return key.kind == JSVAL_KIND_STRING
+			|| key.kind == JSVAL_KIND_STRING_JSSTR8
+			|| key.kind == JSVAL_KIND_SYMBOL;
 }
 
 static jsstr8_t
@@ -3598,6 +3600,81 @@ static int jsval_stringify_value_to_native(jsval_region_t *region, jsval_t value
 		int require_object_coercible, jsval_t *string_value_ptr,
 		jsmethod_error_t *error);
 
+static int jsval_json_emit_jsstr8_string(jsval_region_t *region, jsval_t value, jsval_json_emit_state_t *state)
+{
+	jsval_native_string_jsstr8_t *string = jsval_native_string_jsstr8(region, value);
+	const uint8_t *cursor;
+	const uint8_t *stop;
+	const uint8_t *run;
+
+	if (string == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (jsval_json_emit_byte(state, '"') < 0) {
+		return -1;
+	}
+
+	cursor = (string->len > 0) ? jsval_native_string_jsstr8_bytes_inline(string) : NULL;
+	stop = cursor + string->len;
+	run = cursor;
+	while (cursor < stop) {
+		uint8_t b = *cursor;
+		const char *escape = NULL;
+		uint8_t u_escape[6];
+		size_t u_len = 0;
+
+		if (b == '"') {
+			escape = "\\\"";
+		} else if (b == '\\') {
+			escape = "\\\\";
+		} else if (b == '\b') {
+			escape = "\\b";
+		} else if (b == '\f') {
+			escape = "\\f";
+		} else if (b == '\n') {
+			escape = "\\n";
+		} else if (b == '\r') {
+			escape = "\\r";
+		} else if (b == '\t') {
+			escape = "\\t";
+		} else if (b < 0x20) {
+			static const char hex[] = "0123456789abcdef";
+			u_escape[0] = '\\';
+			u_escape[1] = 'u';
+			u_escape[2] = '0';
+			u_escape[3] = '0';
+			u_escape[4] = (uint8_t)hex[(b >> 4) & 0xF];
+			u_escape[5] = (uint8_t)hex[b & 0xF];
+			u_len = 6;
+		}
+
+		if (escape != NULL || u_len > 0) {
+			if (cursor > run && jsval_json_emit_append(state, run, (size_t)(cursor - run)) < 0) {
+				return -1;
+			}
+			if (escape != NULL) {
+				if (jsval_json_emit_ascii(state, escape) < 0) {
+					return -1;
+				}
+			} else {
+				if (jsval_json_emit_append(state, u_escape, u_len) < 0) {
+					return -1;
+				}
+			}
+			cursor++;
+			run = cursor;
+		} else {
+			cursor++;
+		}
+	}
+	if (cursor > run && jsval_json_emit_append(state, run, (size_t)(cursor - run)) < 0) {
+		return -1;
+	}
+
+	return jsval_json_emit_byte(state, '"');
+}
+
 static int jsval_json_emit_native_string(jsval_region_t *region, jsval_t value, jsval_json_emit_state_t *state)
 {
 	jsval_native_string_t *string = jsval_native_string(region, value);
@@ -3800,7 +3877,7 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 			if (name.kind == JSVAL_KIND_SYMBOL) {
 				continue;
 			}
-			if (name.kind != JSVAL_KIND_STRING) {
+			if (name.kind != JSVAL_KIND_STRING && name.kind != JSVAL_KIND_STRING_JSSTR8) {
 				jsval_json_emit_pop(state, value);
 				errno = EINVAL;
 				return -1;
@@ -3809,7 +3886,12 @@ static int jsval_json_emit_value(jsval_region_t *region, jsval_t value, jsval_js
 				jsval_json_emit_pop(state, value);
 				return -1;
 			}
-			if (jsval_json_emit_native_string(region, name, state) < 0) {
+			if (name.kind == JSVAL_KIND_STRING_JSSTR8) {
+				if (jsval_json_emit_jsstr8_string(region, name, state) < 0) {
+					jsval_json_emit_pop(state, value);
+					return -1;
+				}
+			} else if (jsval_json_emit_native_string(region, name, state) < 0) {
 				jsval_json_emit_pop(state, value);
 				return -1;
 			}
@@ -30074,6 +30156,29 @@ int jsval_copy_json(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t 
 
 int jsval_string_copy_utf8(jsval_region_t *region, jsval_t value, uint8_t *buf, size_t cap, size_t *len_ptr)
 {
+	if (value.kind == JSVAL_KIND_STRING_JSSTR8) {
+		jsval_native_string_jsstr8_t *s8 = jsval_native_string_jsstr8(region, value);
+		size_t n;
+
+		if (s8 == NULL) {
+			errno = EINVAL;
+			return -1;
+		}
+		n = s8->len;
+		if (len_ptr != NULL) {
+			*len_ptr = n;
+		}
+		if (buf == NULL || cap == 0) {
+			return 0;
+		}
+		if (n > cap) {
+			n = cap;
+		}
+		if (n > 0) {
+			memcpy(buf, jsval_native_string_jsstr8_bytes_inline(s8), n);
+		}
+		return 0;
+	}
 	if (value.kind != JSVAL_KIND_STRING) {
 		errno = EINVAL;
 		return -1;
@@ -30531,6 +30636,28 @@ static int jsval_native_object_find_utf8(jsval_region_t *region,
 	for (i = 0; i < native->len; i++) {
 		jsval_t name = props[i].name;
 
+		if (name.kind == JSVAL_KIND_STRING_JSSTR8) {
+			jsval_native_string_jsstr8_t *s8 = jsval_native_string_jsstr8(region, name);
+			const uint8_t *bytes;
+
+			if (s8 == NULL || s8->len != key_len) {
+				continue;
+			}
+			if (key_len == 0) {
+				if (index_ptr != NULL) {
+					*index_ptr = i;
+				}
+				return 1;
+			}
+			bytes = jsval_native_string_jsstr8_bytes_inline(s8);
+			if (memcmp(bytes, key, key_len) == 0) {
+				if (index_ptr != NULL) {
+					*index_ptr = i;
+				}
+				return 1;
+			}
+			continue;
+		}
 		if (name.kind != JSVAL_KIND_STRING) {
 			continue;
 		}
@@ -31215,7 +31342,7 @@ int jsval_object_set_utf8(jsval_region_t *region, jsval_t object, const uint8_t 
 
 	{
 		jsval_t name;
-		if (jsval_string_new_utf8(region, key, key_len, &name) < 0) {
+		if (jsval_string_jsstr8_new_bytes(region, key, key_len, &name) < 0) {
 			return -1;
 		}
 		props[native->len].name = name;
@@ -33582,6 +33709,24 @@ int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 			return memcmp(left_buf, right_buf, left_len * sizeof(uint16_t)) == 0;
 		}
 	}
+	case JSVAL_KIND_STRING_JSSTR8:
+	{
+		jsval_native_string_jsstr8_t *l = jsval_native_string_jsstr8(region, left);
+		jsval_native_string_jsstr8_t *r = jsval_native_string_jsstr8(region, right);
+
+		if (l == NULL || r == NULL) {
+			return 0;
+		}
+		if (l->len != r->len) {
+			return 0;
+		}
+		if (l->len == 0) {
+			return 1;
+		}
+		return memcmp(jsval_native_string_jsstr8_bytes_inline(l),
+				jsval_native_string_jsstr8_bytes_inline(r),
+				l->len) == 0;
+	}
 	case JSVAL_KIND_SYMBOL:
 		if (left.repr != JSVAL_REPR_NATIVE || right.repr != JSVAL_REPR_NATIVE) {
 			return 0;
@@ -35823,7 +35968,8 @@ static int jsval_headers_name_equals_ci(jsval_region_t *region,
 	size_t b_len = 0;
 	size_t i;
 
-	if (a.kind != JSVAL_KIND_STRING || b.kind != JSVAL_KIND_STRING) {
+	if ((a.kind != JSVAL_KIND_STRING && a.kind != JSVAL_KIND_STRING_JSSTR8)
+			|| (b.kind != JSVAL_KIND_STRING && b.kind != JSVAL_KIND_STRING_JSSTR8)) {
 		*equal_ptr = 0;
 		return 0;
 	}
@@ -35869,7 +36015,7 @@ static int jsval_headers_name_equals_ascii_ci(jsval_region_t *region,
 	size_t want_len = strlen(ascii);
 	size_t i;
 
-	if (name.kind != JSVAL_KIND_STRING) {
+	if (name.kind != JSVAL_KIND_STRING && name.kind != JSVAL_KIND_STRING_JSSTR8) {
 		*equal_ptr = 0;
 		return 0;
 	}
@@ -35922,7 +36068,7 @@ static int jsval_http_validate_header_name(jsval_region_t *region,
 	size_t n_len = 0;
 	size_t i;
 
-	if (name.kind != JSVAL_KIND_STRING) {
+	if (name.kind != JSVAL_KIND_STRING && name.kind != JSVAL_KIND_STRING_JSSTR8) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -35955,7 +36101,7 @@ static int jsval_http_validate_header_value(jsval_region_t *region,
 	size_t v_len = 0;
 	size_t i;
 
-	if (value.kind != JSVAL_KIND_STRING) {
+	if (value.kind != JSVAL_KIND_STRING && value.kind != JSVAL_KIND_STRING_JSSTR8) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -35987,8 +36133,9 @@ static int jsval_http_normalize_header_value(jsval_region_t *region,
 	size_t v_len = 0;
 	size_t start;
 	size_t end;
+	int prefer_jsstr8 = (in_value.kind == JSVAL_KIND_STRING_JSSTR8);
 
-	if (in_value.kind != JSVAL_KIND_STRING) {
+	if (in_value.kind != JSVAL_KIND_STRING && in_value.kind != JSVAL_KIND_STRING_JSSTR8) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -36009,6 +36156,10 @@ static int jsval_http_normalize_header_value(jsval_region_t *region,
 		}
 		while (end > start && (buf[end - 1] == ' ' || buf[end - 1] == '\t')) {
 			end--;
+		}
+		if (prefer_jsstr8) {
+			return jsval_string_jsstr8_new_bytes(region, buf + start,
+					end - start, out_value);
 		}
 		return jsval_string_new_utf8(region, buf + start, end - start,
 				out_value);
@@ -37522,26 +37673,22 @@ int jsval_response_json(jsval_region_t *region, jsval_t data_value,
 		jsval_t name;
 		jsval_t val;
 		int already = 0;
-		if (jsval_string_new_utf8(region, (const uint8_t *)"Content-Type", 12,
-				&name) < 0) {
+		if (jsval_string_jsstr8_new_bytes(region,
+				(const uint8_t *)"Content-Type", 12, &name) < 0) {
 			return -1;
 		}
 		if (jsval_headers_has(region, native->headers, name, &already) < 0) {
 			return -1;
 		}
+		if (jsval_string_jsstr8_new_bytes(region,
+				(const uint8_t *)"application/json", 16, &val) < 0) {
+			return -1;
+		}
 		if (!already) {
-			if (jsval_string_new_utf8(region,
-					(const uint8_t *)"application/json", 16, &val) < 0) {
-				return -1;
-			}
 			if (jsval_headers_append(region, native->headers, name, val) < 0) {
 				return -1;
 			}
 		} else {
-			if (jsval_string_new_utf8(region,
-					(const uint8_t *)"application/json", 16, &val) < 0) {
-				return -1;
-			}
 			if (jsval_headers_set(region, native->headers, name, val) < 0) {
 				return -1;
 			}
