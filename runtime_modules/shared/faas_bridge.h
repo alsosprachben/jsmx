@@ -240,40 +240,73 @@ static int faas_serialize_response(jsval_region_t *region,
 				&value_val) < 0) {
 			return -1;
 		}
-		if (jsval_string_copy_utf8(region, name_val, NULL, 0,
-				&name_len) < 0) {
-			return -1;
-		}
-		if (jsval_string_copy_utf8(region, value_val, NULL, 0,
-				&value_len) < 0) {
-			return -1;
-		}
 		{
-			uint8_t name_buf[name_len ? name_len : 1];
-			uint8_t value_buf[value_len ? value_len : 1];
+			const uint8_t *name_bytes = NULL;
+			const uint8_t *value_bytes = NULL;
+			int name_borrowed = 0;
+			int value_borrowed = 0;
 
-			if (name_len > 0
-					&& jsval_string_copy_utf8(region, name_val, name_buf,
-							name_len, NULL) < 0) {
-				return -1;
+			/* Borrow JSSTR8 inline bytes (zero-copy) when available;
+			 * otherwise measure-then-copy the UTF-16 STRING. */
+			if (name_val.kind == JSVAL_KIND_STRING_JSSTR8) {
+				if (jsval_string_jsstr8_bytes(region, name_val,
+						&name_bytes, &name_len) < 0) {
+					return -1;
+				}
+				name_borrowed = 1;
+			} else {
+				if (jsval_string_copy_utf8(region, name_val, NULL, 0,
+						&name_len) < 0) {
+					return -1;
+				}
 			}
-			if (value_len > 0
-					&& jsval_string_copy_utf8(region, value_val, value_buf,
-							value_len, NULL) < 0) {
-				return -1;
+			if (value_val.kind == JSVAL_KIND_STRING_JSSTR8) {
+				if (jsval_string_jsstr8_bytes(region, value_val,
+						&value_bytes, &value_len) < 0) {
+					return -1;
+				}
+				value_borrowed = 1;
+			} else {
+				if (jsval_string_copy_utf8(region, value_val, NULL, 0,
+						&value_len) < 0) {
+					return -1;
+				}
 			}
-			if (faas_ascii_ci_equal(name_buf, name_len, "content-length")
-					|| faas_ascii_ci_equal(name_buf, name_len,
-							"transfer-encoding")) {
-				continue;
+			{
+				uint8_t name_scratch[name_borrowed ? 1
+						: (name_len ? name_len : 1)];
+				uint8_t value_scratch[value_borrowed ? 1
+						: (value_len ? value_len : 1)];
+
+				if (!name_borrowed && name_len > 0) {
+					if (jsval_string_copy_utf8(region, name_val,
+							name_scratch, name_len, NULL) < 0) {
+						return -1;
+					}
+					name_bytes = name_scratch;
+				}
+				if (!value_borrowed && value_len > 0) {
+					if (jsval_string_copy_utf8(region, value_val,
+							value_scratch, value_len, NULL) < 0) {
+						return -1;
+					}
+					value_bytes = value_scratch;
+				}
+				if (faas_ascii_ci_equal(name_bytes, name_len,
+								"content-length")
+						|| faas_ascii_ci_equal(name_bytes, name_len,
+								"transfer-encoding")) {
+					continue;
+				}
+				faas_emit_bytes(out_buf, out_cap, &pos, name_bytes,
+						name_len);
+				faas_emit_literal(out_buf, out_cap, &pos, ": ");
+				if (value_len > 0) {
+					faas_emit_bytes(out_buf, out_cap, &pos, value_bytes,
+							value_len);
+				}
+				faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
 			}
-			faas_emit_bytes(out_buf, out_cap, &pos, name_buf, name_len);
-			faas_emit_literal(out_buf, out_cap, &pos, ": ");
-			if (value_len > 0) {
-				faas_emit_bytes(out_buf, out_cap, &pos, value_buf,
-						value_len);
-			}
-			faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
 		}
 	}
 
@@ -393,40 +426,73 @@ static int faas_serialize_response_headers_chunked(jsval_region_t *region,
 				&value_val) < 0) {
 			return -1;
 		}
-		if (jsval_string_copy_utf8(region, name_val, NULL, 0,
-				&name_len) < 0) {
-			return -1;
-		}
-		if (jsval_string_copy_utf8(region, value_val, NULL, 0,
-				&value_len) < 0) {
-			return -1;
-		}
 		{
-			uint8_t name_buf[name_len ? name_len : 1];
-			uint8_t value_buf[value_len ? value_len : 1];
+			const uint8_t *name_bytes = NULL;
+			const uint8_t *value_bytes = NULL;
+			int name_borrowed = 0;
+			int value_borrowed = 0;
 
-			if (name_len > 0
-					&& jsval_string_copy_utf8(region, name_val, name_buf,
-							name_len, NULL) < 0) {
-				return -1;
+			/* Borrow JSSTR8 inline bytes (zero-copy) when available;
+			 * otherwise measure-then-copy the UTF-16 STRING. */
+			if (name_val.kind == JSVAL_KIND_STRING_JSSTR8) {
+				if (jsval_string_jsstr8_bytes(region, name_val,
+						&name_bytes, &name_len) < 0) {
+					return -1;
+				}
+				name_borrowed = 1;
+			} else {
+				if (jsval_string_copy_utf8(region, name_val, NULL, 0,
+						&name_len) < 0) {
+					return -1;
+				}
 			}
-			if (value_len > 0
-					&& jsval_string_copy_utf8(region, value_val, value_buf,
-							value_len, NULL) < 0) {
-				return -1;
+			if (value_val.kind == JSVAL_KIND_STRING_JSSTR8) {
+				if (jsval_string_jsstr8_bytes(region, value_val,
+						&value_bytes, &value_len) < 0) {
+					return -1;
+				}
+				value_borrowed = 1;
+			} else {
+				if (jsval_string_copy_utf8(region, value_val, NULL, 0,
+						&value_len) < 0) {
+					return -1;
+				}
 			}
-			if (faas_ascii_ci_equal(name_buf, name_len, "content-length")
-					|| faas_ascii_ci_equal(name_buf, name_len,
-							"transfer-encoding")) {
-				continue;
+			{
+				uint8_t name_scratch[name_borrowed ? 1
+						: (name_len ? name_len : 1)];
+				uint8_t value_scratch[value_borrowed ? 1
+						: (value_len ? value_len : 1)];
+
+				if (!name_borrowed && name_len > 0) {
+					if (jsval_string_copy_utf8(region, name_val,
+							name_scratch, name_len, NULL) < 0) {
+						return -1;
+					}
+					name_bytes = name_scratch;
+				}
+				if (!value_borrowed && value_len > 0) {
+					if (jsval_string_copy_utf8(region, value_val,
+							value_scratch, value_len, NULL) < 0) {
+						return -1;
+					}
+					value_bytes = value_scratch;
+				}
+				if (faas_ascii_ci_equal(name_bytes, name_len,
+								"content-length")
+						|| faas_ascii_ci_equal(name_bytes, name_len,
+								"transfer-encoding")) {
+					continue;
+				}
+				faas_emit_bytes(out_buf, out_cap, &pos, name_bytes,
+						name_len);
+				faas_emit_literal(out_buf, out_cap, &pos, ": ");
+				if (value_len > 0) {
+					faas_emit_bytes(out_buf, out_cap, &pos, value_bytes,
+							value_len);
+				}
+				faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
 			}
-			faas_emit_bytes(out_buf, out_cap, &pos, name_buf, name_len);
-			faas_emit_literal(out_buf, out_cap, &pos, ": ");
-			if (value_len > 0) {
-				faas_emit_bytes(out_buf, out_cap, &pos, value_buf,
-						value_len);
-			}
-			faas_emit_literal(out_buf, out_cap, &pos, "\r\n");
 		}
 	}
 

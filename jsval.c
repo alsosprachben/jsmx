@@ -36885,7 +36885,7 @@ static int jsval_http_method_from_string(jsval_region_t *region, jsval_t name,
 	size_t i;
 	size_t n_len = 0;
 
-	if (name.kind != JSVAL_KIND_STRING) {
+	if (name.kind != JSVAL_KIND_STRING && name.kind != JSVAL_KIND_STRING_JSSTR8) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -37470,7 +37470,7 @@ int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 			&headers_value) < 0) {
 		return -1;
 	}
-	if (jsval_string_new_utf8(region, (const uint8_t *)"", 0,
+	if (jsval_string_jsstr8_new_bytes(region, (const uint8_t *)"", 0,
 			&status_text) < 0) {
 		return -1;
 	}
@@ -37487,15 +37487,15 @@ int jsval_response_new(jsval_region_t *region, jsval_t body_value,
 			jsval_t name;
 			jsval_t val;
 			int already = 0;
-			if (jsval_string_new_utf8(region, (const uint8_t *)"Content-Type",
-					12, &name) < 0) {
+			if (jsval_string_jsstr8_new_bytes(region,
+					(const uint8_t *)"Content-Type", 12, &name) < 0) {
 				return -1;
 			}
 			if (jsval_headers_has(region, headers_value, name, &already) < 0) {
 				return -1;
 			}
 			if (!already) {
-				if (jsval_string_new_utf8(region,
+				if (jsval_string_jsstr8_new_bytes(region,
 						(const uint8_t *)"text/plain;charset=UTF-8", 24,
 						&val) < 0) {
 					return -1;
@@ -38716,8 +38716,10 @@ int jsval_request_new_with_lazy_headers(jsval_region_t *region,
 	}
 
 	/* Parse method via the same path the eager constructor uses, so
-	 * any forbidden-method check stays consistent. */
-	if (jsval_string_new_utf8(region, (const uint8_t *)use_method,
+	 * any forbidden-method check stays consistent. The method_value is
+	 * a temporary consumed only by jsval_http_method_from_string —
+	 * JSSTR8 avoids the UTF-16 round-trip on the hot request path. */
+	if (jsval_string_jsstr8_new_bytes(region, (const uint8_t *)use_method,
 			strlen(use_method), &method_value) < 0) {
 		return -1;
 	}
