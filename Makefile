@@ -6,11 +6,13 @@ LDLIBS += -lz
 
 all: libjsmn.a libjsmx.a simple_example jsondump test test_jsstr test_jsmethod test_jsurl test_utf8 test_unicode test_collation test_jsnum test_jscrypto test_jsval test_codegen test_compliance
 
-libjsmn.a: jsmn.o
-	$(AR) rc $@ $^
+LIBJSMX_OBJS = jsmn.o jsnum.o jscrypto.o jsval.o jsval_url.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o
 
-libjsmx.a: jsmn.o jsnum.o jscrypto.o jsval.o jsval_url.o jsmethod.o jsregex.o jsurl.o jsstr.o unicode.o
-	$(AR) rc $@ $^
+libjsmn.a: jsmn.o
+	$(AR) rc $@ jsmn.o
+
+libjsmx.a: $(LIBJSMX_OBJS)
+	$(AR) rc $@ $(LIBJSMX_OBJS)
 
 jsstr.o: jsstr.c jsstr.h unicode.h unicode_db.h
 

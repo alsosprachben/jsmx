@@ -209,7 +209,16 @@ static int faas_serialize_response(jsval_region_t *region,
 	faas_emit_bytes(out_buf, out_cap, &pos, (const uint8_t *)numbuf,
 			(size_t)numlen);
 	faas_emit_literal(out_buf, out_cap, &pos, " ");
-	if (status_text_value.kind == JSVAL_KIND_STRING) {
+	if (status_text_value.kind == JSVAL_KIND_STRING_JSSTR8) {
+		const uint8_t *stbytes = NULL;
+		if (jsval_string_jsstr8_bytes(region, status_text_value,
+				&stbytes, &status_text_len) < 0) {
+			return -1;
+		}
+		if (status_text_len > 0) {
+			faas_emit_bytes(out_buf, out_cap, &pos, stbytes, status_text_len);
+		}
+	} else if (status_text_value.kind == JSVAL_KIND_STRING) {
 		if (jsval_string_copy_utf8(region, status_text_value, NULL, 0,
 				&status_text_len) < 0) {
 			return -1;
@@ -397,7 +406,16 @@ static int faas_serialize_response_headers_chunked(jsval_region_t *region,
 	faas_emit_bytes(out_buf, out_cap, &pos, (const uint8_t *)numbuf,
 			(size_t)numlen);
 	faas_emit_literal(out_buf, out_cap, &pos, " ");
-	if (status_text_value.kind == JSVAL_KIND_STRING) {
+	if (status_text_value.kind == JSVAL_KIND_STRING_JSSTR8) {
+		const uint8_t *stbytes = NULL;
+		if (jsval_string_jsstr8_bytes(region, status_text_value,
+				&stbytes, &status_text_len) < 0) {
+			return -1;
+		}
+		if (status_text_len > 0) {
+			faas_emit_bytes(out_buf, out_cap, &pos, stbytes, status_text_len);
+		}
+	} else if (status_text_value.kind == JSVAL_KIND_STRING) {
 		if (jsval_string_copy_utf8(region, status_text_value, NULL, 0,
 				&status_text_len) < 0) {
 			return -1;
