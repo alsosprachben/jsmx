@@ -229,7 +229,10 @@ static void assert_string(jsval_region_t *region, jsval_t value, const char *exp
 	size_t actual_len = 0;
 	uint8_t buf[expected_len ? expected_len : 1];
 
-	assert(value.kind == JSVAL_KIND_STRING);
+	/* Accept either UTF-16 STRING or byte-pure JSSTR8: callers
+	 * compare bytes, and jsval_string_copy_utf8 handles both kinds. */
+	assert(value.kind == JSVAL_KIND_STRING
+			|| value.kind == JSVAL_KIND_STRING_JSSTR8);
 	assert(jsval_string_copy_utf8(region, value, NULL, 0, &actual_len) == 0);
 	assert(actual_len == expected_len);
 	assert(jsval_string_copy_utf8(region, value, buf, actual_len, NULL) == 0);

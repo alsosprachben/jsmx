@@ -4027,6 +4027,24 @@ static int jsval_string_measure_utf16(const jsval_region_t *region,
 	return jsval_region_measure_reserve(region, used_ptr, bytes_len, JSVAL_ALIGN);
 }
 
+static int jsval_string_measure_jsstr8(const jsval_region_t *region,
+		size_t *used_ptr, size_t byte_len)
+{
+	size_t bytes_len;
+
+	if (used_ptr == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (byte_len > SIZE_MAX - sizeof(jsval_native_string_jsstr8_t)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+
+	bytes_len = sizeof(jsval_native_string_jsstr8_t) + byte_len;
+	return jsval_region_measure_reserve(region, used_ptr, bytes_len, JSVAL_ALIGN);
+}
+
 static int jsval_value_utf16_len(jsval_region_t *region, jsval_t value, size_t *len_ptr)
 {
 	jsval_json_doc_t *doc;
@@ -30114,7 +30132,11 @@ int jsval_json_parse(jsval_region_t *region, const uint8_t *json, size_t len, un
 
 	memcpy(json_copy, json, len);
 	json_copy[len] = '\0';
-	memset(tokens, 0, token_cap * sizeof(jsmntok_t));
+	/* No memset of the token pool: jsmn_alloc_token (jsmn.c) writes
+	 * every field of each token it allocates, and jsmn never reads
+	 * tokens beyond parser->toknext. Zeroing 256 * sizeof(jsmntok_t)
+	 * (~14 KB) per parse showed up as 5.6% of CPU on the /sum
+	 * callgrind. */
 
 	jsmn_init(&parser);
 	rc = jsmn_parse(&parser, (const char *)json_copy, len, tokens, token_cap);
@@ -33652,6 +33674,45 @@ int jsval_truthy(jsval_region_t *region, jsval_t value)
 
 int jsval_strict_eq(jsval_region_t *region, jsval_t left, jsval_t right)
 {
+	/* Cross-kind STRING <-> STRING_JSSTR8: both represent the same
+	 * abstract JS string value (different storage representations);
+	 * compare by UTF-8 byte content. JS strict equality on strings
+	 * is by content, not representation, so this case must succeed
+	 * for the JSSTR8 transpilation to interoperate with code that
+	 * still produces UTF-16 STRING values (e.g. JSON-parsed keys
+	 * compared against handler-supplied JSSTR8 keys). */
+	if ((left.kind == JSVAL_KIND_STRING
+			&& right.kind == JSVAL_KIND_STRING_JSSTR8)
+	    || (left.kind == JSVAL_KIND_STRING_JSSTR8
+			&& right.kind == JSVAL_KIND_STRING)) {
+		size_t left_len = 0;
+		size_t right_len = 0;
+
+		if (jsval_string_copy_utf8(region, left, NULL, 0, &left_len) < 0
+		    || jsval_string_copy_utf8(region, right, NULL, 0,
+					&right_len) < 0) {
+			return 0;
+		}
+		if (left_len != right_len) {
+			return 0;
+		}
+		if (left_len == 0) {
+			return 1;
+		}
+		{
+			uint8_t left_buf[left_len];
+			uint8_t right_buf[right_len];
+
+			if (jsval_string_copy_utf8(region, left, left_buf,
+						left_len, NULL) < 0
+			    || jsval_string_copy_utf8(region, right, right_buf,
+						right_len, NULL) < 0) {
+				return 0;
+			}
+			return memcmp(left_buf, right_buf, left_len) == 0;
+		}
+	}
+
 	if (left.kind != right.kind) {
 		return 0;
 	}
@@ -35450,17 +35511,20 @@ int jsval_promote_object_shallow_measure(jsval_region_t *region, jsval_t object,
 		for (i = 0; i < (unsigned int)tokens[object.as.index].size; i++) {
 			int key_index = cursor;
 			int value_index = jsval_json_next(region, doc, key_index);
-			size_t key_utf16_len;
+			size_t key_utf8_len;
 
 			if (value_index < 0) {
 				errno = EINVAL;
 				return -1;
 			}
-			if (jsval_json_string_copy_utf16(region, doc, (uint32_t)key_index, NULL,
-					0, &key_utf16_len) < 0) {
+			/* Match the in_place path: keys land as JSSTR8 via
+			 * jsval_object_set_utf8 (post JSSTR8 transpilation),
+			 * not as UTF-16 native strings. */
+			if (jsval_json_string_copy_utf8_internal(region, doc,
+					(uint32_t)key_index, NULL, 0, &key_utf8_len) < 0) {
 				return -1;
 			}
-			if (jsval_string_measure_utf16(region, &used, key_utf16_len) < 0) {
+			if (jsval_string_measure_jsstr8(region, &used, key_utf8_len) < 0) {
 				return -1;
 			}
 
